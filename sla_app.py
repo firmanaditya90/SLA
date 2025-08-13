@@ -40,12 +40,18 @@ def format_seconds(total_seconds):
 
 if uploaded_file:
     try:
-        # Baca file dengan skip header SLA merge
+        # Baca multiheader (baris pertama & kedua)
         df_raw = pd.read_excel(uploaded_file, header=[0, 1])
-        df_raw.columns = [c[0] if 'Unnamed' not in str(c[1]) else c[0] for c in df_raw.columns]
-        df_raw.columns = [str(c).strip().upper() for c in df_raw.columns]
 
-        # Ambil kolom SLA
+        # Gabungkan header: kalau di baris kedua ada nama proses, pakai itu
+        new_cols = []
+        for col in df_raw.columns:
+            if "Unnamed" in str(col[1]):
+                new_cols.append(str(col[0]).strip().upper())
+            else:
+                new_cols.append(str(col[1]).strip().upper())
+        df_raw.columns = new_cols
+
         sla_cols = ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
         periode_col = "PERIODE"
         jenis_col = "JENIS TRANSAKSI"
@@ -55,37 +61,36 @@ if uploaded_file:
         st.write("📄 Kolom yang terdeteksi di file")
         st.write(detected_cols)
 
-        # Pastikan kolom SLA ada
         missing = [col for col in sla_cols if col not in df_raw.columns]
         if missing:
             st.error(f"Kolom SLA berikut tidak ditemukan: {missing}")
         else:
-            # Konversi SLA ke detik & string
+            # Konversi SLA
             for col in sla_cols:
                 df_raw[col + "_SEC"] = df_raw[col].apply(parse_sla_to_seconds)
                 df_raw[col + "_STR"] = df_raw[col + "_SEC"].apply(format_seconds)
 
+            df_filtered = df_raw
+
             # Filter periode
-            if periode_col in df_raw.columns:
-                periode_list = sorted(df_raw[periode_col].dropna().unique().tolist())
+            if periode_col in df_filtered.columns:
+                periode_list = sorted(df_filtered[periode_col].dropna().unique().tolist())
                 periode_selected = st.multiselect("Filter Periode", periode_list, default=periode_list)
-                df_filtered = df_raw[df_raw[periode_col].isin(periode_selected)]
-            else:
-                df_filtered = df_raw
+                df_filtered = df_filtered[df_filtered[periode_col].isin(periode_selected)]
 
             # Filter jenis transaksi
-            if jenis_col in df_raw.columns:
+            if jenis_col in df_filtered.columns:
                 jenis_list = sorted(df_filtered[jenis_col].dropna().unique().tolist())
                 jenis_selected = st.multiselect("Filter Jenis Transaksi", jenis_list, default=jenis_list)
                 df_filtered = df_filtered[df_filtered[jenis_col].isin(jenis_selected)]
 
             # Filter vendor
-            if vendor_col in df_raw.columns:
+            if vendor_col in df_filtered.columns:
                 vendor_list = sorted(df_filtered[vendor_col].dropna().unique().tolist())
                 vendor_selected = st.multiselect("Filter Vendor", vendor_list, default=vendor_list)
                 df_filtered = df_filtered[df_filtered[vendor_col].isin(vendor_selected)]
 
-            # Hitung rata-rata SLA dalam detik
+            # Hitung rata-rata SLA
             avg_sla = {col: df_filtered[col + "_SEC"].mean() for col in sla_cols}
             avg_sla_formatted = {col: format_seconds(v) for col, v in avg_sla.items()}
 
@@ -106,10 +111,4 @@ if uploaded_file:
                 vendor_group = df_filtered.groupby(vendor_col)[[c + "_SEC" for c in sla_cols]].mean().reset_index()
                 for col in sla_cols:
                     vendor_group[col] = vendor_group[col + "_SEC"].apply(format_seconds)
-                st.dataframe(vendor_group[[vendor_col] + sla_cols])
-
-            st.subheader("📋 Data SLA (Format waktu lengkap)")
-            st.dataframe(df_filtered[[periode_col, jenis_col, vendor_col] + [c + "_STR" for c in sla_cols]])
-
-    except Exception as e:
-        st.error(f"Terjadi error saat memproses file: {e}")
+                st.dataframe(vendor_group[[vendor_col] +_]()]()_
