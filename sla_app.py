@@ -161,7 +161,7 @@ if uploaded_file:
         trend_display[col] = trend_display[col].apply(seconds_to_sla_format)
     st.dataframe(trend_display[[periode_col] + available_sla_cols])
 
-    # Plot grafik SLA TOTAL WAKTU dalam satuan hari
+    # Grafik trend SLA TOTAL WAKTU dalam satuan hari
     if "TOTAL WAKTU" in available_sla_cols:
         fig, ax = plt.subplots(figsize=(10, 5))
         y_values_days = trend["TOTAL WAKTU"].apply(lambda x: x/86400)
@@ -179,20 +179,37 @@ if uploaded_file:
     # Grafik trend SLA per proses (kecuali TOTAL WAKTU)
     if proses_grafik_cols:
         fig3, axs = plt.subplots(2, 2, figsize=(14, 8), constrained_layout=True)
-        fig3.suptitle("Trend Rata-rata SLA per Proses per Periode (hari)", fontsize=16, fontweight='bold')
+        fig3.suptitle("Trend Rata-rata SLA per Proses per Periode (hari)", fontsize=16)
         axs = axs.flatten()
-        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
         for i, col in enumerate(proses_grafik_cols):
-            y = trend[col].apply(lambda x: x / 86400)
-            axs[i].plot(trend[periode_col], y, marker='o', linestyle='-', color=colors[i])
-            axs[i].set_title(col, fontsize=14, fontweight='semibold')
+            y_vals = trend[col]/86400
+            axs[i].plot(trend[periode_col], y_vals, marker='o', color='skyblue')
+            axs[i].set_title(col)
+            axs[i].set_ylabel("Hari")
             axs[i].set_xlabel("Periode")
-            axs[i].set_ylabel("Rata-rata SLA (hari)")
-            axs[i].grid(True, linestyle='--', alpha=0.6)
+            axs[i].grid(True, linestyle='--', alpha=0.7)
             for label in axs[i].get_xticklabels():
                 label.set_rotation(45)
                 label.set_ha('right')
         st.pyplot(fig3)
+
+    # Jumlah transaksi per periode
+    if "JENIS TRANSAKSI" in df_filtered.columns:
+        st.subheader("📊 Jumlah Transaksi per Periode")
+        jumlah_trx = df_filtered.groupby(df_filtered[periode_col].astype(str))["JENIS TRANSAKSI"].count().reset_index()
+        jumlah_trx.columns = [periode_col, "Jumlah Transaksi"]
+        st.dataframe(jumlah_trx)
+
+        fig4, ax4 = plt.subplots(figsize=(10, 4))
+        ax4.bar(jumlah_trx[periode_col], jumlah_trx["Jumlah Transaksi"], color='#2ca02c')
+        ax4.set_title("Jumlah Transaksi per Periode")
+        ax4.set_xlabel("Periode")
+        ax4.set_ylabel("Jumlah Transaksi")
+        ax4.grid(axis='y', linestyle='--', alpha=0.7)
+        for label in ax4.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
+        st.pyplot(fig4)
 
 else:
     st.info("Silakan upload file Excel SLA terlebih dahulu.")
