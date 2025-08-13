@@ -193,17 +193,20 @@ if uploaded_file:
                 label.set_ha('right')
         st.pyplot(fig3)
 
-    # Jumlah transaksi per periode (urut bulan/tahun)
+    # Jumlah transaksi per periode (urut berdasarkan bulan dan tahun)
     if "JENIS TRANSAKSI" in df_filtered.columns:
         st.subheader("📊 Jumlah Transaksi per Periode")
-        df_trx = df_filtered[df_filtered[periode_col].astype(str).isin(selected_periode)].copy()
+
+        # Konversi periode ke datetime agar bisa di-sort
         try:
-            df_trx['PERIODE_DT'] = pd.to_datetime(df_trx[periode_col], format="%b %Y")
+            df_filtered['PERIODE_DT'] = pd.to_datetime(df_filtered[periode_col], format="%b %Y")
         except:
-            df_trx['PERIODE_DT'] = pd.to_datetime(df_trx[periode_col], errors='coerce')
-        jumlah_trx = df_trx.groupby(['PERIODE_DT', periode_col])["JENIS TRANSAKSI"].count().reset_index()
+            df_filtered['PERIODE_DT'] = pd.to_datetime(df_filtered[periode_col], errors='coerce')
+
+        jumlah_trx = df_filtered.groupby(['PERIODE_DT', periode_col])["JENIS TRANSAKSI"].count().reset_index()
         jumlah_trx.columns = ["PERIODE_DT", periode_col, "Jumlah Transaksi"]
         jumlah_trx = jumlah_trx.sort_values("PERIODE_DT")
+
         st.dataframe(jumlah_trx[[periode_col, "Jumlah Transaksi"]])
 
         fig4, ax4 = plt.subplots(figsize=(10, 4))
