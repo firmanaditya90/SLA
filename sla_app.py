@@ -2,13 +2,11 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(page_title="SLA Payment Analyzer", layout="wide")
-
 st.title("📊 SLA Payment Analyzer")
 st.write("Upload file SLA `.xlsx` untuk menghitung rata-rata SLA per proses, per jenis transaksi, dan per vendor.")
 
 uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx")
 
-# Fungsi parsing SLA string ke hari (float)
 def parse_sla(s):
     if pd.isna(s):
         return None
@@ -28,13 +26,20 @@ def parse_sla(s):
     return round(days + hours / 24 + minutes / 1440, 2)
 
 if uploaded_file:
-    # Baca file mulai dari baris kedua sebagai header
-    df = pd.read_excel(uploaded_file, header=1)
+    # Baca dua baris pertama sebagai header multi-level
+    df_raw = pd.read_excel(uploaded_file, header=[0, 1])
+
+    # Gabungkan header multi-level menjadi satu baris
+    df_raw.columns = [
+        col[0] if "Unnamed" not in str(col[0]) else col[1]
+        for col in df_raw.columns
+    ]
+    df = df_raw.copy()
 
     st.subheader("📄 Kolom yang terdeteksi di file")
     st.write(list(df.columns))
 
-    # Cari kolom PERIODE secara fleksibel
+    # Cari kolom PERIODE
     periode_col = None
     for col in df.columns:
         if "PERIODE" in str(col).upper():
@@ -44,51 +49,34 @@ if uploaded_file:
         st.error("Kolom PERIODE tidak ditemukan.")
         st.stop()
 
-    # Cari kolom SLA proses
     sla_cols = ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
     available_sla_cols = [col for col in sla_cols if col in df.columns]
 
-    # Konversi SLA menjadi hari
     for col in available_sla_cols:
         df[col] = df[col].apply(parse_sla)
 
-    # ==== FILTER PERIODE ====
-    periode_list = df[periode_col].dropna().unique().tolist()
-    try:
-        periode_list_dt = pd.to_datetime(periode_list, errors="coerce")
-        if periode_list_dt.notna().all():
-            periode_list = sorted(periode_list_dt)
-        else:
-            periode_list = sorted([str(p) for p in periode_list])
-    except Exception:
-        periode_list = sorted([str(p) for p in periode_list])
-
-    periode_filter = st.multiselect(
-        "Filter Periode",
-        [str(p) for p in periode_list],
-        default=[str(p) for p in periode_list]
-    )
-
+    # Filter Periode
+    periode_list = sorted(df[periode_col].astype(str).dropna().unique().tolist())
+    periode_filter = st.multiselect("Filter Periode", periode_list, default=periode_list)
     df_filtered = df[df[periode_col].astype(str).isin(periode_filter)]
 
-    # ==== Rata-rata SLA per Proses ====
+    # Rata-rata SLA per Proses
     if available_sla_cols:
         st.subheader("📌 Rata-rata SLA per Proses (hari)")
         rata_proses = df_filtered[available_sla_cols[:-1]].mean().reset_index()
         rata_proses.columns = ["Proses", "Rata-rata (hari)"]
         st.dataframe(rata_proses)
 
-    # ==== Rata-rata SLA per Jenis Transaksi ====
+    # Rata-rata SLA per Jenis Transaksi
     if "JENIS TRANSAKSI" in df.columns:
         st.subheader("📌 Rata-rata SLA per Jenis Transaksi")
         rata_transaksi = df_filtered.groupby("JENIS TRANSAKSI")[available_sla_cols[:-1]].mean().reset_index()
         st.dataframe(rata_transaksi)
 
-    # ==== Rata-rata SLA per Vendor ====
+    # Rata-rata SLA per Vendor
     if "NAMA VENDOR" in df.columns:
         st.subheader("📌 Rata-rata SLA per Vendor")
         rata_vendor = df_filtered.groupby("NAMA VENDOR")[available_sla_cols[:-1]].mean().reset_index()
         st.dataframe(rata_vendor)
-
 else:
     st.info("Silakan upload file Excel SLA terlebih dahulu.")
