@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="SLA Payment Analyzer", layout="wide")
 st.title("📊 SLA Payment Analyzer")
-st.write("Upload file SLA .xlsx untuk menghitung rata-rata SLA per proses, per jenis transaksi, dan per vendor.")
+st.write("Upload file SLA `.xlsx` untuk menghitung rata-rata SLA per proses, per jenis transaksi, dan per vendor.")
 
 uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx")
 
@@ -82,6 +82,7 @@ if uploaded_file:
         if col in df_raw.columns:
             df_raw[col] = df_raw[col].apply(parse_sla)
 
+    # Buat daftar periode unik
     periode_list = list(dict.fromkeys(df_raw[periode_col].dropna().astype(str)))
 
     st.subheader("Filter Rentang Periode (berdasarkan urutan)")
@@ -196,12 +197,16 @@ if uploaded_file:
     # Jumlah transaksi per periode
     if "JENIS TRANSAKSI" in df_filtered.columns:
         st.subheader("📊 Jumlah Transaksi per Periode")
-        jumlah_trx = df_filtered.groupby(df_filtered[periode_col].astype(str))["JENIS TRANSAKSI"].count().reset_index()
-        jumlah_trx.columns = [periode_col, "Jumlah Transaksi"]
-        st.dataframe(jumlah_trx)
+        jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str))["JENIS TRANSAKSI"].count().reset_index()
+        jumlah_transaksi.columns = [periode_col, "Jumlah Transaksi"]
+        # Sort sesuai selected_periode
+        jumlah_transaksi["PERIODE_SORTED"] = pd.Categorical(jumlah_transaksi[periode_col], categories=selected_periode, ordered=True)
+        jumlah_transaksi = jumlah_transaksi.sort_values("PERIODE_SORTED")
+        st.dataframe(jumlah_transaksi[[periode_col,"Jumlah Transaksi"]])
 
-        fig4, ax4 = plt.subplots(figsize=(10, 4))
-        ax4.bar(jumlah_trx[periode_col], jumlah_trx["Jumlah Transaksi"], color='#2ca02c')
+        # Grafik jumlah transaksi per periode
+        fig4, ax4 = plt.subplots(figsize=(10,5))
+        ax4.bar(jumlah_transaksi[periode_col], jumlah_transaksi["Jumlah Transaksi"], color='teal')
         ax4.set_title("Jumlah Transaksi per Periode")
         ax4.set_xlabel("Periode")
         ax4.set_ylabel("Jumlah Transaksi")
@@ -210,6 +215,3 @@ if uploaded_file:
             label.set_rotation(45)
             label.set_ha('right')
         st.pyplot(fig4)
-
-else:
-    st.info("Silakan upload file Excel SLA terlebih dahulu.")
