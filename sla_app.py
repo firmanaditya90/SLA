@@ -126,7 +126,7 @@ if uploaded_file:
             ax2.grid(axis='y', linestyle='--', alpha=0.7)
             st.pyplot(fig2)
 
-    # Trend SLA per Periode
+    # Trend Rata-rata SLA per Periode
     st.subheader("📈 Trend Rata-rata SLA per Periode")
 
     trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[available_sla_cols].mean().reset_index()
@@ -144,13 +144,42 @@ if uploaded_file:
     if "TOTAL WAKTU" in available_sla_cols:
         fig, ax = plt.subplots(figsize=(10, 5))
         y_values_days = trend["TOTAL WAKTU"] / 86400  # detik ke hari
-        ax.plot(trend[periode_col], y_values_days, marker='o', label="TOTAL WAKTU")
+        ax.plot(trend[periode_col], y_values_days, marker='o', label="TOTAL WAKTU", color='#9467bd')
         ax.set_title("Trend Rata-rata SLA TOTAL WAKTU per Periode")
         ax.set_xlabel("Periode")
         ax.set_ylabel("Rata-rata SLA (hari)")
-        ax.grid(True)
+        ax.grid(True, linestyle='--', alpha=0.7)
         ax.legend()
+        for label in ax.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
         st.pyplot(fig)
+
+    # Grafik trend SLA per proses (kecuali TOTAL WAKTU)
+    proses_grafik_cols = [c for c in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN"] if c in available_sla_cols]
+    if proses_grafik_cols:
+        fig3, axs = plt.subplots(2, 2, figsize=(14, 8), constrained_layout=True)
+        fig3.suptitle("Trend Rata-rata SLA per Proses per Periode (hari)", fontsize=16, fontweight='bold')
+
+        axs = axs.flatten()
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']  # warna modern matplotlib
+
+        for i, col in enumerate(proses_grafik_cols):
+            y = trend[col] / 86400  # detik ke hari
+            axs[i].plot(trend[periode_col], y, marker='o', linestyle='-', color=colors[i])
+            axs[i].set_title(col, fontsize=14, fontweight='semibold')
+            axs[i].set_xlabel("Periode")
+            axs[i].set_ylabel("Rata-rata SLA (hari)")
+            axs[i].grid(True, linestyle='--', alpha=0.6)
+            for label in axs[i].get_xticklabels():
+                label.set_rotation(45)
+                label.set_ha('right')
+
+        # Matikan subplot kosong jika ada
+        for j in range(len(proses_grafik_cols), 4):
+            fig3.delaxes(axs[j])
+
+        st.pyplot(fig3)
 
 else:
     st.info("Silakan upload file Excel SLA terlebih dahulu.")
