@@ -10,7 +10,7 @@ st.write("Upload file SLA `.xlsx` untuk menghitung rata-rata SLA per proses, per
 uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type=["xlsx"])
 
 def parse_sla_to_seconds(s):
-    """Konversi format 'SLA x days hh:mm:ss' atau 'SLA hh:mm:ss' jadi total detik"""
+    """Konversi format SLA menjadi total detik"""
     if pd.isna(s):
         return None
     if isinstance(s, pd.Timedelta):
@@ -25,11 +25,10 @@ def parse_sla_to_seconds(s):
         hours = int(time_match.group(1))
         minutes = int(time_match.group(2))
         seconds = int(time_match.group(3))
-    total_seconds = days * 86400 + hours * 3600 + minutes * 60 + seconds
-    return total_seconds
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
 def format_seconds(total_seconds):
-    """Ubah total detik jadi 'xx hari xx jam xx menit xx detik'"""
+    """Ubah total detik jadi format hari, jam, menit, detik"""
     if pd.isna(total_seconds):
         return None
     d = total_seconds // 86400
@@ -40,10 +39,10 @@ def format_seconds(total_seconds):
 
 if uploaded_file:
     try:
-        # Baca multiheader (baris pertama & kedua)
+        # Baca Excel dengan 2 baris header
         df_raw = pd.read_excel(uploaded_file, header=[0, 1])
 
-        # Gabungkan header: kalau di baris kedua ada nama proses, pakai itu
+        # Gabungkan header, pakai baris kedua kalau ada
         new_cols = []
         for col in df_raw.columns:
             if "Unnamed" in str(col[1]):
@@ -57,15 +56,14 @@ if uploaded_file:
         jenis_col = "JENIS TRANSAKSI"
         vendor_col = "NAMA VENDOR"
 
-        detected_cols = df_raw.columns.tolist()
         st.write("📄 Kolom yang terdeteksi di file")
-        st.write(detected_cols)
+        st.write(df_raw.columns.tolist())
 
         missing = [col for col in sla_cols if col not in df_raw.columns]
         if missing:
             st.error(f"Kolom SLA berikut tidak ditemukan: {missing}")
         else:
-            # Konversi SLA
+            # Konversi SLA ke detik & string
             for col in sla_cols:
                 df_raw[col + "_SEC"] = df_raw[col].apply(parse_sla_to_seconds)
                 df_raw[col + "_STR"] = df_raw[col + "_SEC"].apply(format_seconds)
@@ -111,4 +109,10 @@ if uploaded_file:
                 vendor_group = df_filtered.groupby(vendor_col)[[c + "_SEC" for c in sla_cols]].mean().reset_index()
                 for col in sla_cols:
                     vendor_group[col] = vendor_group[col + "_SEC"].apply(format_seconds)
-                st.dataframe(vendor_group[[vendor_col] +_]()]()_
+                st.dataframe(vendor_group[[vendor_col] + sla_cols])
+
+            st.subheader("📋 Data SLA (Format waktu lengkap)")
+            st.dataframe(df_filtered[[periode_col, jenis_col, vendor_col] + [c + "_STR" for c in sla_cols]])
+
+    except Exception as e:
+        st.error(f"Terjadi error saat memproses file: {e}")
