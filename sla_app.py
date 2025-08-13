@@ -1,80 +1,65 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="SLA Payment Analyzer", layout="wide")
 
 st.title("📊 SLA Payment Analyzer")
 st.write("Upload file SLA `.xlsx` untuk menghitung rata-rata SLA per proses, per jenis transaksi, dan per vendor.")
 
-uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type=["xlsx"])
+uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx")
+
+# Fungsi parsing SLA string ke hari (float)
+def parse_sla(s):
+    if pd.isna(s):
+        return None
+    s = str(s).replace("SLA", "").replace("TOTAL", "").strip()
+    days = 0
+    hours = 0
+    minutes = 0
+    parts = s.split()
+    if "days" in parts:
+        days = int(parts[parts.index("days") - 1])
+    elif "day" in parts:
+        days = int(parts[parts.index("day") - 1])
+    if ":" in parts[-1]:
+        t = parts[-1].split(":")
+        hours = int(t[0])
+        minutes = int(t[1])
+    return round(days + hours / 24 + minutes / 1440, 2)
 
 if uploaded_file:
-    try:
-        df = pd.read_excel(uploaded_file)
+    # Baca file mulai dari baris kedua sebagai header
+    df = pd.read_excel(uploaded_file, header=1)
 
-        # Tampilkan kolom yang terdeteksi
-        st.subheader("📋 Kolom yang terdeteksi di file")
-        st.json(list(df.columns))
+    st.subheader("📄 Kolom yang terdeteksi di file")
+    st.write(list(df.columns))
 
-        # Bersihkan nama kolom
-        df.columns = [str(c).strip().upper() for c in df.columns]
+    # Bersihkan dan konversi kolom SLA jadi angka hari
+    sla_cols = ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
+    for col in sla_cols:
+        if col in df.columns:
+            df[col] = df[col].apply(parse_sla)
 
-        # Pastikan kolom PERIODE jadi string agar tidak error sorting
-        if "PERIODE" in df.columns:
-            df["PERIODE"] = df["PERIODE"].astype(str)
+    # Filter periode (opsional)
+    periode_list = df["PERIODE"].dropna().unique().tolist()
+    periode_filter = st.multiselect("Filter Periode", periode_list, default=periode_list)
+    df_filtered = df[df["PERIODE"].isin(periode_filter)]
 
-        # Konversi kolom SLA ke numerik (jika berupa tanggal, konversi ke hari)
-        if "SLA" in df.columns:
-            if pd.api.types.is_datetime64_any_dtype(df["SLA"]):
-                df["SLA_HARI"] = (df["SLA"] - df["SLA"].min()).dt.days
-            else:
-                df["SLA_HARI"] = pd.to_numeric(df["SLA"], errors="coerce")
-        else:
-            st.error("Kolom 'SLA' tidak ditemukan di file.")
-            st.stop()
+    # Rata-rata SLA per proses
+    st.subheader("📌 Rata-rata SLA per Proses (hari)")
+    rata_proses = df_filtered[sla_cols[:-1]].mean().reset_index()
+    rata_proses.columns = ["Proses", "Rata-rata (hari)"]
+    st.dataframe(rata_proses)
 
-        # Filter periode
-        if "PERIODE" in df.columns:
-            periode_list = sorted(df["PERIODE"].dropna().unique())
-            periode_filter = st.multiselect("Filter Periode", periode_list, default=periode_list)
-            df = df[df["PERIODE"].isin(periode_filter)]
+    # Rata-rata SLA per jenis transaksi
+    st.subheader("📌 Rata-rata SLA per Jenis Transaksi")
+    rata_transaksi = df_filtered.groupby("JENIS TRANSAKSI")[sla_cols[:-1]].mean().reset_index()
+    st.dataframe(rata_transaksi)
 
-        # Hitung rata-rata SLA
-        rata_sla = pd.DataFrame({"Proses": ["SLA"], "Rata-rata (hari)": [round(df["SLA_HARI"].mean(), 2)]})
+    # Rata-rata SLA per vendor
+    st.subheader("📌 Rata-rata SLA per Vendor")
+    rata_vendor = df_filtered.groupby("NAMA VENDOR")[sla_cols[:-1]].mean().reset_index()
+    st.dataframe(rata_vendor)
 
-        st.subheader("📏 Rata-rata SLA (hari)")
-        st.dataframe(rata_sla, use_container_width=True)
-
-        # Grafik rata-rata SLA per jenis transaksi
-        if "JENIS TRANSAKSI" in df.columns:
-            rekap_transaksi = df.groupby("JENIS TRANSAKSI", as_index=False)["SLA_HARI"].mean()
-            rekap_transaksi["SLA_HARI"] = rekap_transaksi["SLA_HARI"].round(2)
-
-            st.subheader("📌 Rekap per Jenis Transaksi")
-            st.dataframe(rekap_transaksi, use_container_width=True)
-
-            fig, ax = plt.subplots()
-            ax.barh(rekap_transaksi["JENIS TRANSAKSI"], rekap_transaksi["SLA_HARI"])
-            ax.set_xlabel("Rata-rata SLA (hari)")
-            ax.set_ylabel("Jenis Transaksi")
-            ax.set_title("Rata-rata SLA per Jenis Transaksi")
-            st.pyplot(fig)
-
-        # Grafik rata-rata SLA per vendor
-        if "NAMA VENDOR" in df.columns:
-            rekap_vendor = df.groupby("NAMA VENDOR", as_index=False)["SLA_HARI"].mean()
-            rekap_vendor["SLA_HARI"] = rekap_vendor["SLA_HARI"].round(2)
-
-            st.subheader("🏢 Rekap per Vendor")
-            st.dataframe(rekap_vendor, use_container_width=True)
-
-            fig, ax = plt.subplots()
-            ax.barh(rekap_vendor["NAMA VENDOR"], rekap_vendor["SLA_HARI"])
-            ax.set_xlabel("Rata-rata SLA (hari)")
-            ax.set_ylabel("Vendor")
-            ax.set_title("Rata-rata SLA per Vendor")
-            st.pyplot(fig)
-
-    except Exception as e:
-        st.error(f"Terjadi error saat memproses file: {e}")
+else:
+    st.info("Silakan upload file Excel SLA terlebih dahulu.")
