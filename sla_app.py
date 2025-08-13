@@ -14,9 +14,7 @@ def parse_sla(s):
     if pd.isna(s):
         return None
     s = str(s).replace("SLA", "").replace("TOTAL", "").strip()
-    days = 0
-    hours = 0
-    minutes = 0
+    days, hours, minutes = 0, 0, 0
     parts = s.split()
     if "days" in parts:
         days = int(parts[parts.index("days") - 1])
@@ -29,37 +27,38 @@ def parse_sla(s):
     return round(days + hours / 24 + minutes / 1440, 2)
 
 if uploaded_file:
-    # Baca dengan 2 baris header
+    # Pakai header=[0,1] supaya merge cell kebaca
     df = pd.read_excel(uploaded_file, header=[0, 1])
 
-    # Gabungkan header multi-index jadi string
+    # Gabungkan header multi-baris jadi satu string
     df.columns = [
-        (str(col[0]).strip() if col[0] != 'nan' else '') + " " + str(col[1]).strip()
-        if col[1] != 'nan' else str(col[0]).strip()
-        for col in df.columns
+        " ".join([str(c).strip() for c in col if str(c) != 'nan']).strip()
+        for col in df.columns.values
     ]
-    df.columns = [col.strip().upper().replace("  ", " ") for col in df.columns]
+    df.columns = [col.upper() for col in df.columns]
 
-    st.subheader("📄 Kolom yang terdeteksi di file")
-    st.write(list(df.columns))
+    st.subheader("📄 Kolom yang terdeteksi")
+    st.write(df.columns.tolist())
 
-    # Tentukan kolom SLA
-    sla_cols = ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
-    for col in sla_cols:
-        if col in df.columns:
-            df[col] = df[col].apply(parse_sla)
-
-    # Filter Periode
-    periode_col = [col for col in df.columns if "PERIODE" in col]
-    if periode_col:
-        periode_list = sorted(df[periode_col[0]].dropna().unique().tolist())
-        periode_filter = st.multiselect("Filter Periode", periode_list, default=periode_list)
-        df_filtered = df[df[periode_col[0]].isin(periode_filter)]
-    else:
-        st.error("Kolom 'PERIODE' tidak ditemukan di file.")
+    # Cari kolom PERIODE
+    periode_col = next((col for col in df.columns if "PERIODE" in col), None)
+    if not periode_col:
+        st.error("Kolom 'PERIODE' tidak ditemukan.")
         st.stop()
 
-    # --- 1. Rata-rata SLA per proses ---
+    # SLA columns yang akan diproses
+    sla_cols = [c for c in df.columns if any(x in c for x in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"])]
+
+    # Parsing SLA jadi hari (float)
+    for col in sla_cols:
+        df[col] = df[col].apply(parse_sla)
+
+    # Filter Periode
+    periode_list = sorted(df[periode_col].dropna().unique().tolist())
+    periode_filter = st.multiselect("Filter Periode", periode_list, default=periode_list)
+    df_filtered = df[df[periode_col].isin(periode_filter)]
+
+    # --- 1. Rata-rata SLA per Proses ---
     st.subheader("📌 Rata-rata SLA per Proses (hari)")
     rata_proses = df_filtered[sla_cols[:-1]].mean().reset_index()
     rata_proses.columns = ["Proses", "Rata-rata (hari)"]
@@ -71,28 +70,28 @@ if uploaded_file:
     ax1.set_title("Rata-rata SLA per Proses")
     st.pyplot(fig1)
 
-    # --- 2. Rata-rata SLA per jenis transaksi ---
-    jenis_col = [col for col in df.columns if "JENIS" in col]
+    # --- 2. Rata-rata SLA per Jenis Transaksi ---
+    jenis_col = next((col for col in df.columns if "JENIS" in col), None)
     if jenis_col:
         st.subheader("📌 Rata-rata SLA per Jenis Transaksi")
-        rata_transaksi = df_filtered.groupby(jenis_col[0])[sla_cols[:-1]].mean().reset_index()
+        rata_transaksi = df_filtered.groupby(jenis_col)[sla_cols[:-1]].mean().reset_index()
         st.dataframe(rata_transaksi)
 
         fig2, ax2 = plt.subplots(figsize=(8, 4))
         for col in sla_cols[:-1]:
-            ax2.plot(rata_transaksi[jenis_col[0]], rata_transaksi[col], marker="o", label=col)
+            ax2.plot(rata_transaksi[jenis_col], rata_transaksi[col], marker="o", label=col)
         ax2.set_ylabel("Hari")
         ax2.set_title("Rata-rata SLA per Jenis Transaksi")
         ax2.legend()
         plt.xticks(rotation=45, ha='right')
         st.pyplot(fig2)
 
-    # --- 3. Rata-rata SLA per vendor ---
-    vendor_col = [col for col in df.columns if "NAMA VENDOR" in col]
+    # --- 3. Rata-rata SLA per Vendor ---
+    vendor_col = next((col for col in df.columns if "NAMA VENDOR" in col), None)
     if vendor_col:
         st.subheader("📌 Rata-rata SLA per Vendor (Top 10 Terlama)")
         rata_vendor = (
-            df_filtered.groupby(vendor_col[0])[sla_cols[:-1]]
+            df_filtered.groupby(vendor_col)[sla_cols[:-1]]
             .mean()
             .reset_index()
             .sort_values(by="TOTAL WAKTU", ascending=False)
@@ -101,7 +100,7 @@ if uploaded_file:
         st.dataframe(rata_vendor)
 
         fig3, ax3 = plt.subplots(figsize=(8, 5))
-        ax3.barh(rata_vendor[vendor_col[0]], rata_vendor["TOTAL WAKTU"], color="salmon")
+        ax3.barh(rata_vendor[vendor_col], rata_vendor["TOTAL WAKTU"], color="salmon")
         ax3.set_xlabel("Hari")
         ax3.set_title("Top 10 Vendor dengan SLA Terlama")
         plt.gca().invert_yaxis()
