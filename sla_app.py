@@ -50,24 +50,6 @@ def seconds_to_sla_format(total_seconds):
     parts.append(f"{seconds} detik")
     return " ".join(parts)
 
-# Mapping bulan Indonesia -> angka bulan
-bulan_id_to_num = {
-    "Januari":1, "Februari":2, "Maret":3, "April":4, 
-    "Mei":5, "Juni":6, "Juli":7, "Agustus":8, "September":9, 
-    "Oktober":10, "November":11, "Desember":12
-}
-
-def parse_periode_indonesia(s):
-    try:
-        if isinstance(s, pd.Timestamp):
-            return s
-        parts = str(s).split()
-        if len(parts) == 2:
-            bulan, tahun = parts
-            return pd.Timestamp(year=int(tahun), month=bulan_id_to_num[bulan], day=1)
-    except:
-        return pd.NaT
-
 if uploaded_file:
     df_raw = pd.read_excel(uploaded_file, header=[0, 1])
     df_raw.columns = [
@@ -100,17 +82,16 @@ if uploaded_file:
         if col in df_raw.columns:
             df_raw[col] = df_raw[col].apply(parse_sla)
 
-    # Konversi kolom PERIODE menjadi datetime untuk sorting
-    df_raw['PERIODE_DT'] = df_raw[periode_col].apply(parse_periode_indonesia)
-    periode_list_sorted = df_raw.sort_values('PERIODE_DT')[periode_col].dropna().unique().tolist()
+    # Buat daftar periode unik
+    periode_list = list(dict.fromkeys(df_raw[periode_col].dropna().astype(str)))
 
     st.subheader("Filter Rentang Periode (berdasarkan urutan)")
-    start_periode = st.selectbox("Periode Mulai", periode_list_sorted, index=0)
-    end_periode = st.selectbox("Periode Akhir", periode_list_sorted, index=len(periode_list_sorted)-1)
+    start_periode = st.selectbox("Periode Mulai", periode_list, index=0)
+    end_periode = st.selectbox("Periode Akhir", periode_list, index=len(periode_list)-1)
 
     try:
-        idx_start = periode_list_sorted.index(start_periode)
-        idx_end = periode_list_sorted.index(end_periode)
+        idx_start = periode_list.index(start_periode)
+        idx_end = periode_list.index(end_periode)
         if idx_start > idx_end:
             st.error("Periode Mulai harus sebelum Periode Akhir.")
             st.stop()
@@ -118,8 +99,8 @@ if uploaded_file:
         st.error("Periode yang dipilih tidak valid.")
         st.stop()
 
-    selected_periode = periode_list_sorted[idx_start:idx_end+1]
-    df_filtered = df_raw[df_raw[periode_col].isin(selected_periode)]
+    selected_periode = periode_list[idx_start:idx_end+1]
+    df_filtered = df_raw[df_raw[periode_col].astype(str).isin(selected_periode)]
 
     st.write(f"Menampilkan data periode dari **{start_periode}** sampai **{end_periode}**, total baris: {len(df_filtered)}")
 
@@ -173,8 +154,9 @@ if uploaded_file:
 
     # Trend Rata-rata SLA per Periode
     st.subheader("📈 Trend Rata-rata SLA per Periode")
-    trend = df_filtered.groupby(['PERIODE_DT', periode_col])[available_sla_cols].mean().reset_index()
-    trend = trend.sort_values('PERIODE_DT')
+    trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[available_sla_cols].mean().reset_index()
+    trend["PERIODE_SORTED"] = pd.Categorical(trend[periode_col], categories=selected_periode, ordered=True)
+    trend = trend.sort_values("PERIODE_SORTED")
     trend_display = trend.copy()
     for col in available_sla_cols:
         trend_display[col] = trend_display[col].apply(seconds_to_sla_format)
@@ -201,3 +183,35 @@ if uploaded_file:
         fig3.suptitle("Trend Rata-rata SLA per Proses per Periode (hari)", fontsize=16)
         axs = axs.flatten()
         for i, col in enumerate(proses_grafik_cols):
+            y_vals = trend[col]/86400
+            axs[i].plot(trend[periode_col], y_vals, marker='o', color='skyblue')
+            axs[i].set_title(col)
+            axs[i].set_ylabel("Hari")
+            axs[i].set_xlabel("Periode")
+            axs[i].grid(True, linestyle='--', alpha=0.7)
+            for label in axs[i].get_xticklabels():
+                label.set_rotation(45)
+                label.set_ha('right')
+        st.pyplot(fig3)
+
+    # Jumlah transaksi per periode
+    if "JENIS TRANSAKSI" in df_filtered.columns:
+        st.subheader("📊 Jumlah Transaksi per Periode")
+        jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str))["JENIS TRANSAKSI"].count().reset_index()
+        jumlah_transaksi.columns = [periode_col, "Jumlah Transaksi"]
+        # Sort sesuai selected_periode
+        jumlah_transaksi["PERIODE_SORTED"] = pd.Categorical(jumlah_transaksi[periode_col], categories=selected_periode, ordered=True)
+        jumlah_transaksi = jumlah_transaksi.sort_values("PERIODE_SORTED")
+        st.dataframe(jumlah_transaksi[[periode_col,"Jumlah Transaksi"]])
+
+        # Grafik jumlah transaksi per periode
+        fig4, ax4 = plt.subplots(figsize=(10,5))
+        ax4.bar(jumlah_transaksi[periode_col], jumlah_transaksi["Jumlah Transaksi"], color='teal')
+        ax4.set_title("Jumlah Transaksi per Periode")
+        ax4.set_xlabel("Periode")
+        ax4.set_ylabel("Jumlah Transaksi")
+        ax4.grid(axis='y', linestyle='--', alpha=0.7)
+        for label in ax4.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
+        st.pyplot(fig4)
