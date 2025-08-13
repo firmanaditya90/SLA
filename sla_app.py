@@ -35,26 +35,20 @@ if uploaded_file:
             if pd.isna(val):
                 return None
 
-            # Jika timedelta
             if isinstance(val, timedelta):
-                return val.total_seconds() / 86400  # detik ke hari
-
-            # Jika datetime.time (jam-menit-detik saja)
+                return val.total_seconds() / 86400
             if isinstance(val, time):
                 return (val.hour / 24) + (val.minute / 1440) + (val.second / 86400)
-
-            # Jika datetime.datetime (tanggal + jam)
             if isinstance(val, datetime):
-                return (val - datetime(1899, 12, 30)).total_seconds() / 86400  # Excel date offset
+                return (val - datetime(1899, 12, 30)).total_seconds() / 86400
 
-            # Jika string
             s = str(val).strip().upper()
             match = re.search(r'(\d+)\s*DAYS?\s*(\d+):(\d+):(\d+)', s)
             if match:
                 days, hours, minutes, seconds = map(int, match.groups())
                 return days + hours / 24 + minutes / 1440 + seconds / 86400
             else:
-                match = re.search(r'(\d+):(\d+):(\d+)', s)  # HH:MM:SS tanpa 'days'
+                match = re.search(r'(\d+):(\d+):(\d+)', s)
                 if match:
                     hours, minutes, seconds = map(int, match.groups())
                     return hours / 24 + minutes / 1440 + seconds / 86400
@@ -66,9 +60,10 @@ if uploaded_file:
 
         # Filter periode (kalau kolom PERIODE ada)
         if "PERIODE" in df.columns:
-            periode_list = sorted(df["PERIODE"].dropna().unique().tolist())
+            # Konversi semua ke string supaya bisa di-sort
+            periode_list = sorted(df["PERIODE"].dropna().astype(str).unique().tolist())
             selected_periode = st.multiselect("Filter Periode", periode_list, default=periode_list)
-            df = df[df["PERIODE"].isin(selected_periode)]
+            df = df[df["PERIODE"].astype(str).isin(selected_periode)]
 
         # Tabel rata-rata SLA per proses
         if sla_cols:
