@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 import math
+import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="SLA Payment Analyzer", layout="wide")
 st.title("📊 SLA Payment Analyzer")
@@ -30,7 +31,7 @@ def parse_sla(s):
     return total_seconds
 
 def seconds_to_sla_format(total_seconds):
-    if total_seconds is None or math.isnan(total_seconds):
+    if total_seconds is None or (isinstance(total_seconds, float) and math.isnan(total_seconds)):
         return "-"
     total_seconds = int(round(total_seconds))
     days = total_seconds // 86400
@@ -119,7 +120,6 @@ if uploaded_file:
     # Trend SLA per Periode
     st.subheader("📈 Trend Rata-rata SLA per Periode")
 
-    # Group rata-rata SLA per periode
     trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[available_sla_cols].mean().reset_index()
 
     # Urutkan sesuai selected_periode agar trend terurut
@@ -132,14 +132,14 @@ if uploaded_file:
 
     st.dataframe(trend_display[[periode_col] + available_sla_cols])
 
-    # Plot grafik (contoh untuk TOTAL WAKTU)
-    import matplotlib.pyplot as plt
+    # Plot grafik SLA TOTAL WAKTU dalam satuan hari
     if "TOTAL WAKTU" in available_sla_cols:
         fig, ax = plt.subplots(figsize=(10, 5))
-        ax.plot(trend[periode_col], trend["TOTAL WAKTU"], marker='o', label="TOTAL WAKTU")
+        y_values_days = trend["TOTAL WAKTU"] / 86400  # detik ke hari
+        ax.plot(trend[periode_col], y_values_days, marker='o', label="TOTAL WAKTU")
         ax.set_title("Trend Rata-rata SLA TOTAL WAKTU per Periode")
         ax.set_xlabel("Periode")
-        ax.set_ylabel("Rata-rata SLA (detik)")
+        ax.set_ylabel("Rata-rata SLA (hari)")
         ax.grid(True)
         ax.legend()
         st.pyplot(fig)
