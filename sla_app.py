@@ -28,22 +28,33 @@ def parse_sla(s):
     return round(days + hours / 24 + minutes / 1440, 2)
 
 if uploaded_file:
-    # Baca file mulai dari baris kedua sebagai header
-    df = pd.read_excel(uploaded_file, header=1)
+    # Baca file dengan 2 baris header lalu gabungkan jadi satu
+    df = pd.read_excel(uploaded_file, header=[0, 1])
+
+    # Gabungkan multi-index kolom jadi satu baris nama
+    df.columns = [str(col[0]).strip() if col[0] != 'nan' else str(col[1]).strip() for col in df.columns]
+
+    # Normalisasi nama kolom (hapus spasi extra, uppercase semua)
+    df.columns = [col.strip().upper() for col in df.columns]
 
     st.subheader("📄 Kolom yang terdeteksi di file")
     st.write(list(df.columns))
 
-    # Bersihkan dan konversi kolom SLA jadi angka hari
+    # Tentukan kolom SLA
     sla_cols = ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
     for col in sla_cols:
         if col in df.columns:
             df[col] = df[col].apply(parse_sla)
 
-    # Filter periode (opsional)
-    periode_list = df["PERIODE"].dropna().unique().tolist()
-    periode_filter = st.multiselect("Filter Periode", periode_list, default=periode_list)
-    df_filtered = df[df["PERIODE"].isin(periode_filter)]
+    # Ambil list periode (pastikan kolom ada)
+    periode_col = [col for col in df.columns if "PERIODE" in col]
+    if periode_col:
+        periode_list = df[periode_col[0]].dropna().unique().tolist()
+        periode_filter = st.multiselect("Filter Periode", periode_list, default=periode_list)
+        df_filtered = df[df[periode_col[0]].isin(periode_filter)]
+    else:
+        st.error("Kolom 'PERIODE' tidak ditemukan di file.")
+        st.stop()
 
     # Rata-rata SLA per proses
     st.subheader("📌 Rata-rata SLA per Proses (hari)")
@@ -52,14 +63,18 @@ if uploaded_file:
     st.dataframe(rata_proses)
 
     # Rata-rata SLA per jenis transaksi
-    st.subheader("📌 Rata-rata SLA per Jenis Transaksi")
-    rata_transaksi = df_filtered.groupby("JENIS TRANSAKSI")[sla_cols[:-1]].mean().reset_index()
-    st.dataframe(rata_transaksi)
+    jenis_col = [col for col in df.columns if "JENIS" in col]
+    if jenis_col:
+        st.subheader("📌 Rata-rata SLA per Jenis Transaksi")
+        rata_transaksi = df_filtered.groupby(jenis_col[0])[sla_cols[:-1]].mean().reset_index()
+        st.dataframe(rata_transaksi)
 
     # Rata-rata SLA per vendor
-    st.subheader("📌 Rata-rata SLA per Vendor")
-    rata_vendor = df_filtered.groupby("NAMA VENDOR")[sla_cols[:-1]].mean().reset_index()
-    st.dataframe(rata_vendor)
+    vendor_col = [col for col in df.columns if "VENDOR" in col and col != "VENDOR"]
+    if vendor_col:
+        st.subheader("📌 Rata-rata SLA per Vendor")
+        rata_vendor = df_filtered.groupby(vendor_col[0])[sla_cols[:-1]].mean().reset_index()
+        st.dataframe(rata_vendor)
 
 else:
     st.info("Silakan upload file Excel SLA terlebih dahulu.")
