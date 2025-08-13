@@ -137,19 +137,25 @@ if uploaded_file:
             transaksi_display[f"{col} (Jumlah)"] = transaksi_group[(col,'count')]
         st.dataframe(transaksi_display)
 
-    # Rata-rata SLA per Vendor
+    # Filter nama vendor
     if "NAMA VENDOR" in df_filtered.columns:
         st.subheader("📌 Rata-rata SLA per Vendor")
-        rata_vendor = df_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean().reset_index()
-        st.dataframe(rata_vendor)
+        vendor_list = sorted(df_filtered["NAMA VENDOR"].dropna().unique())
+        selected_vendors = st.multiselect("Pilih Vendor", vendor_list, default=vendor_list)
+        df_vendor_filtered = df_filtered[df_filtered["NAMA VENDOR"].isin(selected_vendors)]
+        if not df_vendor_filtered.empty:
+            rata_vendor = df_vendor_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean().reset_index()
+            for col in available_sla_cols:
+                rata_vendor[col] = rata_vendor[col].apply(seconds_to_sla_format)
+            st.dataframe(rata_vendor)
+        else:
+            st.info("Tidak ada data untuk vendor yang dipilih.")
 
     # Trend Rata-rata SLA per Periode
     st.subheader("📈 Trend Rata-rata SLA per Periode")
-
     trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[available_sla_cols].mean().reset_index()
     trend["PERIODE_SORTED"] = pd.Categorical(trend[periode_col], categories=selected_periode, ordered=True)
     trend = trend.sort_values("PERIODE_SORTED")
-
     trend_display = trend.copy()
     for col in available_sla_cols:
         trend_display[col] = trend_display[col].apply(seconds_to_sla_format)
@@ -158,7 +164,7 @@ if uploaded_file:
     # Plot grafik SLA TOTAL WAKTU dalam satuan hari
     if "TOTAL WAKTU" in available_sla_cols:
         fig, ax = plt.subplots(figsize=(10, 5))
-        y_values_days = trend["TOTAL WAKTU"] / 86400
+        y_values_days = trend["TOTAL WAKTU"].apply(lambda x: x/86400)
         ax.plot(trend[periode_col], y_values_days, marker='o', label="TOTAL WAKTU", color='#9467bd')
         ax.set_title("Trend Rata-rata SLA TOTAL WAKTU per Periode")
         ax.set_xlabel("Periode")
@@ -177,7 +183,7 @@ if uploaded_file:
         axs = axs.flatten()
         colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
         for i, col in enumerate(proses_grafik_cols):
-            y = trend[col] / 86400
+            y = trend[col].apply(lambda x: x / 86400)
             axs[i].plot(trend[periode_col], y, marker='o', linestyle='-', color=colors[i])
             axs[i].set_title(col, fontsize=14, fontweight='semibold')
             axs[i].set_xlabel("Periode")
