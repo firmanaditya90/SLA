@@ -9,7 +9,7 @@ st.write("Upload file SLA `.xlsx` untuk menghitung rata-rata SLA per proses, per
 
 uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type=["xlsx"])
 
-# Fungsi untuk parsing SLA string -> float (hari)
+# Fungsi parsing SLA string → hari (float)
 def parse_sla_to_days(s):
     if pd.isna(s):
         return None
@@ -30,13 +30,14 @@ def parse_sla_to_days(s):
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
 
-    # Pastikan nama kolom bersih
+    # Bersihkan nama kolom
     df.columns = df.columns.astype(str).str.strip()
 
     # Filter periode
     if "PERIODE" in df.columns:
-        periode_list = sorted(df["PERIODE"].dropna().unique())
+        periode_list = sorted(df["PERIODE"].dropna().astype(str).unique())
         selected_periode = st.sidebar.multiselect("Filter Periode", periode_list, default=periode_list)
+        df["PERIODE"] = df["PERIODE"].astype(str)
         df = df[df["PERIODE"].isin(selected_periode)]
     else:
         st.error("Kolom 'PERIODE' tidak ditemukan di file.")
@@ -48,7 +49,7 @@ if uploaded_file:
         if col in df.columns:
             df[col + " (hari)"] = df[col].apply(parse_sla_to_days)
 
-    # Rata-rata SLA per proses (kolom proses = kolom SLA)
+    # Rata-rata SLA per proses
     avg_sla = df[[c + " (hari)" for c in sla_cols if c in df.columns]].mean().reset_index()
     avg_sla.columns = ["Proses", "Rata-rata (hari)"]
 
