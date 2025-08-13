@@ -67,4 +67,51 @@ if uploaded_file:
 
         missing = [col for col in required_cols if col not in df.columns]
         if missing:
-            st.error(f"
+            st.error(f"Kolom berikut tidak ditemukan di file: {', '.join(missing)}")
+        else:
+            # Filter periode
+            periode_list = sorted(df["PERIODE"].dropna().unique().tolist())
+            selected_periode = st.selectbox("Filter Periode", periode_list)
+            df_filtered = df[df["PERIODE"] == selected_periode].copy()
+
+            # Konversi SLA ke detik
+            for col in sla_cols:
+                if col in df_filtered.columns:
+                    df_filtered[col + "_SEC"] = df_filtered[col].apply(parse_sla_to_seconds)
+
+            # ===== Rata-rata SLA per Proses =====
+            st.subheader("📊 Rata-rata SLA per Proses")
+            avg_sla = {col: seconds_to_dhms(df_filtered[col + "_SEC"].mean(skipna=True))
+                       for col in sla_cols if col in df_filtered.columns}
+            st.write(avg_sla)
+
+            # ===== Rata-rata SLA per Jenis Transaksi =====
+            if "JENIS TRANSAKSI" in df_filtered.columns:
+                st.subheader("📈 Rata-rata SLA per Jenis Transaksi")
+                group_trans = (
+                    df_filtered
+                    .groupby("JENIS TRANSAKSI")[[c + "_SEC" for c in sla_cols if c in df_filtered.columns]]
+                    .mean(skipna=True)
+                    .reset_index()
+                )
+                for col in sla_cols:
+                    if col in df_filtered.columns:
+                        group_trans[col] = group_trans[col + "_SEC"].apply(seconds_to_dhms)
+                st.dataframe(group_trans[["JENIS TRANSAKSI"] + [c for c in sla_cols if c in df_filtered.columns]])
+
+            # ===== Rata-rata SLA per Vendor =====
+            if "NAMA VENDOR" in df_filtered.columns:
+                st.subheader("🏢 Rata-rata SLA per Vendor")
+                group_vendor = (
+                    df_filtered
+                    .groupby("NAMA VENDOR")[[c + "_SEC" for c in sla_cols if c in df_filtered.columns]]
+                    .mean(skipna=True)
+                    .reset_index()
+                )
+                for col in sla_cols:
+                    if col in df_filtered.columns:
+                        group_vendor[col] = group_vendor[col + "_SEC"].apply(seconds_to_dhms)
+                st.dataframe(group_vendor[["NAMA VENDOR"] + [c for c in sla_cols if c in df_filtered.columns]])
+
+    except Exception as e:
+        st.error(f"Terjadi error saat memproses file: {e}")
