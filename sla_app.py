@@ -3,40 +3,21 @@ import pandas as pd
 import re
 import math
 import matplotlib.pyplot as plt
-from io import BytesIO
-from fpdf import FPDF
 
 st.set_page_config(page_title="SLA Payment Analyzer", layout="wide")
 st.title("📊 SLA Payment Analyzer")
-st.write("Upload file SLA `.xlsx` untuk menghitung rata-rata SLA per proses, per jenis transaksi, dan per vendor.")
+st.write("Upload file SLA .xlsx untuk menghitung rata-rata SLA per proses, per jenis transaksi, dan per vendor.")
 
 uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx")
-
-# Mapping bulan bahasa Indonesia ke angka
-bulan_map = {
-    "Januari":1, "Februari":2, "Maret":3, "April":4,
-    "Mei":5, "Juni":6, "Juli":7, "Agustus":8,
-    "September":9, "Oktober":10, "November":11, "Desember":12
-}
-
-def month_year_sort_key(s):
-    try:
-        s = str(s)
-        match = re.match(r'([A-Za-z]+)\s+(\d{4})', s)
-        if match:
-            bulan_str, tahun = match.groups()
-            bulan_num = bulan_map.get(bulan_str, 0)
-            return int(tahun)*100 + bulan_num
-        else:
-            return 0
-    except:
-        return 0
 
 def parse_sla(s):
     if pd.isna(s):
         return None
     s = str(s).upper().replace("SLA", "").strip()
-    days = hours = minutes = seconds = 0
+    days = 0
+    hours = 0
+    minutes = 0
+    seconds = 0
     day_match = re.search(r'(\d+)\s*DAY', s)
     if day_match:
         days = int(day_match.group(1))
@@ -101,8 +82,7 @@ if uploaded_file:
         if col in df_raw.columns:
             df_raw[col] = df_raw[col].apply(parse_sla)
 
-    # Urutkan periode menggunakan bulan_map
-    periode_list = sorted(df_raw[periode_col].dropna().astype(str).unique(), key=month_year_sort_key)
+    periode_list = list(dict.fromkeys(df_raw[periode_col].dropna().astype(str)))
 
     st.subheader("Filter Rentang Periode (berdasarkan urutan)")
     start_periode = st.selectbox("Periode Mulai", periode_list, index=0)
@@ -179,38 +159,57 @@ if uploaded_file:
     trend_display = trend.copy()
     for col in available_sla_cols:
         trend_display[col] = trend_display[col].apply(seconds_to_sla_format)
-    st.dataframe(trend_display[[periode_col]+available_sla_cols])
+    st.dataframe(trend_display[[periode_col] + available_sla_cols])
 
-    # Grafik trend TOTAL WAKTU
+    # Grafik trend SLA TOTAL WAKTU dalam satuan hari
     if "TOTAL WAKTU" in available_sla_cols:
-        fig, ax = plt.subplots(figsize=(10,4))
-        total_seconds = trend["TOTAL WAKTU"] / 86400  # ke hari
-        ax.plot(trend[periode_col], total_seconds, marker='o', color='orange')
-        ax.set_title("Trend Rata-rata TOTAL WAKTU per Periode")
-        ax.set_ylabel("TOTAL WAKTU (hari)")
+        fig, ax = plt.subplots(figsize=(10, 5))
+        y_values_days = trend["TOTAL WAKTU"].apply(lambda x: x/86400)
+        ax.plot(trend[periode_col], y_values_days, marker='o', label="TOTAL WAKTU", color='#9467bd')
+        ax.set_title("Trend Rata-rata SLA TOTAL WAKTU per Periode")
         ax.set_xlabel("Periode")
-        ax.grid(axis='y', linestyle='--', alpha=0.7)
-        plt.xticks(rotation=45)
+        ax.set_ylabel("Rata-rata SLA (hari)")
+        ax.grid(True, linestyle='--', alpha=0.7)
+        ax.legend()
+        for label in ax.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
         st.pyplot(fig)
 
-    # Tombol download Excel
-    st.subheader("📥 Download Laporan")
-    output_excel = BytesIO()
-    with pd.ExcelWriter(output_excel, engine="xlsxwriter") as writer:
-        df_filtered.to_excel(writer, index=False, sheet_name="Data Filtered")
-        rata_proses.to_excel(writer, index=False, sheet_name="Rata-rata Proses")
-        if "JENIS TRANSAKSI" in df_filtered.columns:
-            transaksi_display.to_excel(writer, index=False, sheet_name="Rata-rata Transaksi")
-        if "NAMA VENDOR" in df_filtered.columns and not df_vendor_filtered.empty:
-            rata_vendor.to_excel(writer, index=False, sheet_name="Rata-rata Vendor")
-    st.download_button("Download Excel", data=output_excel.getvalue(), file_name="SLA_Report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    
-    # Tombol download PDF (simple)
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(0, 10, "Laporan SLA Payment Analyzer", ln=True, align="C")
-    pdf.ln(10)
-    pdf.set_font("Arial", "", 10)
-    pdf.multi_cell(0, 5, f"Periode: {start_periode} - {end_periode}\nTotal baris: {len(df_filtered)}")
-    st.download_button("Download PDF", data=pdf.output(dest='S').encode('latin1'), file_name="SLA_Report.pdf", mime="application/pdf")
+    # Grafik trend SLA per proses (kecuali TOTAL WAKTU)
+    if proses_grafik_cols:
+        fig3, axs = plt.subplots(2, 2, figsize=(14, 8), constrained_layout=True)
+        fig3.suptitle("Trend Rata-rata SLA per Proses per Periode (hari)", fontsize=16)
+        axs = axs.flatten()
+        for i, col in enumerate(proses_grafik_cols):
+            y_vals = trend[col]/86400
+            axs[i].plot(trend[periode_col], y_vals, marker='o', color='skyblue')
+            axs[i].set_title(col)
+            axs[i].set_ylabel("Hari")
+            axs[i].set_xlabel("Periode")
+            axs[i].grid(True, linestyle='--', alpha=0.7)
+            for label in axs[i].get_xticklabels():
+                label.set_rotation(45)
+                label.set_ha('right')
+        st.pyplot(fig3)
+
+    # Jumlah transaksi per periode
+    if "JENIS TRANSAKSI" in df_filtered.columns:
+        st.subheader("📊 Jumlah Transaksi per Periode")
+        jumlah_trx = df_filtered.groupby(df_filtered[periode_col].astype(str))["JENIS TRANSAKSI"].count().reset_index()
+        jumlah_trx.columns = [periode_col, "Jumlah Transaksi"]
+        st.dataframe(jumlah_trx)
+
+        fig4, ax4 = plt.subplots(figsize=(10, 4))
+        ax4.bar(jumlah_trx[periode_col], jumlah_trx["Jumlah Transaksi"], color='#2ca02c')
+        ax4.set_title("Jumlah Transaksi per Periode")
+        ax4.set_xlabel("Periode")
+        ax4.set_ylabel("Jumlah Transaksi")
+        ax4.grid(axis='y', linestyle='--', alpha=0.7)
+        for label in ax4.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
+        st.pyplot(fig4)
+
+else:
+    st.info("Silakan upload file Excel SLA terlebih dahulu.")
