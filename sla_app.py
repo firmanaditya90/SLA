@@ -118,7 +118,7 @@ if uploaded_file:
         proses_grafik_cols = [c for c in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN"] if c in available_sla_cols]
         if proses_grafik_cols:
             fig2, ax2 = plt.subplots(figsize=(8, 4))
-            values_hari = [rata_proses_seconds[col] / 86400 for col in proses_grafik_cols]  # detik ke hari
+            values_hari = [rata_proses_seconds[col] / 86400 for col in proses_grafik_cols]
             ax2.bar(proses_grafik_cols, values_hari, color='skyblue')
             ax2.set_title("Rata-rata SLA per Proses (hari)")
             ax2.set_ylabel("Rata-rata SLA (hari)")
@@ -126,24 +126,39 @@ if uploaded_file:
             ax2.grid(axis='y', linestyle='--', alpha=0.7)
             st.pyplot(fig2)
 
+    # Rata-rata SLA per Jenis Transaksi
+    if "JENIS TRANSAKSI" in df_filtered.columns:
+        st.subheader("📌 Rata-rata SLA per Jenis Transaksi (dengan jumlah transaksi)")
+        transaksi_group = df_filtered.groupby("JENIS TRANSAKSI")[available_sla_cols].agg(['mean','count']).reset_index()
+        transaksi_display = pd.DataFrame()
+        transaksi_display["JENIS TRANSAKSI"] = transaksi_group["JENIS TRANSAKSI"]
+        for col in available_sla_cols:
+            transaksi_display[f"{col} (Rata-rata)"] = transaksi_group[(col,'mean')].apply(seconds_to_sla_format)
+            transaksi_display[f"{col} (Jumlah)"] = transaksi_group[(col,'count')]
+        st.dataframe(transaksi_display)
+
+    # Rata-rata SLA per Vendor
+    if "NAMA VENDOR" in df_filtered.columns:
+        st.subheader("📌 Rata-rata SLA per Vendor")
+        rata_vendor = df_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean().reset_index()
+        st.dataframe(rata_vendor)
+
     # Trend Rata-rata SLA per Periode
     st.subheader("📈 Trend Rata-rata SLA per Periode")
 
     trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[available_sla_cols].mean().reset_index()
-
     trend["PERIODE_SORTED"] = pd.Categorical(trend[periode_col], categories=selected_periode, ordered=True)
     trend = trend.sort_values("PERIODE_SORTED")
 
     trend_display = trend.copy()
     for col in available_sla_cols:
         trend_display[col] = trend_display[col].apply(seconds_to_sla_format)
-
     st.dataframe(trend_display[[periode_col] + available_sla_cols])
 
     # Plot grafik SLA TOTAL WAKTU dalam satuan hari
     if "TOTAL WAKTU" in available_sla_cols:
         fig, ax = plt.subplots(figsize=(10, 5))
-        y_values_days = trend["TOTAL WAKTU"] / 86400  # detik ke hari
+        y_values_days = trend["TOTAL WAKTU"] / 86400
         ax.plot(trend[periode_col], y_values_days, marker='o', label="TOTAL WAKTU", color='#9467bd')
         ax.set_title("Trend Rata-rata SLA TOTAL WAKTU per Periode")
         ax.set_xlabel("Periode")
@@ -156,16 +171,13 @@ if uploaded_file:
         st.pyplot(fig)
 
     # Grafik trend SLA per proses (kecuali TOTAL WAKTU)
-    proses_grafik_cols = [c for c in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN"] if c in available_sla_cols]
     if proses_grafik_cols:
         fig3, axs = plt.subplots(2, 2, figsize=(14, 8), constrained_layout=True)
         fig3.suptitle("Trend Rata-rata SLA per Proses per Periode (hari)", fontsize=16, fontweight='bold')
-
         axs = axs.flatten()
-        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']  # warna modern matplotlib
-
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
         for i, col in enumerate(proses_grafik_cols):
-            y = trend[col] / 86400  # detik ke hari
+            y = trend[col] / 86400
             axs[i].plot(trend[periode_col], y, marker='o', linestyle='-', color=colors[i])
             axs[i].set_title(col, fontsize=14, fontweight='semibold')
             axs[i].set_xlabel("Periode")
@@ -174,11 +186,6 @@ if uploaded_file:
             for label in axs[i].get_xticklabels():
                 label.set_rotation(45)
                 label.set_ha('right')
-
-        # Matikan subplot kosong jika ada
-        for j in range(len(proses_grafik_cols), 4):
-            fig3.delaxes(axs[j])
-
         st.pyplot(fig3)
 
 else:
