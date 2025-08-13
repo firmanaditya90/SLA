@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import re
+from datetime import datetime, timedelta, time
 
 st.set_page_config(page_title="SLA Payment Analyzer", layout="wide")
 
@@ -29,11 +30,25 @@ if uploaded_file:
         else:
             st.success(f"Kolom SLA yang dipakai: {sla_cols}")
 
-        # Fungsi parsing SLA string -> hari (float)
-        def parse_sla(s):
-            if pd.isna(s):
+        # Fungsi parsing SLA string / datetime / timedelta -> hari (float)
+        def parse_sla(val):
+            if pd.isna(val):
                 return None
-            s = str(s).strip().upper()
+
+            # Jika timedelta
+            if isinstance(val, timedelta):
+                return val.total_seconds() / 86400  # detik ke hari
+
+            # Jika datetime.time (jam-menit-detik saja)
+            if isinstance(val, time):
+                return (val.hour / 24) + (val.minute / 1440) + (val.second / 86400)
+
+            # Jika datetime.datetime (tanggal + jam)
+            if isinstance(val, datetime):
+                return (val - datetime(1899, 12, 30)).total_seconds() / 86400  # Excel date offset
+
+            # Jika string
+            s = str(val).strip().upper()
             match = re.search(r'(\d+)\s*DAYS?\s*(\d+):(\d+):(\d+)', s)
             if match:
                 days, hours, minutes, seconds = map(int, match.groups())
