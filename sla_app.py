@@ -1,93 +1,115 @@
 import streamlit as st
 import pandas as pd
+import re
 
-st.set_page_config(page_title="SLA Payment Analyzer", layout="wide")
+st.set_page_config(page_title="📊 SLA Payment Analyzer", layout="wide")
+
 st.title("📊 SLA Payment Analyzer")
 st.write("Upload file SLA `.xlsx` untuk menghitung rata-rata SLA per proses, per jenis transaksi, dan per vendor.")
 
-uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx")
+uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type=["xlsx"])
 
-def parse_sla(s):
-    """Konversi SLA string menjadi jumlah hari (float)"""
+def parse_sla_to_seconds(s):
+    """Konversi format 'SLA x days hh:mm:ss' atau 'SLA hh:mm:ss' jadi total detik"""
     if pd.isna(s):
         return None
+    if isinstance(s, pd.Timedelta):
+        return int(s.total_seconds())
     s = str(s).replace("SLA", "").strip()
-    days = 0
-    hours = 0
-    minutes = 0
-    parts = s.split()
-    if "days" in parts:
-        days = int(parts[parts.index("days") - 1])
-    elif "day" in parts:
-        days = int(parts[parts.index("day") - 1])
-    if ":" in parts[-1]:
-        t = parts[-1].split(":")
-        hours = int(t[0])
-        minutes = int(t[1])
-    return round(days + hours / 24 + minutes / 1440, 2)
+    days, hours, minutes, seconds = 0, 0, 0, 0
+    match = re.search(r"(\d+)\s+day", s)
+    if match:
+        days = int(match.group(1))
+    time_match = re.search(r"(\d+):(\d+):(\d+)", s)
+    if time_match:
+        hours = int(time_match.group(1))
+        minutes = int(time_match.group(2))
+        seconds = int(time_match.group(3))
+    total_seconds = days * 86400 + hours * 3600 + minutes * 60 + seconds
+    return total_seconds
+
+def format_seconds(total_seconds):
+    """Ubah total detik jadi 'xx hari xx jam xx menit xx detik'"""
+    if pd.isna(total_seconds):
+        return None
+    d = total_seconds // 86400
+    h = (total_seconds % 86400) // 3600
+    m = (total_seconds % 3600) // 60
+    s = total_seconds % 60
+    return f"{d} hari {h} jam {m} menit {s} detik"
 
 if uploaded_file:
-    # Baca 2 baris header
-    df_raw = pd.read_excel(uploaded_file, header=[0, 1])
+    try:
+        # Baca file dengan skip header SLA merge
+        df_raw = pd.read_excel(uploaded_file, header=[0, 1])
+        df_raw.columns = [c[0] if 'Unnamed' not in str(c[1]) else c[0] for c in df_raw.columns]
+        df_raw.columns = [str(c).strip().upper() for c in df_raw.columns]
 
-    # Gabungkan nama kolom
-    df_raw.columns = [
-        f"{col0}_{col1}" if "SLA" in str(col0).upper() else col0
-        for col0, col1 in df_raw.columns
-    ]
+        # Ambil kolom SLA
+        sla_cols = ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
+        periode_col = "PERIODE"
+        jenis_col = "JENIS TRANSAKSI"
+        vendor_col = "NAMA VENDOR"
 
-    # Rename supaya rapi
-    rename_map = {
-        "SLA_FUNGSIONAL": "FUNGSIONAL",
-        "SLA_VENDOR": "VENDOR",
-        "SLA_KEUANGAN": "KEUANGAN",
-        "SLA_PERBENDAHARAAN": "PERBENDAHARAAN",
-        "SLA_TOTAL WAKTU": "TOTAL WAKTU"
-    }
-    df_raw.rename(columns=rename_map, inplace=True)
+        detected_cols = df_raw.columns.tolist()
+        st.write("📄 Kolom yang terdeteksi di file")
+        st.write(detected_cols)
 
-    st.subheader("📄 Kolom yang terdeteksi di file")
-    st.write(list(df_raw.columns))
+        # Pastikan kolom SLA ada
+        missing = [col for col in sla_cols if col not in df_raw.columns]
+        if missing:
+            st.error(f"Kolom SLA berikut tidak ditemukan: {missing}")
+        else:
+            # Konversi SLA ke detik & string
+            for col in sla_cols:
+                df_raw[col + "_SEC"] = df_raw[col].apply(parse_sla_to_seconds)
+                df_raw[col + "_STR"] = df_raw[col + "_SEC"].apply(format_seconds)
 
-    # Pastikan kolom PERIODE ada
-    periode_col = None
-    for col in df_raw.columns:
-        if "PERIODE" in str(col).upper():
-            periode_col = col
-            break
-    if not periode_col:
-        st.error("Kolom PERIODE tidak ditemukan.")
-        st.stop()
+            # Filter periode
+            if periode_col in df_raw.columns:
+                periode_list = sorted(df_raw[periode_col].dropna().unique().tolist())
+                periode_selected = st.multiselect("Filter Periode", periode_list, default=periode_list)
+                df_filtered = df_raw[df_raw[periode_col].isin(periode_selected)]
+            else:
+                df_filtered = df_raw
 
-    # Konversi kolom SLA jadi hari (float)
-    sla_cols = ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
-    for col in sla_cols:
-        if col in df_raw.columns:
-            df_raw[col] = df_raw[col].apply(parse_sla)
+            # Filter jenis transaksi
+            if jenis_col in df_raw.columns:
+                jenis_list = sorted(df_filtered[jenis_col].dropna().unique().tolist())
+                jenis_selected = st.multiselect("Filter Jenis Transaksi", jenis_list, default=jenis_list)
+                df_filtered = df_filtered[df_filtered[jenis_col].isin(jenis_selected)]
 
-    # Filter Periode
-    periode_list = sorted(df_raw[periode_col].astype(str).dropna().unique().tolist())
-    periode_filter = st.multiselect("Filter Periode", periode_list, default=periode_list)
-    df_filtered = df_raw[df_raw[periode_col].astype(str).isin(periode_filter)]
+            # Filter vendor
+            if vendor_col in df_raw.columns:
+                vendor_list = sorted(df_filtered[vendor_col].dropna().unique().tolist())
+                vendor_selected = st.multiselect("Filter Vendor", vendor_list, default=vendor_list)
+                df_filtered = df_filtered[df_filtered[vendor_col].isin(vendor_selected)]
 
-    # Rata-rata SLA per Proses
-    available_sla_cols = [col for col in sla_cols if col in df_filtered.columns]
-    if available_sla_cols:
-        st.subheader("📌 Rata-rata SLA per Proses (hari)")
-        rata_proses = df_filtered[available_sla_cols].mean().reset_index()
-        rata_proses.columns = ["Proses", "Rata-rata (hari)"]
-        st.dataframe(rata_proses)
+            # Hitung rata-rata SLA dalam detik
+            avg_sla = {col: df_filtered[col + "_SEC"].mean() for col in sla_cols}
+            avg_sla_formatted = {col: format_seconds(v) for col, v in avg_sla.items()}
 
-    # Rata-rata SLA per Jenis Transaksi
-    if "JENIS TRANSAKSI" in df_filtered.columns:
-        st.subheader("📌 Rata-rata SLA per Jenis Transaksi")
-        rata_transaksi = df_filtered.groupby("JENIS TRANSAKSI")[available_sla_cols].mean().reset_index()
-        st.dataframe(rata_transaksi)
+            st.subheader("📊 Rata-rata SLA per Proses")
+            st.table(pd.DataFrame.from_dict(avg_sla_formatted, orient="index", columns=["Rata-rata"]))
 
-    # Rata-rata SLA per Vendor
-    if "NAMA VENDOR" in df_filtered.columns:
-        st.subheader("📌 Rata-rata SLA per Vendor")
-        rata_vendor = df_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean().reset_index()
-        st.dataframe(rata_vendor)
-else:
-    st.info("Silakan upload file Excel SLA terlebih dahulu.")
+            # Rekap per jenis transaksi
+            if jenis_col in df_filtered.columns:
+                st.subheader("📑 Rata-rata SLA per Jenis Transaksi")
+                jenis_group = df_filtered.groupby(jenis_col)[[c + "_SEC" for c in sla_cols]].mean().reset_index()
+                for col in sla_cols:
+                    jenis_group[col] = jenis_group[col + "_SEC"].apply(format_seconds)
+                st.dataframe(jenis_group[[jenis_col] + sla_cols])
+
+            # Rekap per vendor
+            if vendor_col in df_filtered.columns:
+                st.subheader("🏢 Rata-rata SLA per Vendor")
+                vendor_group = df_filtered.groupby(vendor_col)[[c + "_SEC" for c in sla_cols]].mean().reset_index()
+                for col in sla_cols:
+                    vendor_group[col] = vendor_group[col + "_SEC"].apply(format_seconds)
+                st.dataframe(vendor_group[[vendor_col] + sla_cols])
+
+            st.subheader("📋 Data SLA (Format waktu lengkap)")
+            st.dataframe(df_filtered[[periode_col, jenis_col, vendor_col] + [c + "_STR" for c in sla_cols]])
+
+    except Exception as e:
+        st.error(f"Terjadi error saat memproses file: {e}")
