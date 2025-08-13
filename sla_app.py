@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="SLA Payment Analyzer", layout="wide")
 st.title("📊 SLA Payment Analyzer")
-st.write("Upload file SLA `.xlsx` untuk menghitung rata-rata SLA per proses, per jenis transaksi, dan per vendor.")
+st.write("Upload file SLA .xlsx untuk menghitung rata-rata SLA per proses, per jenis transaksi, dan per vendor.")
 
 uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx")
 
@@ -193,21 +193,12 @@ if uploaded_file:
                 label.set_ha('right')
         st.pyplot(fig3)
 
-    # Jumlah transaksi per periode (urut berdasarkan bulan dan tahun)
+    # Jumlah transaksi per periode
     if "JENIS TRANSAKSI" in df_filtered.columns:
         st.subheader("📊 Jumlah Transaksi per Periode")
-
-        # Konversi periode ke datetime agar bisa di-sort
-        try:
-            df_filtered['PERIODE_DT'] = pd.to_datetime(df_filtered[periode_col], format="%b %Y")
-        except:
-            df_filtered['PERIODE_DT'] = pd.to_datetime(df_filtered[periode_col], errors='coerce')
-
-        jumlah_trx = df_filtered.groupby(['PERIODE_DT', periode_col])["JENIS TRANSAKSI"].count().reset_index()
-        jumlah_trx.columns = ["PERIODE_DT", periode_col, "Jumlah Transaksi"]
-        jumlah_trx = jumlah_trx.sort_values("PERIODE_DT")
-
-        st.dataframe(jumlah_trx[[periode_col, "Jumlah Transaksi"]])
+        jumlah_trx = df_filtered.groupby(df_filtered[periode_col].astype(str))["JENIS TRANSAKSI"].count().reset_index()
+        jumlah_trx.columns = [periode_col, "Jumlah Transaksi"]
+        st.dataframe(jumlah_trx)
 
         fig4, ax4 = plt.subplots(figsize=(10, 4))
         ax4.bar(jumlah_trx[periode_col], jumlah_trx["Jumlah Transaksi"], color='#2ca02c')
@@ -219,3 +210,6 @@ if uploaded_file:
             label.set_rotation(45)
             label.set_ha('right')
         st.pyplot(fig4)
+
+else:
+    st.info("Silakan upload file Excel SLA terlebih dahulu.")
