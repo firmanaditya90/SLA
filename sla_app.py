@@ -82,15 +82,12 @@ if uploaded_file:
         if col in df_raw.columns:
             df_raw[col] = df_raw[col].apply(parse_sla)
 
-    # Ambil list periode unik (urut sesuai kemunculan di data)
     periode_list = list(dict.fromkeys(df_raw[periode_col].dropna().astype(str)))
 
-    # Pilih rentang periode berdasarkan list urut
     st.subheader("Filter Rentang Periode (berdasarkan urutan)")
     start_periode = st.selectbox("Periode Mulai", periode_list, index=0)
     end_periode = st.selectbox("Periode Akhir", periode_list, index=len(periode_list)-1)
 
-    # Dapatkan index rentang
     try:
         idx_start = periode_list.index(start_periode)
         idx_end = periode_list.index(end_periode)
@@ -117,12 +114,23 @@ if uploaded_file:
         rata_proses["Rata-rata SLA"] = rata_proses["Rata-rata (detik)"].apply(seconds_to_sla_format)
         st.dataframe(rata_proses[["Proses", "Rata-rata SLA"]])
 
+        # Grafik rata-rata SLA per proses (kecuali TOTAL WAKTU)
+        proses_grafik_cols = [c for c in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN"] if c in available_sla_cols]
+        if proses_grafik_cols:
+            fig2, ax2 = plt.subplots(figsize=(8, 4))
+            values_hari = [rata_proses_seconds[col] / 86400 for col in proses_grafik_cols]  # detik ke hari
+            ax2.bar(proses_grafik_cols, values_hari, color='skyblue')
+            ax2.set_title("Rata-rata SLA per Proses (hari)")
+            ax2.set_ylabel("Rata-rata SLA (hari)")
+            ax2.set_xlabel("Proses")
+            ax2.grid(axis='y', linestyle='--', alpha=0.7)
+            st.pyplot(fig2)
+
     # Trend SLA per Periode
     st.subheader("📈 Trend Rata-rata SLA per Periode")
 
     trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[available_sla_cols].mean().reset_index()
 
-    # Urutkan sesuai selected_periode agar trend terurut
     trend["PERIODE_SORTED"] = pd.Categorical(trend[periode_col], categories=selected_periode, ordered=True)
     trend = trend.sort_values("PERIODE_SORTED")
 
