@@ -85,7 +85,7 @@ if uploaded_file:
     # Buat daftar periode unik
     periode_list = list(dict.fromkeys(df_raw[periode_col].dropna().astype(str)))
 
-    # --- FILTER DI SIDEBAR ---
+    # ================= Sidebar Filters =================
     st.sidebar.subheader("Filter Rentang Periode")
     start_periode = st.sidebar.selectbox("Periode Mulai", periode_list, index=0)
     end_periode = st.sidebar.selectbox("Periode Akhir", periode_list, index=len(periode_list)-1)
@@ -139,7 +139,7 @@ if uploaded_file:
             transaksi_display[f"{col} (Jumlah)"] = transaksi_group[(col,'count')]
         st.dataframe(transaksi_display)
 
-    # Filter nama vendor
+    # Filter nama vendor di sidebar
     if "NAMA VENDOR" in df_filtered.columns:
         st.sidebar.subheader("Filter Vendor")
         vendor_list = sorted(df_filtered["NAMA VENDOR"].dropna().unique())
@@ -149,6 +149,7 @@ if uploaded_file:
             rata_vendor = df_vendor_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean().reset_index()
             for col in available_sla_cols:
                 rata_vendor[col] = rata_vendor[col].apply(seconds_to_sla_format)
+            st.subheader("📌 Rata-rata SLA per Vendor")
             st.dataframe(rata_vendor)
         else:
             st.info("Tidak ada data untuk vendor yang dipilih.")
@@ -195,29 +196,15 @@ if uploaded_file:
                 label.set_ha('right')
         st.pyplot(fig3)
 
-    # Jumlah transaksi per periode
+    # Jumlah transaksi per periode dengan TOTAL
     if "JENIS TRANSAKSI" in df_filtered.columns:
         st.subheader("📊 Jumlah Transaksi per Periode")
         jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str))["JENIS TRANSAKSI"].count().reset_index()
-        jumlah_transaksi.columns = [periode_col, "Jumlah Transaksi"]
-        total_row = pd.DataFrame({periode_col:["TOTAL"], "Jumlah Transaksi":[jumlah_transaksi["Jumlah Transaksi"].sum()]})
+        jumlah_transaksi.columns = [periode_col, "Jumlah"]
+        total_row = pd.DataFrame({periode_col: ["TOTAL"], "Jumlah": [jumlah_transaksi["Jumlah"].sum()]})
         jumlah_transaksi = pd.concat([jumlah_transaksi, total_row], ignore_index=True)
-        jumlah_transaksi["PERIODE_SORTED"] = pd.Categorical(jumlah_transaksi[periode_col], categories=selected_periode + ["TOTAL"], ordered=True)
-        jumlah_transaksi = jumlah_transaksi.sort_values("PERIODE_SORTED")
 
-        # Fungsi styling untuk bold TOTAL
         def highlight_total(row):
-            return ['font-weight: bold' if str(row[periode_col]).upper() == "TOTAL" else '' for _ in row]
+            return ['font-weight: bold' if row[periode_col]=="TOTAL" else '' for _ in row]
 
-        st.dataframe(jumlah_transaksi.style.apply(highlight_total, axis=1).hide_columns(["PERIODE_SORTED"]))
-
-        # Grafik jumlah transaksi per periode (tidak termasuk TOTAL)
-        fig4, ax4 = plt.subplots(figsize=(10, 5))
-        ax4.bar(jumlah_transaksi[jumlah_transaksi[periode_col]!="TOTAL"][periode_col],
-                jumlah_transaksi[jumlah_transaksi[periode_col]!="TOTAL"]["Jumlah Transaksi"],
-                color='#2ca02c')
-        ax4.set_title("Jumlah Transaksi per Periode")
-        ax4.set_xlabel("Periode")
-        ax4.set_ylabel("Jumlah Transaksi")
-        ax4.grid(axis='y', linestyle='--', alpha=0.7)
-        st.pyplot(fig4)
+        st.dataframe(jumlah_transaksi.style.apply(highlight_total, axis=1))
