@@ -94,7 +94,7 @@ hr.soft { border: none; height: 1px; background: linear-gradient(90deg, transpar
 
 st.markdown("""
 <div class="hero">
-st.markdown('<h1 class="hero">🚢 SLA Payment Analyzer</h1>', unsafe_allow_html=True)
+<h1 class="hero">🚢 SLA Payment Analyzer</h1>
 
   <p>Dashboard modern untuk melihat & menganalisis SLA dokumen penagihan</p>
 </div>
