@@ -195,36 +195,31 @@ if uploaded_file:
                 label.set_ha('right')
         st.pyplot(fig3)
 
-    # Jumlah Transaksi per Periode (urutkan bulan + TOTAL)
+    # Jumlah Transaksi per Periode (urut bulan + total)
     st.subheader("📊 Jumlah Transaksi per Periode")
     jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name="Jumlah Transaksi")
 
-    def month_order(month_str):
-        month_str = str(month_str).strip().lower()
-        month_map = {m.lower(): i for i, m in enumerate(calendar.month_name) if m}
-        for name, idx in month_map.items():
-            if name in month_str:
-                return idx
-        return 13
+    # Fungsi urut bulan
+    def month_order(val):
+        if isinstance(val, pd.Timestamp):
+            return val.year * 12 + val.month
+        try:
+            val = str(val).strip()
+            parts = val.split()
+            if len(parts) == 2:
+                month_str, year_str = parts
+                month_map = {m.lower(): i for i, m in enumerate(calendar.month_name) if m}
+                month_num = month_map.get(month_str.lower(), 13)
+                year_num = int(year_str)
+                return year_num * 12 + month_num
+        except:
+            pass
+        return 9999
 
-    jumlah_transaksi['BULAN_URUT'] = jumlah_transaksi[periode_col].apply(month_order)
-    jumlah_transaksi = jumlah_transaksi.sort_values('BULAN_URUT').drop(columns=['BULAN_URUT'])
+    jumlah_transaksi["SORT_KEY"] = jumlah_transaksi[periode_col].apply(month_order)
+    jumlah_transaksi = jumlah_transaksi.sort_values("SORT_KEY").drop(columns=["SORT_KEY"])
 
-    total_row = pd.DataFrame({periode_col: ['TOTAL'], 'Jumlah Transaksi': [jumlah_transaksi['Jumlah Transaksi'].sum()]})
-    jumlah_transaksi_display = pd.concat([jumlah_transaksi, total_row], ignore_index=True)
-
-    st.dataframe(
-        jumlah_transaksi_display.style.apply(lambda x: ['font-weight: bold' if x[periode_col]=='TOTAL' else '' for _ in x], axis=1)
-    )
-
-    # Grafik jumlah transaksi (tanpa TOTAL)
-    fig4, ax4 = plt.subplots(figsize=(10, 5))
-    ax4.bar(jumlah_transaksi[periode_col], jumlah_transaksi["Jumlah Transaksi"], color='#ff7f0e')
-    ax4.set_xlabel("Periode")
-    ax4.set_ylabel("Jumlah Transaksi")
-    ax4.set_title("Jumlah Transaksi per Periode")
-    ax4.grid(axis='y', linestyle='--', alpha=0.7)
-    for label in ax4.get_xticklabels():
-        label.set_rotation(45)
-        label.set_ha('right')
-    st.pyplot(fig4)
+    # Tambahkan row TOTAL
+    total_row = pd.DataFrame({periode_col: ["TOTAL"], "Jumlah Transaksi": [jumlah_transaksi["Jumlah Transaksi"].sum()]})
+    jumlah_transaksi = pd.concat([jumlah_transaksi, total_row], ignore_index=True)
+    st.dataframe(jumlah_transaksi.style.format({"Jumlah Transaksi": "{:,}"}).applymap(lambda v: "font-weight: bold" if v == jumlah_transaksi["Jumlah Transaksi"].sum() else "", subset=["Jumlah Transaksi"]))
