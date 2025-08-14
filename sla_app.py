@@ -171,41 +171,25 @@ if uploaded_file:
     if "TOTAL WAKTU" in available_sla_cols:
         fig, ax = plt.subplots(figsize=(10, 5))
         y_values_days = trend["TOTAL WAKTU"].apply(lambda x: x/86400)
-        ax.plot(trend[periode_col], y_values_days, marker='o', label="TOTAL WAKTU", color='#9467bd')
-        ax.set_title("Trend Rata-rata SLA TOTAL WAKTU per Periode")
+        ax.plot(trend[periode_col], y_values_days, marker='o', label="TOTAL WAKTU")
+        ax.set_title("Trend Rata-rata SLA TOTAL WAKTU per Periode (hari)")
         ax.set_xlabel("Periode")
         ax.set_ylabel("Rata-rata SLA (hari)")
-        ax.grid(True, linestyle='--', alpha=0.7)
-        ax.legend()
-        for label in ax.get_xticklabels():
-            label.set_rotation(45)
-            label.set_ha('right')
+        ax.grid(axis='y', linestyle='--', alpha=0.7)
+        ax.set_xticklabels(trend[periode_col], rotation=45, ha='right')
         st.pyplot(fig)
 
-    # Grafik trend SLA per proses (kecuali TOTAL WAKTU)
-    if proses_grafik_cols:
-        fig3, axs = plt.subplots(2, 2, figsize=(14, 8), constrained_layout=True)
-        fig3.suptitle("Trend Rata-rata SLA per Proses per Periode (hari)", fontsize=16)
-        axs = axs.flatten()
-        for i, col in enumerate(proses_grafik_cols):
-            axs[i].plot(trend[periode_col], trend[col]/86400, marker='o', color='skyblue')
-            axs[i].set_title(col)
-            axs[i].set_ylabel("Hari")
-            axs[i].set_xlabel("Periode")
-            axs[i].grid(True, linestyle='--', alpha=0.7)
-            for label in axs[i].get_xticklabels():
-                label.set_rotation(45)
-                label.set_ha('right')
-        st.pyplot(fig3)
-
-    # Jumlah transaksi per periode dengan total
+    # Grafik Jumlah Transaksi per Periode
     st.subheader("📊 Jumlah Transaksi per Periode")
     jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name='Jumlah')
-    jumlah_transaksi = jumlah_transaksi.sort_values(by=periode_col, key=lambda x: pd.Categorical(x, categories=selected_periode, ordered=True))
-    total_row = pd.DataFrame({periode_col: ["TOTAL"], 'Jumlah': [jumlah_transaksi['Jumlah'].sum()]})
-    jumlah_transaksi = pd.concat([jumlah_transaksi, total_row], ignore_index=True)
-
-    def highlight_total(row):
-        return ['font-weight: bold' if row[periode_col]=="TOTAL" else '' for _ in row]
-
-    st.dataframe(jumlah_transaksi.style.apply(highlight_total, axis=1))
+    jumlah_transaksi_chart = jumlah_transaksi[jumlah_transaksi[periode_col] != "TOTAL"]
+    fig4, ax4 = plt.subplots(figsize=(10, 5))
+    ax4.bar(jumlah_transaksi_chart[periode_col], jumlah_transaksi_chart['Jumlah'], color='orange')
+    ax4.set_title("Jumlah Transaksi per Periode")
+    ax4.set_xlabel("Periode")
+    ax4.set_ylabel("Jumlah Transaksi")
+    ax4.grid(axis='y', linestyle='--', alpha=0.7)
+    for label in ax4.get_xticklabels():
+        label.set_rotation(45)
+        label.set_ha('right')
+    st.pyplot(fig4)
