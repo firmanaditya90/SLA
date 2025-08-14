@@ -215,7 +215,3 @@ if uploaded_file:
             label.set_rotation(45)
             label.set_ha('right')
         st.pyplot(fig4)
-
-# Footer / Credit
-st.markdown("---")
-st.caption("Created By. Firman Aditya")
