@@ -195,31 +195,31 @@ if uploaded_file:
                 label.set_ha('right')
         st.pyplot(fig3)
 
-    # Jumlah Transaksi per Periode (urut bulan + total)
+    # Jumlah Transaksi per Periode (Tabel + Grafik)
     st.subheader("📊 Jumlah Transaksi per Periode")
-    jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name="Jumlah Transaksi")
-
-    # Fungsi urut bulan
-    def month_order(val):
-        if isinstance(val, pd.Timestamp):
-            return val.year * 12 + val.month
-        try:
-            val = str(val).strip()
-            parts = val.split()
-            if len(parts) == 2:
-                month_str, year_str = parts
-                month_map = {m.lower(): i for i, m in enumerate(calendar.month_name) if m}
-                month_num = month_map.get(month_str.lower(), 13)
-                year_num = int(year_str)
-                return year_num * 12 + month_num
-        except:
-            pass
-        return 9999
-
-    jumlah_transaksi["SORT_KEY"] = jumlah_transaksi[periode_col].apply(month_order)
-    jumlah_transaksi = jumlah_transaksi.sort_values("SORT_KEY").drop(columns=["SORT_KEY"])
-
-    # Tambahkan row TOTAL
-    total_row = pd.DataFrame({periode_col: ["TOTAL"], "Jumlah Transaksi": [jumlah_transaksi["Jumlah Transaksi"].sum()]})
+    jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name='Jumlah')
+    jumlah_transaksi = jumlah_transaksi.sort_values(by=periode_col, key=lambda x: pd.Categorical(x, categories=selected_periode, ordered=True))
+    total_row = pd.DataFrame({periode_col: ["TOTAL"], 'Jumlah': [jumlah_transaksi['Jumlah'].sum()]})
     jumlah_transaksi = pd.concat([jumlah_transaksi, total_row], ignore_index=True)
-    st.dataframe(jumlah_transaksi.style.format({"Jumlah Transaksi": "{:,}"}).applymap(lambda v: "font-weight: bold" if v == jumlah_transaksi["Jumlah Transaksi"].sum() else "", subset=["Jumlah Transaksi"]))
+
+    def highlight_total(row):
+        return ['font-weight: bold' if row[periode_col]=="TOTAL" else '' for _ in row]
+
+    # Tampilkan tabel
+    with st.container():
+        st.dataframe(jumlah_transaksi.style.apply(highlight_total, axis=1))
+
+    # Tampilkan grafik
+    with st.container():
+        fig_trans, ax_trans = plt.subplots(figsize=(10, 5))
+        ax_trans.bar(jumlah_transaksi[jumlah_transaksi[periode_col]!="TOTAL"][periode_col],
+                     jumlah_transaksi[jumlah_transaksi[periode_col]!="TOTAL"]['Jumlah'],
+                     color='coral')
+        ax_trans.set_title("Jumlah Transaksi per Periode")
+        ax_trans.set_xlabel("Periode")
+        ax_trans.set_ylabel("Jumlah Transaksi")
+        ax_trans.grid(axis='y', linestyle='--', alpha=0.7)
+        for label in ax_trans.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
+        st.pyplot(fig_trans)
