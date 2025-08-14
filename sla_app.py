@@ -134,25 +134,25 @@ if uploaded_file:
             transaksi_display[f"{col} (Jumlah)"] = transaksi_group[(col,'count')]
         st.dataframe(transaksi_display)
 
-    # Filter nama vendor dengan opsi ALL
-    if "NAMA VENDOR" in df_filtered.columns:
-        vendor_list = sorted(df_filtered["NAMA VENDOR"].dropna().unique())
-        vendor_list_with_all = ["ALL"] + vendor_list
-        selected_vendors = st.sidebar.multiselect("Pilih Vendor", vendor_list_with_all, default=["ALL"])
+# Filter nama vendor
+if "NAMA VENDOR" in df_filtered.columns:
+    vendor_list = sorted(df_filtered["NAMA VENDOR"].dropna().unique())
+    vendor_list_with_all = ["ALL"] + vendor_list  # tambahkan opsi ALL
+    selected_vendors = st.sidebar.multiselect("Pilih Vendor", vendor_list_with_all, default=["ALL"])
 
-        if "ALL" in selected_vendors:
-            df_vendor_filtered = df_filtered.copy()
-        else:
-            df_vendor_filtered = df_filtered[df_filtered["NAMA VENDOR"].isin(selected_vendors)]
-
-        if df_vendor_filtered.shape[0] > 0:
-            st.subheader("📌 Rata-rata SLA per Vendor")
-            rata_vendor = df_vendor_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean().reset_index()
-            for col in available_sla_cols:
-                rata_vendor[col] = rata_vendor[col].apply(seconds_to_sla_format)
-            st.dataframe(rata_vendor)
-        else:
-            st.info("Tidak ada data untuk vendor yang dipilih.")
+    if "ALL" in selected_vendors:
+        df_vendor_filtered = df_filtered.copy()  # semua vendor
+    else:
+        df_vendor_filtered = df_filtered[df_filtered["NAMA VENDOR"].isin(selected_vendors)]
+    
+    if df_vendor_filtered.shape[0] > 0:
+        st.subheader("📌 Rata-rata SLA per Vendor")
+        rata_vendor = df_vendor_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean().reset_index()
+        for col in available_sla_cols:
+            rata_vendor[col] = rata_vendor[col].apply(seconds_to_sla_format)
+        st.dataframe(rata_vendor)
+    else:
+        st.info("Tidak ada data untuk vendor yang dipilih.")
 
     # Trend Rata-rata SLA per Periode
     st.subheader("📈 Trend Rata-rata SLA per Periode")
