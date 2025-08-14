@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 # ==============================
 # Konfigurasi Halaman
 # ==============================
-st.set_page_config(page_title="SLA Payment Analyzer", layout="wide", page_icon="🚀")
+st.set_page_config(page_title="SLA Payment Analyzer", layout="wide", page_icon="🚢")
 
 # ------------------------------
 # (Opsional) Pakai tema dark:
