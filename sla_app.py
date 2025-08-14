@@ -74,6 +74,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================
+# Logo di Sidebar
+# ==============================
+with st.sidebar:
+    st.image(
+        "https://raw.githubusercontent.com/<username>/<repo>/main/asdp_logo.png",  # Ganti sesuai URL GitHub raw file kamu
+        width=180
+    )
+    st.markdown("<h3 style='text-align: center;'>🚀 SLA Payment Analyzer</h3>", unsafe_allow_html=True)
+# ==============================
 # Path & Assets
 # ==============================
 os.makedirs("data", exist_ok=True)
