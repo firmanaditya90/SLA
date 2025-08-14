@@ -14,10 +14,7 @@ def parse_sla(s):
     if pd.isna(s):
         return None
     s = str(s).upper().replace("SLA", "").strip()
-    days = 0
-    hours = 0
-    minutes = 0
-    seconds = 0
+    days = hours = minutes = seconds = 0
     day_match = re.search(r'(\d+)\s*DAY', s)
     if day_match:
         days = int(day_match.group(1))
@@ -27,7 +24,7 @@ def parse_sla(s):
         minutes = int(time_match.group(2))
         if time_match.group(3):
             seconds = int(time_match.group(3))
-    total_seconds = days * 86400 + hours * 3600 + minutes * 60 + seconds
+    total_seconds = days*86400 + hours*3600 + minutes*60 + seconds
     return total_seconds
 
 def seconds_to_sla_format(total_seconds):
@@ -51,7 +48,7 @@ def seconds_to_sla_format(total_seconds):
     return " ".join(parts)
 
 if uploaded_file:
-    df_raw = pd.read_excel(uploaded_file, header=[0, 1])
+    df_raw = pd.read_excel(uploaded_file, header=[0,1])
     df_raw.columns = [
         f"{col0}_{col1}" if "SLA" in str(col0).upper() else col0
         for col0, col1 in df_raw.columns
@@ -82,13 +79,11 @@ if uploaded_file:
         if col in df_raw.columns:
             df_raw[col] = df_raw[col].apply(parse_sla)
 
-    # Buat daftar periode unik
+    # Filter periode
     periode_list = list(dict.fromkeys(df_raw[periode_col].dropna().astype(str)))
-
     st.subheader("Filter Rentang Periode (berdasarkan urutan)")
     start_periode = st.selectbox("Periode Mulai", periode_list, index=0)
     end_periode = st.selectbox("Periode Akhir", periode_list, index=len(periode_list)-1)
-
     try:
         idx_start = periode_list.index(start_periode)
         idx_end = periode_list.index(end_periode)
@@ -101,7 +96,6 @@ if uploaded_file:
 
     selected_periode = periode_list[idx_start:idx_end+1]
     df_filtered = df_raw[df_raw[periode_col].astype(str).isin(selected_periode)]
-
     st.write(f"Menampilkan data periode dari **{start_periode}** sampai **{end_periode}**, total baris: {len(df_filtered)}")
 
     available_sla_cols = [col for col in sla_cols if col in df_filtered.columns]
@@ -115,11 +109,10 @@ if uploaded_file:
         rata_proses["Rata-rata SLA"] = rata_proses["Rata-rata (detik)"].apply(seconds_to_sla_format)
         st.dataframe(rata_proses[["Proses", "Rata-rata SLA"]])
 
-        # Grafik rata-rata SLA per proses (kecuali TOTAL WAKTU)
         proses_grafik_cols = [c for c in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN"] if c in available_sla_cols]
         if proses_grafik_cols:
-            fig2, ax2 = plt.subplots(figsize=(8, 4))
-            values_hari = [rata_proses_seconds[col] / 86400 for col in proses_grafik_cols]
+            fig2, ax2 = plt.subplots(figsize=(8,4))
+            values_hari = [rata_proses_seconds[col]/86400 for col in proses_grafik_cols]
             ax2.bar(proses_grafik_cols, values_hari, color='skyblue')
             ax2.set_title("Rata-rata SLA per Proses (hari)")
             ax2.set_ylabel("Rata-rata SLA (hari)")
@@ -137,6 +130,33 @@ if uploaded_file:
             transaksi_display[f"{col} (Rata-rata)"] = transaksi_group[(col,'mean')].apply(seconds_to_sla_format)
             transaksi_display[f"{col} (Jumlah)"] = transaksi_group[(col,'count')]
         st.dataframe(transaksi_display)
+
+    # Rata-rata SLA per Jenis Transaksi per Periode (fitur baru)
+    if "JENIS TRANSAKSI" in df_filtered.columns:
+        st.subheader("📊 Rata-rata SLA per Jenis Transaksi per Periode")
+        df_transaksi_periode = df_filtered.groupby([periode_col, "JENIS TRANSAKSI"])[available_sla_cols].mean().reset_index()
+        # Tampilkan tabel dalam format SLA
+        df_display = df_transaksi_periode.copy()
+        for col in available_sla_cols:
+            df_display[col] = df_display[col].apply(seconds_to_sla_format)
+        st.dataframe(df_display)
+
+        # Grafik bar chart per periode
+        fig5, ax5 = plt.subplots(figsize=(12,5))
+        for jenis in df_transaksi_periode["JENIS TRANSAKSI"].unique():
+            subset = df_transaksi_periode[df_transaksi_periode["JENIS TRANSAKSI"]==jenis]
+            # Ambil TOTAL WAKTU untuk grafik
+            if "TOTAL WAKTU" in available_sla_cols:
+                ax5.plot(subset[periode_col], subset["TOTAL WAKTU"]/86400, marker='o', label=jenis)
+        ax5.set_title("Trend Rata-rata SLA TOTAL WAKTU per Jenis Transaksi per Periode (hari)")
+        ax5.set_xlabel("Periode")
+        ax5.set_ylabel("Rata-rata SLA (hari)")
+        ax5.grid(True, linestyle='--', alpha=0.7)
+        ax5.legend()
+        for label in ax5.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
+        st.pyplot(fig5)
 
     # Filter nama vendor
     if "NAMA VENDOR" in df_filtered.columns:
@@ -160,11 +180,11 @@ if uploaded_file:
     trend_display = trend.copy()
     for col in available_sla_cols:
         trend_display[col] = trend_display[col].apply(seconds_to_sla_format)
-    st.dataframe(trend_display[[periode_col] + available_sla_cols])
+    st.dataframe(trend_display[[periode_col]+available_sla_cols])
 
-    # Grafik trend SLA TOTAL WAKTU dalam satuan hari
+    # Grafik trend SLA TOTAL WAKTU
     if "TOTAL WAKTU" in available_sla_cols:
-        fig, ax = plt.subplots(figsize=(10, 5))
+        fig, ax = plt.subplots(figsize=(10,5))
         y_values_days = trend["TOTAL WAKTU"].apply(lambda x: x/86400)
         ax.plot(trend[periode_col], y_values_days, marker='o', label="TOTAL WAKTU", color='#9467bd')
         ax.set_title("Trend Rata-rata SLA TOTAL WAKTU per Periode")
@@ -177,9 +197,9 @@ if uploaded_file:
             label.set_ha('right')
         st.pyplot(fig)
 
-    # Grafik trend SLA per proses (kecuali TOTAL WAKTU)
+    # Grafik trend SLA per proses
     if proses_grafik_cols:
-        fig3, axs = plt.subplots(2, 2, figsize=(14, 8), constrained_layout=True)
+        fig3, axs = plt.subplots(2,2,figsize=(14,8), constrained_layout=True)
         fig3.suptitle("Trend Rata-rata SLA per Proses per Periode (hari)", fontsize=16)
         axs = axs.flatten()
         for i, col in enumerate(proses_grafik_cols):
@@ -199,12 +219,10 @@ if uploaded_file:
         st.subheader("📊 Jumlah Transaksi per Periode")
         jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str))["JENIS TRANSAKSI"].count().reset_index()
         jumlah_transaksi.columns = [periode_col, "Jumlah Transaksi"]
-        # Sort sesuai selected_periode
         jumlah_transaksi["PERIODE_SORTED"] = pd.Categorical(jumlah_transaksi[periode_col], categories=selected_periode, ordered=True)
         jumlah_transaksi = jumlah_transaksi.sort_values("PERIODE_SORTED")
         st.dataframe(jumlah_transaksi[[periode_col,"Jumlah Transaksi"]])
 
-        # Grafik jumlah transaksi per periode
         fig4, ax4 = plt.subplots(figsize=(10,5))
         ax4.bar(jumlah_transaksi[periode_col], jumlah_transaksi["Jumlah Transaksi"], color='teal')
         ax4.set_title("Jumlah Transaksi per Periode")
