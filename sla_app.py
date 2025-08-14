@@ -194,7 +194,7 @@ if uploaded_file:
                 label.set_ha('right')
         st.pyplot(fig3)
 
-    # Jumlah transaksi per periode + total
+    # Jumlah transaksi per periode
     if "JENIS TRANSAKSI" in df_filtered.columns:
         st.subheader("📊 Jumlah Transaksi per Periode")
         jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str))["JENIS TRANSAKSI"].count().reset_index()
@@ -203,16 +203,19 @@ if uploaded_file:
         jumlah_transaksi["PERIODE_SORTED"] = pd.Categorical(jumlah_transaksi[periode_col], categories=selected_periode, ordered=True)
         jumlah_transaksi = jumlah_transaksi.sort_values("PERIODE_SORTED")
 
-        # Tambahkan total
+        # Hitung total
         total_transaksi = jumlah_transaksi["Jumlah Transaksi"].sum()
-        total_row = pd.DataFrame({periode_col: ["Total"], "Jumlah Transaksi": [total_transaksi]})
-        jumlah_transaksi_display = pd.concat([jumlah_transaksi[[periode_col,"Jumlah Transaksi"]], total_row], ignore_index=True)
+        jumlah_transaksi.loc["Total"] = ["Total", total_transaksi, None]  # tambahkan kolom PERIODE_SORTED sebagai placeholder
 
-        st.dataframe(jumlah_transaksi_display)
+        # Style baris Total bold
+        def highlight_total(row):
+            return ['font-weight: bold' if row.name == "Total" else '' for _ in row]
 
-        # Grafik jumlah transaksi per periode (tanpa total)
+        st.table(jumlah_transaksi.style.apply(highlight_total, axis=1).hide_columns(["PERIODE_SORTED"]))
+
+        # Grafik jumlah transaksi per periode (tidak termasuk total)
         fig4, ax4 = plt.subplots(figsize=(10,5))
-        ax4.bar(jumlah_transaksi[periode_col], jumlah_transaksi["Jumlah Transaksi"], color='teal')
+        ax4.bar(jumlah_transaksi[periode_col][:-1], jumlah_transaksi["Jumlah Transaksi"][:-1], color='teal')
         ax4.set_title("Jumlah Transaksi per Periode")
         ax4.set_xlabel("Periode")
         ax4.set_ylabel("Jumlah Transaksi")
