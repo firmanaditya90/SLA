@@ -290,6 +290,97 @@ proses_grafik_cols = [c for c in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAH
 # Created by
 st.sidebar.markdown("<p style='text-align:center; font-size:12px; color:gray;'>Created by. Firman Aditya</p>", unsafe_allow_html=True)
 
+# app.py
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+from io import BytesIO
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib.utils import ImageReader
+
+# ===========================
+# Created by. Firman Aditya
+# ===========================
+
+st.set_page_config(page_title="Data & Grafik App", layout="wide")
+
+# Judul aplikasi
+st.title("Aplikasi Tabel & Grafik")
+
+# Sample data
+data = {
+    "Nama": ["Andi", "Budi", "Citra", "Dewi"],
+    "Umur": [23, 34, 45, 29],
+    "Skor": [88, 92, 79, 95]
+}
+df = pd.DataFrame(data)
+
+# Tampilkan tabel
+st.subheader("Tabel Data")
+st.dataframe(df)
+
+# Tampilkan grafik
+st.subheader("Grafik Skor")
+fig, ax = plt.subplots()
+ax.bar(df["Nama"], df["Skor"], color='skyblue')
+ax.set_ylabel("Skor")
+ax.set_xlabel("Nama")
+ax.set_title("Skor per Nama")
+st.pyplot(fig)
+
+# ===========================
+# Tombol Download PDF
+# ===========================
+
+def generate_pdf(df, fig):
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+
+    # Judul
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(50, height - 50, "Laporan Data & Grafik")
+
+    # Tulis tabel
+    c.setFont("Helvetica", 12)
+    c.drawString(50, height - 80, "Tabel Data:")
+    x_offset = 50
+    y_offset = height - 110
+    row_height = 20
+
+    # Header
+    for i, col in enumerate(df.columns):
+        c.drawString(x_offset + i * 100, y_offset, str(col))
+    y_offset -= row_height
+
+    # Data rows
+    for idx, row in df.iterrows():
+        for i, col in enumerate(df.columns):
+            c.drawString(x_offset + i * 100, y_offset, str(row[col]))
+        y_offset -= row_height
+
+    # Tambahkan grafik
+    img_buffer = BytesIO()
+    fig.savefig(img_buffer, format='PNG')
+    img_buffer.seek(0)
+    img = ImageReader(img_buffer)
+    c.drawImage(img, 50, y_offset - 250, width=500, height=250)
+
+    c.showPage()
+    c.save()
+    buffer.seek(0)
+    return buffer
+
+st.subheader("Download Laporan PDF")
+pdf_buffer = generate_pdf(df, fig)
+st.download_button(
+    label="Download PDF",
+    data=pdf_buffer,
+    file_name="laporan_data_grafik.pdf",
+    mime="application/pdf"
+)
+
 # ==============================
 # Parsing SLA setelah filter (dengan status)
 # ==============================
