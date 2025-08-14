@@ -25,11 +25,6 @@ st.set_page_config(page_title="SLA Payment Analyzer", layout="wide", page_icon="
 # ------------------------------
 
 # ==============================
-# Judul Aplikasi
-# ==============================
-st.markdown('<h1 class="hero">🚢 SLA Payment Analyzer</h1>', unsafe_allow_html=True)
-
-# ==============================
 # Fungsi untuk baca data dengan animasi ferry
 # ==============================
 @st.cache_data
@@ -99,7 +94,7 @@ hr.soft { border: none; height: 1px; background: linear-gradient(90deg, transpar
 
 st.markdown("""
 <div class="hero">
-  <h1>🚀 SLA Payment Analyzer</h1>
+  <h1>🚢 SLA Payment Analyzer</h1>
   <p>Dashboard modern untuk melihat & menganalisis SLA dokumen penagihan</p>
 </div>
 """, unsafe_allow_html=True)
