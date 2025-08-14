@@ -78,7 +78,7 @@ st.markdown("""
 # ==============================
 with st.sidebar:
     st.image(
-        "https://raw.githubusercontent.com/<username>/<repo>/main/asdp_logo.png",  # Ganti sesuai URL GitHub raw file kamu
+        "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png",  # Ganti sesuai URL GitHub raw file kamu
         width=180
     )
     st.markdown("<h3 style='text-align: center;'>🚀 SLA Payment Analyzer</h3>", unsafe_allow_html=True)
