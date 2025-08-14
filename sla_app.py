@@ -194,7 +194,7 @@ if uploaded_file:
                 label.set_ha('right')
         st.pyplot(fig3)
 
-    # Jumlah transaksi per periode
+    # Jumlah transaksi per periode + total
     if "JENIS TRANSAKSI" in df_filtered.columns:
         st.subheader("📊 Jumlah Transaksi per Periode")
         jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str))["JENIS TRANSAKSI"].count().reset_index()
@@ -202,9 +202,15 @@ if uploaded_file:
         # Sort sesuai selected_periode
         jumlah_transaksi["PERIODE_SORTED"] = pd.Categorical(jumlah_transaksi[periode_col], categories=selected_periode, ordered=True)
         jumlah_transaksi = jumlah_transaksi.sort_values("PERIODE_SORTED")
-        st.dataframe(jumlah_transaksi[[periode_col,"Jumlah Transaksi"]])
 
-        # Grafik jumlah transaksi per periode
+        # Tambahkan total
+        total_transaksi = jumlah_transaksi["Jumlah Transaksi"].sum()
+        total_row = pd.DataFrame({periode_col: ["Total"], "Jumlah Transaksi": [total_transaksi]})
+        jumlah_transaksi_display = pd.concat([jumlah_transaksi[[periode_col,"Jumlah Transaksi"]], total_row], ignore_index=True)
+
+        st.dataframe(jumlah_transaksi_display)
+
+        # Grafik jumlah transaksi per periode (tanpa total)
         fig4, ax4 = plt.subplots(figsize=(10,5))
         ax4.bar(jumlah_transaksi[periode_col], jumlah_transaksi["Jumlah Transaksi"], color='teal')
         ax4.set_title("Jumlah Transaksi per Periode")
