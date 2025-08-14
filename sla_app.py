@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import re
 import math
@@ -10,7 +11,7 @@ import matplotlib.pyplot as plt
 # ==============================
 # Konfigurasi Halaman
 # ==============================
-st.set_page_config(page_title="SLA Payment Analyzer", layout="wide", page_icon="🚀")
+st.set_page_config(page_title="SLA Payment Analyzer", layout="wide", page_icon="🚢")
 
 # ------------------------------
 # (Opsional) Pakai tema dark:
@@ -23,32 +24,6 @@ st.set_page_config(page_title="SLA Payment Analyzer", layout="wide", page_icon="
 # textColor="#E6E6E6"
 # font="sans serif"
 # ------------------------------
-
-# ==============================
-# Fungsi untuk baca data dengan animasi ferry
-# ==============================
-@st.cache_data
-def load_data(file_path):
-    ferry_html = """
-    <div style="display:flex;justify-content:center;">
-        <lottie-player src="https://assets10.lottiefiles.com/packages/lf20_xpdp3p.json"
-            background="transparent"
-            speed="1"
-            style="width: 300px; height: 300px;"
-            loop
-            autoplay>
-        </lottie-player>
-    </div>
-    """
-    with st.spinner("Memuat data..."):
-        st.components.v1.html(
-            '<script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>' 
-            + ferry_html,
-            height=350,
-        )
-        time.sleep(2)  # simulasi loading
-        return pd.read_excel(file_path)
-
 
 # ==============================
 # Styling: CSS untuk look modern
@@ -94,30 +69,35 @@ hr.soft { border: none; height: 1px; background: linear-gradient(90deg, transpar
 
 st.markdown("""
 <div class="hero">
-<h1 class="hero">🚢 SLA Payment Analyzer</h1>
-
+  <h1>🚢 SLA Payment Analyzer</h1>
   <p>Dashboard modern untuk melihat & menganalisis SLA dokumen penagihan</p>
 </div>
 """, unsafe_allow_html=True)
 
 # ==============================
-# Logo di Sidebar
+# Sidebar: Logo ASDP + Admin header
 # ==============================
+ASDP_LOGO_RAW = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
+
 with st.sidebar:
-    st.image(
-        "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png",  # Ganti sesuai URL GitHub raw file kamu
-        width=180
-    )
-    st.markdown("<h3 style='text-align: center;'>🚀 SLA Payment Analyzer</h3>", unsafe_allow_html=True)
+    # show logo (uses raw link from GitHub)
+    try:
+        st.image(ASDP_LOGO_RAW, width=180)
+    except Exception:
+        # fallback text if image fails
+        st.markdown("**PT. ASDP Indonesia Ferry (Persero)**")
+
+    st.markdown("<h3 style='text-align: center;'>🔐 Admin Panel</h3>", unsafe_allow_html=True)
+
 # ==============================
-# Path & Assets
+# Paths & assets
 # ==============================
 os.makedirs("data", exist_ok=True)
-os.makedirs("assets", exist_ok=True)  # taruh assets/rocket.gif
-DATA_PATH = os.path.join("data", "last_data.xlsx")
-ROCKET_GIF_PATH = os.path.join("assets", "rocket.gif")
+os.makedirs("assets", exist_ok=True)  # optional for local gifs
+DATA_PATH = os.path.join("data", "last_data.xlsx")  # persistent saved upload
+ROCKET_GIF_PATH = os.path.join("assets", "rocket.gif")  # optional local gif (not required)
 
-def gif_b64(path: str) -> str | None:
+def gif_b64(path):
     try:
         with open(path, "rb") as f:
             return f"data:image/gif;base64,{base64.b64encode(f.read()).decode('utf-8')}"
@@ -128,6 +108,7 @@ rocket_b64 = gif_b64(ROCKET_GIF_PATH)
 
 # ==============================
 # Admin password (defensif)
+# - tries Streamlit secrets, then ENV, else read-only mode
 # ==============================
 try:
     ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", None)
@@ -143,7 +124,7 @@ else:
     is_admin = False
 
 # ==============================
-# Util SLA
+# Utility: parse SLA strings -> seconds
 # ==============================
 def parse_sla(s):
     if pd.isna(s):
@@ -182,33 +163,68 @@ def seconds_to_sla_format(total_seconds):
     return " ".join(parts)
 
 # ==============================
-# Upload (hanya admin)
+# Upload area (Admin only)
 # ==============================
 with st.sidebar.expander("📤 Upload Data (Admin Only)", expanded=is_admin):
     uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx") if is_admin else None
 
-# ==============================
-# Load data terakhir / simpan baru  (dengan animasi roket)
-# ==============================
-load_status = st.empty()
+# When admin uploads, save to DATA_PATH
 if uploaded_file is not None and is_admin:
-    with st.spinner("🚀 Mengunggah & menyiapkan data..."):
-        if rocket_b64:
-            st.markdown(f'<div style="text-align:center;"><img src="{rocket_b64}" width="160"/></div>', unsafe_allow_html=True)
-        time.sleep(0.2)
+    with st.spinner("🚢 Mengunggah & menyiapkan data..."):
+        # show ferry animation during upload (small)
+        ferry_html_small = """
+        <div style="display:flex;justify-content:center;">
+            <lottie-player src="https://assets10.lottiefiles.com/packages/lf20_xpdp3p.json"
+                background="transparent"
+                speed="1"
+                style="width: 180px; height: 180px;"
+                loop
+                autoplay>
+            </lottie-player>
+        </div>
+        """
+        components.html(
+            '<script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>' + ferry_html_small,
+            height=220,
+        )
+        time.sleep(0.6)
+        # save uploaded file persistently
         with open(DATA_PATH, "wb") as f:
             f.write(uploaded_file.getbuffer())
         st.success("✅ Data baru berhasil diunggah dan disimpan!")
 
+# ==============================
+# Read data (cached) with ferry animation while reading
+# ==============================
+@st.cache_data(show_spinner=False)
+def read_excel_cached(path, size, mtime):
+    # read with pandas, keep header multiindex compatibility
+    try:
+        return pd.read_excel(path, header=[0, 1])
+    except Exception:
+        # fallback to single header
+        return pd.read_excel(path)
+
+df_raw = None
 if os.path.exists(DATA_PATH):
-    # Progress & spinner saat baca file
+    # show ferry animation while reading (main spinner)
     with st.spinner("🔄 Membaca data terakhir..."):
-        if rocket_b64:
-            st.markdown(f'<div style="text-align:center;"><img src="{rocket_b64}" width="120"/></div>', unsafe_allow_html=True)
-        # Cache baca excel agar lebih cepat setelah refresh (invalidate saat file berubah size/mtime)
-        @st.cache_data(show_spinner=False)
-        def read_excel_cached(path: str, size: int, mtime: float):
-            return pd.read_excel(path, header=[0, 1])
+        ferry_html = """
+        <div style="display:flex;justify-content:center;">
+            <lottie-player src="https://assets10.lottiefiles.com/packages/lf20_xpdp3p.json"
+                background="transparent"
+                speed="1"
+                style="width: 260px; height: 260px;"
+                loop
+                autoplay>
+            </lottie-player>
+        </div>
+        """
+        components.html(
+            '<script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>' + ferry_html,
+            height=320,
+        )
+        # use file size + mtime to invalidate cache on change
         stat = os.stat(DATA_PATH)
         df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
         st.info("ℹ️ Menampilkan data dari upload terakhir.")
@@ -216,21 +232,29 @@ else:
     st.warning("⚠️ Belum ada file yang diunggah.")
     st.stop()
 
-# Tombol reset (hanya admin)
+# Admin tool: reset data
 with st.sidebar.expander("🛠️ Admin Tools", expanded=False):
     if is_admin and os.path.exists(DATA_PATH):
         if st.button("🗑️ Reset Data (hapus data terakhir)"):
-            os.remove(DATA_PATH)
+            try:
+                os.remove(DATA_PATH)
+            except Exception:
+                pass
             st.experimental_rerun()
 
 # ==============================
 # Preprocessing kolom
 # ==============================
-# Normalisasi header multiindex
-df_raw.columns = [
-    f"{col0}_{col1}" if "SLA" in str(col0).upper() else col0
-    for col0, col1 in df_raw.columns
-]
+# If df_raw has MultiIndex columns (header=[0,1]) normalize, else keep
+if isinstance(df_raw.columns, pd.MultiIndex):
+    df_raw.columns = [
+        f"{col0}_{col1}" if "SLA" in str(col0).upper() else col0
+        for col0, col1 in df_raw.columns
+    ]
+else:
+    # if simple header, still attempt to rename SLA_* columns if present
+    df_raw.columns = [str(c) for c in df_raw.columns]
+
 rename_map = {
     "SLA_FUNGSIONAL": "FUNGSIONAL",
     "SLA_VENDOR": "VENDOR",
@@ -240,20 +264,20 @@ rename_map = {
 }
 df_raw.rename(columns=rename_map, inplace=True)
 
-# Panel: daftar kolom
+# Panel: daftar kolom (expandable)
 with st.expander("🧾 Kolom yang terdeteksi di file"):
     st.write(list(df_raw.columns))
 
-# Deteksi kolom periode
+# detect periode column
 periode_col = next((col for col in df_raw.columns if "PERIODE" in str(col).upper()), None)
 if not periode_col:
     st.error("Kolom PERIODE tidak ditemukan.")
     st.stop()
 
-# Parse SLA (tunda heavy parsing sampai setelah filter)
+# SLA columns we support
 sla_cols = ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
 
-# Try parse periode ke datetime (tidak wajib)
+# try parse periode to datetime for convenience
 try:
     df_raw['PERIODE_DATETIME'] = pd.to_datetime(df_raw[periode_col], errors='coerce')
 except Exception:
@@ -269,12 +293,24 @@ with st.sidebar:
         df_raw[periode_col].dropna().astype(str).unique().tolist(),
         key=lambda x: pd.to_datetime(x, errors='coerce')
     )
+    if len(periode_list) == 0:
+        st.error("Tidak ada nilai periode pada kolom PERIODE.")
+        st.stop()
     start_periode = st.selectbox("Periode Mulai", periode_list, index=0)
     end_periode = st.selectbox("Periode Akhir", periode_list, index=len(periode_list)-1)
     st.markdown('</div>', unsafe_allow_html=True)
 
-idx_start = periode_list.index(start_periode)
-idx_end = periode_list.index(end_periode)
+# Created by text under filter
+st.sidebar.markdown("<p style='text-align:center; font-size:12px; color:gray;'>Created by. Firman Aditya</p>", unsafe_allow_html=True)
+
+# validate selected periods
+try:
+    idx_start = periode_list.index(start_periode)
+    idx_end = periode_list.index(end_periode)
+except ValueError:
+    st.error("Periode yang dipilih tidak valid.")
+    st.stop()
+
 if idx_start > idx_end:
     st.error("Periode Mulai harus sebelum Periode Akhir.")
     st.stop()
@@ -284,19 +320,19 @@ df_filtered = df_raw[df_raw[periode_col].astype(str).isin(selected_periode)].cop
 
 st.markdown(f'<div class="small">Menampilkan data periode dari <b>{start_periode}</b> sampai <b>{end_periode}</b> — total baris: <b>{len(df_filtered)}</b></div>', unsafe_allow_html=True)
 
+# available SLA columns (present in the dataframe)
 available_sla_cols = [col for col in sla_cols if col in df_filtered.columns]
 proses_grafik_cols = [c for c in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN"] if c in available_sla_cols]
 
-# Created by
-st.sidebar.markdown("<p style='text-align:center; font-size:12px; color:gray;'>Created by. Firman Aditya</p>", unsafe_allow_html=True)
-
 # ==============================
-# Parsing SLA setelah filter (dengan status)
+# Parse SLA fields (after filtering) with spinner
 # ==============================
-with st.status("⏱️ Memproses kolom SLA setelah filter...", expanded=False) as status:
+with st.spinner("⏱️ Memproses kolom SLA setelah filter..."):
+    # apply parse only on present sla columns
     for col in available_sla_cols:
-        df_filtered[col] = df_filtered[col].apply(parse_sla)
-    status.update(label="✅ Parsing SLA selesai", state="complete")
+        # avoid re-parsing if already numeric (cached)
+        if not pd.api.types.is_numeric_dtype(df_filtered[col]):
+            df_filtered[col] = df_filtered[col].apply(parse_sla)
 
 # ==============================
 # KPI Ringkasan (glass cards)
@@ -315,10 +351,14 @@ with k3:
     fastest_label = "-"
     fastest_value = None
     for c in [x for x in available_sla_cols if x != "TOTAL WAKTU"]:
-        val = df_filtered[c].mean()
+        try:
+            val = df_filtered[c].mean()
+        except Exception:
+            val = None
         if val is not None and not (isinstance(val, float) and math.isnan(val)):
             if fastest_value is None or val < fastest_value:
-                fastest_value = val; fastest_label = c
+                fastest_value = val
+                fastest_label = c
     st.markdown(f'<div class="card kpi"><div class="label">Proses Tercepat</div><div class="value">{fastest_label}</div></div>', unsafe_allow_html=True)
 with k4:
     valid_ratio = (df_filtered[periode_col].notna().mean() * 100.0) if len(df_filtered) > 0 else 0.0
@@ -327,7 +367,7 @@ with k4:
 st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
 
 # ==============================
-# Tabs untuk konten (semua fitur dipertahankan)
+# Tabs (all features preserved)
 # ==============================
 tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah = st.tabs(
     ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi"]
