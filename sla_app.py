@@ -1,67 +1,97 @@
-# app.py
+import streamlit as st
+import pandas as pd
+import re
+import math
 import os
 import time
 import base64
-import re
-import math
-import json
-import tempfile
-
-import pandas as pd
-import streamlit as st
-
-# plotting libs
-try:
-    import plotly.express as px
-    _HAS_PLOTLY = True
-except Exception:
-    import matplotlib.pyplot as plt
-    _HAS_PLOTLY = False
-
-# Lottie support
-try:
-    from streamlit_lottie import st_lottie
-    _HAS_LOTTIE = True
-except Exception:
-    _HAS_LOTTIE = False
+import matplotlib.pyplot as plt
 
 # ==============================
-# Page config & minimal CSS
+# Konfigurasi Halaman
 # ==============================
-st.set_page_config(page_title="🚀 SLA Payment Analyzer", layout="wide", page_icon="🚀")
-st.markdown(
-    """
-    <style>
-      /* Hero style */
-      .hero { text-align:center; margin-bottom: 8px; }
-      .hero h1 { 
-        margin:0; 
-        font-weight:800; 
-        background: linear-gradient(90deg,#00BFFF 0%, #7F7FD5 50%, #86A8E7 100%);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      }
-      .card { background: rgba(255,255,255,0.03); border-radius:12px; padding:12px; border:1px solid rgba(255,255,255,0.04); }
-      .small { font-size:12px; opacity:0.85; }
-      hr.soft { border: none; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent); margin: 10px 0 14px 0; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+st.set_page_config(page_title="SLA Payment Analyzer", layout="wide", page_icon="🚀")
 
-st.markdown('<div class="hero"><h1>🚀 SLA Payment Analyzer</h1><p class="small">Dashboard modern untuk memantau & menganalisis SLA dokumen penagihan</p></div>', unsafe_allow_html=True)
+# ------------------------------
+# (Opsional) Pakai tema dark:
+# Buat file .streamlit/config.toml:
+# [theme]
+# base="dark"
+# primaryColor="#00BFFF"
+# backgroundColor="#0E1117"
+# secondaryBackgroundColor="#1B1F24"
+# textColor="#E6E6E6"
+# font="sans serif"
+# ------------------------------
 
 # ==============================
-# Paths & assets
+# Styling: CSS untuk look modern
+# ==============================
+st.markdown("""
+<style>
+/* Hero gradient title */
+.hero {
+  text-align: center;
+  padding: 12px 0 6px 0;
+}
+.hero h1 {
+  margin: 0;
+  background: linear-gradient(90deg, #00BFFF 0%, #7F7FD5 50%, #86A8E7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+.hero p {
+  opacity: 0.85;
+  margin: 8px 0 0 0;
+}
+/* Glass cards */
+.card {
+  background: rgba(255,255,255,0.06);
+  border-radius: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.12);
+}
+.kpi {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.kpi .label { font-size: 12px; opacity: 0.7; }
+.kpi .value { font-size: 22px; font-weight: 700; }
+.small {
+  font-size: 12px; opacity: 0.75;
+}
+hr.soft { border: none; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent); margin: 10px 0 14px 0; }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="hero">
+  <h1>🚀 SLA Payment Analyzer</h1>
+  <p>Dashboard modern untuk melihat & menganalisis SLA dokumen penagihan</p>
+</div>
+""", unsafe_allow_html=True)
+
+# ==============================
+# Path & Assets
 # ==============================
 os.makedirs("data", exist_ok=True)
-os.makedirs("assets", exist_ok=True)
-EXCEL_PATH = os.path.join("data", "last_data.xlsx")
-PARQUET_PATH = os.path.join("data", "last_data.parquet")
-ROCKET_GIF_PATH = os.path.join("assets", "rocket.gif")  # optional fallback GIF
-LOTTIE_URL = "https://assets3.lottiefiles.com/packages/lf20_jtkhrafb.json"  # public rocket Lottie
+os.makedirs("assets", exist_ok=True)  # taruh assets/rocket.gif
+DATA_PATH = os.path.join("data", "last_data.xlsx")
+ROCKET_GIF_PATH = os.path.join("assets", "rocket.gif")
+
+def gif_b64(path: str) -> str | None:
+    try:
+        with open(path, "rb") as f:
+            return f"data:image/gif;base64,{base64.b64encode(f.read()).decode('utf-8')}"
+    except Exception:
+        return None
+
+rocket_b64 = gif_b64(ROCKET_GIF_PATH)
 
 # ==============================
-# Admin password (secrets -> env fallback)
+# Admin password (defensif)
 # ==============================
 try:
     ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", None)
@@ -70,51 +100,14 @@ except Exception:
 
 st.sidebar.markdown("### 🔐 Admin")
 if ADMIN_PASSWORD:
-    pwd = st.sidebar.text_input("Password admin (untuk upload/reset)", type="password")
-    is_admin = bool(pwd and pwd == ADMIN_PASSWORD)
-    if is_admin:
-        st.sidebar.success("Mode admin aktif")
+    password_input = st.sidebar.text_input("Password admin (untuk upload)", type="password")
+    is_admin = password_input == ADMIN_PASSWORD
 else:
-    st.sidebar.info("Admin password belum dikonfigurasi. App berjalan read-only.")
+    st.sidebar.warning("Admin password belum dikonfigurasi (Secrets/ENV). App berjalan dalam mode read-only.")
     is_admin = False
 
 # ==============================
-# utility: Lottie loader or GIF fallback
-# ==============================
-def load_lottie_from_url(url: str):
-    """Try load Lottie JSON from URL (internet)."""
-    try:
-        import requests
-        r = requests.get(url, timeout=6)
-        if r.status_code == 200:
-            return r.json()
-    except Exception:
-        return None
-    return None
-
-def get_rocket_anim():
-    # prefer local lottie file in assets/rocket.json
-    local_json = os.path.join("assets", "rocket.json")
-    if os.path.exists(local_json):
-        try:
-            with open(local_json, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    # try to fetch Lottie URL if internet available and streamlit-lottie installed
-    if _HAS_LOTTIE:
-        l = load_lottie_from_url(LOTTIE_URL)
-        return l
-    # fallback: if local gif exists, return path for base64 display
-    if os.path.exists(ROCKET_GIF_PATH):
-        with open(ROCKET_GIF_PATH, "rb") as f:
-            return "data:image/gif;base64," + base64.b64encode(f.read()).decode("utf-8")
-    return None
-
-rocket_anim = get_rocket_anim()
-
-# ==============================
-# SLA parse & formatter
+# Util SLA
 # ==============================
 def parse_sla(s):
     if pd.isna(s):
@@ -153,113 +146,55 @@ def seconds_to_sla_format(total_seconds):
     return " ".join(parts)
 
 # ==============================
-# IO: cached loaders
-# invalidate by file size+mtime
+# Upload (hanya admin)
 # ==============================
-@st.cache_data
-def read_parquet(path, size, mtime):
-    return pd.read_parquet(path)
-
-@st.cache_data
-def read_excel_flat(path, size, mtime):
-    # read with header multiindex then flatten columns
-    df = pd.read_excel(path, engine="openpyxl", header=[0,1])
-    # flatten multiindex into single names
-    df.columns = ["_".join([str(c) for c in col if str(c) != 'nan']).strip() for col in df.columns]
-    return df
-
-def save_parquet_safe(df, path):
-    # write to tmp then move to avoid partial writes
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".parquet")
-    try:
-        df.to_parquet(tmp.name, index=False)
-        tmp.close()
-        os.replace(tmp.name, path)
-    except Exception:
-        try:
-            tmp.close()
-            os.unlink(tmp.name)
-        except Exception:
-            pass
+with st.sidebar.expander("📤 Upload Data (Admin Only)", expanded=is_admin):
+    uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx") if is_admin else None
 
 # ==============================
-# Upload (admin only)
+# Load data terakhir / simpan baru  (dengan animasi roket)
 # ==============================
-with st.sidebar.expander("📤 Upload Data (Admin only)", expanded=is_admin):
-    if is_admin:
-        up = st.file_uploader("Upload Excel (.xlsx) — header multi (multi-row)", type="xlsx")
-        if up is not None:
-            # show rocket animation while saving
-            with st.spinner("🚀 Mengunggah & memproses file..."):
-                # read upload into df (handle multiindex)
-                try:
-                    df_new = pd.read_excel(up, engine="openpyxl", header=[0,1])
-                    # flatten columns immediately so downstream is consistent
-                    df_new.columns = ["_".join([str(c) for c in col if str(c) != 'nan']).strip() for col in df_new.columns]
-                except Exception as e:
-                    st.error(f"Gagal membaca file upload: {e}")
-                    st.stop()
-                # save excel (flattened), and save parquet
-                try:
-                    df_new.to_excel(EXCEL_PATH, index=False)
-                except Exception:
-                    # some runtimes may block writing excel; ignore but ensure parquet saved
-                    pass
-                try:
-                    save_parquet_safe(df_new, PARQUET_PATH)
-                except Exception as e:
-                    st.warning(f"Gagal menyimpan Parquet: {e}")
-                st.success("✅ Upload selesai. Data terbaru aktif.")
-                # clear cache so subsequent reads use new file
-                st.cache_data.clear()
-                # optional celebratory effect
-                try:
-                    st.balloons()
-                except Exception:
-                    pass
+load_status = st.empty()
+if uploaded_file is not None and is_admin:
+    with st.spinner("🚀 Mengunggah & menyiapkan data..."):
+        if rocket_b64:
+            st.markdown(f'<div style="text-align:center;"><img src="{rocket_b64}" width="160"/></div>', unsafe_allow_html=True)
+        time.sleep(0.2)
+        with open(DATA_PATH, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        st.success("✅ Data baru berhasil diunggah dan disimpan!")
 
-# ==============================
-# Load data (Parquet preferred)
-# ==============================
-if os.path.exists(PARQUET_PATH):
-    st.info("Memuat data (parquet) — cepat.")
-    stat = os.stat(PARQUET_PATH)
-    with st.spinner("🚀 Menyiapkan data..."):
-        # show rocket animation while loading
-        if rocket_anim:
-            if _HAS_LOTTIE and isinstance(rocket_anim, dict):
-                st_lottie(rocket_anim, height=160, key="rocket1")
-            elif isinstance(rocket_anim, str) and rocket_anim.startswith("data:image"):
-                st.markdown(f'<div style="text-align:center;"><img src="{rocket_anim}" width="160" /></div>', unsafe_allow_html=True)
-        df_raw = read_parquet(PARQUET_PATH, stat.st_size, stat.st_mtime)
-elif os.path.exists(EXCEL_PATH):
-    st.info("Memuat data (excel). Akan disimpan sebagai parquet otomatis untuk percepatan selanjutnya.")
-    stat = os.stat(EXCEL_PATH)
-    with st.spinner("🚀 Membaca file Excel..."):
-        if rocket_anim:
-            if _HAS_LOTTIE and isinstance(rocket_anim, dict):
-                st_lottie(rocket_anim, height=160, key="rocket2")
-            elif isinstance(rocket_anim, str) and rocket_anim.startswith("data:image"):
-                st.markdown(f'<div style="text-align:center;"><img src="{rocket_anim}" width="160" /></div>', unsafe_allow_html=True)
-        df_raw = read_excel_flat(EXCEL_PATH, stat.st_size, stat.st_mtime)
-        # save parquet for faster future loads
-        try:
-            save_parquet_safe(df_raw, PARQUET_PATH)
-        except Exception:
-            pass
+if os.path.exists(DATA_PATH):
+    # Progress & spinner saat baca file
+    with st.spinner("🔄 Membaca data terakhir..."):
+        if rocket_b64:
+            st.markdown(f'<div style="text-align:center;"><img src="{rocket_b64}" width="120"/></div>', unsafe_allow_html=True)
+        # Cache baca excel agar lebih cepat setelah refresh (invalidate saat file berubah size/mtime)
+        @st.cache_data(show_spinner=False)
+        def read_excel_cached(path: str, size: int, mtime: float):
+            return pd.read_excel(path, header=[0, 1])
+        stat = os.stat(DATA_PATH)
+        df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
+        st.info("ℹ️ Menampilkan data dari upload terakhir.")
 else:
-    st.warning("Belum ada data. Admin perlu upload file.")
+    st.warning("⚠️ Belum ada file yang diunggah.")
     st.stop()
 
-# minimal sanity
-if df_raw is None or df_raw.empty:
-    st.warning("Data kosong atau gagal dimuat.")
-    st.stop()
+# Tombol reset (hanya admin)
+with st.sidebar.expander("🛠️ Admin Tools", expanded=False):
+    if is_admin and os.path.exists(DATA_PATH):
+        if st.button("🗑️ Reset Data (hapus data terakhir)"):
+            os.remove(DATA_PATH)
+            st.experimental_rerun()
 
 # ==============================
-# normalize column names (legacy mapping)
+# Preprocessing kolom
 # ==============================
-# if columns like 'SLA' exist at first level we've flattened earlier; still keep mapping
+# Normalisasi header multiindex
+df_raw.columns = [
+    f"{col0}_{col1}" if "SLA" in str(col0).upper() else col0
+    for col0, col1 in df_raw.columns
+]
 rename_map = {
     "SLA_FUNGSIONAL": "FUNGSIONAL",
     "SLA_VENDOR": "VENDOR",
@@ -267,255 +202,226 @@ rename_map = {
     "SLA_PERBENDAHARAAN": "PERBENDAHARAAN",
     "SLA_TOTAL WAKTU": "TOTAL WAKTU"
 }
-df_raw = df_raw.rename(columns={k: v for k, v in rename_map.items() if k in df_raw.columns})
+df_raw.rename(columns=rename_map, inplace=True)
 
-# detect periode column
-periode_col = next((c for c in df_raw.columns if "PERIODE" in str(c).upper()), None)
+# Panel: daftar kolom
+with st.expander("🧾 Kolom yang terdeteksi di file"):
+    st.write(list(df_raw.columns))
+
+# Deteksi kolom periode
+periode_col = next((col for col in df_raw.columns if "PERIODE" in str(col).upper()), None)
 if not periode_col:
-    st.error("Kolom PERIODE tidak ditemukan pada data.")
+    st.error("Kolom PERIODE tidak ditemukan.")
     st.stop()
 
-# try datetime parse (non-fatal)
+# Parse SLA (tunda heavy parsing sampai setelah filter)
+sla_cols = ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
+
+# Try parse periode ke datetime (tidak wajib)
 try:
     df_raw['PERIODE_DATETIME'] = pd.to_datetime(df_raw[periode_col], errors='coerce')
 except Exception:
     df_raw['PERIODE_DATETIME'] = None
 
 # ==============================
-# Sidebar: periode filter (glass card effect)
+# Sidebar: filter periode (glass card)
 # ==============================
 with st.sidebar:
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.subheader("📅 Filter Rentang Periode")
-    periode_list = df_raw[periode_col].dropna().astype(str).unique().tolist()
-    # sort if possible chronologically
-    try:
-        periode_list = sorted(periode_list, key=lambda x: pd.to_datetime(x, errors='coerce'))
-    except Exception:
-        periode_list = sorted(periode_list)
+    periode_list = sorted(
+        df_raw[periode_col].dropna().astype(str).unique().tolist(),
+        key=lambda x: pd.to_datetime(x, errors='coerce')
+    )
     start_periode = st.selectbox("Periode Mulai", periode_list, index=0)
     end_periode = st.selectbox("Periode Akhir", periode_list, index=len(periode_list)-1)
     st.markdown('</div>', unsafe_allow_html=True)
 
-# validate
-try:
-    idx0 = periode_list.index(start_periode)
-    idx1 = periode_list.index(end_periode)
-    if idx0 > idx1:
-        st.error("Periode Mulai harus sebelum/atau sama dengan Periode Akhir.")
-        st.stop()
-except Exception:
-    st.error("Periode tidak valid.")
+idx_start = periode_list.index(start_periode)
+idx_end = periode_list.index(end_periode)
+if idx_start > idx_end:
+    st.error("Periode Mulai harus sebelum Periode Akhir.")
     st.stop()
 
-selected_periods = set(periode_list[idx0:idx1+1])
-df_filtered = df_raw[df_raw[periode_col].astype(str).isin(selected_periods)].copy()
-st.markdown(f'<div class="small">Menampilkan periode <b>{start_periode}</b> sampai <b>{end_periode}</b> — total baris: <b>{len(df_filtered)}</b></div>', unsafe_allow_html=True)
+selected_periode = periode_list[idx_start:idx_end+1]
+df_filtered = df_raw[df_raw[periode_col].astype(str).isin(selected_periode)].copy()
 
-# SLA columns to consider
-sla_candidates = ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
-available_sla_cols = [c for c in sla_candidates if c in df_filtered.columns]
+st.markdown(f'<div class="small">Menampilkan data periode dari <b>{start_periode}</b> sampai <b>{end_periode}</b> — total baris: <b>{len(df_filtered)}</b></div>', unsafe_allow_html=True)
+
+available_sla_cols = [col for col in sla_cols if col in df_filtered.columns]
 proses_grafik_cols = [c for c in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN"] if c in available_sla_cols]
 
 # ==============================
-# parse SLA only after filtering (faster)
+# Parsing SLA setelah filter (dengan status)
 # ==============================
-progress_placeholder = st.empty()
-with st.spinner("⏱️ Memproses kolom SLA..."):
-    # show small progress bar
-    p = st.progress(0)
-    for i, col in enumerate(available_sla_cols):
+with st.status("⏱️ Memproses kolom SLA setelah filter...", expanded=False) as status:
+    for col in available_sla_cols:
         df_filtered[col] = df_filtered[col].apply(parse_sla)
-        p.progress(int((i+1)/max(1, len(available_sla_cols)) * 100))
-    p.empty()
-    progress_placeholder.empty()
+    status.update(label="✅ Parsing SLA selesai", state="complete")
 
 # ==============================
-# HERO metrics
+# KPI Ringkasan (glass cards)
 # ==============================
-st.markdown("---")
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.metric("Jumlah Transaksi", f"{len(df_filtered):,}")
-with col2:
-    if "TOTAL WAKTU" in available_sla_cols and len(df_filtered)>0:
-        avg_total = df_filtered["TOTAL WAKTU"].mean()
-        st.metric("Rata-rata TOTAL WAKTU", seconds_to_sla_format(avg_total))
+st.markdown("## 📈 Ringkasan")
+k1, k2, k3, k4 = st.columns(4)
+with k1:
+    st.markdown('<div class="card kpi"><div class="label">Jumlah Transaksi</div><div class="value">{:,}</div></div>'.format(len(df_filtered)), unsafe_allow_html=True)
+with k2:
+    if "TOTAL WAKTU" in available_sla_cols and len(df_filtered) > 0:
+        avg_total = float(df_filtered["TOTAL WAKTU"].mean())
+        st.markdown(f'<div class="card kpi"><div class="label">Rata-rata TOTAL WAKTU</div><div class="value">{seconds_to_sla_format(avg_total)}</div></div>', unsafe_allow_html=True)
     else:
-        st.metric("Rata-rata TOTAL WAKTU", "-")
-with col3:
-    fastest = "-"
-    fastest_val = None
-    for c in [x for x in available_sla_cols if x!="TOTAL WAKTU"]:
+        st.markdown('<div class="card kpi"><div class="label">Rata-rata TOTAL WAKTU</div><div class="value">-</div></div>', unsafe_allow_html=True)
+with k3:
+    fastest_label = "-"
+    fastest_value = None
+    for c in [x for x in available_sla_cols if x != "TOTAL WAKTU"]:
         val = df_filtered[c].mean()
-        if pd.notna(val):
-            if fastest_val is None or val < fastest_val:
-                fastest_val = val; fastest = c
-    st.metric("Proses Tercepat (mean)", fastest)
-with col4:
-    valid_pct = 100.0 * df_filtered[periode_col].notna().mean() if len(df_filtered)>0 else 0.0
-    st.metric("Kualitas Periode (valid)", f"{valid_pct:.1f}%")
+        if val is not None and not (isinstance(val, float) and math.isnan(val)):
+            if fastest_value is None or val < fastest_value:
+                fastest_value = val; fastest_label = c
+    st.markdown(f'<div class="card kpi"><div class="label">Proses Tercepat</div><div class="value">{fastest_label}</div></div>', unsafe_allow_html=True)
+with k4:
+    valid_ratio = (df_filtered[periode_col].notna().mean() * 100.0) if len(df_filtered) > 0 else 0.0
+    st.markdown(f'<div class="card kpi"><div class="label">Kualitas Periode (Valid)</div><div class="value">{valid_ratio:.1f}%</div></div>', unsafe_allow_html=True)
 
 st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
 
 # ==============================
-# Tabs (Overview, Per Proses, Jenis Transaksi, Vendor, Tren, Jumlah)
+# Tabs untuk konten (semua fitur dipertahankan)
 # ==============================
-tabs = st.tabs(["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi"])
+tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah = st.tabs(
+    ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi"]
+)
 
-# Overview
-with tabs[0]:
+with tab_overview:
     st.subheader("📄 Sampel Data (50 baris)")
     st.dataframe(df_filtered.head(50), use_container_width=True)
-    st.markdown("### ⬇️ Unduh data terfilter")
-    csv_bytes = df_filtered.to_csv(index=False).encode("utf-8")
-    st.download_button("Download CSV", data=csv_bytes, file_name="sla_filtered.csv", mime="text/csv")
 
-# Per Proses
-with tabs[1]:
-    st.subheader("📌 Rata-rata SLA per Proses")
+with tab_proses:
     if available_sla_cols:
-        means = df_filtered[available_sla_cols].mean().rename("mean_seconds")
-        mean_df = means.reset_index()
-        mean_df.columns = ["Proses", "Rata-rata (detik)"]
-        mean_df["Rata-rata (format)"] = mean_df["Rata-rata (detik)"].apply(seconds_to_sla_format)
-        st.dataframe(mean_df[["Proses", "Rata-rata (format)"]], use_container_width=True)
+        st.subheader("📌 Rata-rata SLA per Proses (format hari jam menit detik)")
+        rata_proses_seconds = df_filtered[available_sla_cols].mean()
+        rata_proses = rata_proses_seconds.reset_index()
+        rata_proses.columns = ["Proses", "Rata-rata (detik)"]
+        rata_proses["Rata-rata SLA"] = rata_proses["Rata-rata (detik)"].apply(seconds_to_sla_format)
+        st.dataframe(rata_proses[["Proses", "Rata-rata SLA"]], use_container_width=True)
 
-        # interactive chart
-        if _HAS_PLOTLY:
-            fig = px.bar(mean_df[mean_df["Proses"]!="TOTAL WAKTU"], x="Proses", y="Rata-rata (detik)",
-                         title="Rata-rata SLA per Proses (detik)", text="Rata-rata (detik)")
-            fig.update_traces(texttemplate="%{text:.0f}", textposition="outside")
-            fig.update_layout(yaxis_title="Detik", xaxis_title="", uniformtext_minsize=8)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            fig, ax = plt.subplots(figsize=(8,4))
-            vals = [means[c] for c in proses_grafik_cols]
-            ax.bar(proses_grafik_cols, [v/86400 for v in vals], color='#75c8ff')
-            ax.set_ylabel("Hari")
-            ax.set_title("Rata-rata SLA per Proses (hari)")
-            st.pyplot(fig)
-    else:
-        st.info("Tidak ada kolom SLA yang tersedia untuk ditampilkan.")
+        if proses_grafik_cols:
+            fig2, ax2 = plt.subplots(figsize=(8, 4))
+            values_hari = [rata_proses_seconds[col] / 86400 for col in proses_grafik_cols]
+            ax2.bar(proses_grafik_cols, values_hari, color='#75c8ff')
+            ax2.set_title("Rata-rata SLA per Proses (hari)")
+            ax2.set_ylabel("Rata-rata SLA (hari)")
+            ax2.set_xlabel("Proses")
+            ax2.grid(axis='y', linestyle='--', alpha=0.7)
+            st.pyplot(fig2)
 
-# Jenis Transaksi
-with tabs[2]:
-    st.subheader("📌 Rata-rata SLA per Jenis Transaksi")
+with tab_transaksi:
     if "JENIS TRANSAKSI" in df_filtered.columns and available_sla_cols:
-        grp = df_filtered.groupby("JENIS TRANSAKSI")[available_sla_cols].agg(['mean','count']).reset_index()
-        disp = pd.DataFrame({"JENIS TRANSAKSI": grp["JENIS TRANSAKSI"]})
-        for c in available_sla_cols:
-            disp[f"{c} (Rata-rata)"] = grp[(c,'mean')].apply(seconds_to_sla_format)
-            disp[f"{c} (Jumlah)"] = grp[(c,'count')]
-        st.dataframe(disp, use_container_width=True)
+        st.subheader("📌 Rata-rata SLA per Jenis Transaksi (dengan jumlah transaksi)")
+        transaksi_group = df_filtered.groupby("JENIS TRANSAKSI")[available_sla_cols].agg(['mean', 'count']).reset_index()
+        transaksi_display = pd.DataFrame()
+        transaksi_display["JENIS TRANSAKSI"] = transaksi_group["JENIS TRANSAKSI"]
+        for col in available_sla_cols:
+            transaksi_display[f"{col} (Rata-rata)"] = transaksi_group[(col, 'mean')].apply(seconds_to_sla_format)
+            transaksi_display[f"{col} (Jumlah)"] = transaksi_group[(col, 'count')]
+        st.dataframe(transaksi_display, use_container_width=True)
     else:
-        st.info("Kolom 'JENIS TRANSAKSI' tidak tersedia atau tidak ada kolom SLA.")
+        st.info("Kolom 'JENIS TRANSAKSI' tidak ditemukan atau tidak ada kolom SLA yang tersedia.")
 
-# Vendor
-with tabs[3]:
-    st.subheader("📌 Rata-rata SLA per Vendor")
-    if "NAMA VENDOR" in df_filtered.columns and available_sla_cols:
-        vendors = sorted(df_filtered["NAMA VENDOR"].dropna().unique())
-        sel = st.multiselect("Pilih Vendor", ["ALL"]+vendors, default=["ALL"])
-        if "ALL" in sel or not sel:
-            dfv = df_filtered.copy()
+with tab_vendor:
+    if "NAMA VENDOR" in df_filtered.columns:
+        vendor_list = sorted(df_filtered["NAMA VENDOR"].dropna().unique())
+        vendor_list_with_all = ["ALL"] + vendor_list
+        selected_vendors = st.multiselect("Pilih Vendor", vendor_list_with_all, default=["ALL"])
+
+        if "ALL" in selected_vendors:
+            df_vendor_filtered = df_filtered.copy()
         else:
-            dfv = df_filtered[df_filtered["NAMA VENDOR"].isin(sel)]
-        if len(dfv)>0:
-            rv = dfv.groupby("NAMA VENDOR")[available_sla_cols].mean().reset_index()
-            for c in available_sla_cols:
-                rv[c] = rv[c].apply(seconds_to_sla_format)
-            st.dataframe(rv, use_container_width=True)
+            df_vendor_filtered = df_filtered[df_filtered["NAMA VENDOR"].isin(selected_vendors)]
+        
+        if df_vendor_filtered.shape[0] > 0 and available_sla_cols:
+            st.subheader("📌 Rata-rata SLA per Vendor")
+            rata_vendor = df_vendor_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean().reset_index()
+            for col in available_sla_cols:
+                rata_vendor[col] = rata_vendor[col].apply(seconds_to_sla_format)
+            st.dataframe(rata_vendor, use_container_width=True)
         else:
             st.info("Tidak ada data untuk vendor yang dipilih.")
     else:
-        st.info("Kolom 'NAMA VENDOR' tidak tersedia.")
+        st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
 
-# Tren
-with tabs[4]:
-    st.subheader("📈 Trend Rata-rata SLA per Periode")
+with tab_tren:
     if available_sla_cols:
+        st.subheader("📈 Trend Rata-rata SLA per Periode")
         trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[available_sla_cols].mean().reset_index()
-        # order
-        trend["PERIODE_SORTED"] = pd.Categorical(trend[periode_col], categories=list(selected_periods), ordered=True)
+        trend["PERIODE_SORTED"] = pd.Categorical(trend[periode_col], categories=selected_periode, ordered=True)
         trend = trend.sort_values("PERIODE_SORTED")
-        st.dataframe(trend[[periode_col]+available_sla_cols], use_container_width=True)
+        trend_display = trend.copy()
+        for col in available_sla_cols:
+            trend_display[col] = trend_display[col].apply(seconds_to_sla_format)
+        st.dataframe(trend_display[[periode_col] + available_sla_cols], use_container_width=True)
 
+        # Grafik TOTAL WAKTU
         if "TOTAL WAKTU" in available_sla_cols:
-            if _HAS_PLOTLY:
-                tdf = trend.copy()
-                tdf["TOTAL_WAKTU_days"] = tdf["TOTAL WAKTU"]/86400.0
-                fig = px.line(tdf, x=periode_col, y="TOTAL_WAKTU_days", markers=True, title="Trend TOTAL WAKTU (hari)")
-                fig.update_layout(yaxis_title="Hari", xaxis_title="Periode")
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                fig, ax = plt.subplots(figsize=(10,5))
-                ax.plot(trend[periode_col], trend["TOTAL WAKTU"]/86400.0, marker='o')
-                ax.set_ylabel("Hari")
-                ax.set_title("Trend TOTAL WAKTU (hari)")
-                st.pyplot(fig)
+            fig, ax = plt.subplots(figsize=(10, 5))
+            y_values_days = trend["TOTAL WAKTU"].apply(lambda x: x / 86400)
+            ax.plot(trend[periode_col], y_values_days, marker='o', label="TOTAL WAKTU", color='#9467bd')
+            ax.set_title("Trend Rata-rata SLA TOTAL WAKTU per Periode")
+            ax.set_xlabel("Periode")
+            ax.set_ylabel("Rata-rata SLA (hari)")
+            ax.grid(True, linestyle='--', alpha=0.7)
+            ax.legend()
+            for label in ax.get_xticklabels():
+                label.set_rotation(45)
+                label.set_ha('right')
+            st.pyplot(fig)
 
-        # multi-line per proses
-        proc_cols = [c for c in available_sla_cols if c!="TOTAL WAKTU"]
-        if proc_cols:
-            if _HAS_PLOTLY:
-                long = trend.melt(id_vars=[periode_col], value_vars=proc_cols, var_name="Proses", value_name="Detik")
-                long["Hari"] = long["Detik"]/86400.0
-                fig2 = px.line(long, x=periode_col, y="Hari", color="Proses", markers=True, title="Trend per Proses (hari)")
-                st.plotly_chart(fig2, use_container_width=True)
-            else:
-                fig, axs = plt.subplots(min(2, len(proc_cols)), 2, figsize=(14,6), constrained_layout=True)
-                axs = axs.flatten()
-                for i, c in enumerate(proc_cols):
-                    axs[i].plot(trend[periode_col], trend[c]/86400.0, marker='o')
-                    axs[i].set_title(c)
-                st.pyplot(fig)
+        # Grafik per proses
+        if proses_grafik_cols:
+            fig3, axs = plt.subplots(2, 2, figsize=(14, 8), constrained_layout=True)
+            fig3.suptitle("Trend Rata-rata SLA per Proses")
+            axs = axs.flatten()
+            for i, col in enumerate(proses_grafik_cols):
+                y_days = trend[col] / 86400
+                axs[i].plot(trend[periode_col], y_days, marker='o', color='#75c8ff')
+                axs[i].set_title(col)
+                axs[i].set_ylabel("Hari")
+                axs[i].grid(True, linestyle='--', alpha=0.7)
+                for label in axs[i].get_xticklabels():
+                    label.set_rotation(45)
+                    label.set_ha('right')
+            st.pyplot(fig3)
     else:
-        st.info("Tidak ada kolom SLA untuk tren.")
+        st.info("Tidak ada kolom SLA yang dapat ditampilkan di tren.")
 
-# Jumlah
-with tabs[5]:
+with tab_jumlah:
     st.subheader("📊 Jumlah Transaksi per Periode")
-    jumlah = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name="Jumlah")
-    # order
-    try:
-        jumlah = jumlah.sort_values(by=periode_col, key=lambda x: pd.Categorical(x, categories=list(selected_periods), ordered=True))
-    except Exception:
-        pass
-    total_row = pd.DataFrame({periode_col:["TOTAL"], "Jumlah":[jumlah["Jumlah"].sum()]})
-    jumlah = pd.concat([jumlah, total_row], ignore_index=True)
-    st.dataframe(jumlah, use_container_width=True)
+    jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name='Jumlah')
+    jumlah_transaksi = jumlah_transaksi.sort_values(
+        by=periode_col,
+        key=lambda x: pd.Categorical(x, categories=selected_periode, ordered=True)
+    )
+    total_row = pd.DataFrame({periode_col: ["TOTAL"], 'Jumlah': [jumlah_transaksi['Jumlah'].sum()]})
+    jumlah_transaksi = pd.concat([jumlah_transaksi, total_row], ignore_index=True)
 
-    if _HAS_PLOTLY:
-        fig = px.bar(jumlah[jumlah[periode_col]!="TOTAL"], x=periode_col, y="Jumlah", text="Jumlah", title="Jumlah Transaksi per Periode")
-        fig.update_traces(textposition="outside")
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        fig, ax = plt.subplots(figsize=(10,5))
-        ax.bar(jumlah[jumlah[periode_col]!="TOTAL"][periode_col], jumlah[jumlah[periode_col]!="TOTAL"]["Jumlah"])
-        st.pyplot(fig)
+    def highlight_total(row):
+        return ['font-weight: bold' if row[periode_col] == "TOTAL" else '' for _ in row]
 
-# ==============================
-# Admin reset (sidebar)
-# ==============================
-with st.sidebar.expander("🛠️ Admin Tools", expanded=False):
-    if is_admin:
-        if st.button("🗑️ Reset (hapus data terakhir)"):
-            try:
-                if os.path.exists(PARQUET_PATH):
-                    os.remove(PARQUET_PATH)
-                if os.path.exists(EXCEL_PATH):
-                    os.remove(EXCEL_PATH)
-                st.cache_data.clear()
-                st.success("Data dihapus. Silakan muat ulang halaman.")
-                st.experimental_rerun()
-            except Exception as e:
-                st.error(f"Gagal menghapus data: {e}")
-    else:
-        st.write("Login admin untuk aksesoris.")
+    st.dataframe(jumlah_transaksi.style.apply(highlight_total, axis=1), use_container_width=True)
 
-# ==============================
-# Final tip
-# ==============================
-st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
-st.caption("Tip: untuk performa terbaik, upload file Excel sekali; app akan menyimpan versi Parquet yang dimuat jauh lebih cepat pada kunjungan berikutnya.")
+    fig_trans, ax_trans = plt.subplots(figsize=(10, 5))
+    ax_trans.bar(
+        jumlah_transaksi[jumlah_transaksi[periode_col] != "TOTAL"][periode_col],
+        jumlah_transaksi[jumlah_transaksi[periode_col] != "TOTAL"]['Jumlah'],
+        color='#ff9f7f'
+    )
+    ax_trans.set_title("Jumlah Transaksi per Periode")
+    ax_trans.set_xlabel("Periode")
+    ax_trans.set_ylabel("Jumlah Transaksi")
+    ax_trans.grid(axis='y', linestyle='--', alpha=0.7)
+    for label in ax_trans.get_xticklabels():
+        label.set_rotation(45)
+        label.set_ha('right')
+    st.pyplot(fig_trans)
