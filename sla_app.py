@@ -24,6 +24,26 @@ st.set_page_config(page_title="SLA Payment Analyzer", layout="wide", page_icon="
 # font="sans serif"
 # ------------------------------
 
+# Tampilkan animasi ferry saat loading
+with st.spinner("Memuat data..."):
+    ferry_html = """
+    <div style="display:flex;justify-content:center;">
+        <lottie-player src="https://assets1.lottiefiles.com/packages/lf20_ferryboat.json"
+            background="transparent"
+            speed="1"
+            style="width: 300px; height: 300px;"
+            loop
+            autoplay>
+        </lottie-player>
+    </div>
+    """
+    st.components.v1.html(
+        '<script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>'
+        + ferry_html,
+        height=350,
+    )
+    time.sleep(3)  # Simulasi loading
+
 # ==============================
 # Styling: CSS untuk look modern
 # ==============================
