@@ -82,11 +82,15 @@ if uploaded_file:
         if col in df_raw.columns:
             df_raw[col] = df_raw[col].apply(parse_sla)
 
-    # Buat daftar periode unik
-    periode_list = list(dict.fromkeys(df_raw[periode_col].dropna().astype(str)))
+    # Konversi periode ke datetime bila memungkinkan untuk sorting kronologis
+    try:
+        df_raw['PERIODE_DATETIME'] = pd.to_datetime(df_raw[periode_col], errors='coerce')
+    except:
+        df_raw['PERIODE_DATETIME'] = None
 
-    # ================= Sidebar Filters =================
-    st.sidebar.subheader("Filter Rentang Periode")
+    # Sidebar filter
+    st.sidebar.subheader("Filter Rentang Periode & Vendor")
+    periode_list = df_raw[periode_col].dropna().astype(str).unique().tolist()
     start_periode = st.sidebar.selectbox("Periode Mulai", periode_list, index=0)
     end_periode = st.sidebar.selectbox("Periode Akhir", periode_list, index=len(periode_list)-1)
 
@@ -139,17 +143,16 @@ if uploaded_file:
             transaksi_display[f"{col} (Jumlah)"] = transaksi_group[(col,'count')]
         st.dataframe(transaksi_display)
 
-    # Filter nama vendor di sidebar
+    # Filter nama vendor
     if "NAMA VENDOR" in df_filtered.columns:
-        st.sidebar.subheader("Filter Vendor")
         vendor_list = sorted(df_filtered["NAMA VENDOR"].dropna().unique())
         selected_vendors = st.sidebar.multiselect("Pilih Vendor", vendor_list, default=vendor_list)
         df_vendor_filtered = df_filtered[df_filtered["NAMA VENDOR"].isin(selected_vendors)]
-        if not df_vendor_filtered.empty:
+        if df_vendor_filtered.shape[0] > 0:
+            st.subheader("📌 Rata-rata SLA per Vendor")
             rata_vendor = df_vendor_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean().reset_index()
             for col in available_sla_cols:
                 rata_vendor[col] = rata_vendor[col].apply(seconds_to_sla_format)
-            st.subheader("📌 Rata-rata SLA per Vendor")
             st.dataframe(rata_vendor)
         else:
             st.info("Tidak ada data untuk vendor yang dipilih.")
@@ -185,8 +188,7 @@ if uploaded_file:
         fig3.suptitle("Trend Rata-rata SLA per Proses per Periode (hari)", fontsize=16)
         axs = axs.flatten()
         for i, col in enumerate(proses_grafik_cols):
-            y_vals = trend[col]/86400
-            axs[i].plot(trend[periode_col], y_vals, marker='o', color='skyblue')
+            axs[i].plot(trend[periode_col], trend[col]/86400, marker='o', color='skyblue')
             axs[i].set_title(col)
             axs[i].set_ylabel("Hari")
             axs[i].set_xlabel("Periode")
@@ -196,15 +198,14 @@ if uploaded_file:
                 label.set_ha('right')
         st.pyplot(fig3)
 
-    # Jumlah transaksi per periode dengan TOTAL
-    if "JENIS TRANSAKSI" in df_filtered.columns:
-        st.subheader("📊 Jumlah Transaksi per Periode")
-        jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str))["JENIS TRANSAKSI"].count().reset_index()
-        jumlah_transaksi.columns = [periode_col, "Jumlah"]
-        total_row = pd.DataFrame({periode_col: ["TOTAL"], "Jumlah": [jumlah_transaksi["Jumlah"].sum()]})
-        jumlah_transaksi = pd.concat([jumlah_transaksi, total_row], ignore_index=True)
+    # Jumlah transaksi per periode dengan total
+    st.subheader("📊 Jumlah Transaksi per Periode")
+    jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name='Jumlah')
+    jumlah_transaksi = jumlah_transaksi.sort_values(by=periode_col, key=lambda x: pd.Categorical(x, categories=selected_periode, ordered=True))
+    total_row = pd.DataFrame({periode_col: ["TOTAL"], 'Jumlah': [jumlah_transaksi['Jumlah'].sum()]})
+    jumlah_transaksi = pd.concat([jumlah_transaksi, total_row], ignore_index=True)
 
-        def highlight_total(row):
-            return ['font-weight: bold' if row[periode_col]=="TOTAL" else '' for _ in row]
+    def highlight_total(row):
+        return ['font-weight: bold' if row[periode_col]=="TOTAL" else '' for _ in row]
 
-        st.dataframe(jumlah_transaksi.style.apply(highlight_total, axis=1))
+    st.dataframe(jumlah_transaksi.style.apply(highlight_total, axis=1))
