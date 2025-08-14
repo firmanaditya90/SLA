@@ -85,9 +85,10 @@ if uploaded_file:
     # Buat daftar periode unik
     periode_list = list(dict.fromkeys(df_raw[periode_col].dropna().astype(str)))
 
-    st.subheader("Filter Rentang Periode (berdasarkan urutan)")
-    start_periode = st.selectbox("Periode Mulai", periode_list, index=0)
-    end_periode = st.selectbox("Periode Akhir", periode_list, index=len(periode_list)-1)
+    # --- Sidebar Filters ---
+    st.sidebar.subheader("Filter Rentang Periode")
+    start_periode = st.sidebar.selectbox("Periode Mulai", periode_list, index=0)
+    end_periode = st.sidebar.selectbox("Periode Akhir", periode_list, index=len(periode_list)-1)
 
     try:
         idx_start = periode_list.index(start_periode)
@@ -140,11 +141,12 @@ if uploaded_file:
 
     # Filter nama vendor
     if "NAMA VENDOR" in df_filtered.columns:
-        st.subheader("📌 Rata-rata SLA per Vendor")
+        st.sidebar.subheader("Filter Vendor")
         vendor_list = sorted(df_filtered["NAMA VENDOR"].dropna().unique())
-        selected_vendors = st.multiselect("Pilih Vendor", vendor_list, default=vendor_list)
+        selected_vendors = st.sidebar.multiselect("Pilih Vendor", vendor_list, default=vendor_list)
         df_vendor_filtered = df_filtered[df_filtered["NAMA VENDOR"].isin(selected_vendors)]
         if not df_vendor_filtered.empty:
+            st.subheader("📌 Rata-rata SLA per Vendor")
             rata_vendor = df_vendor_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean().reset_index()
             for col in available_sla_cols:
                 rata_vendor[col] = rata_vendor[col].apply(seconds_to_sla_format)
@@ -194,34 +196,27 @@ if uploaded_file:
                 label.set_ha('right')
         st.pyplot(fig3)
 
-    # Jumlah transaksi per periode dengan total bold & highlight
+    # Jumlah transaksi per periode dengan total
     if "JENIS TRANSAKSI" in df_filtered.columns:
         st.subheader("📊 Jumlah Transaksi per Periode")
         jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str))["JENIS TRANSAKSI"].count().reset_index()
         jumlah_transaksi.columns = [periode_col, "Jumlah Transaksi"]
-
-        # Sort sesuai selected_periode
         jumlah_transaksi["PERIODE_SORTED"] = pd.Categorical(jumlah_transaksi[periode_col], categories=selected_periode, ordered=True)
         jumlah_transaksi = jumlah_transaksi.sort_values("PERIODE_SORTED")
 
-        # Tambahkan baris total
-        total_jumlah = jumlah_transaksi["Jumlah Transaksi"].sum()
-        total_row = pd.DataFrame({periode_col: ["TOTAL"], "Jumlah Transaksi": [total_jumlah], "PERIODE_SORTED": ["ZZZ"]})
+        # Tambahkan baris TOTAL
+        total_row = pd.DataFrame({periode_col: ["TOTAL"], "Jumlah Transaksi": [jumlah_transaksi["Jumlah Transaksi"].sum()]})
         jumlah_transaksi = pd.concat([jumlah_transaksi, total_row], ignore_index=True)
 
-        # Fungsi styling untuk bold dan highlight baris TOTAL
+        # Tampilkan tabel dengan TOTAL bold
         def highlight_total(row):
-            if row[periode_col] == "TOTAL":
-                return ["font-weight: bold; background-color: #FFD700" for _ in row]  # Gold color
-            else:
-                return [""]*len(row)
+            return ['font-weight: bold' if str(row[periode_col]).upper() == "TOTAL" else '' for _ in row]
 
-        # Tampilkan dengan styling
-        st.dataframe(jumlah_transaksi.drop(columns=["PERIODE_SORTED"]).style.apply(highlight_total, axis=1))
+        st.table(jumlah_transaksi.style.apply(highlight_total, axis=1).hide_columns(["PERIODE_SORTED"]))
 
-        # Grafik jumlah transaksi per periode (tanpa total)
+        # Grafik jumlah transaksi per periode (tidak termasuk TOTAL)
         fig4, ax4 = plt.subplots(figsize=(10,5))
-        ax4.bar(jumlah_transaksi[jumlah_transaksi[periode_col] != "TOTAL"][periode_col], 
+        ax4.bar(jumlah_transaksi[jumlah_transaksi[periode_col] != "TOTAL"][periode_col],
                 jumlah_transaksi[jumlah_transaksi[periode_col] != "TOTAL"]["Jumlah Transaksi"], color='teal')
         ax4.set_title("Jumlah Transaksi per Periode")
         ax4.set_xlabel("Periode")
