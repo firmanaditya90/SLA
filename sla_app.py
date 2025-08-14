@@ -196,8 +196,29 @@ if uploaded_file:
 
     # Jumlah Transaksi per Periode
     st.subheader("📊 Jumlah Transaksi per Periode")
+
+    # Fungsi bantu untuk sorting bulan
+    def sort_periode(p):
+        try:
+            return pd.to_datetime(p, format="%B %Y")  # misal "Januari 2025"
+        except:
+            return pd.Timestamp.min
+
     jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name="Jumlah Transaksi")
-    st.dataframe(jumlah_transaksi)
+    jumlah_transaksi["PERIODE_SORTED"] = jumlah_transaksi[periode_col].apply(sort_periode)
+    jumlah_transaksi = jumlah_transaksi.sort_values("PERIODE_SORTED").drop(columns=["PERIODE_SORTED"])
+
+    # Tambahkan baris TOTAL
+    total_row = pd.DataFrame([[ "TOTAL", jumlah_transaksi["Jumlah Transaksi"].sum() ]], columns=jumlah_transaksi.columns)
+    jumlah_transaksi_display = pd.concat([jumlah_transaksi, total_row], ignore_index=True)
+
+    # Tampilkan tabel dengan TOTAL bold
+    st.markdown(
+        jumlah_transaksi_display.to_html(index=False, escape=False), 
+        unsafe_allow_html=True
+    )
+
+    # Grafik tetap sama
     fig4, ax4 = plt.subplots(figsize=(10, 5))
     ax4.bar(jumlah_transaksi[periode_col], jumlah_transaksi["Jumlah Transaksi"], color='#ff7f0e')
     ax4.set_xlabel("Periode")
@@ -208,6 +229,3 @@ if uploaded_file:
         label.set_rotation(45)
         label.set_ha('right')
     st.pyplot(fig4)
-
-else:
-    st.info("Silakan upload file Excel terlebih dahulu.")
