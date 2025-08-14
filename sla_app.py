@@ -3,6 +3,7 @@ import pandas as pd
 import re
 import math
 import matplotlib.pyplot as plt
+import calendar
 
 st.set_page_config(page_title="SLA Payment Analyzer", layout="wide")
 st.title("📊 SLA Payment Analyzer")
@@ -194,10 +195,29 @@ if uploaded_file:
                 label.set_ha('right')
         st.pyplot(fig3)
 
-    # Jumlah Transaksi per Periode
+    # Jumlah Transaksi per Periode (urutkan bulan + TOTAL)
     st.subheader("📊 Jumlah Transaksi per Periode")
     jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name="Jumlah Transaksi")
-    st.dataframe(jumlah_transaksi)
+
+    def month_order(month_str):
+        month_str = str(month_str).strip().lower()
+        month_map = {m.lower(): i for i, m in enumerate(calendar.month_name) if m}
+        for name, idx in month_map.items():
+            if name in month_str:
+                return idx
+        return 13
+
+    jumlah_transaksi['BULAN_URUT'] = jumlah_transaksi[periode_col].apply(month_order)
+    jumlah_transaksi = jumlah_transaksi.sort_values('BULAN_URUT').drop(columns=['BULAN_URUT'])
+
+    total_row = pd.DataFrame({periode_col: ['TOTAL'], 'Jumlah Transaksi': [jumlah_transaksi['Jumlah Transaksi'].sum()]})
+    jumlah_transaksi_display = pd.concat([jumlah_transaksi, total_row], ignore_index=True)
+
+    st.dataframe(
+        jumlah_transaksi_display.style.apply(lambda x: ['font-weight: bold' if x[periode_col]=='TOTAL' else '' for _ in x], axis=1)
+    )
+
+    # Grafik jumlah transaksi (tanpa TOTAL)
     fig4, ax4 = plt.subplots(figsize=(10, 5))
     ax4.bar(jumlah_transaksi[periode_col], jumlah_transaksi["Jumlah Transaksi"], color='#ff7f0e')
     ax4.set_xlabel("Periode")
@@ -208,8 +228,3 @@ if uploaded_file:
         label.set_rotation(45)
         label.set_ha('right')
     st.pyplot(fig4)
-
-else:
-    st.info("Silakan upload file Excel terlebih dahulu.")
-
-
