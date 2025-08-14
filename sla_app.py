@@ -24,11 +24,19 @@ st.set_page_config(page_title="SLA Payment Analyzer", layout="wide", page_icon="
 # font="sans serif"
 # ------------------------------
 
-# Tampilkan animasi ferry saat loading
-with st.spinner("Memuat data..."):
+# ==============================
+# Judul Aplikasi
+# ==============================
+st.markdown('<h1 class="hero">🚢 SLA Payment Analyzer</h1>', unsafe_allow_html=True)
+
+# ==============================
+# Fungsi untuk baca data dengan animasi ferry
+# ==============================
+@st.cache_data
+def load_data(file_path):
     ferry_html = """
     <div style="display:flex;justify-content:center;">
-        <lottie-player src="https://assets1.lottiefiles.com/packages/lf20_ferryboat.json"
+        <lottie-player src="https://assets10.lottiefiles.com/packages/lf20_xpdp3p.json"
             background="transparent"
             speed="1"
             style="width: 300px; height: 300px;"
@@ -37,12 +45,15 @@ with st.spinner("Memuat data..."):
         </lottie-player>
     </div>
     """
-    st.components.v1.html(
-        '<script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>'
-        + ferry_html,
-        height=350,
-    )
-    time.sleep(3)  # Simulasi loading
+    with st.spinner("Memuat data..."):
+        st.components.v1.html(
+            '<script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>' 
+            + ferry_html,
+            height=350,
+        )
+        time.sleep(2)  # simulasi loading
+        return pd.read_excel(file_path)
+
 
 # ==============================
 # Styling: CSS untuk look modern
