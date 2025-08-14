@@ -251,6 +251,9 @@ st.markdown(f'<div class="small">Menampilkan data periode dari <b>{start_periode
 available_sla_cols = [col for col in sla_cols if col in df_filtered.columns]
 proses_grafik_cols = [c for c in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN"] if c in available_sla_cols]
 
+# Created by
+st.sidebar.markdown("<p style='text-align:center; font-size:12px; color:gray;'>Created by. Firman Aditya</p>", unsafe_allow_html=True)
+
 # ==============================
 # Parsing SLA setelah filter (dengan status)
 # ==============================
