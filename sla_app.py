@@ -544,7 +544,7 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         except:
             return ImageFont.load_default()
 
-    font_title = font_try("arialbd.ttf", 86)   # bold
+    font_title = font_try("arialbd.ttf", 286)   # bold
     font_sub   = font_try("arial.ttf", 38)
     font_h     = font_try("arialbd.ttf", 34)
     font_cell  = font_try("arial.ttf", 30)
