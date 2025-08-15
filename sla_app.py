@@ -476,102 +476,6 @@ with tab_jumlah:
 # ==========================================================
 import streamlit as st
 import pandas as pd
-import io
-import requests
-from PIL import Image, ImageDraw, ImageFont
-
-# ------------------------------------------------
-# Fungsi utilitas
-# ------------------------------------------------
-def seconds_to_sla_format(seconds):
-    if seconds is None:
-        return "0 hari"
-    days = int(seconds // 86400)
-    return f"{days} hari"
-
-# ------------------------------------------------
-# Fungsi generate poster
-# ------------------------------------------------
-def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text):
-    # Ukuran poster A4 ~ 2480x3508 px (300 DPI)
-    W, H = 2480, 3508
-    bg_color = (255, 255, 255)
-    bg = Image.new("RGBA", (W, H), bg_color)
-    draw = ImageDraw.Draw(bg)
-
-    # -------------------------
-    # Logo ASDP kiri atas
-    # -------------------------
-    try:
-        logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
-        resp = requests.get(logo_url, timeout=10)
-        logo_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
-        # proporsional, tinggi ~300px
-        target_h = 300
-        scale = target_h / logo_img.height
-        target_w = int(logo_img.width * scale)
-        logo_img = logo_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-        logo_x, logo_y = 100, 100
-        bg.paste(logo_img, (logo_x, logo_y), logo_img)
-    except Exception:
-        logo_img = None
-        logo_x, logo_y = 0, 0
-
-    # -------------------------
-    # Judul poster di sebelah kanan logo
-    # -------------------------
-    title_text = "SLA DOKUMEN PENAGIHAN"
-    font_path = "Anton-Regular.ttf"  # harus ada di folder yang sama
-    if logo_img:
-        max_width = W - (logo_x + logo_img.width + 100)
-        start_x = logo_x + logo_img.width + 50
-        center_y = logo_y + logo_img.height // 2
-    else:
-        max_width = W - 200
-        start_x = 100
-        center_y = 200
-
-    # Tentukan font size terbesar yang muat
-    font_size = 50
-    font = ImageFont.truetype(font_path, font_size)
-    while font.getsize(title_text)[0] < max_width:
-        font_size += 5
-        font = ImageFont.truetype(font_path, font_size)
-    font_size -= 5
-    font = ImageFont.truetype(font_path, font_size)
-    text_w, text_h = font.getsize(title_text)
-    text_x = start_x
-    text_y = center_y - text_h // 2
-    draw.text((text_x, text_y), title_text, font=font, fill=(0, 0, 0))
-
-    # -------------------------
-    # Gambar Captain Ferizy kanan bawah
-    # -------------------------
-    try:
-        raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
-        resp = requests.get(raw_url, timeout=10)
-        ferizy_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
-        target_h = 1100
-        scale = target_h / ferizy_img.height
-        target_w = int(ferizy_img.width * scale)
-        ferizy_img = ferizy_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-        pos_x = W - target_w - 120
-        pos_y = H - target_h - 140
-        bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
-    except Exception:
-        pass
-
-    # Output buffer PNG
-    out = io.BytesIO()
-    bg.save(out, format="PNG")
-    out.seek(0)
-    return out
-
-# ------------------------------------------------
-# Data dummy
-# ------------------------------------------------
-import streamlit as st
-import pandas as pd
 import requests, io, os
 from PIL import Image, ImageDraw, ImageFont
 
@@ -596,8 +500,7 @@ def seconds_to_sla_format(seconds):
 
 # ================== Fungsi Generate Poster ==================
 def generate_poster_A4(sla_dict, transaksi_df, image_url, periode_range_text):
-    # Ukuran poster A4 2480 x 3508 px (~300 DPI)
-    W, H = 2480, 3508
+    W, H = 2480, 3508  # A4 300dpi
     bg = Image.new("RGBA", (W, H), "white")
     draw = ImageDraw.Draw(bg)
 
@@ -615,29 +518,34 @@ def generate_poster_A4(sla_dict, transaksi_df, image_url, periode_range_text):
     except Exception:
         logo_img = None
 
-    # ===== Judul =====
-    try:
-        font_path = os.path.join(os.getcwd(), "Anton-Regular.ttf")
-        font_size = 250
-        font = ImageFont.truetype(font_path, font_size)
-    except:
-        font = ImageFont.load_default()
-
+    # ===== Judul Otomatis Presisi =====
     title_text = "SLA DOKUMEN PENAGIHAN"
-    # Sesuaikan ukuran font agar lebar lebih proporsional
-    max_width = W - 400
-    while font.getbbox(title_text)[2] < max_width and font_size < 400:
-        font_size += 10
-        font = ImageFont.truetype(font_path, font_size)
+    font_path = os.path.join(os.getcwd(), "Anton-Regular.ttf")
+    font_size_initial = 100
+    font = ImageFont.truetype(font_path, font_size_initial)
 
-    # Posisi judul di samping logo, center horizontal
-    title_w, title_h = font.getbbox(title_text)[2] - font.getbbox(title_text)[0], font.getbbox(title_text)[3] - font.getbbox(title_text)[1]
+    # Maksimal lebar judul (85% lebar poster)
+    max_width = int(W * 0.85)
+    bbox = font.getbbox(title_text)
+    current_width = bbox[2] - bbox[0]
+
+    # Hitung rasio scaling
+    scale_ratio = max_width / current_width
+    font_size_optimal = int(font_size_initial * scale_ratio)
+    font = ImageFont.truetype(font_path, font_size_optimal)
+
+    # Posisi judul di bawah logo, center
+    title_bbox = font.getbbox(title_text)
+    title_w = title_bbox[2] - title_bbox[0]
+    title_h = title_bbox[3] - title_bbox[1]
+
     if logo_img:
-        title_x = logo_x + logo_img.width + 50
-        title_y = logo_y + (logo_img.height - title_h)//2
+        title_x = (W - title_w) // 2
+        title_y = logo_y + logo_img.height + 50
     else:
-        title_x = (W - title_w)//2
+        title_x = (W - title_w) // 2
         title_y = 150
+
     draw.text((title_x, title_y), title_text, fill="black", font=font)
 
     # ===== Gambar Captain Ferizy =====
@@ -655,7 +563,6 @@ def generate_poster_A4(sla_dict, transaksi_df, image_url, periode_range_text):
     except Exception:
         pass
 
-    # ===== Output buffer PNG =====
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
@@ -686,11 +593,10 @@ transaksi_df["__order"] = transaksi_df["Periode"].apply(
 )
 transaksi_df = transaksi_df.sort_values("__order").drop(columns="__order")
 
-# Gambar Captain Ferizy (GitHub)
+# Gambar Captain Ferizy
 image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
 periode_range_text = f"{start_periode} — {end_periode}"
 
-# Tombol generate
 if st.button("🎨 Generate Poster A4"):
     poster_buf = generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text)
     st.image(poster_buf, caption="Preview Poster A4", use_column_width=True)
