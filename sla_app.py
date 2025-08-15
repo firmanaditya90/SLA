@@ -520,15 +520,15 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         font_size = 200  # default awal
         font = ImageFont.truetype(font_path, font_size)
 
-        # Atur presisi agar tidak kepotong kanan
-        max_width = W - logo_x - logo_img.width - 150
+        # Maks width poster minus margin kiri-kanan
+        max_width = W - 200
         while font.getbbox(title_text)[2] > max_width:
             font_size -= 5
             font = ImageFont.truetype(font_path, font_size)
 
         title_w, title_h = font.getbbox(title_text)[2], font.getbbox(title_text)[3]
-        title_x = logo_x + logo_img.width + ((max_width - title_w) // 2)
-        title_y = logo_y + (logo_img.height - title_h) // 2
+        title_x = (W - title_w) // 2
+        title_y = logo_y + logo_img.height + 30  # sedikit di bawah logo
         draw.text((title_x, title_y), title_text, fill="black", font=font)
     except Exception:
         pass
@@ -592,18 +592,21 @@ transaksi_df = (
 transaksi_df["__order"] = transaksi_df["Periode"].apply(lambda x: selected_periode.index(str(x)) if str(x) in selected_periode else 10**9)
 transaksi_df = transaksi_df.sort_values("__order").drop(columns="__order")
 
-# ---------- UI Tab Poster ----------
-st.subheader("📥 Download Poster SLA (A4)")
+# ---------- Tabs ----------
+tab = st.sidebar.radio("Menu", ["Overview", "Vendor", "Tren", "Download Poster"])
 
-image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
-periode_range_text = f"{start_periode} — {end_periode}"
+if tab == "Download Poster":
+    st.subheader("📥 Download Poster SLA (A4)")
 
-if st.button("🎨 Generate Poster A4"):
-    poster_buf = generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text)
-    st.image(poster_buf, caption="Preview Poster A4", use_column_width=True)
-    st.download_button(
-        label="💾 Download Poster (PNG, A4 - 300 DPI)",
-        data=poster_buf,
-        file_name="Poster_SLA_A4.png",
-        mime="image/png"
-    )
+    image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
+    periode_range_text = f"{start_periode} — {end_periode}"
+
+    if st.button("🎨 Generate Poster A4"):
+        poster_buf = generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text)
+        st.image(poster_buf, caption="Preview Poster A4", use_column_width=True)
+        st.download_button(
+            label="💾 Download Poster (PNG, A4 - 300 DPI)",
+            data=poster_buf,
+            file_name="Poster_SLA_A4.png",
+            mime="image/png"
+        )
