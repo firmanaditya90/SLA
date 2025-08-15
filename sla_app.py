@@ -549,18 +549,24 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     font_h     = font_try("arialbd.ttf", 340)
     font_cell  = font_try("arial.ttf", 300)
     
-    # Ambil background
-    bg_resp = requests.get("https://raw.githubusercontent.com/firmanaditya90/SLA/main/Background.png")
-    background = Image.open(io.BytesIO(bg_resp.content)).convert('RGBA')
-    background = background.resize((width, height))
-    
      # ===== Header: Judul (justified / rata kiri-kanan) =====
-    left_margin, right_margin = 140, W-140
-    title_y = 120
-    title_text = "SLA PAYMENT ANALYZER"
-    draw_justified_line(draw, title_text, font_title, left_margin, right_margin, title_y, fill=(0,0,0))
-    # Subjudul periode
-    draw.text((left_margin, title_y + 100), f"Periode: {periode_range_text}", font=font_sub, fill=(30,30,30))
+# Posisi vertical tetap
+title_y = 120
+
+# Menghitung lebar teks judul
+title_width, title_height = draw.textsize(title_text, font=font_title)
+
+# Posisi horizontal agar center
+title_x = (W - title_width) / 2
+
+# Menulis judul
+draw.text((title_x, title_y), title_text, font=font_title, fill=(0,0,0))
+
+# Subjudul periode
+subtitle_text = f"Periode: {periode_range_text}"
+subtitle_width, subtitle_height = draw.textsize(subtitle_text, font=font_sub)
+subtitle_x = (W - subtitle_width) / 2
+draw.text((subtitle_x, title_y + 100), subtitle_text, font=font_sub, fill=(30,30,
 
         # Logo ASDP (left top)
     try:
