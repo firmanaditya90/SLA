@@ -637,6 +637,19 @@ def seconds_to_sla_format(seconds):
     hours = int((seconds % 86400) // 3600)
     minutes = int((seconds % 3600) // 60)
     return f"{days}d {hours}h {minutes}m"
+import streamlit as st
+import pandas as pd
+import requests, io
+from PIL import Image, ImageDraw, ImageFont
+
+# ---------- Helper ----------
+def seconds_to_sla_format(seconds):
+    if seconds is None:
+        return "0d 0h 0m"
+    days = int(seconds // 86400)
+    hours = int((seconds % 86400) // 3600)
+    minutes = int((seconds % 3600) // 60)
+    return f"{days}d {hours}h {minutes}m"
 
 # ---------- Poster Generation ----------
 def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text):
@@ -657,8 +670,9 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         target_h = int(logo_img.height * scale)
         logo_img = logo_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
         bg.paste(logo_img, (logo_x, logo_y), logo_img)
-    except Exception:
-        pass
+    except Exception as e:
+        print("Logo gagal di-load:", e)
+        logo_img = None
 
     # ---------- Judul Poster ----------
     title_text = "SLA DOKUMEN PENAGIHAN"
@@ -670,7 +684,8 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         while font.getbbox(title_text)[2] - font.getbbox(title_text)[0] > max_title_width and font_size > 10:
             font_size -= 2
             font = ImageFont.truetype(font_path, font_size)
-    except Exception:
+    except Exception as e:
+        print("Font gagal di-load:", e)
         font = ImageFont.load_default()
 
     title_bbox = font.getbbox(title_text)
@@ -698,8 +713,8 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         pos_x = W - target_w - margin_right
         pos_y = H - target_h - margin_bottom
         bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
-    except Exception:
-        pass
+    except Exception as e:
+        print("Gambar Ferizy gagal di-load:", e)
 
     out = io.BytesIO()
     bg.save(out, format="PNG")
@@ -717,42 +732,43 @@ periode_col = "Periode"
 selected_periode = df_filtered[periode_col].astype(str).tolist()
 start_periode, end_periode = selected_periode[0], selected_periode[-1]
 
-# Ringkasan SLA per proses
-sla_text_dict = {}
-for proses in proses_grafik_cols:
-    avg_seconds = df_filtered[proses].mean()
-    sla_text_dict[proses] = {
-        "average_days": (avg_seconds or 0) / 86400 if avg_seconds is not None else 0,
-        "text": seconds_to_sla_format(avg_seconds)
-    }
+# ---------- Streamlit Tabs ----------
+tab1, tab2 = st.tabs(["📊 Analisis SLA", "📥 Download Poster"])
 
-# Jumlah transaksi per periode
-transaksi_df = (
-    df_filtered.groupby(df_filtered[periode_col].astype(str))
-    .size()
-    .reset_index(name="Jumlah")
-    .rename(columns={periode_col: "Periode"})
-)
-transaksi_df["__order"] = transaksi_df["Periode"].apply(
-    lambda x: selected_periode.index(str(x)) if str(x) in selected_periode else 10**9
-)
-transaksi_df = transaksi_df.sort_values("__order").drop(columns="__order")
+with tab1:
+    st.subheader("Analisis SLA")
+    st.write("Tampilkan grafik dan tabel analisis SLA di sini...")
+    st.dataframe(df_filtered)
 
-# Gambar Captain Ferizy (GitHub)
-image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
-periode_range_text = f"{start_periode} — {end_periode}"
-
-# ---------- Tabs ----------
-tab_dashboard, tab_download = st.tabs(["Dashboard", "Download Poster"])
-
-with tab_dashboard:
-    st.header("📊 Dashboard SLA")
-    st.write("Konten dashboard di sini...")
-    # Preview poster bisa ditambahkan di sini jika ingin, tapi tombol download tidak muncul
-
-with tab_download:
+with tab2:
     st.subheader("📥 Download Poster SLA (A4)")
 
+    # Ringkasan SLA per proses
+    sla_text_dict = {}
+    for proses in proses_grafik_cols:
+        avg_seconds = df_filtered[proses].mean()
+        sla_text_dict[proses] = {
+            "average_days": (avg_seconds or 0) / 86400 if avg_seconds is not None else 0,
+            "text": seconds_to_sla_format(avg_seconds)
+        }
+
+    # Jumlah transaksi per periode
+    transaksi_df = (
+        df_filtered.groupby(df_filtered[periode_col].astype(str))
+        .size()
+        .reset_index(name="Jumlah")
+        .rename(columns={periode_col: "Periode"})
+    )
+    transaksi_df["__order"] = transaksi_df["Periode"].apply(
+        lambda x: selected_periode.index(str(x)) if str(x) in selected_periode else 10**9
+    )
+    transaksi_df = transaksi_df.sort_values("__order").drop(columns="__order")
+
+    # Gambar Captain Ferizy (GitHub)
+    image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
+    periode_range_text = f"{start_periode} — {end_periode}"
+
+    # Tombol generate
     if st.button("🎨 Generate Poster A4"):
         poster_buf = generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text)
         st.image(poster_buf, caption="Preview Poster A4", use_column_width=True)
