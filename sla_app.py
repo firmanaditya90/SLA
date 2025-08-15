@@ -490,7 +490,7 @@ def seconds_to_sla_format(seconds):
 
 # ---------- Poster Generation ----------
 def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text):
-    W, H = 2480, 3508
+    W, H = 2480, 3508  # ukuran A4 300dpi
     bg = Image.new("RGB", (W, H), "white")
     draw = ImageDraw.Draw(bg)
 
@@ -501,9 +501,10 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
         resp = requests.get(logo_url, timeout=10)
         logo_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
-        target_h = 250
-        scale = target_h / logo_img.height
+        # Skala otomatis 10% dari lebar poster
+        scale = (W * 0.1) / logo_img.width
         target_w = int(logo_img.width * scale)
+        target_h = int(logo_img.height * scale)
         logo_img = logo_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
         bg.paste(logo_img, (logo_x, logo_y), logo_img)
     except Exception:
@@ -511,18 +512,25 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
 
     # ---------- Judul Poster ----------
     title_text = "SLA DOKUMEN PENAGIHAN"
-    title_y = logo_y + (logo_img.height if logo_img else 0) + 30
     try:
         font_path = "Anton-Regular.ttf"
-        max_title_width = W - 400
-        font_size = 180
+        # Mulai dari font besar
+        font_size = 300
         font = ImageFont.truetype(font_path, font_size)
-        while font.getsize(title_text)[0] > max_title_width:
+        # batas lebar judul = 80% dari poster width
+        max_title_width = W * 0.8
+        # otomatis sesuaikan font agar muat
+        while font.getbbox(title_text)[2] - font.getbbox(title_text)[0] > max_title_width and font_size > 10:
             font_size -= 2
             font = ImageFont.truetype(font_path, font_size)
     except Exception:
         font = ImageFont.load_default()
-    title_w, title_h = draw.textsize(title_text, font=font)
+
+    # Hitung posisi judul (di bawah logo, center)
+    title_bbox = font.getbbox(title_text)
+    title_w = title_bbox[2] - title_bbox[0]
+    title_h = title_bbox[3] - title_bbox[1]
+    title_y = (logo_y + (logo_img.height if logo_img else 0) + 30)
     title_x = (W - title_w) // 2
     draw.text((title_x, title_y), title_text, fill="black", font=font)
 
@@ -535,9 +543,10 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
         resp = requests.get(raw_url, timeout=10)
         ferizy_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
-        target_h = 1100
-        scale = target_h / ferizy_img.height
+        # skala otomatis ke 35% tinggi poster
+        scale = (H * 0.35) / ferizy_img.height
         target_w = int(ferizy_img.width * scale)
+        target_h = int(ferizy_img.height * scale)
         ferizy_img = ferizy_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
         margin_right = 50
         margin_bottom = 50
