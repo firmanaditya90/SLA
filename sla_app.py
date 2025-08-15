@@ -549,15 +549,13 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     font_h     = font_try("arialbd.ttf", 340)
     font_cell  = font_try("arial.ttf", 300)
 
-    # ===== Header: Judul (center / rata tengah) =====
-    # Title (center)
-    title = "SLA PAYMENT ANALYZER"
-    tw, th = _text_size(draw, title, font_title)
-    draw.text(((W-tw)/2, 40), title, fill=(20,20,20), font=font_title)
-
-    
+     # ===== Header: Judul (justified / rata kiri-kanan) =====
+    left_margin, right_margin = 140, W-140
+    title_y = 120
+    title_text = "SLA PAYMENT ANALYZER"
+    draw_justified_line(draw, title_text, font_title, left_margin, right_margin, title_y, fill=(0,0,0))
     # Subjudul periode
-    draw.text((left_margin, title_y + 100), f"Periode: {periode_range_text}", font=font_sub, fill=(30,30,30))
+    draw.text((left_margin, title_y + 100), f"Periode: {periode_range_text}", font=font_sub, fill=(300,300,300))
 
         # Logo ASDP (left top)
     try:
