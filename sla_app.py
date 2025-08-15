@@ -551,11 +551,22 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
 
     # ===== Header: Judul (justified / rata kiri-kanan) =====
     left_margin, right_margin = 140, W-140
-    title_y = 120
+    title_y = 200
     title_text = "SLA PAYMENT ANALYZER"
     draw_justified_line(draw, title_text, font_title, left_margin, right_margin, title_y, fill=(0,0,0))
     # Subjudul periode
     draw.text((left_margin, title_y + 100), f"Periode: {periode_range_text}", font=font_sub, fill=(30,30,30))
+
+        # Logo ASDP (left top)
+    try:
+        logo_raw = requests.get("https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png", timeout=10)
+        logo = Image.open(io.BytesIO(logo_raw.content)).convert("RGBA")
+        ratio = 100 / logo.height
+        logo = logo.resize((int(logo.width*ratio), 100), Image.Resampling.LANCZOS)
+        bg.paste(logo, (40, 28), logo)
+    except Exception:
+        pass
+
 
     # ===== Chart SLA rata-rata per proses =====
     # Siapkan chart matplotlib (transparan) dan tempel ke poster
