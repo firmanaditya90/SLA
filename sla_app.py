@@ -184,8 +184,40 @@ def seconds_to_sla_format(total_seconds):
 # ==============================
 # Upload (hanya admin)
 # ==============================
-with st.sidebar.expander("📤 Upload Data (Admin Only)", expanded=is_admin):
-    uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx") if is_admin else None
+import streamlit as st
+import pandas as pd
+
+st.set_page_config(page_title="Excel Uploader", layout="wide")
+
+st.title("Upload Excel Cepat & Responsif")
+
+# Fungsi baca file dengan caching
+@st.cache_data
+def load_excel(file):
+    try:
+        # Pakai openpyxl, baca semua sheet sebagai dataframe
+        df = pd.read_excel(file, engine="openpyxl", dtype=str)
+        return df
+    except Exception as e:
+        st.error(f"Gagal membaca file: {e}")
+        return None
+
+# Upload file
+uploaded_file = st.file_uploader("Pilih file Excel", type=["xlsx", "xls"])
+
+if uploaded_file:
+    with st.spinner("Sedang memproses..."):
+        df = load_excel(uploaded_file)
+
+    if df is not None:
+        st.success("File berhasil diunggah!")
+        # Tampilkan hanya 500 baris pertama untuk respons cepat
+        st.dataframe(df.head(500))
+
+        # Opsional: informasi tambahan
+        st.write(f"Jumlah baris: {len(df)}, Jumlah kolom: {len(df.columns)}")
+        st.write("Nama kolom:", list(df.columns))
+
 
 
 # ==============================
