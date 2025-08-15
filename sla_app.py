@@ -550,14 +550,14 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     font_cell  = font_try("arial.ttf", 300)
     
      # ===== Header: Judul (justified / rata kiri-kanan) =====
-# Posisi vertical tetap
-title_y = 120
+    # Posisi vertical tetap
+    title_y = 120
 
-# Menghitung lebar teks judul
-title_width, title_height = draw.textsize(title_text, font=font_title)
+    # Menghitung lebar teks judul
+    title_width, title_height = draw.textsize(title_text, font=font_title)
 
-# Posisi horizontal agar center
-title_x = (W - title_width) / 2
+    # Posisi horizontal agar center
+    title_x = (W - title_width) / 2
 
 # Menulis judul
 draw.text((title_x, title_y), title_text, font=font_title, fill=(0,0,0))
@@ -568,16 +568,19 @@ subtitle_width, subtitle_height = draw.textsize(subtitle_text, font=font_sub)
 subtitle_x = (W - subtitle_width) / 2
 draw.text((subtitle_x, title_y + 100), subtitle_text, font=font_sub, fill=(30,30,30))
 
-        # Logo ASDP (left top)
+def generate_image():
+    # Logo ASDP (left top)
     try:
-        logo_raw = requests.get("https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png", timeout=10)
+        logo_raw = requests.get(
+            "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png",
+            timeout=10
+        )
         logo = Image.open(io.BytesIO(logo_raw.content)).convert("RGBA")
         ratio = 300 / logo.height
         logo = logo.resize((int(logo.width*ratio), 300), Image.Resampling.LANCZOS)
         bg.paste(logo, (40, 28), logo)
     except Exception:
         pass
-
 
     # ===== Chart SLA rata-rata per proses =====
     # Siapkan chart matplotlib (transparan) dan tempel ke poster
