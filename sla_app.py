@@ -471,6 +471,18 @@ with tab_jumlah:
         label.set_ha('right')
     st.pyplot(fig_trans)
 
+with tab_download:
+    st.subheader("📥 Download Poster")
+
+    if st.button("🎨 Generate Poster A4"):
+        poster_buf = generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text)
+        st.image(poster_buf, caption="Preview Poster A4", use_column_width=True)
+        st.download_button(
+            label="💾 Download Poster (PNG, A4 - 300 DPI)",
+            data=poster_buf,
+            file_name="Poster_SLA_A4.png",
+            mime="image/png"
+        )
 # ==========================================================
 #            FITUR BARU: 📥 DOWNLOAD POSTER (A4)
 # ==========================================================
@@ -566,40 +578,25 @@ periode_col = "Periode"
 selected_periode = df_filtered[periode_col].astype(str).tolist()
 start_periode, end_periode = selected_periode[0], selected_periode[-1]
 
-# ---------- Tab Download Poster ----------
-with tab_download:
-    st.subheader("📥 Download Poster")
+# Ringkasan SLA per proses
+sla_text_dict = {}
+for proses in proses_grafik_cols:
+    avg_seconds = df_filtered[proses].mean()
+    sla_text_dict[proses] = {
+        "average_days": (avg_seconds or 0) / 86400 if avg_seconds is not None else 0,
+        "text": seconds_to_sla_format(avg_seconds)
+    }
 
-    # Ringkasan SLA per proses
-    sla_text_dict = {}
-    for proses in proses_grafik_cols:
-        avg_seconds = df_filtered[proses].mean()
-        sla_text_dict[proses] = {
-            "average_days": (avg_seconds or 0) / 86400 if avg_seconds is not None else 0,
-            "text": seconds_to_sla_format(avg_seconds)
-        }
+# Jumlah transaksi per periode
+transaksi_df = (
+    df_filtered.groupby(df_filtered[periode_col].astype(str))
+    .size()
+    .reset_index(name="Jumlah")
+    .rename(columns={periode_col: "Periode"})
+)
+transaksi_df["__order"] = transaksi_df["Periode"].apply(lambda x: selected_periode.index(str(x)) if str(x) in selected_periode else 10**9)
+transaksi_df = transaksi_df.sort_values("__order").drop(columns="__order")
 
-    # Jumlah transaksi per periode
-    transaksi_df = (
-        df_filtered.groupby(df_filtered[periode_col].astype(str))
-        .size()
-        .reset_index(name="Jumlah")
-        .rename(columns={periode_col: "Periode"})
-    )
-    transaksi_df["__order"] = transaksi_df["Periode"].apply(lambda x: selected_periode.index(str(x)) if str(x) in selected_periode else 10**9)
-    transaksi_df = transaksi_df.sort_values("__order").drop(columns="__order")
-
-    # Gambar Captain Ferizy (GitHub)
-    image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
-    periode_range_text = f"{start_periode} — {end_periode}"
-
-    # Tombol generate poster hanya di tab ini
-    if st.button("🎨 Generate Poster A4"):
-        poster_buf = generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text)
-        st.image(poster_buf, caption="Preview Poster A4", use_column_width=True)
-        st.download_button(
-            label="💾 Download Poster (PNG, A4 - 300 DPI)",
-            data=poster_buf,
-            file_name="Poster_SLA_A4.png",
-            mime="image/png"
-        )
+# Gambar Captain Ferizy (GitHub)
+image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
+periode_range_text = f"{start_periode} — {end_periode}"
