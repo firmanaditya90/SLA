@@ -562,7 +562,7 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         logo_raw = requests.get("https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png", timeout=10)
         logo = Image.open(io.BytesIO(logo_raw.content)).convert("RGBA")
         ratio = 100 / logo.height
-        logo = logo.resize((int(logo.width*ratio), 1000), Image.Resampling.LANCZOS)
+        logo = logo.resize((int(logo.width*ratio), 200), Image.Resampling.LANCZOS)
         bg.paste(logo, (40, 28), logo)
     except Exception:
         pass
