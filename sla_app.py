@@ -555,7 +555,7 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     title_text = "SLA PAYMENT ANALYZER"
     draw_justified_line(draw, title_text, font_title, left_margin, right_margin, title_y, fill=(0,0,0))
     # Subjudul periode
-    draw.text((left_margin, title_y + 100), f"Periode: {periode_range_text}", font=font_sub, fill=(300,300,300))
+    draw.text((left_margin, title_y + 100), f"Periode: {periode_range_text}", font=font_sub, fill=(30,30,30))
 
         # Logo ASDP (left top)
     try:
