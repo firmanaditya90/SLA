@@ -512,32 +512,31 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         logo_img = None
         logo_x = logo_y = 100
 
-    # ---------- Judul ----------
+    # ---------- Judul SLA DOKUMEN PENAGIHAN ----------
     title_text = "SLA DOKUMEN PENAGIHAN"
-    font_size = 250
+    font_size = 350  # mulai lebih besar dari logo
     try:
         font = ImageFont.truetype("arial.ttf", font_size)
     except:
         font = ImageFont.load_default()
 
-    if logo_img:
-        max_width = W - (logo_x + logo_img.width + 150)
+    # Auto resize jika terlalu lebar
+    bbox = draw.textbbox((0, 0), title_text, font=font)
+    text_width = bbox[2] - bbox[0]
+    max_width = W - 200  # margin kiri-kanan
+    while text_width > max_width and font_size > 10:
+        font_size -= 5
+        try:
+            font = ImageFont.truetype("arial.ttf", font_size)
+        except:
+            font = ImageFont.load_default()
         bbox = draw.textbbox((0, 0), title_text, font=font)
         text_width = bbox[2] - bbox[0]
-        while text_width > max_width and font_size > 10:
-            font_size -= 5
-            try:
-                font = ImageFont.truetype("arial.ttf", font_size)
-            except:
-                font = ImageFont.load_default()
-            bbox = draw.textbbox((0, 0), title_text, font=font)
-            text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        text_x = logo_x + logo_img.width + 50
-        text_y = logo_y + (logo_img.height - text_height) // 2
-    else:
-        text_x, text_y = 100, 100
+    text_height = bbox[3] - bbox[1]
 
+    # posisi horizontal center, vertikal sedikit di bawah logo
+    text_x = (W - text_width) // 2
+    text_y = logo_y + (logo_img.height - text_height) // 2 if logo_img else 100
     draw.text((text_x, text_y), title_text, fill="black", font=font)
 
     # ---------- Gambar Captain Ferizy (kanan bawah) ----------
