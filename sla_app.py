@@ -566,35 +566,6 @@ periode_col = "Periode"
 selected_periode = df_filtered[periode_col].astype(str).tolist()
 start_periode, end_periode = selected_periode[0], selected_periode[-1]
 
-# ---------- Tab Setup ----------
-tabs = st.tabs(["Overview", "Per Proses", "Jenis Transaksi", "Vendor", "Tren", "Jumlah Transaksi", "Download Poster"])
-tab_overview, tab_per_proses, tab_jenis, tab_vendor, tab_tren, tab_jumlah, tab_download = tabs
-
-# ---------- Tab Konten (contoh placeholder) ----------
-with tab_overview:
-    st.subheader("Overview")
-    st.write("Konten overview di sini...")
-
-with tab_per_proses:
-    st.subheader("Per Proses")
-    st.write("Konten per proses di sini...")
-
-with tab_jenis:
-    st.subheader("Jenis Transaksi")
-    st.write("Konten jenis transaksi di sini...")
-
-with tab_vendor:
-    st.subheader("Vendor")
-    st.write("Konten vendor di sini...")
-
-with tab_tren:
-    st.subheader("Tren")
-    st.write("Konten tren di sini...")
-
-with tab_jumlah:
-    st.subheader("Jumlah Transaksi")
-    st.write("Konten jumlah transaksi di sini...")
-
 # ---------- Tab Download Poster ----------
 with tab_download:
     st.subheader("📥 Download Poster SLA (A4)")
