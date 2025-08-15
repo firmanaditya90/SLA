@@ -466,15 +466,10 @@ sla_cols = [c for c in df.columns if re.search(r'\bSLA\b', c, flags=re.IGNORECAS
 proses_grafik_cols = [c for c in df.columns if c not in sla_cols and c not in ["Periode", "Vendor", "Jenis Transaksi"]]
 
 # Pastikan kolom Periode ada
-periode_col = None
-for cand in ["Periode", "periode", "Tahun-Bulan", "Bulan"]:
-    if cand in df.columns:
-        periode_col = cand
-        break
-if periode_col is None:
-    st.error("Tidak ditemukan kolom Periode di data.")
+periode_col = next((col for col in df.columns if "PERIODE" in str(col).upper()), None)
+if not periode_col:
+    st.error("Kolom PERIODE tidak ditemukan.")
     st.stop()
-
 # Konversi kolom SLA menjadi detik
 for c in sla_cols:
     df[c] = parse_sla(df[c])
