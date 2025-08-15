@@ -548,7 +548,12 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     font_sub   = font_try("arial.ttf", 380)
     font_h     = font_try("arialbd.ttf", 340)
     font_cell  = font_try("arial.ttf", 300)
-
+    
+    # Ambil background
+    bg_resp = requests.get("https://raw.githubusercontent.com/firmanaditya90/SLA/main/Background.png")
+    background = Image.open(io.BytesIO(bg_resp.content)).convert('RGBA')
+    background = background.resize((width, height))
+    
      # ===== Header: Judul (justified / rata kiri-kanan) =====
     left_margin, right_margin = 140, W-140
     title_y = 120
@@ -606,7 +611,7 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     # Header kolom
     draw.text((table_left, table_top), "PROSES", font=font_h, fill=(40,40,40))
     draw.text((table_left + col1_w, table_top), "RATA-RATA SLA", font=font_h, fill=(40,40,40))
-    y_cursor = table_top + 180 + 240
+    y_cursor = table_top + 18 + 24
 
     # Garis pemisah header
     draw.line([(card1_x0+20, y_cursor), (card1_x1-20, y_cursor)], fill=(220,220,220), width=2)
