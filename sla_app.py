@@ -557,6 +557,13 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     # Subjudul periode
     draw.text((left_margin, title_y + 100), f"Periode: {periode_range_text}", font=font_sub, fill=(30,30,30))
 
+        # Logo ASDP kiri atas
+    asdp_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
+    asdp_resp = requests.get(asdp_url)
+    asdp_img = Image.open(io.BytesIO(asdp_resp.content)).convert('RGBA')
+    asdp_img = asdp_img.resize((350, 120))
+    poster.paste(asdp_img, (100, 50), asdp_img)
+
     # ===== Chart SLA rata-rata per proses =====
     # Siapkan chart matplotlib (transparan) dan tempel ke poster
     processes = list(sla_text_dict.keys())
