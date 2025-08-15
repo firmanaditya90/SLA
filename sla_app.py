@@ -501,7 +501,6 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
         resp = requests.get(logo_url, timeout=10)
         logo_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
-        # Skala otomatis 10% dari lebar poster
         scale = (W * 0.1) / logo_img.width
         target_w = int(logo_img.width * scale)
         target_h = int(logo_img.height * scale)
@@ -514,19 +513,15 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     title_text = "SLA DOKUMEN PENAGIHAN"
     try:
         font_path = "Anton-Regular.ttf"
-        # Mulai dari font besar
         font_size = 300
         font = ImageFont.truetype(font_path, font_size)
-        # batas lebar judul = 80% dari poster width
         max_title_width = W * 0.8
-        # otomatis sesuaikan font agar muat
         while font.getbbox(title_text)[2] - font.getbbox(title_text)[0] > max_title_width and font_size > 10:
             font_size -= 2
             font = ImageFont.truetype(font_path, font_size)
     except Exception:
         font = ImageFont.load_default()
 
-    # Hitung posisi judul (di bawah logo, center)
     title_bbox = font.getbbox(title_text)
     title_w = title_bbox[2] - title_bbox[0]
     title_h = title_bbox[3] - title_bbox[1]
@@ -543,7 +538,6 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
         resp = requests.get(raw_url, timeout=10)
         ferizy_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
-        # skala otomatis ke 35% tinggi poster
         scale = (H * 0.35) / ferizy_img.height
         target_w = int(ferizy_img.width * scale)
         target_h = int(ferizy_img.height * scale)
@@ -572,39 +566,69 @@ periode_col = "Periode"
 selected_periode = df_filtered[periode_col].astype(str).tolist()
 start_periode, end_periode = selected_periode[0], selected_periode[-1]
 
-# ---------- UI Tab Poster ----------
-st.subheader("📥 Download Poster SLA (A4)")
+# ---------- Tab Setup ----------
+tabs = st.tabs(["Overview", "Per Proses", "Jenis Transaksi", "Vendor", "Tren", "Jumlah Transaksi", "Download Poster"])
+tab_overview, tab_per_proses, tab_jenis, tab_vendor, tab_tren, tab_jumlah, tab_download = tabs
 
-# Ringkasan SLA per proses
-sla_text_dict = {}
-for proses in proses_grafik_cols:
-    avg_seconds = df_filtered[proses].mean()
-    sla_text_dict[proses] = {
-        "average_days": (avg_seconds or 0) / 86400 if avg_seconds is not None else 0,
-        "text": seconds_to_sla_format(avg_seconds)
-    }
+# ---------- Tab Konten (contoh placeholder) ----------
+with tab_overview:
+    st.subheader("Overview")
+    st.write("Konten overview di sini...")
 
-# Jumlah transaksi per periode
-transaksi_df = (
-    df_filtered.groupby(df_filtered[periode_col].astype(str))
-    .size()
-    .reset_index(name="Jumlah")
-    .rename(columns={periode_col: "Periode"})
-)
-transaksi_df["__order"] = transaksi_df["Periode"].apply(lambda x: selected_periode.index(str(x)) if str(x) in selected_periode else 10**9)
-transaksi_df = transaksi_df.sort_values("__order").drop(columns="__order")
+with tab_per_proses:
+    st.subheader("Per Proses")
+    st.write("Konten per proses di sini...")
 
-# Gambar Captain Ferizy (GitHub)
-image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
-periode_range_text = f"{start_periode} — {end_periode}"
+with tab_jenis:
+    st.subheader("Jenis Transaksi")
+    st.write("Konten jenis transaksi di sini...")
 
-# Tombol generate
-if st.button("🎨 Generate Poster A4"):
-    poster_buf = generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text)
-    st.image(poster_buf, caption="Preview Poster A4", use_column_width=True)
-    st.download_button(
-        label="💾 Download Poster (PNG, A4 - 300 DPI)",
-        data=poster_buf,
-        file_name="Poster_SLA_A4.png",
-        mime="image/png"
+with tab_vendor:
+    st.subheader("Vendor")
+    st.write("Konten vendor di sini...")
+
+with tab_tren:
+    st.subheader("Tren")
+    st.write("Konten tren di sini...")
+
+with tab_jumlah:
+    st.subheader("Jumlah Transaksi")
+    st.write("Konten jumlah transaksi di sini...")
+
+# ---------- Tab Download Poster ----------
+with tab_download:
+    st.subheader("📥 Download Poster SLA (A4)")
+
+    # Ringkasan SLA per proses
+    sla_text_dict = {}
+    for proses in proses_grafik_cols:
+        avg_seconds = df_filtered[proses].mean()
+        sla_text_dict[proses] = {
+            "average_days": (avg_seconds or 0) / 86400 if avg_seconds is not None else 0,
+            "text": seconds_to_sla_format(avg_seconds)
+        }
+
+    # Jumlah transaksi per periode
+    transaksi_df = (
+        df_filtered.groupby(df_filtered[periode_col].astype(str))
+        .size()
+        .reset_index(name="Jumlah")
+        .rename(columns={periode_col: "Periode"})
     )
+    transaksi_df["__order"] = transaksi_df["Periode"].apply(lambda x: selected_periode.index(str(x)) if str(x) in selected_periode else 10**9)
+    transaksi_df = transaksi_df.sort_values("__order").drop(columns="__order")
+
+    # Gambar Captain Ferizy (GitHub)
+    image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
+    periode_range_text = f"{start_periode} — {end_periode}"
+
+    # Tombol generate poster hanya di tab ini
+    if st.button("🎨 Generate Poster A4"):
+        poster_buf = generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text)
+        st.image(poster_buf, caption="Preview Poster A4", use_column_width=True)
+        st.download_button(
+            label="💾 Download Poster (PNG, A4 - 300 DPI)",
+            data=poster_buf,
+            file_name="Poster_SLA_A4.png",
+            mime="image/png"
+        )
