@@ -545,9 +545,9 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
             return ImageFont.load_default()
 
     font_title = font_try("arialbd.ttf", 286)   # bold
-    font_sub   = font_try("arial.ttf", 38)
-    font_h     = font_try("arialbd.ttf", 34)
-    font_cell  = font_try("arial.ttf", 30)
+    font_sub   = font_try("arial.ttf", 380)
+    font_h     = font_try("arialbd.ttf", 340)
+    font_cell  = font_try("arial.ttf", 300)
 
     # ===== Header: Judul (justified / rata kiri-kanan) =====
     left_margin, right_margin = 140, W-140
