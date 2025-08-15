@@ -559,14 +559,14 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     # Posisi horizontal agar center
     title_x = (W - title_width) / 2
 
-# Menulis judul
-draw.text((title_x, title_y), title_text, font=font_title, fill=(0,0,0))
+    # Menulis judul
+    draw.text((title_x, title_y), title_text, font=font_title, fill=(0,0,0))
 
-# Subjudul periode
-subtitle_text = f"Periode: {periode_range_text}"
-subtitle_width, subtitle_height = draw.textsize(subtitle_text, font=font_sub)
-subtitle_x = (W - subtitle_width) / 2
-draw.text((subtitle_x, title_y + 100), subtitle_text, font=font_sub, fill=(30,30,30))
+    # Subjudul periode
+    subtitle_text = f"Periode: {periode_range_text}"
+    subtitle_width, subtitle_height = draw.textsize(subtitle_text, font=font_sub)
+    subtitle_x = (W - subtitle_width) / 2
+    draw.text((subtitle_x, title_y + 100), subtitle_text, font=font_sub, fill=(30,30,30))
 
 def generate_image():
     # Logo ASDP (left top)
