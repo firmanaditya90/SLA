@@ -640,8 +640,8 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     t2_left = card2_x0 + 30
     t2_top  = card2_y0 + header_h + 20
 
-    draw.text((t2_left, t2_top), "Periode", font=font_h, fill=(40,40,40))
-    draw.text((t2_left + t2_col1_w, t2_top), "Jumlah", font=font_h, fill=(40,40,40))
+    draw.text((t2_left, t2_top), "PERIODE", font=font_h, fill=(40,40,40))
+    draw.text((t2_left + t2_col1_w, t2_top), "JUMLAH", font=font_h, fill=(40,40,40))
     t2_y_cursor = t2_top + 18 + 24
     draw.line([(card2_x0+20, t2_y_cursor), (card2_x1-20, t2_y_cursor)], fill=(220,220,220), width=2)
     t2_y = t2_y_cursor + 18
