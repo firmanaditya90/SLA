@@ -476,25 +476,24 @@ with tab_jumlah:
 # ==========================================================
 import streamlit as st
 import pandas as pd
+import io
 import requests
 from PIL import Image, ImageDraw, ImageFont
-import io
 
-# ===============================
-# Helper functions
-# ===============================
+# ---------- Fungsi utility ----------
 def seconds_to_sla_format(seconds):
     if seconds is None:
-        return "-"
+        return "0d 0h 0m"
     days = int(seconds // 86400)
     hours = int((seconds % 86400) // 3600)
     minutes = int((seconds % 3600) // 60)
     return f"{days}d {hours}h {minutes}m"
 
-def generate_poster_A4(sla_dict, transaksi_df, ferizy_url, periode_range):
-    # ukuran poster A4 (px) ~ 2480x3508 (300 DPI)
+# ---------- Generate Poster A4 ----------
+def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text):
+    # A4 300 DPI
     W, H = 2480, 3508
-    bg = Image.new("RGB", (W, H), "white")
+    bg = Image.new("RGB", (W, H), color="white")
     draw = ImageDraw.Draw(bg)
 
     # ---------- Logo ASDP ----------
@@ -502,8 +501,8 @@ def generate_poster_A4(sla_dict, transaksi_df, ferizy_url, periode_range):
         logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
         resp = requests.get(logo_url, timeout=10)
         logo_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
-        # proporsional
-        target_w = 300
+        # proporsional, lebar 500 px
+        target_w = 500
         scale = target_w / logo_img.width
         target_h = int(logo_img.height * scale)
         logo_img = logo_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
@@ -515,15 +514,24 @@ def generate_poster_A4(sla_dict, transaksi_df, ferizy_url, periode_range):
 
     # ---------- Judul ----------
     title_text = "SLA DOKUMEN PENAGIHAN"
-    font_size = 120
+    font_size = 250
     try:
         font = ImageFont.truetype("arial.ttf", font_size)
     except:
         font = ImageFont.load_default()
 
     if logo_img:
+        max_width = W - (logo_x + logo_img.width + 150)
         bbox = draw.textbbox((0, 0), title_text, font=font)
         text_width = bbox[2] - bbox[0]
+        while text_width > max_width and font_size > 10:
+            font_size -= 5
+            try:
+                font = ImageFont.truetype("arial.ttf", font_size)
+            except:
+                font = ImageFont.load_default()
+            bbox = draw.textbbox((0, 0), title_text, font=font)
+            text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
         text_x = logo_x + logo_img.width + 50
         text_y = logo_y + (logo_img.height - text_height) // 2
@@ -534,10 +542,9 @@ def generate_poster_A4(sla_dict, transaksi_df, ferizy_url, periode_range):
 
     # ---------- Gambar Captain Ferizy (kanan bawah) ----------
     try:
-        raw_url = ferizy_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
+        raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
         resp = requests.get(raw_url, timeout=10)
         ferizy_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
-        # skala proporsional ~ tinggi 1100px
         target_h = 1100
         scale = target_h / ferizy_img.height
         target_w = int(ferizy_img.width * scale)
@@ -554,23 +561,18 @@ def generate_poster_A4(sla_dict, transaksi_df, ferizy_url, periode_range):
     out.seek(0)
     return out
 
-# ===============================
-# Data Dummy
-# ===============================
+# ---------- Data Dummy ----------
 df_filtered = pd.DataFrame({
     "Proses A": [86400, 172800, 259200],
     "Proses B": [43200, 86400, 129600],
     "Periode": ["2025-07", "2025-08", "2025-09"]
 })
-
 proses_grafik_cols = ["Proses A", "Proses B"]
 periode_col = "Periode"
 selected_periode = df_filtered[periode_col].astype(str).tolist()
 start_periode, end_periode = selected_periode[0], selected_periode[-1]
 
-# ===============================
-# UI Tab Poster
-# ===============================
+# ---------- UI Tab Poster ----------
 st.subheader("📥 Download Poster SLA (A4)")
 
 # Ringkasan SLA per proses
