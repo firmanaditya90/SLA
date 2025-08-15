@@ -597,6 +597,112 @@ for proses in proses_grafik_cols:
 
 # Jumlah transaksi per periode
 transaksi_df = (
+import streamlit as st
+import pandas as pd
+import requests, io
+from PIL import Image, ImageDraw, ImageFont
+
+# ---------------- Helper Functions ----------------
+def seconds_to_sla_format(seconds):
+    if seconds is None:
+        return "0 hari"
+    days = seconds // 86400
+    return f"{int(days)} hari"
+
+def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text):
+    # Ukuran poster A4 di 300 DPI
+    W, H = 2480, 3508
+    bg = Image.new("RGB", (W, H), "white")
+    draw = ImageDraw.Draw(bg)
+
+    # ------------------ Logo ASDP ------------------
+    try:
+        logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
+        resp = requests.get(logo_url, timeout=10)
+        logo_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
+        # skala proporsional ~ tinggi 300 px
+        target_h = 300
+        scale = target_h / logo_img.height
+        target_w = int(logo_img.width * scale)
+        logo_img = logo_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+        logo_x, logo_y = 100, 100
+        bg.paste(logo_img, (logo_x, logo_y), logo_img)
+    except Exception:
+        logo_img = None
+
+    # ------------------ Judul ------------------
+    title_text = "SLA DOKUMEN PENAGIHAN"
+    font_path = "Anton-Regular.ttf"  # pastikan ada di folder sama dengan app.py
+    max_width = W - 2*100 - (logo_img.width if logo_img else 0) - 50  # space kanan logo
+    font_size = 50
+    font = ImageFont.truetype(font_path, font_size)
+
+    # hitung ukuran teks dengan textbbox
+    text_w, text_h = draw.textbbox((0,0), title_text, font=font)[2:]
+    while text_w < max_width:
+        font_size += 5
+        font = ImageFont.truetype(font_path, font_size)
+        text_w, text_h = draw.textbbox((0,0), title_text, font=font)[2:]
+
+    font_size -= 5
+    font = ImageFont.truetype(font_path, font_size)
+    text_w, text_h = draw.textbbox((0,0), title_text, font=font)[2:]
+
+    # letak judul di tengah tinggi logo, di kanan logo
+    if logo_img:
+        text_x = logo_x + logo_img.width + 50
+        text_y = logo_y + (logo_img.height - text_h)//2
+    else:
+        text_x = (W - text_w)//2
+        text_y = 100
+    draw.text((text_x, text_y), title_text, font=font, fill="black")
+
+    # ------------------ Captain Ferizy ------------------
+    try:
+        raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
+        resp = requests.get(raw_url, timeout=10)
+        ferizy_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
+        target_h = 1100
+        scale = target_h / ferizy_img.height
+        target_w = int(ferizy_img.width * scale)
+        ferizy_img = ferizy_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+        pos_x = W - target_w - 120
+        pos_y = H - target_h - 140
+        bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
+    except Exception:
+        pass
+
+    # Output buffer PNG
+    out = io.BytesIO()
+    bg.save(out, format="PNG")
+    out.seek(0)
+    return out
+
+# ------------------ UI Tab Poster ------------------
+st.subheader("📥 Download Poster SLA (A4)")
+
+# Contoh DataFrame dummy
+df_filtered = pd.DataFrame({
+    "Proses A": [86400, 172800, 259200],
+    "Proses B": [43200, 86400, 129600],
+    "Periode": ["2025-07", "2025-08", "2025-09"]
+})
+proses_grafik_cols = ["Proses A", "Proses B"]
+periode_col = "Periode"
+selected_periode = df_filtered[periode_col].astype(str).tolist()
+start_periode, end_periode = selected_periode[0], selected_periode[-1]
+
+# Ringkasan SLA per proses
+sla_text_dict = {}
+for proses in proses_grafik_cols:
+    avg_seconds = df_filtered[proses].mean()
+    sla_text_dict[proses] = {
+        "average_days": (avg_seconds or 0) / 86400 if avg_seconds is not None else 0,
+        "text": seconds_to_sla_format(avg_seconds)
+    }
+
+# Jumlah transaksi per periode
+transaksi_df = (
     df_filtered.groupby(df_filtered[periode_col].astype(str))
     .size()
     .reset_index(name="Jumlah")
