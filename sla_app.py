@@ -480,7 +480,83 @@ import requests
 from PIL import Image, ImageDraw, ImageFont
 import io
 
-# ---------------- Contoh DataFrame ----------------
+# ===============================
+# Helper functions
+# ===============================
+def seconds_to_sla_format(seconds):
+    if seconds is None:
+        return "-"
+    days = int(seconds // 86400)
+    hours = int((seconds % 86400) // 3600)
+    minutes = int((seconds % 3600) // 60)
+    return f"{days}d {hours}h {minutes}m"
+
+def generate_poster_A4(sla_dict, transaksi_df, ferizy_url, periode_range):
+    # ukuran poster A4 (px) ~ 2480x3508 (300 DPI)
+    W, H = 2480, 3508
+    bg = Image.new("RGB", (W, H), "white")
+    draw = ImageDraw.Draw(bg)
+
+    # ---------- Logo ASDP ----------
+    try:
+        logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
+        resp = requests.get(logo_url, timeout=10)
+        logo_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
+        # proporsional
+        target_w = 300
+        scale = target_w / logo_img.width
+        target_h = int(logo_img.height * scale)
+        logo_img = logo_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+        logo_x, logo_y = 100, 100
+        bg.paste(logo_img, (logo_x, logo_y), logo_img)
+    except Exception:
+        logo_img = None
+        logo_x = logo_y = 100
+
+    # ---------- Judul ----------
+    title_text = "SLA DOKUMEN PENAGIHAN"
+    font_size = 120
+    try:
+        font = ImageFont.truetype("arial.ttf", font_size)
+    except:
+        font = ImageFont.load_default()
+
+    if logo_img:
+        bbox = draw.textbbox((0, 0), title_text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        text_x = logo_x + logo_img.width + 50
+        text_y = logo_y + (logo_img.height - text_height) // 2
+    else:
+        text_x, text_y = 100, 100
+
+    draw.text((text_x, text_y), title_text, fill="black", font=font)
+
+    # ---------- Gambar Captain Ferizy (kanan bawah) ----------
+    try:
+        raw_url = ferizy_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
+        resp = requests.get(raw_url, timeout=10)
+        ferizy_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
+        # skala proporsional ~ tinggi 1100px
+        target_h = 1100
+        scale = target_h / ferizy_img.height
+        target_w = int(ferizy_img.width * scale)
+        ferizy_img = ferizy_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+        pos_x = W - target_w - 120
+        pos_y = H - target_h - 140
+        bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
+    except Exception:
+        pass
+
+    # Output buffer PNG
+    out = io.BytesIO()
+    bg.save(out, format="PNG")
+    out.seek(0)
+    return out
+
+# ===============================
+# Data Dummy
+# ===============================
 df_filtered = pd.DataFrame({
     "Proses A": [86400, 172800, 259200],
     "Proses B": [43200, 86400, 129600],
@@ -492,75 +568,9 @@ periode_col = "Periode"
 selected_periode = df_filtered[periode_col].astype(str).tolist()
 start_periode, end_periode = selected_periode[0], selected_periode[-1]
 
-# ---------------- Helper Function ----------------
-def seconds_to_sla_format(seconds):
-    if seconds is None:
-        return "-"
-    days = int(seconds // 86400)
-    hours = int((seconds % 86400) // 3600)
-    mins = int((seconds % 3600) // 60)
-    return f"{days}d {hours}h {mins}m"
-
-# ---------------- Generate Poster ----------------
-def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text):
-    # Ukuran poster A4 2480x3508 px (~300dpi)
-    W, H = 2480, 3508
-    bg = Image.new("RGB", (W, H), color="white")
-    draw = ImageDraw.Draw(bg)
-
-    # ----- Logo ASDP kiri atas -----
-    logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
-    try:
-        resp = requests.get(logo_url, timeout=10)
-        logo_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
-        # resize proporsional ~ tinggi 300px
-        target_h = 300
-        scale = target_h / logo_img.height
-        target_w = int(logo_img.width * scale)
-        logo_img = logo_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-        logo_x, logo_y = 100, 100
-        bg.paste(logo_img, (logo_x, logo_y), logo_img)
-    except Exception:
-        logo_img = None
-
-    # ----- Judul di samping logo -----
-    title_text = "SLA DOKUMEN PENAGIHAN"
-    font_size = 120  # bisa diubah sesuai proporsional
-    try:
-        font = ImageFont.truetype("arial.ttf", font_size)
-    except:
-        font = ImageFont.load_default()
-
-    if logo_img:
-        text_x = logo_x + logo_img.width + 50
-        text_y = logo_y + (logo_img.height - font.getsize(title_text)[1]) // 2
-    else:
-        text_x, text_y = 100, 100
-
-    draw.text((text_x, text_y), title_text, fill="black", font=font)
-
-    # ----- Gambar Captain Ferizy kanan bawah -----
-    try:
-        raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
-        resp = requests.get(raw_url, timeout=10)
-        ferizy_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
-        target_h = 1100
-        scale = target_h / ferizy_img.height
-        target_w = int(ferizy_img.width * scale)
-        ferizy_img = ferizy_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-        pos_x = W - target_w - 120
-        pos_y = H - target_h - 140
-        bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
-    except Exception:
-        pass
-
-    # ----- Output buffer PNG -----
-    out = io.BytesIO()
-    bg.save(out, format="PNG")
-    out.seek(0)
-    return out
-
-# ---------------- UI Tab Poster ----------------
+# ===============================
+# UI Tab Poster
+# ===============================
 st.subheader("📥 Download Poster SLA (A4)")
 
 # Ringkasan SLA per proses
