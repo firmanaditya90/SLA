@@ -187,36 +187,6 @@ def seconds_to_sla_format(total_seconds):
 with st.sidebar.expander("📤 Upload Data (Admin Only)", expanded=is_admin):
     uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx") if is_admin else None
 
-if uploaded_file is not None:
-    try:
-        # Baca file Excel
-        df = pd.read_excel(uploaded_file)
-        st.success("File berhasil diunggah!")
-
-        # Tampilkan preview data
-        st.subheader("Preview Data")
-        st.dataframe(df.head())
-
-        # Pilihan manipulasi sederhana: hapus kolom kosong
-        if st.checkbox("Hapus kolom kosong"):
-            df = df.dropna(axis=1, how='all')
-            st.write("Kolom kosong dihapus")
-            st.dataframe(df.head())
-
-        # Download file hasil manipulasi
-        st.subheader("Download Hasil")
-        excel_bytes = df.to_excel(index=False, engine='openpyxl')
-        st.download_button(
-            label="⬇️ Download Excel",
-            data=df.to_excel(index=False, engine='openpyxl'),
-            file_name="hasil.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-    except Exception as e:
-        st.error(f"Terjadi kesalahan saat membaca file: {e}")
-else:
-    st.info("Silakan unggah file Excel untuk melihat preview.")
 
 # ==============================
 # Load data terakhir / simpan baru  (dengan animasi roket)
