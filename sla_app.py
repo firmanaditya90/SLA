@@ -568,7 +568,7 @@ start_periode, end_periode = selected_periode[0], selected_periode[-1]
 
 # ---------- Tab Download Poster ----------
 with tab_download:
-    st.subheader("📥 Download Poster SLA (A4)")
+    st.subheader("📥 Download Poster")
 
     # Ringkasan SLA per proses
     sla_text_dict = {}
