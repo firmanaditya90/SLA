@@ -9,12 +9,20 @@ import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageFont
 import io
 import requests
-def generate_poster(df, sla_text_dict, transaksi_df, image_url):
-    # 1. Buat chart SLA rata-rata per proses
+
+# ==============================
+# Tab Baru: Download Poster
+# ==============================
+import io
+import requests
+from PIL import Image, ImageDraw, ImageFont
+
+def generate_poster(sla_text_dict, transaksi_df, image_url):
+    # Buat chart SLA rata-rata per proses
     fig, ax = plt.subplots(figsize=(6, 4), dpi=100)
     processes = list(sla_text_dict.keys())
-    sla_days = [sla_text_dict[p]['average_days'] for p in processes]  # diasumsikan ada field average_days
-    ax.bar(processes, sla_days, color='#ADD8E6')
+    sla_days = [sla_text_dict[p]['average_days'] for p in processes]
+    ax.bar(processes, sla_days, color='#75c8ff')
     ax.set_ylabel('Rata-rata SLA (hari)')
     ax.set_title('Rata-rata SLA per Proses (hari)')
     plt.tight_layout()
@@ -24,71 +32,85 @@ def generate_poster(df, sla_text_dict, transaksi_df, image_url):
     buf_chart.seek(0)
     chart_img = Image.open(buf_chart)
 
-    # 2. Siapkan background poster
-    width, height = 800, 1200
+    # Siapkan background poster
+    width, height = 900, 1300
     bg_color = (255, 223, 117)  # kuning pastel
     poster = Image.new('RGB', (width, height), bg_color)
     draw = ImageDraw.Draw(poster)
 
-    # 3. Tempel chart ke atas
+    # Tempel chart di poster
     poster.paste(chart_img, (50, 100), chart_img)
 
-    # 4. Load gambar Captain Ferizy dari GitHub
-    # Gunakan raw URL (lihat catatan di bawah!)
+    # Load gambar Captain Ferizy dari GitHub (raw)
     raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
     resp = requests.get(raw_url)
     ferizy_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
-    # Resize & tempel di kanan bawah
-    ferizy_img = ferizy_img.resize((300, 400), Image.ANTIALIAS)
-    poster.paste(ferizy_img, (width - 350, height - 450), ferizy_img)
+    ferizy_img = ferizy_img.resize((350, 450), Image.Resampling.LANCZOS)
+    poster.paste(ferizy_img, (width - 400, height - 500), ferizy_img)
 
-    # 5. Tulis tabel SLA di bawah chart
-    font = ImageFont.truetype("arial.ttf", 20)
+    # Tulis tabel SLA
+    try:
+        font = ImageFont.truetype("arial.ttf", 22)
+    except:
+        font = ImageFont.load_default()
+
     y_text = 550
-    draw.text((50, y_text), "SLA per Proses:", fill='black', font=font)
+    draw.text((50, y_text), "📊 SLA per Proses:", fill='black', font=font)
     for p, info in sla_text_dict.items():
-        y_text += 30
+        y_text += 28
         txt = f"{p}: {info['text']}"
         draw.text((70, y_text), txt, fill='black', font=font)
 
-    # 6. Tulis tabel jumlah transaksi
+    # Tulis tabel jumlah transaksi
     y_text += 50
-    draw.text((50, y_text), "Jumlah Transaksi per Periode:", fill='black', font=font)
+    draw.text((50, y_text), "📋 Jumlah Transaksi per Periode:", fill='black', font=font)
     for _, row in transaksi_df.iterrows():
-        y_text += 30
+        y_text += 28
         txt = f"{row['Periode']}: {row['Jumlah']}"
         draw.text((70, y_text), txt, fill='black', font=font)
 
-    # 7. Save ke buffer
+    # Simpan poster ke buffer
     buf_out = io.BytesIO()
     poster.save(buf_out, format='PNG')
     buf_out.seek(0)
     return buf_out
 
-# Streamlit app:
-st.title("Dashboard SLA & Poster Generator")
+# Tambah tab baru
+tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_poster = st.tabs(
+    ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi", "📥 Download Poster"]
+)
 
-# — Asumsikan df_filtered, sla_texts, transaksi_df sudah tersedia sebelumnya —
-# Contohnya:
-# sla_text_dict = {
-#   'FUNGSIONAL': {'average_days': 2.5, 'text': '2 hari 12 jam 21 menit 52 detik'},
-#   'VENDOR': {'average_days': 9.4, 'text': '9 hari 10 jam 2 menit 27 detik'},
-#   ... }
-# transaksi_df = pd.DataFrame({
-#   'Periode': ['Januari 2025', ...],
-#   'Jumlah': [3690, ...]
-# })
+with tab_poster:
+    st.subheader("📥 Download Poster SLA")
+    # Siapkan data SLA ringkasan
+    sla_text_dict = {}
+    for proses in proses_grafik_cols:
+        avg_seconds = df_filtered[proses].mean()
+        sla_text_dict[proses] = {
+            "average_days": avg_seconds / 86400 if avg_seconds else 0,
+            "text": seconds_to_sla_format(avg_seconds)
+        }
 
-st.header("Generate Poster Ringkasan")
-if st.button("Generate & Download Poster"):
-    image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
-    buf = generate_poster(df_filtered, sla_text_dict, transaksi_df, image_url)
-    st.download_button(
-        label="Download Poster (PNG)",
-        data=buf,
-        file_name="poster_sla.png",
-        mime="image/png"
+    # Siapkan data jumlah transaksi
+    transaksi_df = (
+        df_filtered.groupby(df_filtered[periode_col].astype(str))
+        .size()
+        .reset_index(name="Jumlah")
+        .rename(columns={periode_col: "Periode"})
     )
+
+    image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
+
+    if st.button("🎨 Generate Poster"):
+        buf = generate_poster(sla_text_dict, transaksi_df, image_url)
+        st.image(buf, caption="Preview Poster", use_column_width=True)
+        st.download_button(
+            label="💾 Download Poster (PNG)",
+            data=buf,
+            file_name="poster_sla.png",
+            mime="image/png"
+        )
+
 # ==============================
 # Konfigurasi Halaman
 # ==============================
