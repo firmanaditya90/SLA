@@ -474,6 +474,21 @@ with tab_jumlah:
 # ==========================================================
 #            FITUR BARU: 📥 DOWNLOAD POSTER (A4)
 # ==========================================================
+# ===== Tambahkan Logo ASDP di kiri atas =====
+try:
+    logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
+    resp = requests.get(logo_url, timeout=10)
+    logo_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
+    # skala proporsional, tinggi ~300px
+    target_h = 300
+    scale = target_h / logo_img.height
+    target_w = int(logo_img.width * scale)
+    logo_img = logo_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+    # posisi kiri atas dengan margin
+    logo_x, logo_y = 60, 60
+    bg.paste(logo_img, (logo_x, logo_y), logo_img)
+except Exception:
+    pass
 # Helper: text justify (single line — rata kiri-kanan)
 def draw_justified_line(draw, text, font, box_left, box_right, y, fill):
     # Bagi jadi kata dan hitung total lebar tanpa spasi tambahan
