@@ -471,261 +471,157 @@ with tab_jumlah:
         label.set_ha('right')
     st.pyplot(fig_trans)
 
-# ==========================================================
-#            FITUR BARU: 📥 DOWNLOAD POSTER (A4)
-# ==========================================================
-# Helper: text justify (single line — rata kiri-kanan)
-def draw_justified_line(draw, text, font, box_left, box_right, y, fill):
-    # Bagi jadi kata dan hitung total lebar tanpa spasi tambahan
-    words = text.split()
-    if len(words) <= 1:
-        draw.text((box_left, y), text, font=font, fill=fill)
-        return
-    # Lebar kata-kata
-    widths = [draw.textlength(w, font=font) for w in words]
-    text_width = sum(widths)
-    total_space = (box_right - box_left) - text_width
-    gaps = len(words) - 1
-    if total_space <= 0 or gaps == 0:
-        draw.text((box_left, y), text, font=font, fill=fill)
-        return
-    space_w = total_space / gaps
-    x = box_left
-    for i, w in enumerate(words):
-        draw.text((x, y), w, font=font, fill=fill)
-        x += widths[i]
-        if i < len(words) - 1:
-            x += space_w
+import streamlit as st
+from PIL import Image, ImageDraw, ImageFont
+import requests, io
 
-# Helper: rounded rectangle dengan shadow
-def draw_card_with_shadow(base_img, xy, radius=28, shadow=22, fill=(255,255,255), outline=None, outline_width=2):
-    x0, y0, x1, y1 = xy
-    w = x1 - x0
-    h = y1 - y0
-    # Buat layer shadow
-    shadow_layer = Image.new('RGBA', (w + shadow*2, h + shadow*2), (0,0,0,0))
-    shadow_draw = ImageDraw.Draw(shadow_layer)
-    shadow_draw.rounded_rectangle([shadow, shadow, shadow+w, shadow+h], radius=radius, fill=(0,0,0,120))
-    shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=shadow/2))
-    base_img.paste(shadow_layer, (x0-shadow, y0-shadow), shadow_layer)
-    # Card utama
-    card_layer = Image.new('RGBA', (w, h), (0,0,0,0))
-    card_draw = ImageDraw.Draw(card_layer)
-    card_draw.rounded_rectangle([0,0,w,h], radius=radius, fill=fill)
-    if outline and outline_width>0:
-        card_draw.rounded_rectangle([outline_width//2, outline_width//2, w-outline_width//2, h-outline_width//2],
-                                    radius=radius, outline=outline, width=outline_width)
-    base_img.paste(card_layer, (x0, y0), card_layer)
+# ------------------------------------------------
+# Fungsi untuk mengubah detik ke format SLA
+# ------------------------------------------------
+def seconds_to_sla_format(seconds):
+    if seconds is None:
+        return "0 hari"
+    days = int(seconds // 86400)
+    return f"{days} hari"
 
-# Helper: header gradien untuk tabel
-def draw_gradient_bar(img, xy, top_color=(79,129,189), bottom_color=(31,87,163)):
-    x0, y0, x1, y1 = xy
-    height = y1 - y0
-    bar = Image.new('RGBA', (x1-x0, height), (0,0,0,0))
-    for i in range(height):
-        ratio = i / max(1, height-1)
-        r = int(top_color[0] * (1-ratio) + bottom_color[0] * ratio)
-        g = int(top_color[1] * (1-ratio) + bottom_color[1] * ratio)
-        b = int(top_color[2] * (1-ratio) + bottom_color[2] * ratio)
-        ImageDraw.Draw(bar).line([(0,i),(x1-x0,i)], fill=(r,g,b,255))
-    img.paste(bar, (x0, y0), bar)
-
-# Fungsi utama pembuat poster A4
+# ------------------------------------------------
+# Fungsi generate poster A4
+# ------------------------------------------------
 def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text):
-    # Kanvas A4 (300 DPI): 2480 × 3508 px
+    # Ukuran A4 300 DPI
     W, H = 2480, 3508
-    bg = Image.new("RGB", (W, H), (255, 223, 117))  # kuning pastel
+    bg = Image.new("RGB", (W, H), (255, 255, 255))
     draw = ImageDraw.Draw(bg)
 
-    # Font
-    def font_try(name, size):
-        try:
-            return ImageFont.truetype(name, size)
-        except:
-            return ImageFont.load_default()
-
-    font_title = font_try("arialbd.ttf", 286)   # bold
-    font_sub   = font_try("arial.ttf", 380)
-    font_h     = font_try("arialbd.ttf", 340)
-    font_cell  = font_try("arial.ttf", 300)
-    
-     # ===== Header: Judul (justified / rata kiri-kanan) =====
-    # Posisi vertical tetap
-    title_y = 120
-
-    # Menghitung lebar teks judul
-    title_width, title_height = draw.textsize(title_text, font=font_title)
-
-    # Posisi horizontal agar center
-    title_x = (W - title_width) / 2
-
-    # Menulis judul
-    draw.text((title_x, title_y), title_text, font=font_title, fill=(0,0,0))
-
-    # Subjudul periode
-    subtitle_text = f"Periode: {periode_range_text}"
-    subtitle_width, subtitle_height = draw.textsize(subtitle_text, font=font_sub)
-    subtitle_x = (W - subtitle_width) / 2
-    draw.text((subtitle_x, title_y + 100), subtitle_text, font=font_sub, fill=(30,30,30))
-
-def generate_image():
-    # Logo ASDP (left top)
+    # -------------------
+    # Logo ASDP kiri atas
+    # -------------------
     try:
-        logo_raw = requests.get(
-            "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png",
-            timeout=10
-        )
+        logo_raw = requests.get("https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png", timeout=10)
         logo = Image.open(io.BytesIO(logo_raw.content)).convert("RGBA")
         ratio = 300 / logo.height
-        logo = logo.resize((int(logo.width*ratio), 300), Image.Resampling.LANCZOS)
+        logo = logo.resize((int(logo.width * ratio), 300), Image.Resampling.LANCZOS)
         bg.paste(logo, (40, 28), logo)
     except Exception:
         pass
 
-    # ===== Chart SLA rata-rata per proses =====
-    # Siapkan chart matplotlib (transparan) dan tempel ke poster
-    processes = list(sla_text_dict.keys())
-    sla_days = [sla_text_dict[p]['average_days'] for p in processes] if processes else []
-    fig, ax = plt.subplots(figsize=(10, 4), dpi=200)  # resolusi tinggi
-    if processes:
-        ax.bar(processes, sla_days)
-    ax.set_ylabel('Hari')
-    ax.set_title('Rata-rata SLA per Proses')
-    ax.grid(axis='y', linestyle='--', alpha=0.4)
-    plt.tight_layout()
-    buf_chart = io.BytesIO()
-    fig.savefig(buf_chart, format='PNG', transparent=True)
-    buf_chart.seek(0)
-    chart_img = Image.open(buf_chart)
-    chart_x, chart_y = left_margin, 320
-    bg.paste(chart_img, (chart_x, chart_y), chart_img)
+    # -------------------
+    # Font judul & subjudul
+    # -------------------
+    try:
+        font_title = ImageFont.truetype("arial.ttf", 140)  # diperbesar
+        font_sub = ImageFont.truetype("arial.ttf", 60)
+        font_cell = ImageFont.truetype("arial.ttf", 50)
+    except:
+        font_title = ImageFont.load_default()
+        font_sub = ImageFont.load_default()
+        font_cell = ImageFont.load_default()
 
-    # ===== Kartu Tabel SLA =====
-    card1_x0, card1_y0 = left_margin, 900
-    card1_x1, card1_y1 = W - 140, 900 + 520
-    draw_card_with_shadow(bg, (card1_x0, card1_y0, card1_x1, card1_y1),
-                          radius=32, shadow=28, fill=(255,255,255), outline=(210,210,210), outline_width=2)
-    # Header gradient
-    header_h = 72
-    draw_gradient_bar(bg, (card1_x0, card1_y0, card1_x1, card1_y0+header_h),
-                      top_color=(79,129,189), bottom_color=(31,87,163))
-    draw.text((card1_x0+24, card1_y0+18), "SLA PER PROSES", font=font_h, fill=(255,255,255))
+    # -------------------
+    # Judul center
+    # -------------------
+    title_text = "SLA PAYMENT ANALYZER"
+    title_y = 120
+    bbox = draw.textbbox((0, 0), title_text, font=font_title)
+    title_width = bbox[2] - bbox[0]
+    title_x = (W - title_width) / 2
+    draw.text((title_x, title_y), title_text, font=font_title, fill=(0, 0, 0))
 
-    # Kolom
-    col1_w, col2_w = 560, (card1_x1 - card1_x0 - 560 - 60)
-    table_left = card1_x0 + 30
-    table_top  = card1_y0 + header_h + 20
-    row_h = 60
+    # -------------------
+    # Subjudul center
+    # -------------------
+    subtitle_text = f"Periode: {periode_range_text}"
+    bbox_sub = draw.textbbox((0, 0), subtitle_text, font=font_sub)
+    subtitle_width = bbox_sub[2] - bbox_sub[0]
+    subtitle_x = (W - subtitle_width) / 2
+    draw.text((subtitle_x, title_y + 150), subtitle_text, font=font_sub, fill=(30, 30, 30))
 
-    # Header kolom
-    draw.text((table_left, table_top), "PROSES", font=font_h, fill=(40,40,40))
-    draw.text((table_left + col1_w, table_top), "RATA-RATA SLA", font=font_h, fill=(40,40,40))
-    y_cursor = table_top + 18 + 24
+    # -------------------
+    # Tabel transaksi_df
+    # -------------------
+    row_h = 70
+    card2_x0 = 100
+    t2_y = 400
+    t2_col1_w = 400
 
-    # Garis pemisah header
-    draw.line([(card1_x0+20, y_cursor), (card1_x1-20, y_cursor)], fill=(220,220,220), width=2)
-    y = y_cursor + 18
-
-    # Isi baris
-    for i, (p, info) in enumerate(sla_text_dict.items()):
-        row_bg = Image.new("RGBA", (card1_x1-card1_x0-40, row_h), (255,255,255,0))
-        row_draw = ImageDraw.Draw(row_bg)
-        if i % 2 == 0:
-            # subtle zebra
-            row_draw.rectangle([0,0,row_bg.width,row_bg.height], fill=(245,248,253,255))
-        # teks
-        row_draw.text((10, 12), str(p), font=font_cell, fill=(30,30,30))
-        row_draw.text((10 + col1_w, 12), str(info['text']), font=font_cell, fill=(30,30,30))
-        bg.paste(row_bg, (card1_x0+20, y), row_bg)
-        y += row_h + 8
-
-    # ===== Kartu Tabel Jumlah Transaksi =====
-    card2_x0, card2_y0 = left_margin, card1_y1 + 60
-    card2_x1, card2_y1 = W - 140, card2_y0 + 520
-    draw_card_with_shadow(bg, (card2_x0, card2_y0, card2_x1, card2_y1),
-                          radius=32, shadow=28, fill=(255,255,255), outline=(210,210,210), outline_width=2)
-    # Header gradient (warna oranye)
-    draw_gradient_bar(bg, (card2_x0, card2_y0, card2_x1, card2_y0+header_h),
-                      top_color=(240,130,70), bottom_color=(208,88,34))
-    draw.text((card2_x0+24, card2_y0+18), "JUMLAH TRANSAKSI PER PERIODE", font=font_h, fill=(255,255,255))
-
-    # Kolom
-    t2_col1_w = 800
-    t2_left = card2_x0 + 30
-    t2_top  = card2_y0 + header_h + 20
-
-    draw.text((t2_left, t2_top), "PERIODE", font=font_h, fill=(40,40,40))
-    draw.text((t2_left + t2_col1_w, t2_top), "JUMLAH", font=font_h, fill=(40,40,40))
-    t2_y_cursor = t2_top + 18 + 24
-    draw.line([(card2_x0+20, t2_y_cursor), (card2_x1-20, t2_y_cursor)], fill=(220,220,220), width=2)
-    t2_y = t2_y_cursor + 18
-
-    # Baris tabel transaksi (maks 12 baris agar muat)
-    max_rows = 12
-    for i, row in enumerate(transaksi_df.itertuples()):
-        if i >= max_rows:
-            break
-        rbg = Image.new("RGBA", (card2_x1-card2_x0-40, row_h), (255,255,255,0))
+    for idx, row in transaksi_df.iterrows():
+        # buat card mini per baris
+        rbg = Image.new("RGBA", (600, row_h), (245, 245, 245, 255))
         rdraw = ImageDraw.Draw(rbg)
-        if i % 2 == 0:
-            rdraw.rectangle([0,0,rbg.width,rbg.height], fill=(255,244,238,255))
         rdraw.text((10, 12), str(row.Periode), font=font_cell, fill=(30,30,30))
         rdraw.text((10 + t2_col1_w, 12), str(row.Jumlah), font=font_cell, fill=(30,30,30))
         bg.paste(rbg, (card2_x0+20, t2_y), rbg)
         t2_y += row_h + 8
 
-    # ===== Gambar Captain Ferizy (proporsional, kanan bawah) =====
+    # -------------------
+    # Gambar Captain Ferizy (kanan bawah)
+    # -------------------
     try:
         raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
         resp = requests.get(raw_url, timeout=10)
         ferizy_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
-        # skala proporsional ~ tinggi 1100px
         target_h = 1100
         scale = target_h / ferizy_img.height
         target_w = int(ferizy_img.width * scale)
         ferizy_img = ferizy_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-        # letak kanan bawah, sedikit overlap margin
         pos_x = W - target_w - 120
         pos_y = H - target_h - 140
         bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
     except Exception:
-        # jika gagal load, skip silently
         pass
 
+    # -------------------
     # Output buffer PNG
+    # -------------------
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
     return out
 
-# ---------- UI Tab Poster ----------
+# ------------------------------------------------
+# UI Tab Poster Streamlit
+# ------------------------------------------------
+st.set_page_config(layout="wide")
+tab_poster = st.tabs(["Poster"])[0]
+
 with tab_poster:
     st.subheader("📥 Download Poster SLA (A4)")
-    # Ringkasan SLA per proses (ambil dari filter aktif)
+
+    # Ringkasan SLA per proses
     sla_text_dict = {}
-    for proses in proses_grafik_cols:
-        avg_seconds = df_filtered[proses].mean()
-        sla_text_dict[proses] = {
-            "average_days": (avg_seconds or 0) / 86400 if avg_seconds is not None else 0,
-            "text": seconds_to_sla_format(avg_seconds)
-        }
+    proses_grafik_cols = ["Proses A", "Proses B", "Proses C"]  # ganti sesuai df asli
+    df_filtered = st.session_state.get("df_filtered")  # contoh
+    start_periode = "2025-08-01"
+    end_periode = "2025-08-15"
+    selected_periode = [str(d) for d in range(1, 16)]
 
-    # Jumlah transaksi per periode (urut sesuai pilihan)
-    transaksi_df = (
-        df_filtered.groupby(df_filtered[periode_col].astype(str))
-        .size()
-        .reset_index(name="Jumlah")
-        .rename(columns={periode_col: "Periode"})
-    )
-    # sort sesuai selected_periode
-    transaksi_df["__order"] = transaksi_df["Periode"].apply(lambda x: selected_periode.index(str(x)) if str(x) in selected_periode else 10**9)
-    transaksi_df = transaksi_df.sort_values("__order").drop(columns="__order")
+    if df_filtered is not None:
+        for proses in proses_grafik_cols:
+            avg_seconds = df_filtered[proses].mean()
+            sla_text_dict[proses] = {
+                "average_days": (avg_seconds or 0) / 86400 if avg_seconds is not None else 0,
+                "text": seconds_to_sla_format(avg_seconds)
+            }
 
-    # Gambar Captain Ferizy (GitHub)
+        transaksi_df = (
+            df_filtered.groupby(df_filtered["Periode"].astype(str))
+            .size()
+            .reset_index(name="Jumlah")
+            .rename(columns={"Periode": "Periode"})
+        )
+        transaksi_df["__order"] = transaksi_df["Periode"].apply(
+            lambda x: selected_periode.index(str(x)) if str(x) in selected_periode else 10**9
+        )
+        transaksi_df = transaksi_df.sort_values("__order").drop(columns="__order")
+    else:
+        import pandas as pd
+        transaksi_df = pd.DataFrame({"Periode": [], "Jumlah": []})
+
+    # Gambar Captain Ferizy GitHub
     image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
     periode_range_text = f"{start_periode} — {end_periode}"
 
-    # Tombol generate
+    # Tombol generate poster
     if st.button("🎨 Generate Poster A4"):
         poster_buf = generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text)
         st.image(poster_buf, caption="Preview Poster A4", use_column_width=True)
