@@ -476,36 +476,20 @@ with tab_jumlah:
 # ==========================================================
 import streamlit as st
 import pandas as pd
+import requests, io
 from PIL import Image, ImageDraw, ImageFont
-import requests
-import io
 
-# ---------------- Contoh DataFrame ----------------
-df_filtered = pd.DataFrame({
-    "Proses A": [86400, 172800, 259200],
-    "Proses B": [43200, 86400, 129600],
-    "Periode": ["2025-07", "2025-08", "2025-09"]
-})
-
-proses_grafik_cols = ["Proses A", "Proses B"]
-periode_col = "Periode"
-selected_periode = df_filtered[periode_col].astype(str).tolist()
-start_periode, end_periode = selected_periode[0], selected_periode[-1]
-
-# ---------------- Helper Function ----------------
+# ---------- Fungsi helper ----------
 def seconds_to_sla_format(seconds):
-    if seconds is None:
-        return "-"
-    days = seconds // 86400
-    hours = (seconds % 86400) // 3600
-    minutes = (seconds % 3600) // 60
-    return f"{int(days)}d {int(hours)}h {int(minutes)}m"
+    if seconds is None or seconds == 0:
+        return "0 hari"
+    days = int(seconds // 86400)
+    return f"{days} hari"
 
-# ---------------- Poster Generator ----------------
 def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text):
-    # Ukuran poster A4 @300dpi
+    # ukuran poster A4 @300dpi ~ 2480x3508 px
     W, H = 2480, 3508
-    bg = Image.new("RGB", (W, H), (255, 255, 255))
+    bg = Image.new("RGB", (W, H), color=(255,255,255))
     draw = ImageDraw.Draw(bg)
 
     # ---------- Logo ASDP ----------
@@ -517,10 +501,11 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         scale = target_h / logo_img.height
         target_w = int(logo_img.width * scale)
         logo_img = logo_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-        logo_x, logo_y = 100, 100
+        logo_x, logo_y = 80, 80
         bg.paste(logo_img, (logo_x, logo_y), logo_img)
     except Exception:
         logo_img = None
+        logo_x, logo_y = 80, 80
 
     # ---------- Judul Poster ----------
     try:
@@ -530,17 +515,19 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         font_size = 220
         font = ImageFont.truetype(font_buf, font_size)
         title_text = "SLA DOKUMEN PENAGIHAN"
-        max_width = W - 2*100
-        while font.getlength(title_text) > max_width and font_size > 50:
+        max_width = W - (logo_x + (logo_img.width if logo_img else 0) + 150)
+
+        while draw.textlength(title_text, font=font) > max_width and font_size > 50:
             font_size -= 5
             font = ImageFont.truetype(font_buf, font_size)
-        text_x = logo_x + logo_img.width + 50
-        text_y = logo_y + (logo_img.height - font.getsize(title_text)[1]) // 2
+
+        text_x = logo_x + (logo_img.width if logo_img else 0) + 50
+        text_y = logo_y + ((logo_img.height if logo_img else 0) - font.getbbox(title_text)[3]) // 2
         draw.text((text_x, text_y), title_text, fill=(0,0,0), font=font)
     except Exception as e:
         print("Gagal load font:", e)
 
-    # ---------- Gambar Captain Ferizy ----------
+    # ---------- Gambar Captain Ferizy (kanan bawah) ----------
     try:
         raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
         resp = requests.get(raw_url, timeout=10)
@@ -555,14 +542,26 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     except Exception:
         pass
 
-    # Output PNG
+    # Output buffer PNG
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
     return out
 
-# ---------------- UI Streamlit ----------------
+# ---------- UI Tab Poster ----------
 st.subheader("📥 Download Poster SLA (A4)")
+
+# Contoh DataFrame dummy
+df_filtered = pd.DataFrame({
+    "Proses A": [86400, 172800, 259200],
+    "Proses B": [43200, 86400, 129600],
+    "Periode": ["2025-07", "2025-08", "2025-09"]
+})
+
+proses_grafik_cols = ["Proses A", "Proses B"]
+periode_col = "Periode"
+selected_periode = df_filtered[periode_col].astype(str).tolist()
+start_periode, end_periode = selected_periode[0], selected_periode[-1]
 
 # Ringkasan SLA per proses
 sla_text_dict = {}
@@ -583,11 +582,11 @@ transaksi_df = (
 transaksi_df["__order"] = transaksi_df["Periode"].apply(lambda x: selected_periode.index(str(x)) if str(x) in selected_periode else 10**9)
 transaksi_df = transaksi_df.sort_values("__order").drop(columns="__order")
 
-# Gambar Captain Ferizy
+# Gambar Captain Ferizy (GitHub)
 image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
 periode_range_text = f"{start_periode} — {end_periode}"
 
-# Tombol Generate Poster
+# Tombol generate
 if st.button("🎨 Generate Poster A4"):
     poster_buf = generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text)
     st.image(poster_buf, caption="Preview Poster A4", use_column_width=True)
