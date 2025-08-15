@@ -591,9 +591,7 @@ transaksi_df = (
     .reset_index(name="Jumlah")
     .rename(columns={periode_col: "Periode"})
 )
-transaksi_df["__order"] = transaksi_df["Periode"].apply(
-    lambda x: selected_periode.index(str(x)) if str(x) in selected_periode else 10**9
-)
+transaksi_df["__order"] = transaksi_df["Periode"].apply(lambda x: selected_periode.index(str(x)) if str(x) in selected_periode else 10**9)
 transaksi_df = transaksi_df.sort_values("__order").drop(columns="__order")
 
 # Gambar Captain Ferizy (GitHub)
