@@ -476,80 +476,10 @@ with tab_jumlah:
 # ==========================================================
 import streamlit as st
 import pandas as pd
-import requests
+import requests, io
 from PIL import Image, ImageDraw, ImageFont
-import io
 
-# ---------- Helper ----------
-def seconds_to_sla_format(seconds):
-    if seconds is None:
-        return "0 hari"
-    days = int(seconds // 86400)
-    hours = int((seconds % 86400) // 3600)
-    return f"{days} hari {hours} jam"
-
-# ---------- Fungsi Generate Poster ----------
-def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text):
-    # ukuran poster A4 @300dpi
-    W, H = 2480, 3508
-    bg = Image.new("RGB", (W, H), "white")
-    draw = ImageDraw.Draw(bg)
-
-    # ---------- Logo ASDP ----------
-    try:
-        logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
-        resp = requests.get(logo_url, timeout=10)
-        logo_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
-        # skala proporsional ~ tinggi 300px
-        target_h = 300
-        scale = target_h / logo_img.height
-        target_w = int(logo_img.width * scale)
-        logo_img = logo_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-        logo_x, logo_y = 50, 50
-        bg.paste(logo_img, (logo_x, logo_y), logo_img)
-    except Exception:
-        logo_img = None
-        logo_x, logo_y = 50, 50
-
-    # ---------- Judul SLA ----------
-    title_text = "SLA DOKUMEN PENAGIHAN"
-    # font besar eksplisit
-    font_size = 700
-    try:
-        font = ImageFont.truetype("arial.ttf", font_size)
-    except:
-        font = ImageFont.load_default()
-    # hitung bounding box
-    bbox = draw.textbbox((0,0), title_text, font=font)
-    text_width = bbox[2] - bbox[0]
-    text_height = bbox[3] - bbox[1]
-    # posisi center horizontal, vertikal sejajar tengah logo
-    text_x = (W - text_width) // 2
-    text_y = logo_y + (logo_img.height - text_height) // 2 if logo_img else 100
-    draw.text((text_x, text_y), title_text, fill="black", font=font)
-
-    # ---------- Gambar Captain Ferizy ----------
-    try:
-        raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
-        resp = requests.get(raw_url, timeout=10)
-        ferizy_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
-        target_h = 1100
-        scale = target_h / ferizy_img.height
-        target_w = int(ferizy_img.width * scale)
-        ferizy_img = ferizy_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-        pos_x = W - target_w - 120
-        pos_y = H - target_h - 140
-        bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
-    except Exception:
-        pass
-
-    # Output buffer PNG
-    out = io.BytesIO()
-    bg.save(out, format="PNG")
-    out.seek(0)
-    return out
-
-# ---------- Data Dummy ----------
+# ---------- Dummy Data ----------
 df_filtered = pd.DataFrame({
     "Proses A": [86400, 172800, 259200],
     "Proses B": [43200, 86400, 129600],
@@ -560,39 +490,55 @@ periode_col = "Periode"
 selected_periode = df_filtered[periode_col].astype(str).tolist()
 start_periode, end_periode = selected_periode[0], selected_periode[-1]
 
-# ---------- UI Tab Poster ----------
-st.subheader("📥 Download Poster SLA (A4)")
+def seconds_to_sla_format(seconds):
+    if seconds is None or pd.isna(seconds):
+        return "0 hari"
+    days = int(seconds // 86400)
+    return f"{days} hari"
 
-# Ringkasan SLA per proses
-sla_text_dict = {}
-for proses in proses_grafik_cols:
-    avg_seconds = df_filtered[proses].mean()
-    sla_text_dict[proses] = {
-        "average_days": (avg_seconds or 0) / 86400 if avg_seconds is not None else 0,
-        "text": seconds_to_sla_format(avg_seconds)
-    }
+# ---------- Fungsi Generate Poster ----------
+def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text):
+    # Ukuran poster A4 300dpi ~ 2480 x 3508 px
+    W, H = 2480, 3508
+    bg = Image.new("RGB", (W, H), color="white")
+    draw = ImageDraw.Draw(bg)
 
-# Jumlah transaksi per periode
-transaksi_df = (
-    df_filtered.groupby(df_filtered[periode_col].astype(str))
-    .size()
-    .reset_index(name="Jumlah")
-    .rename(columns={periode_col: "Periode"})
-)
-transaksi_df["__order"] = transaksi_df["Periode"].apply(lambda x: selected_periode.index(str(x)) if str(x) in selected_periode else 10**9)
-transaksi_df = transaksi_df.sort_values("__order").drop(columns="__order")
+    # ---------- Logo ASDP (kiri atas) ----------
+    try:
+        logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
+        resp = requests.get(logo_url, timeout=10)
+        logo_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
+        # skala proporsional ~ tinggi 300px
+        target_h = 300
+        scale = target_h / logo_img.height
+        target_w = int(logo_img.width * scale)
+        logo_img = logo_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+        logo_x, logo_y = 100, 100
+        bg.paste(logo_img, (logo_x, logo_y), logo_img)
+    except Exception:
+        logo_img = None
+        logo_x, logo_y = 0, 0
 
-# Gambar Captain Ferizy
-image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
-periode_range_text = f"{start_periode} — {end_periode}"
+    # ---------- Judul SLA (proporsional, center) ----------
+    title_text = "SLA DOKUMEN PENAGIHAN"
+    max_width = W - 200  # margin 100px kiri kanan
+    font_size = 2000
+    while font_size > 10:
+        try:
+            font = ImageFont.truetype("arial.ttf", font_size)
+        except:
+            font = ImageFont.load_default()
+        bbox = draw.textbbox((0,0), title_text, font=font)
+        text_width = bbox[2] - bbox[0]
+        if text_width <= max_width:
+            break
+        font_size -= 10
+    text_x = (W - text_width) // 2
+    text_y = logo_y + (logo_img.height - (bbox[3] - bbox[1])) // 2 if logo_img else 100
+    draw.text((text_x, text_y), title_text, fill="black", font=font)
 
-# Tombol generate
-if st.button("🎨 Generate Poster A4"):
-    poster_buf = generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text)
-    st.image(poster_buf, caption="Preview Poster A4", use_column_width=True)
-    st.download_button(
-        label="💾 Download Poster (PNG, A4 - 300 DPI)",
-        data=poster_buf,
-        file_name="Poster_SLA_A4.png",
-        mime="image/png"
-    )
+    # ---------- Gambar Captain Ferizy (kanan bawah) ----------
+    try:
+        raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
+        resp = requests.get(raw_url, timeout=10)
+        ferizy_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
