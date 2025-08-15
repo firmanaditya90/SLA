@@ -471,7 +471,7 @@ with tab_jumlah:
         label.set_ha('right')
     st.pyplot(fig_trans)
 
-with tab_download:
+with tab_poster:
     st.subheader("📥 Download Poster")
 
     if st.button("🎨 Generate Poster A4"):
