@@ -465,7 +465,7 @@ with tab_jumlah:
         label.set_ha('right')
     st.pyplot(fig_trans)
 
-# == POSTER FUNCTION TAMBAHAN ==
+# ==== FUNGSI POSTER BARU ====
 
 def generate_poster(sla_text_dict, transaksi_df, image_url):
     import io
@@ -476,8 +476,9 @@ def generate_poster(sla_text_dict, transaksi_df, image_url):
     # Ukuran A4 pixel (300 DPI)
     width, height = 2480, 3508
 
-    # Ambil background
-    bg_resp = requests.get("https://raw.githubusercontent.com/firmanaditya90/SLA/main/Background.png")
+    # Ambil background dari GitHub
+    bg_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/Background.png"
+    bg_resp = requests.get(bg_url)
     background = Image.open(io.BytesIO(bg_resp.content)).convert('RGBA')
     background = background.resize((width, height))
 
@@ -488,14 +489,14 @@ def generate_poster(sla_text_dict, transaksi_df, image_url):
 
     # Judul
     try:
-        font_title = ImageFont.truetype("arialbd.ttf", 80)
+        font_title = ImageFont.truetype("arialbd.ttf", 140)
     except:
         font_title = ImageFont.load_default()
     title_text = "SLA PAYMENT ANALYZER"
     title_w, title_h = draw.textsize(title_text, font=font_title)
-    draw.text(((width - title_w) / 2, 150), title_text, fill="black", font=font_title)
+    draw.text(((width - title_w) / 2, 200), title_text, fill="black", font=font_title)
 
-    # Chart
+    # Grafik
     fig, ax = plt.subplots(figsize=(8, 5), dpi=150)
     processes = list(sla_text_dict.keys())
     sla_days = [sla_text_dict[p]['average_days'] for p in processes]
@@ -509,49 +510,49 @@ def generate_poster(sla_text_dict, transaksi_df, image_url):
     chart_img = Image.open(buf_chart)
 
     chart_x = (width - chart_img.width) // 2
-    poster.paste(chart_img, (chart_x, 300), chart_img)
+    poster.paste(chart_img, (chart_x, 400), chart_img)
 
     # Logo ASDP kiri atas
     asdp_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
     asdp_resp = requests.get(asdp_url)
     asdp_img = Image.open(io.BytesIO(asdp_resp.content)).convert('RGBA')
-    asdp_img = asdp_img.resize((250, 120))
+    asdp_img = asdp_img.resize((300, 150))
     poster.paste(asdp_img, (100, 50), asdp_img)
 
     # Captain Ferizy kanan bawah
     raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
     resp = requests.get(raw_url)
     ferizy_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
-    ferizy_img = ferizy_img.resize((500, 650), Image.Resampling.LANCZOS)
-    poster.paste(ferizy_img, (width - 600, height - 800), ferizy_img)
+    ferizy_img = ferizy_img.resize((600, 780), Image.Resampling.LANCZOS)
+    poster.paste(ferizy_img, (width - 750, height - 900), ferizy_img)
 
     # Font tabel
     try:
-        font_table_header = ImageFont.truetype("arialbd.ttf", 48)
-        font_table = ImageFont.truetype("arial.ttf", 40)
+        font_table_header = ImageFont.truetype("arialbd.ttf", 60)
+        font_table = ImageFont.truetype("arial.ttf", 48)
     except:
         font_table_header = ImageFont.load_default()
         font_table = ImageFont.load_default()
 
     # Tabel SLA
-    table_x, table_y = 200, 1000
-    draw.rectangle([table_x, table_y, width - 200, table_y + 70], fill="#4da6ff")
+    table_x, table_y = 200, 1200
+    draw.rectangle([table_x, table_y, width - 200, table_y + 80], fill="#4da6ff")
     draw.text((table_x + 20, table_y + 10), "SLA PER PROSES", font=font_table_header, fill="white")
-    row_y = table_y + 90
+    row_y = table_y + 100
     for p, info in sla_text_dict.items():
         draw.text((table_x + 20, row_y), p, font=font_table, fill="black")
-        draw.text((table_x + 500, row_y), info['text'], font=font_table, fill="black")
-        row_y += 60
+        draw.text((table_x + 600, row_y), info['text'], font=font_table, fill="black")
+        row_y += 70
 
     # Tabel Transaksi
     table2_y = row_y + 100
-    draw.rectangle([table_x, table2_y, width - 200, table2_y + 70], fill="#ff9933")
+    draw.rectangle([table_x, table2_y, width - 200, table2_y + 80], fill="#ff9933")
     draw.text((table_x + 20, table2_y + 10), "JUMLAH TRANSAKSI PER PERIODE", font=font_table_header, fill="white")
-    row2_y = table2_y + 90
+    row2_y = table2_y + 100
     for _, row in transaksi_df.iterrows():
         draw.text((table_x + 20, row2_y), str(row['Periode']), font=font_table, fill="black")
-        draw.text((table_x + 500, row2_y), str(row['Jumlah']), font=font_table, fill="black")
-        row2_y += 60
+        draw.text((table_x + 600, row2_y), str(row['Jumlah']), font=font_table, fill="black")
+        row2_y += 70
 
     buf_out = io.BytesIO()
     poster.convert('RGB').save(buf_out, format='PNG')
