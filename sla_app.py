@@ -476,61 +476,62 @@ with tab_jumlah:
 # ==========================================================
 import streamlit as st
 import pandas as pd
-import requests, io
+import io
+import requests
 from PIL import Image, ImageDraw, ImageFont
 
-# ------------------- Fungsi util -------------------
+# ---------- Fungsi helper ----------
 def seconds_to_sla_format(seconds):
     if seconds is None:
-        return "0d 0h 0m"
+        return "0 hari"
     days = int(seconds // 86400)
-    hours = int((seconds % 86400) // 3600)
-    minutes = int((seconds % 3600) // 60)
-    return f"{days}d {hours}h {minutes}m"
+    return f"{days} hari"
 
-# ------------------- Fungsi generate poster -------------------
+# ---------- Fungsi generate poster A4 ----------
 def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text):
-    # ukuran poster A4 2480x3508 px (300 DPI)
+    # ukuran poster A4 dalam px (300 DPI)
     W, H = 2480, 3508
     bg = Image.new("RGB", (W, H), color="white")
     draw = ImageDraw.Draw(bg)
 
-    # ----- Logo ASDP (kiri atas) -----
+    # ----- Logo ASDP kiri atas -----
+    logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
+    logo_img = None
     try:
-        logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
         resp = requests.get(logo_url, timeout=10)
         logo_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
-        max_w = 300
-        scale = min(max_w / logo_img.width, 1)
-        logo_w = int(logo_img.width * scale)
-        logo_h = int(logo_img.height * scale)
-        logo_img = logo_img.resize((logo_w, logo_h), Image.Resampling.LANCZOS)
-        logo_x, logo_y = 100, 80
-        bg.paste(logo_img, (logo_x, logo_y), mask=logo_img)
-    except Exception as e:
-        print("Logo gagal:", e)
-        logo_img = None
+        # skala proporsional ~ tinggi 300px
+        target_h = 300
+        scale = target_h / logo_img.height
+        target_w = int(logo_img.width * scale)
+        logo_img = logo_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+        logo_x, logo_y = 100, 100
+        bg.paste(logo_img, (logo_x, logo_y), logo_img)
+    except Exception:
+        pass
 
     # ----- Judul di samping logo -----
     title_text = "SLA DOKUMEN PENAGIHAN"
-    font_size = 120
-    try:
-        try:
-            font = ImageFont.truetype("arialbd.ttf", font_size)
-        except:
-            font = ImageFont.load_default()
+    font_size = 20
+    font = ImageFont.load_default()
+    max_width = W * 0.7
+    if logo_img:
+        max_width -= (logo_img.width + 50)
 
-        if logo_img:
-            text_x = logo_x + logo_img.width + 50
-            text_y = logo_y + (logo_img.height - font.getsize(title_text)[1]) // 2
-        else:
-            text_x, text_y = 100, 100
+    # scale font hingga mendekati lebar target
+    while font.getsize(title_text)[0] < max_width:
+        font_size += 5
+        font = ImageFont.load_default()  # PIL default font
 
-        draw.text((text_x, text_y), title_text, fill="black", font=font)
-    except Exception as e:
-        print("Judul gagal:", e)
+    if logo_img:
+        text_x = logo_x + logo_img.width + 50
+        text_y = logo_y + (logo_img.height - font.getsize(title_text)[1]) // 2
+    else:
+        text_x, text_y = 100, 100
 
-    # ----- Captain Ferizy (kanan bawah) -----
+    draw.text((text_x, text_y), title_text, fill="black", font=font)
+
+    # ----- Gambar Captain Ferizy (kanan bawah) -----
     try:
         raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
         resp = requests.get(raw_url, timeout=10)
@@ -545,13 +546,13 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     except Exception:
         pass
 
-    # Output buffer PNG
+    # ----- Output buffer PNG -----
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
     return out
 
-# ------------------- Contoh DataFrame -------------------
+# ---------- Data dummy ----------
 df_filtered = pd.DataFrame({
     "Proses A": [86400, 172800, 259200],
     "Proses B": [43200, 86400, 129600],
@@ -563,7 +564,7 @@ periode_col = "Periode"
 selected_periode = df_filtered[periode_col].astype(str).tolist()
 start_periode, end_periode = selected_periode[0], selected_periode[-1]
 
-# ------------------- UI Tab Poster -------------------
+# ---------- UI Tab Poster ----------
 st.subheader("📥 Download Poster SLA (A4)")
 
 # Ringkasan SLA per proses
