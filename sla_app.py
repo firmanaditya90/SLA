@@ -1,4 +1,4 @@
-import streamlib as st
+import streamlit as st
 import pandas as pd
 import re
 import math
