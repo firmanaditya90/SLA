@@ -495,22 +495,24 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     draw = ImageDraw.Draw(bg)
 
     # ---------- Logo ASDP ----------
+    logo_x, logo_y = 100, 100
+    logo_img = None
     try:
         logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
         resp = requests.get(logo_url, timeout=10)
         logo_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
-        target_h = 300
+        target_h = 250
         scale = target_h / logo_img.height
         target_w = int(logo_img.width * scale)
         logo_img = logo_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-        logo_x, logo_y = 100, 100
         bg.paste(logo_img, (logo_x, logo_y), logo_img)
     except Exception:
         pass
 
     # ---------- Judul Poster ----------
+    title_text = "SLA DOKUMEN PENAGIHAN"
+    title_y = logo_y + (logo_img.height if logo_img else 0) + 30
     try:
-        title_text = "SLA DOKUMEN PENAGIHAN"
         font_path = "Anton-Regular.ttf"
         max_title_width = W - 400
         font_size = 180
@@ -518,15 +520,15 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         while font.getsize(title_text)[0] > max_title_width:
             font_size -= 2
             font = ImageFont.truetype(font_path, font_size)
-        title_w, title_h = draw.textsize(title_text, font=font)
-        title_x = (W - title_w) // 2
-        title_y = logo_y + logo_img.height + 30
-        draw.text((title_x, title_y), title_text, fill="black", font=font)
     except Exception:
-        pass
+        font = ImageFont.load_default()
+    title_w, title_h = draw.textsize(title_text, font=font)
+    title_x = (W - title_w) // 2
+    draw.text((title_x, title_y), title_text, fill="black", font=font)
 
     # ---------- Grafik / Tabel Placeholder ----------
-    draw.text((100, title_y + 250), "Grafik SLA dan Tabel Transaksi di sini...", fill="gray", font=ImageFont.load_default())
+    placeholder_y = title_y + title_h + 50
+    draw.text((100, placeholder_y), "Grafik SLA dan Tabel Transaksi di sini...", fill="gray", font=ImageFont.load_default())
 
     # ---------- Gambar Captain Ferizy ----------
     try:
