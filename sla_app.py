@@ -604,9 +604,9 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     row_h = 60
 
     # Header kolom
-    draw.text((table_left, table_top), "Proses", font=font_h, fill=(40,40,40))
-    draw.text((table_left + col1_w, table_top), "Rata-rata SLA", font=font_h, fill=(40,40,40))
-    y_cursor = table_top + 18 + 24
+    draw.text((table_left, table_top), "PROSES", font=font_h, fill=(40,40,40))
+    draw.text((table_left + col1_w, table_top), "RATA-RATA SLA", font=font_h, fill=(40,40,40))
+    y_cursor = table_top + 180 + 240
 
     # Garis pemisah header
     draw.line([(card1_x0+20, y_cursor), (card1_x1-20, y_cursor)], fill=(220,220,220), width=2)
