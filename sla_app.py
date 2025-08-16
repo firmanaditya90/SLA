@@ -620,13 +620,40 @@ def format_periode_range(start_periode, end_periode):
 # ==========================================================
 # Ambil Periode Valid dari Hasil Filter
 # ==========================================================
-# selected_periode sudah terbentuk dari filter sidebar (list of str)
 valid_periode = [p for p in selected_periode if "-" in str(p)]
 
 if valid_periode:
     start_periode, end_periode = valid_periode[0], valid_periode[-1]
 else:
     start_periode, end_periode = None, None
+
+
+# ==========================================================
+# Ringkasan SLA per proses (untuk Poster)
+# ==========================================================
+sla_text_dict = {}
+if available_sla_cols:
+    for proses in available_sla_cols:
+        avg_seconds = df_filtered[proses].mean()
+        sla_text_dict[proses] = {
+            "average_days": (avg_seconds or 0) / 86400 if avg_seconds is not None else 0,
+            "text": seconds_to_sla_format(avg_seconds)
+        }
+
+
+# ==========================================================
+# Jumlah transaksi per periode (untuk Poster)
+# ==========================================================
+transaksi_df = (
+    df_filtered.groupby(df_filtered[periode_col].astype(str))
+    .size()
+    .reset_index(name="Jumlah")
+    .rename(columns={periode_col: "Periode"})
+)
+transaksi_df["__order"] = transaksi_df["Periode"].apply(
+    lambda x: selected_periode.index(str(x)) if str(x) in selected_periode else 10**9
+)
+transaksi_df = transaksi_df.sort_values("__order").drop(columns="__order")
 
 
 # ==========================================================
