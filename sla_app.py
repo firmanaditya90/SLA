@@ -515,10 +515,10 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     except Exception as e:
         print("Gagal load logo ASDP:", e)
 
-    # ---------- Judul Poster ----------
+# ---------- Judul Poster ----------
     title_text = "SLA DOKUMEN PENAGIHAN"
     try:
-        font_title = ImageFont.truetype("Anton-Regular.ttf", 200)  # font lokal di folder project
+        font_title = ImageFont.truetype("Anton-Regular.ttf", 200)
     except:
         font_title = ImageFont.load_default()
 
@@ -529,10 +529,11 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     title_w = bbox[2] - bbox[0]
     title_h = bbox[3] - bbox[1]
 
-    title_y = 350  # agak turun dari logo
+    # posisikan judul sedikit di bawah logo
+    title_y = 100 + logo_img.height + 50
     draw.text(((W - title_w) // 2, title_y), title_text, fill="black", font=font_title)
 
-    # ---------- Periode Range (70% ukuran judul) ----------
+    # ---------- Periode Range ----------
     periode_font_size = int(200 * 0.7)
     try:
         font_periode = ImageFont.truetype("Anton-Regular.ttf", periode_font_size)
@@ -546,9 +547,9 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     periode_w = bbox[2] - bbox[0]
     periode_h = bbox[3] - bbox[1]
 
-    periode_y = title_y + title_h + 40
+    periode_y = title_y + title_h + 30
     draw.text(((W - periode_w) // 2, periode_y), periode_range_text, fill="gray", font=font_periode)
-
+    
     # ---------- Gambar Captain Ferizy ----------
     try:
         if image_url:
