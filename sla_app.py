@@ -496,7 +496,7 @@ def seconds_to_sla_format(seconds):
     return f"{days}d {hours}h {minutes}m"
 
 def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text):
-    """Generate poster A4 dengan data SLA dan tabel transaksi"""
+    """Generate poster A4 dengan data SLA, tabel transaksi, logo, dan Captain Ferizy"""
     W, H = 2480, 3508  # ukuran A4 300dpi
     bg = Image.new("RGB", (W, H), "white")
     draw = ImageDraw.Draw(bg)
@@ -518,22 +518,40 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     # ---------- Judul Poster ----------
     title_text = "SLA DOKUMEN PENAGIHAN"
     try:
-        font = ImageFont.truetype("Anton-Regular.ttf", 200)
+        font_title = ImageFont.truetype("Anton-Regular.ttf", 200)
     except:
-        font = ImageFont.load_default()
+        font_title = ImageFont.load_default()
 
     try:
-        bbox = font.getbbox(title_text)
+        bbox = font_title.getbbox(title_text)
     except AttributeError:
-        bbox = draw.textbbox((0, 0), title_text, font=font)
+        bbox = draw.textbbox((0, 0), title_text, font=font_title)
     title_w = bbox[2] - bbox[0]
     title_h = bbox[3] - bbox[1]
 
-    draw.text(((W - title_w) // 2, 400), title_text, fill="black", font=font)
+    # letakkan judul di bawah logo, agak naik (misal y=350 instead of 400)
+    title_y = 350
+    draw.text(((W - title_w) // 2, title_y), title_text, fill="black", font=font_title)
+
+    # ---------- Periode Range (70% ukuran judul) ----------
+    periode_font_size = int(200 * 0.7)  # 70% dari judul
+    try:
+        font_periode = ImageFont.truetype("Arial.ttf", periode_font_size)
+    except:
+        font_periode = ImageFont.load_default()
+
+    try:
+        bbox = font_periode.getbbox(periode_range_text)
+    except AttributeError:
+        bbox = draw.textbbox((0, 0), periode_range_text, font=font_periode)
+    periode_w = bbox[2] - bbox[0]
+    periode_h = bbox[3] - bbox[1]
+
+    periode_y = title_y + title_h + 40  # kasih jarak 40px dari judul
+    draw.text(((W - periode_w) // 2, periode_y), periode_range_text, fill="gray", font=font_periode)
 
     # ---------- Gambar Captain Ferizy ----------
     try:
-        # fallback kalau image_url kosong
         if not image_url:
             image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
 
