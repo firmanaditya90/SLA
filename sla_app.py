@@ -628,10 +628,7 @@ image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.pn
 # ==========================================================
 #                       Streamlit Tabs
 # ==========================================================
-tab_report, = st.tabs(["📊 Report"])
-
-with tab_report:
-    tab_poster, tab_pdf = st.tabs(["📥 Download Poster", "📥 Download PDF"])
+tab_report, = st.tabs(["📥 Download Poster", "📥 Download PDF"])
 
     with tab_poster:
         st.subheader("📥 Download Poster")
@@ -640,7 +637,7 @@ with tab_report:
             st.session_state.poster_buf = None
 
         if st.button("🎨 Generate Poster A4", key="generate_poster_btn"):
-            periode_range_text = format_periode_range(start_periode, end_periode)
+            periode_range_text = format_periode_range("Periode Mulai", "Periode Akhir")
             poster_buf = generate_poster_A4(
                 sla_text_dict,
                 transaksi_df,
