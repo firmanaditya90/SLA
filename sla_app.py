@@ -536,7 +536,8 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     # ---------- Periode Range (70% ukuran judul) ----------
     periode_font_size = int(200 * 0.7)  # 70% dari judul
     try:
-        font_periode = ImageFont.truetype("Arial.ttf", periode_font_size)
+        # Pakai font yang ada di project folder
+        font_periode = ImageFont.truetype("Anton-Regular.ttf", periode_font_size)
     except:
         font_periode = ImageFont.load_default()
 
@@ -547,9 +548,9 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     periode_w = bbox[2] - bbox[0]
     periode_h = bbox[3] - bbox[1]
 
-    periode_y = title_y + title_h + 40  # kasih jarak 40px dari judul
+    periode_y = title_y + title_h + 40
     draw.text(((W - periode_w) // 2, periode_y), periode_range_text, fill="gray", font=font_periode)
-
+    
     # ---------- Gambar Captain Ferizy ----------
     try:
         if not image_url:
