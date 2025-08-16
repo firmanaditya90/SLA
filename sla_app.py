@@ -603,34 +603,28 @@ tab_poster, tab_pdf = st.tabs(["📥 Download Poster", "📥 Download PDF"])
 with tab_poster:
     st.subheader("📥 Download Poster")
 
-    # Placeholder khusus untuk poster preview
-    poster_placeholder = st.empty()
+    # Container khusus untuk poster preview & download
+    with st.container() as poster_container:
+        if "poster_buf" not in st.session_state:
+            st.session_state.poster_buf = None
 
-    # Tombol generate poster
-    if st.button("🎨 Generate Poster A4", key="generate_poster_btn"):
-        poster_buf = generate_poster_A4(
-            sla_text_dict, transaksi_df, image_url, periode_range_text
-        )
-        st.session_state.poster_buf = poster_buf  # simpan di session_state
-        poster_placeholder.image(poster_buf, caption="Preview Poster A4", use_column_width=True)
-        poster_placeholder.download_button(
-            label="💾 Download Poster (PNG, A4 - 300 DPI)",
-            data=poster_buf,
-            file_name="Poster_SLA_A4.png",
-            mime="image/png",
-            key="download_poster_btn"
-        )
+        # Tombol generate poster
+        if st.button("🎨 Generate Poster A4", key="generate_poster_btn"):
+            poster_buf = generate_poster_A4(
+                sla_text_dict, transaksi_df, image_url, periode_range_text
+            )
+            st.session_state.poster_buf = poster_buf
 
-    # Jika sudah pernah generate sebelumnya
-    elif "poster_buf" in st.session_state and st.session_state.poster_buf:
-        poster_placeholder.image(st.session_state.poster_buf, caption="Preview Poster A4", use_column_width=True)
-        poster_placeholder.download_button(
-            label="💾 Download Poster (PNG, A4 - 300 DPI)",
-            data=st.session_state.poster_buf,
-            file_name="Poster_SLA_A4.png",
-            mime="image/png",
-            key="download_poster_btn_existing"
-        )
+        # Tampilkan preview & download hanya jika poster ada
+        if st.session_state.poster_buf:
+            st.image(st.session_state.poster_buf, caption="Preview Poster A4", use_column_width=True)
+            st.download_button(
+                label="💾 Download Poster (PNG, A4 - 300 DPI)",
+                data=st.session_state.poster_buf,
+                file_name="Poster_SLA_A4.png",
+                mime="image/png",
+                key="download_poster_btn"
+            )
 
 with tab_pdf:
     st.subheader("📥 Download PDF")
