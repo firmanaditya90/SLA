@@ -335,8 +335,8 @@ st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
 # ==============================
 # Tabs untuk konten (TIDAK DIUBAH)
 # ==============================
-tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_poster = st.tabs(
-    ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi", "📥 Download Poster"]
+tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_report = st.tabs(
+    ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi", "📥 Download Report"]
 )
 
 with tab_overview:
@@ -597,13 +597,8 @@ periode_range_text = f"{start_periode} — {end_periode}"
 #                       Streamlit Tabs
 # ==========================================================
 tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_poster = st.tabs(
-    ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi", "📥 Download Poster"]
+    ["📥 Download Poster",""📥 Download PDF"]
 )
-
-# ------------------- Tab Overview -------------------
-with tab_overview:
-    st.subheader("📄 Sampel Data (50 baris)")
-    st.dataframe(df_filtered.head(50), use_container_width=True)
 
 # ------------------- Tab Poster -------------------
 with tab_poster:
