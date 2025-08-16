@@ -474,8 +474,9 @@ with tab_jumlah:
 # ==========================================================
 #            FITUR BARU: 📥 DOWNLOAD POSTER (A4)
 # ==========================================================
+
 # ==========================================================
-#                       SLA App (Potongan yang fix)
+#                       SLA App
 # ==========================================================
 import streamlit as st
 import pandas as pd
@@ -484,7 +485,7 @@ from PIL import Image, ImageDraw, ImageFont
 import requests, io
 
 # ==========================================================
-# Helper: Konversi SLA
+#                       Helper Functions
 # ==========================================================
 def seconds_to_sla_format(seconds):
     """Konversi detik ke format SLA: 'Xd Yh Zm'"""
@@ -495,58 +496,40 @@ def seconds_to_sla_format(seconds):
     minutes = int((seconds % 3600) // 60)
     return f"{days}d {hours}h {minutes}m"
 
-# ==========================================================
-# ==========================================================
-#                  Helper Format Periode (ID)
-# ==========================================================
 def format_periode_range(start_periode, end_periode):
-    """Ubah periode YYYY-MM ke narasi Bahasa Indonesia"""
-    bulan_id = {
-        1: "Januari", 2: "Februari", 3: "Maret", 4: "April",
-        5: "Mei", 6: "Juni", 7: "Juli", 8: "Agustus",
-        9: "September", 10: "Oktober", 11: "November", 12: "Desember"
-    }
-    try:
-        start_year, start_month = map(int, start_periode.split("-"))
-        end_year, end_month = map(int, end_periode.split("-"))
+    """Format narasi periode: Januari 2025 sampai Agustus 2025"""
+    import calendar
 
-        start_text = f"{bulan_id[start_month]} {start_year}"
-        end_text = f"{bulan_id[end_month]} {end_year}"
+    def format_single(p):
+        year, month = p.split("-")
+        month_name = calendar.month_name[int(month)]
+        return f"{month_name} {year}"
 
-        if start_periode == end_periode:
-            return f"Periode {start_text}"
-        else:
-            return f"Periode {start_text} sampai {end_text}"
-    except Exception as e:
-        print("Format periode gagal:", e)
-        return f"{start_periode} — {end_periode}"
+    return f"Periode {format_single(start_periode)} sampai {format_single(end_periode)}"
 
-
-# ==========================================================
-#                Generate Poster A4
-# ==========================================================
 def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text):
-    W, H = 2480, 3508  # A4 @ 300dpi
+    """Generate poster A4 dengan data SLA dan tabel transaksi"""
+    W, H = 2480, 3508  # ukuran A4 300dpi
     bg = Image.new("RGB", (W, H), "white")
     draw = ImageDraw.Draw(bg)
 
     # ---------- Logo ASDP ----------
+    logo_h = 0
     try:
         logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
         resp = requests.get(logo_url, timeout=10)
         logo_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
-        scale = (W * 0.1) / logo_img.width
+        scale = (W * 0.15) / logo_img.width
         logo_img = logo_img.resize(
             (int(logo_img.width * scale), int(logo_img.height * scale)),
             Image.Resampling.LANCZOS
         )
         logo_h = logo_img.height
-        bg.paste(logo_img, (100, 100), logo_img)
+        bg.paste(logo_img, ((W - logo_img.width) // 2, 100), logo_img)
     except Exception as e:
         print("Gagal load logo ASDP:", e)
-        logo_h = 0
 
-    # ---------- Judul ----------
+    # ---------- Judul Poster ----------
     title_text = "SLA DOKUMEN PENAGIHAN"
     try:
         font_title = ImageFont.truetype("Anton-Regular.ttf", 200)
@@ -557,11 +540,11 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     title_w = bbox_title[2] - bbox_title[0]
     title_h = bbox_title[3] - bbox_title[1]
 
-    # ✅ Naikkan judul, lebih rapat ke logo
-    title_y = 100 + logo_h + 20
+    # Naikkan lebih rapat ke logo
+    title_y = 100 + logo_h + 20  
     draw.text(((W - title_w) // 2, title_y), title_text, fill="black", font=font_title)
 
-    # ---------- Periode ----------
+    # ---------- Periode Range ----------
     try:
         font_periode = ImageFont.truetype("Anton-Regular.ttf", int(200 * 0.7))
     except:
@@ -574,7 +557,7 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
 
     draw.text(((W - periode_w) // 2, periode_y), periode_range_text, fill="black", font=font_periode)
 
-    # ---------- Garis separator ----------
+    # ---------- Garis Separator ----------
     line_y = periode_y + periode_h + 15
     draw.line(
         ((W - title_w) // 2, line_y, (W + title_w) // 2, line_y),
@@ -586,7 +569,7 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
         resp = requests.get(raw_url, timeout=10)
         ferizy_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
-        scale = (H * 0.35) / ferizy_img.height
+        scale = (H * 0.35) / ferizy_img.height  # tinggi gambar ~35% halaman
         ferizy_img = ferizy_img.resize(
             (int(ferizy_img.width * scale), int(ferizy_img.height * scale)),
             Image.Resampling.LANCZOS
@@ -605,6 +588,47 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     out.seek(0)
     return out
 
+# ==========================================================
+#                       Contoh Data
+# ==========================================================
+df_filtered = pd.DataFrame({
+    "Proses A": [86400, 172800, 259200],
+    "Proses B": [43200, 86400, 129600],
+    "Periode": ["2025-01", "2025-02", "2025-08"]
+})
+proses_grafik_cols = ["Proses A", "Proses B"]
+periode_col = "Periode"
+selected_periode = df_filtered[periode_col].astype(str).tolist()
+start_periode, end_periode = selected_periode[0], selected_periode[-1]
+
+# Ringkasan SLA per proses
+sla_text_dict = {}
+for proses in proses_grafik_cols:
+    avg_seconds = df_filtered[proses].mean()
+    sla_text_dict[proses] = {
+        "average_days": (avg_seconds or 0) / 86400 if avg_seconds is not None else 0,
+        "text": seconds_to_sla_format(avg_seconds)
+    }
+
+# Jumlah transaksi per periode
+transaksi_df = (
+    df_filtered.groupby(df_filtered[periode_col].astype(str))
+    .size()
+    .reset_index(name="Jumlah")
+    .rename(columns={periode_col: "Periode"})
+)
+transaksi_df["__order"] = transaksi_df["Periode"].apply(
+    lambda x: selected_periode.index(str(x)) if str(x) in selected_periode else 10**9
+)
+transaksi_df = transaksi_df.sort_values("__order").drop(columns="__order")
+
+# Gambar Captain Ferizy
+image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
+
+# ==========================================================
+#                       Streamlit Tabs
+# ==========================================================
+tab_report, = st.tabs(["📊 Report"])
 
 # ==========================================================
 #   Tab khusus Download Report (Poster & PDF) 
@@ -619,7 +643,7 @@ with tab_report:
             st.session_state.poster_buf = None
 
         if st.button("🎨 Generate Poster A4", key="generate_poster_btn"):
-            # ✅ Hitung ulang periode berdasarkan filter terbaru
+            # ✅ Hitung ulang periode sesuai filter terbaru
             start_periode = selected_periode[0]
             end_periode = selected_periode[-1]
             periode_range_text = format_periode_range(start_periode, end_periode)
@@ -645,4 +669,5 @@ with tab_report:
     with tab_pdf:
         st.subheader("📥 Download PDF")
         st.info("Fitur PDF belum tersedia.")
+
 
