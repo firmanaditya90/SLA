@@ -603,20 +603,16 @@ tab_poster, tab_pdf = st.tabs(["📥 Download Poster", "📥 Download PDF"])
 with tab_poster:
     st.subheader("📥 Download Poster")
 
-    # Container khusus untuk poster preview & download
-    with st.container() as poster_container:
+    poster_container = st.container()  # placeholder khusus tab Poster
+    with poster_container:
         if "poster_buf" not in st.session_state:
             st.session_state.poster_buf = None
 
-        # Tombol generate poster
         if st.button("🎨 Generate Poster A4", key="generate_poster_btn"):
-            poster_buf = generate_poster_A4(
-                sla_text_dict, transaksi_df, image_url, periode_range_text
-            )
+            poster_buf = generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text)
             st.session_state.poster_buf = poster_buf
 
-        # Tampilkan preview & download hanya jika poster ada
-        if st.session_state.poster_buf:
+        if st.session_state.poster_buf:  # tampilkan hanya jika sudah generate
             st.image(st.session_state.poster_buf, caption="Preview Poster A4", use_column_width=True)
             st.download_button(
                 label="💾 Download Poster (PNG, A4 - 300 DPI)",
