@@ -522,9 +522,8 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     except:
         font = ImageFont.load_default()
 
-    # ✅ Pillow 10+ pakai getbbox / textbbox
     try:
-        bbox = font.getbbox(title_text)  # (x0, y0, x1, y1)
+        bbox = font.getbbox(title_text)
     except AttributeError:
         bbox = draw.textbbox((0, 0), title_text, font=font)
     title_w = bbox[2] - bbox[0]
@@ -534,18 +533,20 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
 
     # ---------- Gambar Captain Ferizy ----------
     try:
-        raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
+        # fallback kalau image_url kosong
+        if not image_url:
+            image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
+
+        raw_url = image_url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
         resp = requests.get(raw_url, timeout=10)
-        ferizy_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
-        scale = (H * 0.35) / ferizy_img.height  # tinggi gambar ~35% halaman
+        ferizy_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
+        scale = (H * 0.35) / ferizy_img.height
         ferizy_img = ferizy_img.resize(
             (int(ferizy_img.width * scale), int(ferizy_img.height * scale)),
             Image.Resampling.LANCZOS
         )
-        margin_right = 50
-        margin_bottom = 50
-        pos_x = W - ferizy_img.width - margin_right
-        pos_y = H - ferizy_img.height - margin_bottom
+        pos_x = W - ferizy_img.width - 50
+        pos_y = H - ferizy_img.height - 50
         bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
     except Exception as e:
         print("Gagal load Captain Ferizy:", e)
