@@ -613,6 +613,7 @@ periode_range_text = f"{start_periode} — {end_periode}"
 # # ==========================================================
 #                       Streamlit Tabs
 # ==========================================================
+
 # ==========================================================
 #   Tab khusus Download Report (Poster & PDF) 
 # ==========================================================
@@ -626,7 +627,12 @@ with tab_report:
             st.session_state.poster_buf = None
 
         if st.button("🎨 Generate Poster A4", key="generate_poster_btn"):
-            poster_buf = generate_poster_A4({}, pd.DataFrame(), "", "")
+            poster_buf = generate_poster_A4(
+                sla_text_dict,       # ✅ ringkasan SLA
+                transaksi_df,        # ✅ transaksi
+                image_url,           # ✅ jangan kosong
+                periode_range_text   # ✅ jangan kosong
+            )
             st.session_state.poster_buf = poster_buf
 
         if st.session_state.poster_buf:
