@@ -501,21 +501,35 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     bg = Image.new("RGB", (W, H), "white")
     draw = ImageDraw.Draw(bg)
 
-    # ---------- Logo ----------
+    # ---------- Logo ASDP ----------
     try:
         logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
         resp = requests.get(logo_url, timeout=10)
         logo_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
         scale = (W * 0.1) / logo_img.width
-        logo_img = logo_img.resize((int(logo_img.width * scale), int(logo_img.height * scale)), Image.Resampling.LANCZOS)
+        logo_img = logo_img.resize(
+            (int(logo_img.width * scale), int(logo_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
         bg.paste(logo_img, (100, 100), logo_img)
-    except:
-        pass
+    except Exception as e:
+        print("Gagal load logo ASDP:", e)
 
     # ---------- Judul Poster ----------
     title_text = "SLA DOKUMEN PENAGIHAN"
-    font = ImageFont.load_default()
-    title_w, title_h = draw.textsize(title_text, font=font)
+    try:
+        font = ImageFont.truetype("Anton-Regular.ttf", 200)
+    except:
+        font = ImageFont.load_default()
+
+    # ✅ Pillow 10+ pakai getbbox / textbbox
+    try:
+        bbox = font.getbbox(title_text)  # (x0, y0, x1, y1)
+    except AttributeError:
+        bbox = draw.textbbox((0, 0), title_text, font=font)
+    title_w = bbox[2] - bbox[0]
+    title_h = bbox[3] - bbox[1]
+
     draw.text(((W - title_w) // 2, 400), title_text, fill="black", font=font)
 
     # ---------- Gambar Captain Ferizy ----------
@@ -523,7 +537,7 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
         resp = requests.get(raw_url, timeout=10)
         ferizy_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
-        scale = (H * 0.35) / ferizy_img.height
+        scale = (H * 0.35) / ferizy_img.height  # tinggi gambar ~35% halaman
         ferizy_img = ferizy_img.resize(
             (int(ferizy_img.width * scale), int(ferizy_img.height * scale)),
             Image.Resampling.LANCZOS
@@ -536,12 +550,11 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     except Exception as e:
         print("Gagal load Captain Ferizy:", e)
 
-    # ---------- Save ----------
+    # ---------- Output ----------
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
     return out
-
 
 # ==========================================================
 #                       Contoh Data
