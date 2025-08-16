@@ -632,10 +632,7 @@ image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.pn
 # ==========================================================
 #                       Streamlit Tabs
 # ==========================================================
-tab_report, = st.tabs(["📊 Report"])
-
-with tab_report:
-    tab_poster, tab_pdf = st.tabs(["📥 Download Poster", "📥 Download PDF"])
+tab_poster, tab_pdf = st.tabs(["📥 Download Poster", "📥 Download PDF"])
 
     # ---------------- Tab Poster ----------------
     with tab_poster:
