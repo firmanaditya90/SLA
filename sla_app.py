@@ -628,7 +628,16 @@ image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.pn
 # ==========================================================
 #                       Streamlit Tabs
 # ==========================================================
-tab_report, = st.tabs(["📥 Download Poster", "📥 Download PDF"])
+
+# ==========================================================
+#                       Streamlit Tabs
+# ==========================================================
+tab_report, = st.tabs(["📊 Report"])
+
+with tab_report:
+    tab_poster, tab_pdf = st.tabs(["📥 Download Poster", "📥 Download PDF"])
+
+    # ---------------- Tab Poster ----------------
     with tab_poster:
         st.subheader("📥 Download Poster")
 
@@ -636,7 +645,7 @@ tab_report, = st.tabs(["📥 Download Poster", "📥 Download PDF"])
             st.session_state.poster_buf = None
 
         if st.button("🎨 Generate Poster A4", key="generate_poster_btn"):
-            periode_range_text = format_periode_range("Periode Mulai", "Periode Akhir")
+            periode_range_text = format_periode_range(start_periode, end_periode)
             poster_buf = generate_poster_A4(
                 sla_text_dict,
                 transaksi_df,
@@ -646,7 +655,11 @@ tab_report, = st.tabs(["📥 Download Poster", "📥 Download PDF"])
             st.session_state.poster_buf = poster_buf
 
         if st.session_state.poster_buf:
-            st.image(st.session_state.poster_buf, caption="Preview Poster A4", use_column_width=True)
+            st.image(
+                st.session_state.poster_buf,
+                caption="Preview Poster A4",
+                use_column_width=True
+            )
             st.download_button(
                 label="💾 Download Poster (PNG, A4 - 300 DPI)",
                 data=st.session_state.poster_buf,
@@ -655,9 +668,9 @@ tab_report, = st.tabs(["📥 Download Poster", "📥 Download PDF"])
                 key="download_poster_btn"
             )
 
+    # ---------------- Tab PDF ----------------
     with tab_pdf:
         st.subheader("📥 Download PDF")
         st.info("Fitur PDF belum tersedia.")
-
 
 
