@@ -594,45 +594,46 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
 #                       Contoh Data
 # ==========================================================
 
-# Hitung start & end dari filter (bisa ganti sesuai widget Streamlit)
-start_periode, end_periode = selected_periode[0], selected_periode[-1]
-
-# Ringkasan SLA per proses
-sla_text_dict = {}
-for proses in proses_grafik_cols:
-    avg_seconds = df_filtered[proses].mean()
-    sla_text_dict[proses] = {
-        "average_days": (avg_seconds or 0) / 86400 if avg_seconds is not None else 0,
-        "text": seconds_to_sla_format(avg_seconds)
-    }
-
-# Jumlah transaksi per periode
-transaksi_df = (
-    df_filtered.groupby(df_filtered[periode_col].astype(str))
-    .size()
-    .reset_index(name="Jumlah")
-    .rename(columns={periode_col: "Periode"})
-)
-
-# Gambar Captain Ferizy
-image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
-
 # ==========================================================
-#                       Streamlit Tabs
+# Helper: Format Periode Range
 # ==========================================================
+def format_periode_range(start_periode, end_periode):
+    """Ubah periode 'YYYY-MM' jadi narasi bahasa Indonesia"""
+    def format_single(p):
+        if not p or "-" not in str(p):
+            return ""
+        year, month = str(p).split("-")
+        bulan_map = {
+            "01": "Januari", "02": "Februari", "03": "Maret",
+            "04": "April", "05": "Mei", "06": "Juni",
+            "07": "Juli", "08": "Agustus", "09": "September",
+            "10": "Oktober", "11": "November", "12": "Desember"
+        }
+        return f"{bulan_map.get(month, month)} {year}"
+
+    if not start_periode or not end_periode:
+        return "Periode tidak tersedia"
+
+    return f"Periode {format_single(start_periode)} sampai {format_single(end_periode)}"
+
 
 # ==========================================================
-#                       Streamlit Tabs
+# Ambil Periode Valid dari Hasil Filter
 # ==========================================================
-# ==========================================================
-#                       Tab Utama
-# ==========================================================
+# selected_periode sudah terbentuk dari filter sidebar (list of str)
+valid_periode = [p for p in selected_periode if "-" in str(p)]
+
+if valid_periode:
+    start_periode, end_periode = valid_periode[0], valid_periode[-1]
+else:
+    start_periode, end_periode = None, None
+
 
 # ==========================================================
-#   Tab khusus Report (di dalamnya ada Poster & PDF) 
+# Tab Report dengan Sub-Tab Poster & PDF
 # ==========================================================
 with tab_report:
-    tab_poster, tab_pdf = st.tabs(["🎨 Poster", "📄 PDF"])
+    tab_poster, tab_pdf = st.tabs(["📥 Download Poster", "📥 Download PDF"])
 
     # ---------------- Sub-Tab Poster ----------------
     with tab_poster:
