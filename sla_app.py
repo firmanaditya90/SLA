@@ -619,16 +619,25 @@ def format_periode_range(start_periode, end_periode):
 # ==========================================================
 # Ambil Periode Valid dari Hasil Filter
 # ==========================================================
-periode_list = sorted(df_filtered[periode_col].astype(str).unique().tolist())
-periode_list = [p for p in periode_list if p != "TOTAL"]  # buang TOTAL
+if periode_col in df_filtered.columns and not df_filtered.empty:
+    # ambil list periode unik
+    periode_list = df_filtered[periode_col].dropna().astype(str).unique().tolist()
+    # buang TOTAL kalau ada
+    periode_list = [p for p in periode_list if p != "TOTAL"]
 
-if periode_list:
-    start_periode, end_periode = periode_list[0], periode_list[-1]
+    if periode_list:
+        # urutkan berdasarkan urutan selected_periode (bukan alfabet)
+        periode_order = {p: i for i, p in enumerate(selected_periode)}
+        periode_list_sorted = sorted(periode_list, key=lambda x: periode_order.get(x, 9999))
+
+        start_periode = periode_list_sorted[0]
+        end_periode   = periode_list_sorted[-1]
+    else:
+        start_periode, end_periode = None, None
 else:
     start_periode, end_periode = None, None
 
 periode_range_text = format_periode_range(start_periode, end_periode)
-
 
 # ==========================================================
 # Ringkasan SLA per proses (untuk Poster)
