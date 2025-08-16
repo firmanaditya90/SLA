@@ -471,18 +471,6 @@ with tab_jumlah:
         label.set_ha('right')
     st.pyplot(fig_trans)
 
-with tab_poster:
-    st.subheader("📥 Download Poster")
-
-    if st.button("🎨 Generate Poster A4"):
-        poster_buf = generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text)
-        st.image(poster_buf, caption="Preview Poster A4", use_column_width=True)
-        st.download_button(
-            label="💾 Download Poster (PNG, A4 - 300 DPI)",
-            data=poster_buf,
-            file_name="Poster_SLA_A4.png",
-            mime="image/png"
-        )
 # ==========================================================
 #            FITUR BARU: 📥 DOWNLOAD POSTER (A4)
 # ==========================================================
