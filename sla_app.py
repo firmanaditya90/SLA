@@ -593,7 +593,6 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
 # ==========================================================
 #                       Contoh Data
 # ==========================================================
-
 # ==========================================================
 # Helper: Format Periode Range
 # ==========================================================
@@ -657,6 +656,12 @@ transaksi_df = transaksi_df.sort_values("__order").drop(columns="__order")
 
 
 # ==========================================================
+# Gambar Captain Ferizy (untuk Poster)
+# ==========================================================
+image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
+
+
+# ==========================================================
 # Tab Report dengan Sub-Tab Poster & PDF
 # ==========================================================
 with tab_report:
@@ -670,32 +675,4 @@ with tab_report:
             st.session_state.poster_buf = None
 
         if st.button("🎨 Generate Poster A4", key="generate_poster_btn"):
-            periode_range_text = format_periode_range(start_periode, end_periode)
-            poster_buf = generate_poster_A4(
-                sla_text_dict,
-                transaksi_df,
-                image_url,
-                periode_range_text
-            )
-            st.session_state.poster_buf = poster_buf
-
-        if st.session_state.poster_buf:
-            st.image(
-                st.session_state.poster_buf,
-                caption="Preview Poster A4",
-                use_column_width=True
-            )
-            st.download_button(
-                label="💾 Download Poster (PNG, A4 - 300 DPI)",
-                data=st.session_state.poster_buf,
-                file_name="Poster_SLA_A4.png",
-                mime="image/png",
-                key="download_poster_btn"
-            )
-
-    # ---------------- Sub-Tab PDF ----------------
-    with tab_pdf:
-        st.subheader("📥 Download PDF")
-        st.info("Fitur PDF belum tersedia.")
-
-
+            periode_range
