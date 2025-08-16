@@ -495,13 +495,34 @@ def seconds_to_sla_format(seconds):
     minutes = int((seconds % 3600) // 60)
     return f"{days}d {hours}h {minutes}m"
 
+import calendar
+
+def format_periode_range(start_periode, end_periode):
+    """Ubah periode YYYY-MM ke format narasi: Januari 2025 sampai Agustus 2025"""
+    try:
+        start_year, start_month = map(int, start_periode.split("-"))
+        end_year, end_month = map(int, end_periode.split("-"))
+
+        start_text = f"{calendar.month_name[start_month]} {start_year}"
+        end_text = f"{calendar.month_name[end_month]} {end_year}"
+
+        if start_periode == end_periode:
+            return f"Periode {start_text}"
+        else:
+            return f"Periode {start_text} sampai {end_text}"
+    except Exception as e:
+        print("Format periode gagal:", e)
+        return f"{start_periode} — {end_periode}"
+
+
 def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text):
-    """Generate poster A4 dengan data SLA, periode, dan gambar Captain Ferizy"""
+    """Generate poster A4 dengan data SLA dan tabel transaksi"""
     W, H = 2480, 3508  # ukuran A4 300dpi
     bg = Image.new("RGB", (W, H), "white")
     draw = ImageDraw.Draw(bg)
 
     # ---------- Logo ASDP ----------
+    logo_img = None
     try:
         logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
         resp = requests.get(logo_url, timeout=10)
@@ -515,57 +536,53 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     except Exception as e:
         print("Gagal load logo ASDP:", e)
 
-# ---------- Judul Poster ----------
+    # ---------- Judul Poster ----------
     title_text = "SLA DOKUMEN PENAGIHAN"
     try:
         font_title = ImageFont.truetype("Anton-Regular.ttf", 200)
     except:
         font_title = ImageFont.load_default()
 
-    try:
-        bbox = font_title.getbbox(title_text)
-    except AttributeError:
-        bbox = draw.textbbox((0, 0), title_text, font=font_title)
+    bbox = font_title.getbbox(title_text) if hasattr(font_title, "getbbox") \
+           else draw.textbbox((0, 0), title_text, font=font_title)
     title_w = bbox[2] - bbox[0]
     title_h = bbox[3] - bbox[1]
 
-    # posisikan judul sedikit di bawah logo
-    title_y = 100 + logo_img.height + 50
+    # kalau logo ada, posisikan judul tepat di bawahnya
+    if logo_img:
+        title_y = 100 + logo_img.height + 50
+    else:
+        title_y = 300
     draw.text(((W - title_w) // 2, title_y), title_text, fill="black", font=font_title)
 
     # ---------- Periode Range ----------
-    periode_font_size = int(200 * 0.7)
+    periode_font_size = int(200 * 0.7)  # 70% dari judul
     try:
         font_periode = ImageFont.truetype("Anton-Regular.ttf", periode_font_size)
     except:
         font_periode = ImageFont.load_default()
 
-    try:
-        bbox = font_periode.getbbox(periode_range_text)
-    except AttributeError:
-        bbox = draw.textbbox((0, 0), periode_range_text, font=font_periode)
+    bbox = font_periode.getbbox(periode_range_text) if hasattr(font_periode, "getbbox") \
+           else draw.textbbox((0, 0), periode_range_text, font=font_periode)
     periode_w = bbox[2] - bbox[0]
     periode_h = bbox[3] - bbox[1]
 
     periode_y = title_y + title_h + 30
     draw.text(((W - periode_w) // 2, periode_y), periode_range_text, fill="gray", font=font_periode)
-    
+
     # ---------- Gambar Captain Ferizy ----------
     try:
-        if image_url:
-            raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
-            resp = requests.get(raw_url, timeout=10)
-            ferizy_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
-            scale = (H * 0.35) / ferizy_img.height  # tinggi gambar ~35% halaman
-            ferizy_img = ferizy_img.resize(
-                (int(ferizy_img.width * scale), int(ferizy_img.height * scale)),
-                Image.Resampling.LANCZOS
-            )
-            margin_right = 50
-            margin_bottom = 50
-            pos_x = W - ferizy_img.width - margin_right
-            pos_y = H - ferizy_img.height - margin_bottom
-            bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
+        raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
+        resp = requests.get(raw_url, timeout=10)
+        ferizy_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
+        scale = (H * 0.35) / ferizy_img.height
+        ferizy_img = ferizy_img.resize(
+            (int(ferizy_img.width * scale), int(ferizy_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
+        pos_x = W - ferizy_img.width - 50
+        pos_y = H - ferizy_img.height - 50
+        bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
     except Exception as e:
         print("Gagal load Captain Ferizy:", e)
 
