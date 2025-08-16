@@ -593,14 +593,6 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
 # ==========================================================
 #                       Contoh Data
 # ==========================================================
-df_filtered = pd.DataFrame({
-    "Proses A": [86400, 172800, 259200],
-    "Proses B": [43200, 86400, 129600],
-    "Periode": ["2025-01", "2025-02", "2025-08"]
-})
-proses_grafik_cols = ["Proses A", "Proses B"]
-periode_col = "Periode"
-selected_periode = df_filtered[periode_col].astype(str).tolist()
 
 # Hitung start & end dari filter (bisa ganti sesuai widget Streamlit)
 start_periode, end_periode = selected_periode[0], selected_periode[-1]
