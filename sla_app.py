@@ -501,41 +501,22 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     bg = Image.new("RGB", (W, H), "white")
     draw = ImageDraw.Draw(bg)
 
-    # ---------- Logo ASDP ----------
-    logo_x, logo_y = 100, 100
+    # ---------- Logo ----------
     try:
         logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
         resp = requests.get(logo_url, timeout=10)
         logo_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
         scale = (W * 0.1) / logo_img.width
         logo_img = logo_img.resize((int(logo_img.width * scale), int(logo_img.height * scale)), Image.Resampling.LANCZOS)
-        bg.paste(logo_img, (logo_x, logo_y), logo_img)
-    except Exception:
+        bg.paste(logo_img, (100, 100), logo_img)
+    except:
         pass
 
     # ---------- Judul Poster ----------
     title_text = "SLA DOKUMEN PENAGIHAN"
-    try:
-        font_path = "Anton-Regular.ttf"
-        font_size = 300
-        font = ImageFont.truetype(font_path, font_size)
-        max_title_width = W * 0.8
-        while font.getbbox(title_text)[2] - font.getbbox(title_text)[0] > max_title_width and font_size > 10:
-            font_size -= 2
-            font = ImageFont.truetype(font_path, font_size)
-    except Exception:
-        font = ImageFont.load_default()
-
-    title_bbox = font.getbbox(title_text)
-    title_w = title_bbox[2] - title_bbox[0]
-    title_h = title_bbox[3] - title_bbox[1]
-    title_y = logo_y + 200
-    title_x = (W - title_w) // 2
-    draw.text((title_x, title_y), title_text, fill="black", font=font)
-
-    # ---------- Grafik / Tabel Placeholder ----------
-    placeholder_y = title_y + title_h + 50
-    draw.text((100, placeholder_y), "Grafik SLA dan Tabel Transaksi di sini...", fill="gray", font=ImageFont.load_default())
+    font = ImageFont.load_default()
+    title_w, title_h = draw.textsize(title_text, font=font)
+    draw.text(((W - title_w) // 2, 400), title_text, fill="black", font=font)
 
     # ---------- Gambar Captain Ferizy ----------
     try:
@@ -543,19 +524,24 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         resp = requests.get(raw_url, timeout=10)
         ferizy_img = Image.open(io.BytesIO(resp.content)).convert('RGBA')
         scale = (H * 0.35) / ferizy_img.height
-        ferizy_img = ferizy_img.resize((int(ferizy_img.width * scale), int(ferizy_img.height * scale)), Image.Resampling.LANCZOS)
+        ferizy_img = ferizy_img.resize(
+            (int(ferizy_img.width * scale), int(ferizy_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
         margin_right = 50
         margin_bottom = 50
         pos_x = W - ferizy_img.width - margin_right
         pos_y = H - ferizy_img.height - margin_bottom
         bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
-    except Exception:
-        pass
+    except Exception as e:
+        print("Gagal load Captain Ferizy:", e)
 
+    # ---------- Save ----------
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
     return out
+
 
 # ==========================================================
 #                       Contoh Data
