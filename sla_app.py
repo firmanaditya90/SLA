@@ -594,7 +594,6 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
 #                       Contoh Data
 # ==========================================================
 # ==========================================================
-# ==========================================================
 # Helper: Format Periode Range
 # ==========================================================
 def format_periode_range(start_periode, end_periode):
@@ -629,12 +628,12 @@ if periode_col in df_filtered.columns and not df_filtered.empty:
     )
 
     if not periode_series.empty:
-        # konversi ke datetime agar bisa ambil min & max
-        periode_dt = pd.to_datetime(periode_series, format="%Y-%m", errors="coerce").dropna()
+        # parse otomatis, normalisasi bulanan
+        periode_dt = pd.to_datetime(periode_series, errors="coerce").dropna().to_period("M")
 
         if not periode_dt.empty:
-            start_periode = periode_dt.min().strftime("%Y-%m")
-            end_periode   = periode_dt.max().strftime("%Y-%m")
+            start_periode = str(periode_dt.min())
+            end_periode   = str(periode_dt.max())
         else:
             start_periode, end_periode = None, None
     else:
@@ -719,7 +718,3 @@ with tab_report:
     with tab_pdf:
         st.subheader("📥 Download PDF")
         st.info("Fitur PDF belum tersedia.")
-
-
-
-
