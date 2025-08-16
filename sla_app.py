@@ -593,12 +593,10 @@ transaksi_df = transaksi_df.sort_values("__order").drop(columns="__order")
 image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png"
 periode_range_text = f"{start_periode} — {end_periode}"
 
-# ==========================================================
+# # ==========================================================
 #                       Streamlit Tabs
 # ==========================================================
-tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_poster = st.tabs(
-    ["📥 Download Poster",""📥 Download PDF"]
-)
+tab_poster, tab_pdf = st.tabs(["📥 Download Poster", "📥 Download PDF"])
 
 # ------------------- Tab Poster -------------------
 with tab_poster:
@@ -612,3 +610,8 @@ with tab_poster:
             file_name="Poster_SLA_A4.png",
             mime="image/png"
         )
+
+# ------------------- Tab PDF -------------------
+with tab_pdf:
+    st.subheader("📥 Download PDF")
+    st.info("Fitur PDF belum tersedia.")
