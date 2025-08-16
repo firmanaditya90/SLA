@@ -634,8 +634,8 @@ image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.pn
 # ==========================================================
 tab_poster, tab_pdf = st.tabs(["📥 Download Poster", "📥 Download PDF"])
 
-    # ---------------- Tab Poster ----------------
-    with tab_poster:
+# ---------------- Tab Poster ----------------
+with tab_poster:
         st.subheader("📥 Download Poster")
 
         if "poster_buf" not in st.session_state:
@@ -665,8 +665,8 @@ tab_poster, tab_pdf = st.tabs(["📥 Download Poster", "📥 Download PDF"])
                 key="download_poster_btn"
             )
 
-    # ---------------- Tab PDF ----------------
-    with tab_pdf:
+# ---------------- Tab PDF ----------------
+with tab_pdf:
         st.subheader("📥 Download PDF")
         st.info("Fitur PDF belum tersedia.")
 
