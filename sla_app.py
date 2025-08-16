@@ -594,6 +594,7 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
 #                       Contoh Data
 # ==========================================================
 # ==========================================================
+# ==========================================================
 # Helper: Format Periode Range
 # ==========================================================
 def format_periode_range(start_periode, end_periode):
@@ -620,24 +621,29 @@ def format_periode_range(start_periode, end_periode):
 # Ambil Periode Valid dari Hasil Filter
 # ==========================================================
 if periode_col in df_filtered.columns and not df_filtered.empty:
-    # ambil list periode unik
-    periode_list = df_filtered[periode_col].dropna().astype(str).unique().tolist()
-    # buang TOTAL kalau ada
-    periode_list = [p for p in periode_list if p != "TOTAL"]
+    periode_series = (
+        df_filtered[periode_col]
+        .dropna()
+        .astype(str)
+        .loc[lambda x: x != "TOTAL"]
+    )
 
-    if periode_list:
-        # urutkan berdasarkan urutan selected_periode (bukan alfabet)
-        periode_order = {p: i for i, p in enumerate(selected_periode)}
-        periode_list_sorted = sorted(periode_list, key=lambda x: periode_order.get(x, 9999))
+    if not periode_series.empty:
+        # konversi ke datetime agar bisa ambil min & max
+        periode_dt = pd.to_datetime(periode_series, format="%Y-%m", errors="coerce").dropna()
 
-        start_periode = periode_list_sorted[0]
-        end_periode   = periode_list_sorted[-1]
+        if not periode_dt.empty:
+            start_periode = periode_dt.min().strftime("%Y-%m")
+            end_periode   = periode_dt.max().strftime("%Y-%m")
+        else:
+            start_periode, end_periode = None, None
     else:
         start_periode, end_periode = None, None
 else:
     start_periode, end_periode = None, None
 
 periode_range_text = format_periode_range(start_periode, end_periode)
+
 
 # ==========================================================
 # Ringkasan SLA per proses (untuk Poster)
@@ -713,5 +719,7 @@ with tab_report:
     with tab_pdf:
         st.subheader("📥 Download PDF")
         st.info("Fitur PDF belum tersedia.")
+
+
 
 
