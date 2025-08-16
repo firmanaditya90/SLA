@@ -596,12 +596,13 @@ periode_range_text = f"{start_periode} — {end_periode}"
 # # ==========================================================
 #                       Streamlit Tabs
 # ==========================================================
-tab_poster, tab_pdf = st.tabs(["📥 Download Poster", "📥 Download PDF"])
 
 # ------------------- Tab Poster -------------------
+tab_poster, tab_pdf = st.tabs(["📥 Download Poster", "📥 Download PDF"])
+
 with tab_poster:
     st.subheader("📥 Download Poster")
-    if st.button("🎨 Generate Poster A4"):
+    if st.button("🎨 Generate Poster A4", key="poster_btn"):
         poster_buf = generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text)
         st.image(poster_buf, caption="Preview Poster A4", use_column_width=True)
         st.download_button(
@@ -611,7 +612,6 @@ with tab_poster:
             mime="image/png"
         )
 
-# ------------------- Tab PDF -------------------
 with tab_pdf:
     st.subheader("📥 Download PDF")
     st.info("Fitur PDF belum tersedia.")
