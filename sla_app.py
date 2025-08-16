@@ -632,10 +632,18 @@ image_url = "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.pn
 # ==========================================================
 #                       Streamlit Tabs
 # ==========================================================
-tab_report = st.tabs([tab_poster, tab_pdf])
+# ==========================================================
+#                       Tab Utama
+# ==========================================================
 
-# ---------------- Tab Poster ----------------
-with tab_poster:
+# ==========================================================
+#   Tab khusus Report (di dalamnya ada Poster & PDF) 
+# ==========================================================
+with tab_report:
+    tab_poster, tab_pdf = st.tabs(["🎨 Poster", "📄 PDF"])
+
+    # ---------------- Sub-Tab Poster ----------------
+    with tab_poster:
         st.subheader("📥 Download Poster")
 
         if "poster_buf" not in st.session_state:
@@ -665,8 +673,8 @@ with tab_poster:
                 key="download_poster_btn"
             )
 
-# ---------------- Tab PDF ----------------
-with tab_pdf:
+    # ---------------- Sub-Tab PDF ----------------
+    with tab_pdf:
         st.subheader("📥 Download PDF")
         st.info("Fitur PDF belum tersedia.")
 
