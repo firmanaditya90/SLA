@@ -628,8 +628,12 @@ if periode_col in df_filtered.columns and not df_filtered.empty:
     )
 
     if not periode_series.empty:
-        # parse otomatis, normalisasi bulanan
-        periode_dt = pd.to_datetime(periode_series, errors="coerce").dropna().to_period("M")
+        # parse otomatis, lalu normalisasi bulanan
+        periode_dt = (
+            pd.to_datetime(periode_series, errors="coerce")
+            .dropna()
+            .dt.to_period("M")
+        )
 
         if not periode_dt.empty:
             start_periode = str(periode_dt.min())
