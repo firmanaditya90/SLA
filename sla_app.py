@@ -619,14 +619,14 @@ def format_periode_range(start_periode, end_periode):
 # ==========================================================
 # Ambil Periode Valid dari Hasil Filter
 # ==========================================================
-valid_periode = [p for p in selected_periode if "-" in str(p)]
+periode_list = sorted(df_filtered[periode_col].astype(str).unique().tolist())
+periode_list = [p for p in periode_list if p != "TOTAL"]  # buang TOTAL
 
-if valid_periode:
-    start_periode, end_periode = valid_periode[0], valid_periode[-1]
+if periode_list:
+    start_periode, end_periode = periode_list[0], periode_list[-1]
 else:
     start_periode, end_periode = None, None
 
-# bentuk narasi periode
 periode_range_text = format_periode_range(start_periode, end_periode)
 
 
@@ -682,7 +682,7 @@ with tab_report:
                 sla_text_dict,
                 transaksi_df,
                 image_url,
-                periode_range_text   # ✅ konsisten pakai ini
+                periode_range_text   # ✅ sudah ikut filter
             )
             st.session_state.poster_buf = poster_buf
 
@@ -704,4 +704,5 @@ with tab_report:
     with tab_pdf:
         st.subheader("📥 Download PDF")
         st.info("Fitur PDF belum tersedia.")
+
 
