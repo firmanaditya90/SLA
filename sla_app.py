@@ -602,7 +602,13 @@ tab_poster, tab_pdf = st.tabs(["📥 Download Poster", "📥 Download PDF"])
 
 with tab_poster:
     st.subheader("📥 Download Poster")
+    if "poster_generated" not in st.session_state:
+        st.session_state.poster_generated = False
+
     if st.button("🎨 Generate Poster A4", key="poster_btn"):
+        st.session_state.poster_generated = True
+
+    if st.session_state.poster_generated:
         poster_buf = generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text)
         st.image(poster_buf, caption="Preview Poster A4", use_column_width=True)
         st.download_button(
