@@ -623,29 +623,31 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, image_url, periode_ra
 with tab_report:
     tab_poster, tab_pdf = st.tabs(["🎨 Poster", "📄 PDF"])
 
-    with tab_poster:
-        st.subheader("📥 Download Poster")
+with tab_poster:
+    st.subheader("📥 Download Poster")
 
-        if st.button("🎨 Generate Poster A4"):
-           rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
-           poster_buf = generate_poster_A4(
-                {},  # sla_text_dict (opsional isi nanti)
-                pd.DataFrame(),  # transaksi_df (opsional isi nanti)
-                "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png",
-                periode_info_text   # ✅ ambil teks dari dashboard
-            )
-            st.session_state.poster_buf = poster_buf
+    if st.button("🎨 Generate Poster A4"):
+        # ambil rata-rata SLA per proses
+        rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
 
-        if "poster_buf" in st.session_state:
-            st.image(st.session_state.poster_buf,
-                     caption="Preview Poster A4",
-                     use_column_width=True)
-            st.download_button(
-                "💾 Download Poster (PNG, A4 - 300 DPI)",
-                st.session_state.poster_buf,
-                file_name="Poster_SLA_A4.png",
-                mime="image/png"
-            )
+        poster_buf = generate_poster_A4(
+            {},  # sla_text_dict (kalau mau dipakai nanti)
+            rata_proses_seconds,
+            "Captain Ferizy.png",  # file lokal
+            periode_info_text
+        )
+        st.session_state.poster_buf = poster_buf
+
+    if "poster_buf" in st.session_state:
+        st.image(st.session_state.poster_buf,
+                 caption="Preview Poster A4",
+                 use_column_width=True)
+        st.download_button(
+            "💾 Download Poster (PNG, A4 - 300 DPI)",
+            st.session_state.poster_buf,
+            file_name="Poster_SLA_A4.png",
+            mime="image/png"
+        )
 
     with tab_pdf:
         st.subheader("📥 Download PDF")
