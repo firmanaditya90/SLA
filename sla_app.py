@@ -496,15 +496,47 @@ def seconds_to_sla_format(seconds):
     minutes = int((seconds % 3600) // 60)
     return f"{days}d {hours}h {minutes}m"
 
+# ==============================
+# Sidebar: filter periode
+# ==============================
+with st.sidebar:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.subheader("📅 Filter Rentang Periode")
+    periode_list = sorted(
+        df_raw[periode_col].dropna().astype(str).unique().tolist(),
+        key=lambda x: pd.to_datetime(x, errors='coerce')
+    )
+    start_periode = st.selectbox("Periode Mulai", periode_list, index=0)
+    end_periode = st.selectbox("Periode Akhir", periode_list, index=len(periode_list)-1)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+idx_start = periode_list.index(start_periode)
+idx_end = periode_list.index(end_periode)
+if idx_start > idx_end:
+    st.error("Periode Mulai harus sebelum Periode Akhir.")
+    st.stop()
+
+selected_periode = periode_list[idx_start:idx_end+1]
+df_filtered = df_raw[df_raw[periode_col].astype(str).isin(selected_periode)].copy()
+
+st.markdown(
+    f'<div class="small">Menampilkan data periode dari <b>{start_periode}</b> '
+    f'sampai <b>{end_periode}</b> — total baris: <b>{len(df_filtered)}</b></div>',
+    unsafe_allow_html=True
+)
+
+# 👉 Tambahan: simpan teks periode untuk Poster (global scope)
+periode_info_text = f"Periode dari {start_periode} sampai {end_periode}"
+
 # ==========================================================
 # Poster A4 Generator
 # ==========================================================
 def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text):
-    W, H = 2480, 3508  # ukuran A4 300dpi
+    W, H = 2480, 3508
     bg = Image.new("RGB", (W, H), "white")
     draw = ImageDraw.Draw(bg)
 
-    # ---------- Logo ASDP ----------
+    # ---------- Logo ----------
     logo_h = 0
     try:
         logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
@@ -515,9 +547,9 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
             (int(logo_img.width * scale), int(logo_img.height * scale)),
             Image.Resampling.LANCZOS
         )
-        logo_h = logo_img.height
         bg.paste(logo_img, (80, 80), logo_img)
-    except Exception:
+        logo_h = logo_img.height
+    except:
         pass
 
     # ---------- Judul ----------
@@ -543,7 +575,6 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     draw.text(((W - (bbox_periode[2]-bbox_periode[0])) // 2, periode_y),
               periode_range_text, fill="black", font=font_periode)
 
-    # ---------- Output ----------
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
@@ -560,12 +591,11 @@ with tab_report:
         st.subheader("📥 Download Poster")
 
         if st.button("🎨 Generate Poster A4"):
-            # 👉 Pakai teks periode dari dashboard
             poster_buf = generate_poster_A4(
-                {},  # sla_text_dict kalau nanti mau dipakai
-                pd.DataFrame(),  # transaksi_df kalau nanti dipakai
+                {},  # sla_text_dict (opsional isi nanti)
+                pd.DataFrame(),  # transaksi_df (opsional isi nanti)
                 "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png",
-                periode_info_text   # <--- teks dari dashboard
+                periode_info_text   # ✅ ambil teks dari dashboard
             )
             st.session_state.poster_buf = poster_buf
 
