@@ -502,7 +502,7 @@ periode_info_text = f"Periode dari {start_periode} sampai {end_periode}"
 # ==========================================================
 # Poster A4 Generator
 # ==========================================================
-def generate_poster_A4(sla_text_dict, rata_proses_seconds, image_url, periode_range_text):
+def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url, periode_range_text):
     W, H = 2480, 3508
     bg = Image.new("RGB", (W, H), "white")
     draw = ImageDraw.Draw(bg)
@@ -513,10 +513,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, image_url, periode_ra
         logo_path = os.path.join(os.path.dirname(__file__), "asdp_logo.png")
         logo_img = Image.open(logo_path).convert("RGBA")
         scale = (W * 0.15) / logo_img.width
-        logo_img = logo_img.resize(
-            (int(logo_img.width * scale), int(logo_img.height * scale)),
-            Image.Resampling.LANCZOS
-        )
+        logo_img = logo_img.resize((int(logo_img.width*scale), int(logo_img.height*scale)), Image.Resampling.LANCZOS)
         bg.paste(logo_img, (80, 80), logo_img)
         logo_h = logo_img.height
     except:
@@ -533,8 +530,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, image_url, periode_ra
     title_w = bbox_title[2] - bbox_title[0]
     title_h = bbox_title[3] - bbox_title[1]
 
-    # Posisi judul: ±12% dari atas halaman
-    title_y = int(H * 0.12)
+    title_y = int(H * 0.10)   # naik sedikit
     draw.text(((W - title_w) // 2, title_y), title_text, fill="black", font=font_title)
 
     # ---------- Periode ----------
@@ -557,17 +553,15 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, image_url, periode_ra
         except:
             font_periode = ImageFont.load_default()
 
-    # Posisi periode: ±17% dari atas halaman
-    periode_y = int(H * 0.17)
+    periode_y = title_y + title_h + int(H * 0.03)   # jarak proporsional
     draw.text(((W - periode_w) // 2, periode_y), periode_range_text, fill="black", font=font_periode)
 
     # ---------- Garis Separator ----------
     line_y = periode_y + periode_h + 30
     margin_x = 150
-    draw.line((margin_x, line_y, W - margin_x, line_y),
-              fill="black", width=12)
+    draw.line((margin_x, line_y, W - margin_x, line_y), fill="black", width=12)
 
-    # ---------- Grafik rata-rata SLA per Proses ----------
+    # ---------- Grafik ----------
     try:
         fig, ax = plt.subplots(figsize=(8, 4))
         values_hari = [rata_proses_seconds[col] / 86400 for col in rata_proses_seconds.index]
@@ -584,39 +578,60 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, image_url, periode_ra
         chart_img = Image.open(buf).convert("RGBA")
         max_chart_width = int(W * 0.7)
         scale = max_chart_width / chart_img.width
-        chart_img = chart_img.resize(
-            (int(chart_img.width * scale), int(chart_img.height * scale)),
-            Image.Resampling.LANCZOS
-        )
+        chart_img = chart_img.resize((int(chart_img.width*scale), int(chart_img.height*scale)), Image.Resampling.LANCZOS)
 
         pos_x = (W - chart_img.width) // 2
         pos_y = line_y + 80
         bg.paste(chart_img, (pos_x, pos_y), chart_img)
+        chart_bottom = pos_y + chart_img.height
     except Exception as e:
         print("Gagal render chart:", e)
+        chart_bottom = line_y + 80
+
+    # ---------- Tabel (df_proses) ----------
+    try:
+        fig, ax = plt.subplots(figsize=(8, 2))
+        ax.axis('off')
+        tbl = ax.table(cellText=df_proses.values,
+                       colLabels=df_proses.columns,
+                       rowLabels=df_proses.index,
+                       loc='center')
+        tbl.auto_set_font_size(False)
+        tbl.set_fontsize(10)
+        tbl.scale(1.2, 1.2)
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format="PNG", dpi=300, bbox_inches="tight", transparent=True)
+        buf.seek(0)
+        plt.close(fig)
+
+        table_img = Image.open(buf).convert("RGBA")
+        max_tbl_width = int(W * 0.7)
+        scale = max_tbl_width / table_img.width
+        table_img = table_img.resize((int(table_img.width*scale), int(table_img.height*scale)), Image.Resampling.LANCZOS)
+
+        pos_x = (W - table_img.width) // 2
+        pos_y = chart_bottom + 60
+        bg.paste(table_img, (pos_x, pos_y), table_img)
+    except Exception as e:
+        print("Gagal render tabel:", e)
 
     # ---------- Captain Ferizy ----------
     try:
         ferizy_path = os.path.join(os.path.dirname(__file__), "Captain Ferizy.png")
         ferizy_img = Image.open(ferizy_path).convert("RGBA")
         scale = (H * 0.35) / ferizy_img.height
-        ferizy_img = ferizy_img.resize(
-            (int(ferizy_img.width * scale), int(ferizy_img.height * scale)),
-            Image.Resampling.LANCZOS
-        )
+        ferizy_img = ferizy_img.resize((int(ferizy_img.width*scale), int(ferizy_img.height*scale)), Image.Resampling.LANCZOS)
         pos_x = W - ferizy_img.width - 50
         pos_y = H - ferizy_img.height - 50
         bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
     except Exception as e:
         print("Gagal load Captain Ferizy:", e)
 
-    # ---------- Output ----------
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
     return out
-
-
 # ==========================================================
 # Tab Report (Poster & PDF)
 # ==========================================================
@@ -626,17 +641,17 @@ with tab_report:
 with tab_poster:
     st.subheader("📥 Download Poster")
 
-    if st.button("🎨 Generate Poster A4"):
-        # ambil rata-rata SLA per proses
-        rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
-
-        poster_buf = generate_poster_A4(
-            {},  # sla_text_dict (kalau mau dipakai nanti)
-            rata_proses_seconds,
-            "Captain Ferizy.png",  # file lokal
-            periode_info_text
-        )
-        st.session_state.poster_buf = poster_buf
+if st.button("🎨 Generate Poster A4"):
+    rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
+    df_proses = (df_filtered[proses_grafik_cols]/86400).mean().to_frame("Rata-rata Hari").T
+    poster_buf = generate_poster_A4(
+        {},
+        rata_proses_seconds,
+        df_proses,
+        "Captain Ferizy.png",
+        periode_info_text
+    )
+    st.session_state.poster_buf = poster_buf
 
     if "poster_buf" in st.session_state:
         st.image(st.session_state.poster_buf,
