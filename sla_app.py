@@ -569,25 +569,8 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
     margin_x = 150
     draw.line((margin_x, line_y, W - margin_x, line_y), fill="black", width=12)
 
-    # ---------- Card Background untuk Grafik + Tabel ----------
-    card_margin_x = 80
-    card_top = line_y + 20
-    card_height = int(H * 0.40)  # tinggi card relatif terhadap poster
-    card_bottom = card_top + card_height
-
-    overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
-    overlay_draw = ImageDraw.Draw(overlay)
-    overlay_draw.rounded_rectangle(
-        (card_margin_x, card_top, W - card_margin_x, card_bottom),
-        radius=40,
-        outline="gray",
-        width=5,
-        fill=(240, 240, 240, 180)  # semi transparan abu2
-    )
-    bg = Image.alpha_composite(bg.convert("RGBA"), overlay)
-    draw = ImageDraw.Draw(bg)  # refresh draw
-
-    # ---------- Grafik (65% lebar poster, rata kiri dalam card) ----------
+    # ---------- Render Grafik ----------
+    chart_img = None
     try:
         fig, ax = plt.subplots(figsize=(10, 4))
         values_hari = [rata_proses_seconds[col] / 86400 for col in rata_proses_seconds.index]
@@ -598,28 +581,23 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
 
         buf = io.BytesIO()
         fig.savefig(buf, format="PNG", dpi=300, bbox_inches="tight", transparent=True)
-        buf.seek(0)
-        plt.close(fig)
+        buf.seek(0); plt.close(fig)
 
         chart_img = Image.open(buf).convert("RGBA")
-        max_chart_width = int(W * 0.65)   # grafik lebih dominan
+        max_chart_width = int(W * 0.65)
         scale = max_chart_width / chart_img.width
         chart_img = chart_img.resize(
             (int(chart_img.width * scale), int(chart_img.height * scale)),
             Image.Resampling.LANCZOS
         )
-
-        pos_x = card_margin_x + 50
-        pos_y = card_top + 40
-        bg.paste(chart_img, (pos_x, pos_y), chart_img)
     except Exception as e:
         print("Gagal render chart:", e)
 
-    # ---------- Tabel (35% lebar poster, rata kanan dalam card) ----------
+    # ---------- Render Tabel ----------
+    table_img = None
     try:
         fig, ax = plt.subplots(figsize=(5, 4))
         ax.axis('off')
-
         tbl = ax.table(
             cellText=df_proses.values,
             colLabels=df_proses.columns,
@@ -629,28 +607,55 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         tbl.auto_set_font_size(False)
         tbl.set_fontsize(12)
         tbl.scale(1.3, 1.3)
-
-        # auto sesuaikan lebar kolom sesuai isi
         tbl.auto_set_column_width([0, 1])
 
         buf = io.BytesIO()
         fig.savefig(buf, format="PNG", dpi=300, bbox_inches="tight", transparent=True)
-        buf.seek(0)
-        plt.close(fig)
+        buf.seek(0); plt.close(fig)
 
         table_img = Image.open(buf).convert("RGBA")
-        max_tbl_width = int(W * 0.35)   # tabel lebih kecil, proporsional
+        max_tbl_width = int(W * 0.30)
         scale = max_tbl_width / table_img.width
         table_img = table_img.resize(
             (int(table_img.width * scale), int(table_img.height * scale)),
             Image.Resampling.LANCZOS
         )
+    except Exception as e:
+        print("Gagal render tabel:", e)
 
+    # ---------- Card Background dinamis ----------
+    card_margin_x = 80
+    card_top = line_y + 20
+    # tinggi card = tinggi terbesar dari grafik/tabel + padding
+    content_height = max(
+        chart_img.height if chart_img else 0,
+        table_img.height if table_img else 0
+    )
+    card_bottom = card_top + content_height + 80  # +padding atas/bawah
+
+    overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
+    overlay_draw = ImageDraw.Draw(overlay)
+    overlay_draw.rounded_rectangle(
+        (card_margin_x, card_top, W - card_margin_x, card_bottom),
+        radius=40,
+        outline="gray",
+        width=5,
+        fill=(240, 240, 240, 180)
+    )
+    bg = Image.alpha_composite(bg.convert("RGBA"), overlay)
+    draw = ImageDraw.Draw(bg)
+
+    # ---------- Tempel Grafik & Tabel di dalam card ----------
+    if chart_img:
+        pos_x = card_margin_x + 50
+        pos_y = card_top + 40
+        bg.paste(chart_img, (pos_x, pos_y), chart_img)
+
+    if table_img:
         pos_x = W - table_img.width - card_margin_x - 50
         pos_y = card_top + 40
         bg.paste(table_img, (pos_x, pos_y), table_img)
-    except Exception as e:
-        print("Gagal render tabel:", e)
+    
     
     # ---------- Captain Ferizy ----------
     try:
