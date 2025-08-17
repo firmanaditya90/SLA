@@ -276,7 +276,7 @@ with st.sidebar:
         key=lambda x: pd.to_datetime(x, errors='coerce')
     )
     start_periode = st.selectbox("Periode Mulai", periode_list, index=0, key="periode_mulai")
-end_periode = st.selectbox("Periode Akhir", periode_list, index=len(periode_list)-1, key="periode_akhir")
+    end_periode = st.selectbox("Periode Akhir", periode_list, index=len(periode_list)-1, key="periode_akhir")
 
 idx_start = periode_list.index(start_periode)
 idx_end = periode_list.index(end_periode)
@@ -496,31 +496,6 @@ def seconds_to_sla_format(seconds):
     return f"{days}d {hours}h {minutes}m"
 
 # ==============================
-# Sidebar: filter periode
-# ==============================
-with st.sidebar:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("📅 Filter Rentang Periode")
-    periode_list = sorted(
-        df_raw[periode_col].dropna().astype(str).unique().tolist(),
-        key=lambda x: pd.to_datetime(x, errors='coerce')
-    )
-
-idx_start = periode_list.index(start_periode)
-idx_end = periode_list.index(end_periode)
-if idx_start > idx_end:
-    st.error("Periode Mulai harus sebelum Periode Akhir.")
-    st.stop()
-
-selected_periode = periode_list[idx_start:idx_end+1]
-df_filtered = df_raw[df_raw[periode_col].astype(str).isin(selected_periode)].copy()
-
-st.markdown(
-    f'<div class="small">Menampilkan data periode dari <b>{start_periode}</b> '
-    f'sampai <b>{end_periode}</b> — total baris: <b>{len(df_filtered)}</b></div>',
-    unsafe_allow_html=True
-)
-
 # 👉 Tambahan: simpan teks periode untuk Poster (global scope)
 periode_info_text = f"Periode dari {start_periode} sampai {end_periode}"
 
@@ -560,21 +535,29 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     draw.text(((W - (bbox_title[2]-bbox_title[0])) // 2, title_y),
               title_text, fill="black", font=font_title)
 
+    
     # ---------- Periode ----------
+max_width = int(W * 0.8)
+font_size = 140
+try:
+    font_periode = ImageFont.truetype("Anton-Regular.ttf", font_size)
+except:
+    font_periode = ImageFont.load_default()
+
+# shrink font until fits
+while True:
+    bbox_periode = draw.textbbox((0, 0), periode_range_text, font=font_periode)
+    periode_w = bbox_periode[2] - bbox_periode[0]
+    if periode_w <= max_width or font_size <= 40:
+        break
+    font_size -= 10
     try:
-        font_periode = ImageFont.truetype("Anton-Regular.ttf", 140)
+        font_periode = ImageFont.truetype("Anton-Regular.ttf", font_size)
     except:
         font_periode = ImageFont.load_default()
 
-    bbox_periode = draw.textbbox((0, 0), periode_range_text, font=font_periode)
-    periode_y = title_y + (bbox_title[3]-bbox_title[1]) + 40
-    draw.text(((W - (bbox_periode[2]-bbox_periode[0])) // 2, periode_y),
-              periode_range_text, fill="black", font=font_periode)
-
-    out = io.BytesIO()
-    bg.save(out, format="PNG")
-    out.seek(0)
-    return out
+periode_y = title_y + (bbox_title[3]-bbox_title[1]) + 40
+draw.text(((W - periode_w) // 2, periode_y), periode_range_text, fill="black", font=font_periode)
 
 
 # ==========================================================
