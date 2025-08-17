@@ -661,7 +661,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         kemudi_path = os.path.join(os.path.dirname(__file__), "Kemudi.png")
         kemudi_img = Image.open(kemudi_path).convert("RGBA")
 
-        # scale kemudi: 25% dari lebar poster
+        # scale kemudi: 25% lebar poster
         target_width = int(W * 0.25)
         scale = target_width / kemudi_img.width
         kemudi_img = kemudi_img.resize(
@@ -669,14 +669,16 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
             Image.Resampling.LANCZOS
         )
 
-        # Posisi: center horizontal di bawah card grafik+tabel
+        # Rata tengah poster, di bawah card grafik+tabel
         pos_x = (W - kemudi_img.width) // 2
         pos_y = card_bottom + 40
         bg.paste(kemudi_img, (pos_x, pos_y), kemudi_img)
 
-        # Tulisan "ON TARGET" di bawah kemudi, center
+        # Tulisan "ON TARGET" di bawah kemudi
         try:
-            font_target = ImageFont.truetype("Anton-Regular.ttf", 120)
+            font_target = ImageFont.truetype(
+                os.path.join(os.path.dirname(__file__), "DejaVuSans-Bold.ttf"), 120
+            )
         except:
             font_target = ImageFont.load_default()
 
