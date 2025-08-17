@@ -569,9 +569,9 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
     margin_x = 150
     draw.line((margin_x, line_y, W - margin_x, line_y), fill="black", width=12)
 
-    # ---------- Grafik ----------
+    # ---------- Grafik (rata kiri) ----------
     try:
-        fig, ax = plt.subplots(figsize=(8, 4))
+        fig, ax = plt.subplots(figsize=(6, 4))
         values_hari = [rata_proses_seconds[col] / 86400 for col in rata_proses_seconds.index]
         ax.bar(rata_proses_seconds.index, values_hari, color='#75c8ff')
         ax.set_title("Rata-rata SLA per Proses (hari)")
@@ -584,21 +584,24 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         plt.close(fig)
 
         chart_img = Image.open(buf).convert("RGBA")
-        max_chart_width = int(W * 0.7)
+        max_chart_width = int(W * 0.4)   # 👉 lebar auto 40% poster
         scale = max_chart_width / chart_img.width
-        chart_img = chart_img.resize((int(chart_img.width*scale), int(chart_img.height*scale)), Image.Resampling.LANCZOS)
+        chart_img = chart_img.resize(
+            (int(chart_img.width*scale), int(chart_img.height*scale)),
+            Image.Resampling.LANCZOS
+        )
 
-        pos_x = (W - chart_img.width) // 2
-        pos_y = line_y + 80
+        pos_x = 100   # 👉 rata kiri dengan margin
+        pos_y = line_y + 40
         bg.paste(chart_img, (pos_x, pos_y), chart_img)
         chart_bottom = pos_y + chart_img.height
     except Exception as e:
         print("Gagal render chart:", e)
-        chart_bottom = line_y + 80
+        chart_bottom = line_y + 40
 
-    # ---------- Tabel (df_proses) ----------
+    # ---------- Tabel (rata kanan) ----------
     try:
-        fig, ax = plt.subplots(figsize=(8, 2))
+        fig, ax = plt.subplots(figsize=(6, 4))
         ax.axis('off')
         tbl = ax.table(cellText=df_proses.values,
                        colLabels=df_proses.columns,
@@ -614,12 +617,15 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         plt.close(fig)
 
         table_img = Image.open(buf).convert("RGBA")
-        max_tbl_width = int(W * 0.7)
+        max_tbl_width = int(W * 0.4)   # 👉 lebar auto 40% poster
         scale = max_tbl_width / table_img.width
-        table_img = table_img.resize((int(table_img.width*scale), int(table_img.height*scale)), Image.Resampling.LANCZOS)
+        table_img = table_img.resize(
+            (int(table_img.width*scale), int(table_img.height*scale)),
+            Image.Resampling.LANCZOS
+        )
 
-        pos_x = (W - table_img.width) // 2
-        pos_y = chart_bottom + 20   # 👉 lebih rapat
+        pos_x = W - table_img.width - 100   # 👉 rata kanan dengan margin
+        pos_y = line_y + 40                 # sejajar grafik
         bg.paste(table_img, (pos_x, pos_y), table_img)
     except Exception as e:
         print("Gagal render tabel:", e)
