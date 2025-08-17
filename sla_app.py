@@ -657,8 +657,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         bg.paste(table_img, (pos_x, pos_y), table_img)
 
     # ---------- Tambahan Kemudi Kapal + Tulisan "ON TARGET" ----------
-     # --- Tambah Kemudi & Tulisan ON TARGET
-    try:
+     try:
         kemudi_path = os.path.join(os.path.dirname(__file__), "Kemudi.png")
         kemudi_img = Image.open(kemudi_path).convert("RGBA")
 
@@ -673,19 +672,29 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         pos_y = card_top + table_img.height + 60
         bg.paste(kemudi_img, (pos_x, pos_y), kemudi_img)
 
-        # Pakai font judul, ukuran besar
-        font_target = ImageFont.truetype(
-            os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf"), 150
-        )
+        # Ambil font Anton-Regular.ttf
+        font_path = os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf")
+        try:
+            font_target = ImageFont.truetype(font_path, 150)
+        except:
+            font_target = ImageFont.load_default()
+            print("⚠️ Font Anton gagal dipakai")
+
         text = "ON TARGET"
-        tw, th = draw.textsize(text, font=font_target)
 
-        # Center terhadap kemudi, sedikit lebih tinggi biar tidak jatuh ke bawah
+        # Hitung bounding box teks
+        bbox = draw.textbbox((0, 0), text, font=font_target)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+        # Posisi teks → center di atas kemudi
         text_x = pos_x + (kemudi_img.width - tw) // 2
-        text_y = pos_y + kemudi_img.height - th - 10   # naikkan posisi
+        text_y = pos_y + kemudi_img.height - th - 20
 
-        # Warna hijau tebal
-        draw.text((text_x, text_y), text, fill=(0, 150, 0), font=font_target)
+        # Debug
+        print("🖊️ On Target pos:", text_x, text_y, "size:", tw, th)
+
+        # Gambar teks
+        draw.text((text_x, text_y), text, font=font_target, fill=(0, 150, 0))
     except Exception as e:
         print("Gagal render Kemudi/On Target:", e)
         
