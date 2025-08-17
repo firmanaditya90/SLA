@@ -686,7 +686,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
 
         # Posisi: tepat di bawah kemudi, center
         text_x = pos_x + (kemudi_img.width - tw) // 2
-        text_y = pos_y + kemudi_img.height + 2
+        text_y = pos_y + kemudi_img.height + 0
 
         draw.text((text_x, text_y), text, font=font_target, fill=(0, 150, 0))
     except Exception as e:
