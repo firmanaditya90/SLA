@@ -706,16 +706,14 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         )
         footer_y = H - footer_img.height
 
-        # 1. Garis tengah (paling belakang) → sampai ke bawah poster
-        overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
-        overlay_draw = ImageDraw.Draw(overlay)
+        # 1. Garis tengah (di belakang footer & Ferizy)
         center_x = W // 2
-        overlay_draw.line(
-            (center_x, card_bottom, center_x, H),
+        draw = ImageDraw.Draw(bg)
+        draw.line(
+            (center_x, card_bottom, center_x, footer_y),  # stop di atas footer
             fill="black",
             width=15
         )
-        bg = Image.alpha_composite(overlay, bg)
 
         # 2. Footer di atas garis
         bg.paste(footer_img, (0, footer_y), footer_img)
