@@ -502,7 +502,7 @@ periode_info_text = f"Periode dari {start_periode} sampai {end_periode}"
 # ==========================================================
 # Poster A4 Generator
 # ==========================================================
-def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_text):
+def generate_poster_A4(sla_text_dict, rata_proses_seconds, image_url, periode_range_text):
     W, H = 2480, 3508
     bg = Image.new("RGB", (W, H), "white")
     draw = ImageDraw.Draw(bg)
@@ -510,9 +510,8 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     # ---------- Logo ----------
     logo_h = 0
     try:
-        logo_url = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
-        resp = requests.get(logo_url, timeout=10)
-        logo_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
+        logo_path = os.path.join(os.path.dirname(__file__), "asdp_logo.png")
+        logo_img = Image.open(logo_path).convert("RGBA")
         scale = (W * 0.15) / logo_img.width
         logo_img = logo_img.resize(
             (int(logo_img.width * scale), int(logo_img.height * scale)),
@@ -531,10 +530,12 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         font_title = ImageFont.load_default()
 
     bbox_title = draw.textbbox((0, 0), title_text, font=font_title)
-    # 👉 jarak dari logo dikurangi biar lebih ke atas
-    title_y = logo_h + 80
-    draw.text(((W - (bbox_title[2]-bbox_title[0])) // 2, title_y),
-              title_text, fill="black", font=font_title)
+    title_w = bbox_title[2] - bbox_title[0]
+    title_h = bbox_title[3] - bbox_title[1]
+
+    # Posisi judul: ±12% dari atas halaman
+    title_y = int(H * 0.12)
+    draw.text(((W - title_w) // 2, title_y), title_text, fill="black", font=font_title)
 
     # ---------- Periode ----------
     max_width = int(W * 0.8)
@@ -556,10 +557,9 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         except:
             font_periode = ImageFont.load_default()
 
-    # 👉 jarak dikurangi biar lebih rapat ke judul
-    periode_y = title_y + (bbox_title[3]-bbox_title[1]) + 20
-    draw.text(((W - periode_w) // 2, periode_y),
-              periode_range_text, fill="black", font=font_periode)
+    # Posisi periode: ±17% dari atas halaman
+    periode_y = int(H * 0.17)
+    draw.text(((W - periode_w) // 2, periode_y), periode_range_text, fill="black", font=font_periode)
 
     # ---------- Garis Separator ----------
     line_y = periode_y + periode_h + 30
@@ -567,11 +567,38 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     draw.line((margin_x, line_y, W - margin_x, line_y),
               fill="black", width=12)
 
+    # ---------- Grafik rata-rata SLA per Proses ----------
+    try:
+        fig, ax = plt.subplots(figsize=(8, 4))
+        values_hari = [rata_proses_seconds[col] / 86400 for col in rata_proses_seconds.index]
+        ax.bar(rata_proses_seconds.index, values_hari, color='#75c8ff')
+        ax.set_title("Rata-rata SLA per Proses (hari)")
+        ax.set_ylabel("Hari")
+        ax.grid(axis='y', linestyle='--', alpha=0.7)
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format="PNG", dpi=300, bbox_inches="tight", transparent=True)
+        buf.seek(0)
+        plt.close(fig)
+
+        chart_img = Image.open(buf).convert("RGBA")
+        max_chart_width = int(W * 0.7)
+        scale = max_chart_width / chart_img.width
+        chart_img = chart_img.resize(
+            (int(chart_img.width * scale), int(chart_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
+
+        pos_x = (W - chart_img.width) // 2
+        pos_y = line_y + 80
+        bg.paste(chart_img, (pos_x, pos_y), chart_img)
+    except Exception as e:
+        print("Gagal render chart:", e)
+
     # ---------- Captain Ferizy ----------
     try:
-        raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
-        resp = requests.get(raw_url, timeout=10)
-        ferizy_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
+        ferizy_path = os.path.join(os.path.dirname(__file__), "Captain Ferizy.png")
+        ferizy_img = Image.open(ferizy_path).convert("RGBA")
         scale = (H * 0.35) / ferizy_img.height
         ferizy_img = ferizy_img.resize(
             (int(ferizy_img.width * scale), int(ferizy_img.height * scale)),
@@ -588,6 +615,8 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     bg.save(out, format="PNG")
     out.seek(0)
     return out
+
+
 # ==========================================================
 # Tab Report (Poster & PDF)
 # ==========================================================
@@ -598,7 +627,8 @@ with tab_report:
         st.subheader("📥 Download Poster")
 
         if st.button("🎨 Generate Poster A4"):
-            poster_buf = generate_poster_A4(
+           rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
+           poster_buf = generate_poster_A4(
                 {},  # sla_text_dict (opsional isi nanti)
                 pd.DataFrame(),  # transaksi_df (opsional isi nanti)
                 "https://github.com/firmanaditya90/SLA/blob/main/Captain%20Ferizy.png",
