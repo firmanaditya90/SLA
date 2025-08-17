@@ -650,22 +650,22 @@ with tab_poster:
     st.subheader("📥 Download Poster")
 
     if st.button("🎨 Generate Poster A4"):
-    rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
-
-    df_proses = pd.DataFrame({
-        "Rata-rata SLA": [
-            format_duration(rata_proses_seconds[col]) for col in rata_proses_seconds.index
-        ]
-    }, index=rata_proses_seconds.index)
-
-    poster_buf = generate_poster_A4(
+        rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
+        
+        df_proses = pd.DataFrame({
+            "Rata-rata SLA": [
+                format_duration(rata_proses_seconds[col]) for col in rata_proses_seconds.index
+            ]
+        }, index=rata_proses_seconds.index)
+        
+        poster_buf = generate_poster_A4(
         {},
         rata_proses_seconds,
         df_proses,
         "Captain Ferizy.png",
         periode_info_text
-    )
-    st.session_state.poster_buf = poster_buf
+        )
+        st.session_state.poster_buf = poster_buf
     
     if "poster_buf" in st.session_state:
         st.image(st.session_state.poster_buf,
