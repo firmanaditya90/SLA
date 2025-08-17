@@ -712,7 +712,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         draw.line(
             (center_x, card_bottom, center_x, footer_y),  # stop di atas footer
             fill="black",
-            width=15
+            width=20
         )
 
         # 2. Footer di atas garis
