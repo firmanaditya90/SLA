@@ -708,6 +708,51 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
     bg.save(out, format="PNG")
     out.seek(0)
     return out
+
+    # --- Tambah Footer di bawah poster
+    try:
+        footer_path = os.path.join(os.path.dirname(__file__), "Footer.png")
+        footer_img = Image.open(footer_path).convert("RGBA")
+
+        # Resize footer biar lebar = poster
+        scale = W / footer_img.width
+        footer_img = footer_img.resize(
+            (W, int(footer_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
+
+        footer_y = H - footer_img.height   # posisi paling bawah
+        bg.paste(footer_img, (0, footer_y), footer_img)
+
+        # Tambah Captain Ferizy di kanan bawah, di atas footer
+        try:
+            ferizy_path = os.path.join(os.path.dirname(__file__), "Captain Ferizy.png")
+            ferizy_img = Image.open(ferizy_path).convert("RGBA")
+            scale = (footer_img.height * 0.9) / ferizy_img.height
+            ferizy_img = ferizy_img.resize(
+                (int(ferizy_img.width * scale), int(ferizy_img.height * scale)),
+                Image.Resampling.LANCZOS
+            )
+            pos_x = W - ferizy_img.width - 80
+            pos_y = H - ferizy_img.height - 30   # nempel atas footer
+            bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
+        except Exception as e:
+            print("Gagal render Captain Ferizy:", e)
+
+        # Garis vertikal tebal dari bawah card ke atas footer (di belakang)
+        overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
+        overlay_draw = ImageDraw.Draw(overlay)
+        center_x = W // 2
+        overlay_draw.line(
+            (center_x, card_bottom, center_x, footer_y),
+            fill="black",
+            width=15
+        )
+        # composite biar garis di paling belakang
+        bg = Image.alpha_composite(overlay, bg)
+
+    except Exception as e:
+        print("Gagal render Footer:", e)
 # ==========================================================
 # Tab Report (Poster & PDF)
 # ==========================================================
