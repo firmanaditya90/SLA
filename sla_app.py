@@ -692,18 +692,6 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
     except Exception as e:
         print("Gagal render Kemudi/On Target:", e)
     
-    # ---------- Captain Ferizy ----------
-    try:
-        ferizy_path = os.path.join(os.path.dirname(__file__), "Captain Ferizy.png")
-        ferizy_img = Image.open(ferizy_path).convert("RGBA")
-        scale = (H * 0.35) / ferizy_img.height
-        ferizy_img = ferizy_img.resize((int(ferizy_img.width*scale), int(ferizy_img.height*scale)), Image.Resampling.LANCZOS)
-        pos_x = W - ferizy_img.width - 50
-        pos_y = H - ferizy_img.height - 50
-        bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
-    except Exception as e:
-        print("Gagal load Captain Ferizy:", e)
-
     # --- Tambah Garis Tengah + Footer + Captain Ferizy ---
     try:
         footer_path = os.path.join(os.path.dirname(__file__), "Footer.png")
@@ -736,14 +724,14 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         ferizy_path = os.path.join(os.path.dirname(__file__), "Captain Ferizy.png")
         ferizy_img = Image.open(ferizy_path).convert("RGBA")
 
-        scale = (footer_img.height * 0.9) / ferizy_img.height
+        scale = (footer_img.height * 0.35) / ferizy_img.height
         ferizy_img = ferizy_img.resize(
             (int(ferizy_img.width * scale), int(ferizy_img.height * scale)),
             Image.Resampling.LANCZOS
         )
 
-        pos_x = W - ferizy_img.width - 60
-        pos_y = H - ferizy_img.height - 10
+        pos_x = W - ferizy_img.width - 50
+        pos_y = H - ferizy_img.height - 50
         bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
 
     except Exception as e:
