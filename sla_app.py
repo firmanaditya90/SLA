@@ -724,7 +724,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         ferizy_path = os.path.join(os.path.dirname(__file__), "Captain Ferizy.png")
         ferizy_img = Image.open(ferizy_path).convert("RGBA")
 
-        scale = (footer_img.height * 0.4) / ferizy_img.height
+        scale = (footer_img.height * 5) / ferizy_img.height
         ferizy_img = ferizy_img.resize(
             (int(ferizy_img.width * scale), int(ferizy_img.height * scale)),
             Image.Resampling.LANCZOS
