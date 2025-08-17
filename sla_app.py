@@ -531,22 +531,23 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         font_title = ImageFont.load_default()
 
     bbox_title = draw.textbbox((0, 0), title_text, font=font_title)
-    title_y = logo_h + 150
+    # 👉 jarak dari logo dikurangi biar lebih ke atas
+    title_y = logo_h + 80
     draw.text(((W - (bbox_title[2]-bbox_title[0])) // 2, title_y),
               title_text, fill="black", font=font_title)
 
     # ---------- Periode ----------
-    max_width = int(W * 0.8)   # sekarang aman, W sudah ada
+    max_width = int(W * 0.8)
     font_size = 140
     try:
         font_periode = ImageFont.truetype("Anton-Regular.ttf", font_size)
     except:
         font_periode = ImageFont.load_default()
 
-    # shrink font until fits
     while True:
         bbox_periode = draw.textbbox((0, 0), periode_range_text, font=font_periode)
         periode_w = bbox_periode[2] - bbox_periode[0]
+        periode_h = bbox_periode[3] - bbox_periode[1]
         if periode_w <= max_width or font_size <= 40:
             break
         font_size -= 10
@@ -555,15 +556,38 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
         except:
             font_periode = ImageFont.load_default()
 
-    periode_y = title_y + (bbox_title[3]-bbox_title[1]) + 40
+    # 👉 jarak dikurangi biar lebih rapat ke judul
+    periode_y = title_y + (bbox_title[3]-bbox_title[1]) + 20
     draw.text(((W - periode_w) // 2, periode_y),
               periode_range_text, fill="black", font=font_periode)
 
+    # ---------- Garis Separator ----------
+    line_y = periode_y + periode_h + 30
+    margin_x = 150
+    draw.line((margin_x, line_y, W - margin_x, line_y),
+              fill="black", width=12)
+
+    # ---------- Captain Ferizy ----------
+    try:
+        raw_url = image_url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
+        resp = requests.get(raw_url, timeout=10)
+        ferizy_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
+        scale = (H * 0.35) / ferizy_img.height
+        ferizy_img = ferizy_img.resize(
+            (int(ferizy_img.width * scale), int(ferizy_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
+        pos_x = W - ferizy_img.width - 50
+        pos_y = H - ferizy_img.height - 50
+        bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
+    except Exception as e:
+        print("Gagal load Captain Ferizy:", e)
+
+    # ---------- Output ----------
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
     return out
-
 # ==========================================================
 # Tab Report (Poster & PDF)
 # ==========================================================
