@@ -535,30 +535,34 @@ def generate_poster_A4(sla_text_dict, transaksi_df, image_url, periode_range_tex
     draw.text(((W - (bbox_title[2]-bbox_title[0])) // 2, title_y),
               title_text, fill="black", font=font_title)
 
-    
     # ---------- Periode ----------
-max_width = int(W * 0.8)
-font_size = 140
-try:
-    font_periode = ImageFont.truetype("Anton-Regular.ttf", font_size)
-except:
-    font_periode = ImageFont.load_default()
-
-# shrink font until fits
-while True:
-    bbox_periode = draw.textbbox((0, 0), periode_range_text, font=font_periode)
-    periode_w = bbox_periode[2] - bbox_periode[0]
-    if periode_w <= max_width or font_size <= 40:
-        break
-    font_size -= 10
+    max_width = int(W * 0.8)   # sekarang aman, W sudah ada
+    font_size = 140
     try:
         font_periode = ImageFont.truetype("Anton-Regular.ttf", font_size)
     except:
         font_periode = ImageFont.load_default()
 
-periode_y = title_y + (bbox_title[3]-bbox_title[1]) + 40
-draw.text(((W - periode_w) // 2, periode_y), periode_range_text, fill="black", font=font_periode)
+    # shrink font until fits
+    while True:
+        bbox_periode = draw.textbbox((0, 0), periode_range_text, font=font_periode)
+        periode_w = bbox_periode[2] - bbox_periode[0]
+        if periode_w <= max_width or font_size <= 40:
+            break
+        font_size -= 10
+        try:
+            font_periode = ImageFont.truetype("Anton-Regular.ttf", font_size)
+        except:
+            font_periode = ImageFont.load_default()
 
+    periode_y = title_y + (bbox_title[3]-bbox_title[1]) + 40
+    draw.text(((W - periode_w) // 2, periode_y),
+              periode_range_text, fill="black", font=font_periode)
+
+    out = io.BytesIO()
+    bg.save(out, format="PNG")
+    out.seek(0)
+    return out
 
 # ==========================================================
 # Tab Report (Poster & PDF)
