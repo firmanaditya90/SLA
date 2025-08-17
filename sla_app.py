@@ -657,7 +657,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         bg.paste(table_img, (pos_x, pos_y), table_img)
 
     # ---------- Tambahan Kemudi Kapal + Tulisan "ON TARGET" ----------
-     try:
+    try:
         kemudi_path = os.path.join(os.path.dirname(__file__), "Kemudi.png")
         kemudi_img = Image.open(kemudi_path).convert("RGBA")
 
