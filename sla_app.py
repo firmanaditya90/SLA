@@ -611,11 +611,11 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         table_img = table_img.resize((int(table_img.width*scale), int(table_img.height*scale)), Image.Resampling.LANCZOS)
 
         pos_x = (W - table_img.width) // 2
-        pos_y = chart_bottom + 60
+        pos_y = chart_bottom + 20   # 👉 lebih rapat
         bg.paste(table_img, (pos_x, pos_y), table_img)
     except Exception as e:
         print("Gagal render tabel:", e)
-
+    
     # ---------- Captain Ferizy ----------
     try:
         ferizy_path = os.path.join(os.path.dirname(__file__), "Captain Ferizy.png")
@@ -643,7 +643,14 @@ with tab_poster:
 
 if st.button("🎨 Generate Poster A4"):
     rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
-    df_proses = (df_filtered[proses_grafik_cols]/86400).mean().to_frame("Rata-rata Hari").T
+
+    # Buat tabel sama seperti tab_proses, tapi diformat durasi
+    df_proses = pd.DataFrame({
+        "Rata-rata SLA": [
+            format_duration(rata_proses_seconds[col]) for col in rata_proses_seconds.index
+        ]
+    }, index=rata_proses_seconds.index)
+
     poster_buf = generate_poster_A4(
         {},
         rata_proses_seconds,
@@ -652,7 +659,7 @@ if st.button("🎨 Generate Poster A4"):
         periode_info_text
     )
     st.session_state.poster_buf = poster_buf
-
+    
     if "poster_buf" in st.session_state:
         st.image(st.session_state.poster_buf,
                  caption="Preview Poster A4",
