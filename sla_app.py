@@ -600,19 +600,23 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         chart_bottom = line_y + 40
 
     # ---------- Tabel (30% lebar poster) ----------
+    # ---------- Tabel (rata kanan, lebih besar & ada jarak) ----------
     try:
-        fig, ax = plt.subplots(figsize=(4, 4))
+        fig, ax = plt.subplots(figsize=(5, 4))
         ax.axis('off')
+
         tbl = ax.table(
             cellText=df_proses.values,
             colLabels=df_proses.columns,
             rowLabels=df_proses.index,
-            colWidths=[0.4, 0.6],   # 👉 atur proporsi kolom (label vs SLA)
             loc='center'
         )
         tbl.auto_set_font_size(False)
-        tbl.set_fontsize(10)
-        tbl.scale(1.1, 1.1)
+        tbl.set_fontsize(12)
+        tbl.scale(1.3, 1.3)
+
+        # 👉 otomatis sesuaikan lebar kolom
+        tbl.auto_set_column_width([0, 1])
 
         buf = io.BytesIO()
         fig.savefig(buf, format="PNG", dpi=300, bbox_inches="tight", transparent=True)
@@ -620,14 +624,15 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         plt.close(fig)
 
         table_img = Image.open(buf).convert("RGBA")
-        max_tbl_width = int(W * 0.30)   # 👉 tabel lebih kecil
+        max_tbl_width = int(W * 0.35)   # lebih besar biar jelas
         scale = max_tbl_width / table_img.width
         table_img = table_img.resize(
-            (int(table_img.width*scale), int(table_img.height*scale)),
+            (int(table_img.width * scale), int(table_img.height * scale)),
             Image.Resampling.LANCZOS
         )
 
-        pos_x = W - table_img.width - 100
+        # 👉 kasih jarak dari grafik (gap 50 px)
+        pos_x = W - table_img.width - 150
         pos_y = line_y + 40
         bg.paste(table_img, (pos_x, pos_y), table_img)
     except Exception as e:
