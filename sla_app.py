@@ -661,30 +661,30 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         kemudi_path = os.path.join(os.path.dirname(__file__), "Kemudi.png")
         kemudi_img = Image.open(kemudi_path).convert("RGBA")
 
-        # scale kemudi: 25% lebar poster
-        target_width = int(W * 0.25)
+        # scale kemudi: 18% dari lebar poster (proporsional)
+        target_width = int(W * 0.18)
         scale = target_width / kemudi_img.width
         kemudi_img = kemudi_img.resize(
             (target_width, int(kemudi_img.height * scale)),
             Image.Resampling.LANCZOS
         )
 
-        # Rata tengah poster, di bawah card grafik+tabel
-        pos_x = (W - kemudi_img.width) // 2
-        pos_y = card_bottom + 40
+        # Posisi: rata kanan, tepat di bawah tabel (masih dalam card)
+        pos_x = W - card_margin_x - kemudi_img.width - 50
+        pos_y = card_top + table_img.height + 60
         bg.paste(kemudi_img, (pos_x, pos_y), kemudi_img)
 
         # Tulisan "ON TARGET" di bawah kemudi
         try:
             font_target = ImageFont.truetype(
-                os.path.join(os.path.dirname(__file__), "DejaVuSans-Bold.ttf"), 120
+                os.path.join(os.path.dirname(__file__), "DejaVuSans-Bold.ttf"), 90
             )
         except:
             font_target = ImageFont.load_default()
 
         text = "ON TARGET"
         tw, th = draw.textsize(text, font=font_target)
-        text_x = (W - tw) // 2
+        text_x = pos_x + (kemudi_img.width - tw)//2
         text_y = pos_y + kemudi_img.height + 20
         draw.text((text_x, text_y), text, fill=(0, 150, 0), font=font_target)
     except Exception as e:
