@@ -14,6 +14,14 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
 import requests
 
+def format_duration(seconds):
+    """Convert detik jadi 'xx hari xx jam xx menit xx detik'"""
+    days = int(seconds // 86400)
+    hours = int((seconds % 86400) // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    return f"{days} hari {hours} jam {minutes} menit {secs} detik"
+    
 # ==============================
 # Konfigurasi Halaman (TIDAK DIUBAH)
 # ==============================
@@ -644,7 +652,6 @@ with tab_poster:
 if st.button("🎨 Generate Poster A4"):
     rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
 
-    # Buat tabel sama seperti tab_proses, tapi diformat durasi
     df_proses = pd.DataFrame({
         "Rata-rata SLA": [
             format_duration(rata_proses_seconds[col]) for col in rata_proses_seconds.index
