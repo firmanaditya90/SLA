@@ -649,7 +649,7 @@ with tab_report:
 with tab_poster:
     st.subheader("📥 Download Poster")
 
-if st.button("🎨 Generate Poster A4"):
+    if st.button("🎨 Generate Poster A4"):
     rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
 
     df_proses = pd.DataFrame({
