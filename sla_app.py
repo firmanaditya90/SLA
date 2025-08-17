@@ -275,9 +275,8 @@ with st.sidebar:
         df_raw[periode_col].dropna().astype(str).unique().tolist(),
         key=lambda x: pd.to_datetime(x, errors='coerce')
     )
-    start_periode = st.selectbox("Periode Mulai", periode_list, index=0)
-    end_periode = st.selectbox("Periode Akhir", periode_list, index=len(periode_list)-1)
-    st.markdown('</div>', unsafe_allow_html=True)
+    start_periode = st.selectbox("Periode Mulai", periode_list, index=0, key="periode_mulai")
+end_periode = st.selectbox("Periode Akhir", periode_list, index=len(periode_list)-1, key="periode_akhir")
 
 idx_start = periode_list.index(start_periode)
 idx_end = periode_list.index(end_periode)
@@ -506,9 +505,6 @@ with st.sidebar:
         df_raw[periode_col].dropna().astype(str).unique().tolist(),
         key=lambda x: pd.to_datetime(x, errors='coerce')
     )
-    start_periode = st.selectbox("Periode Mulai", periode_list, index=0)
-    end_periode = st.selectbox("Periode Akhir", periode_list, index=len(periode_list)-1)
-    st.markdown('</div>', unsafe_allow_html=True)
 
 idx_start = periode_list.index(start_periode)
 idx_end = periode_list.index(end_periode)
