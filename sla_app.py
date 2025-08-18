@@ -707,11 +707,17 @@ import os
 import io
 from PIL import Image, ImageDraw
 
-def render_poster(bg, W, H, card_bottom):
+import os
+import io
+from PIL import Image, ImageDraw, ImageFont
+
+def render_poster(bg, W, H, card_bottom, title_text="", font_title=None):
     """
     bg          : Image background (RGBA)
     W, H        : Lebar & tinggi poster
     card_bottom : posisi Y akhir dari konten utama (sebagai start garis tengah)
+    title_text  : teks judul yang ingin ditampilkan
+    font_title  : PIL.ImageFont instance untuk judul
     """
     # ---------- Logo (rata kanan) ----------
     try:
@@ -730,6 +736,17 @@ def render_poster(bg, W, H, card_bottom):
         bg.paste(logo_img, (x_logo, y_logo), logo_img)
     except Exception as e:
         print("⚠️ Gagal render logo:", e)
+
+    draw = ImageDraw.Draw(bg)
+
+    # ---------- Teks judul ----------
+    if title_text and font_title:
+        # Aman untuk semua versi Pillow: pakai textsize
+        text_width, text_height = draw.textsize(title_text, font=font_title)
+        # Letakkan di tengah horizontal, 50px dari atas
+        x_text = (W - text_width) // 2
+        y_text = 50
+        draw.text((x_text, y_text), title_text, font=font_title, fill="black")
 
     # ---------- Footer + garis tengah + Ferizy ----------
     try:
