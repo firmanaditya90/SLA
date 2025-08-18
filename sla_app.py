@@ -692,6 +692,11 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
     except Exception as e:
         print("Gagal render Kemudi/On Target:", e)
 
+from PIL import Image, ImageDraw
+import os
+import io
+
+def render_image(bg, W, H, card_bottom, footer_y):
     # --- Garis Vertikal 3D (paling belakang) ---
     try:
         draw = ImageDraw.Draw(bg)
@@ -717,27 +722,47 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
             fill=(80, 80, 80),
             width=4
         )
-        
-        # 2. Footer di atas garis
-        bg.paste(footer_img, (0, footer_y), footer_img)
 
-        # 3. Captain Ferizy di depan footer
+    except Exception as e:
+        print("⚠️ Gagal render garis vertikal 3D:", e)
+
+    # --- Paste Footer ---
+    try:
+        footer_path = os.path.join(os.path.dirname(__file__), "Footer.png")
+        print("Membuka footer:", footer_path)
+        footer_img = Image.open(footer_path).convert("RGBA")
+
+        if footer_y + footer_img.height > H:
+            footer_y = H - footer_img.height  # menyesuaikan jika di luar canvas
+
+        bg.paste(footer_img, (0, footer_y), footer_img)
+    except Exception as e:
+        print("⚠️ Gagal paste footer:", e)
+
+    # --- Paste Captain Ferizy ---
+    try:
         ferizy_path = os.path.join(os.path.dirname(__file__), "Captain Ferizy.png")
+        print("Membuka Captain Ferizy:", ferizy_path)
         ferizy_img = Image.open(ferizy_path).convert("RGBA")
 
+        # Scaling sesuai tinggi footer
         scale = (footer_img.height * 2) / ferizy_img.height
         ferizy_img = ferizy_img.resize(
             (int(ferizy_img.width * scale), int(ferizy_img.height * scale)),
             Image.Resampling.LANCZOS
         )
 
-        pos_x = W - ferizy_img.width - 0
-        pos_y = H - ferizy_img.height - 0
-        bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
+        pos_x = W - ferizy_img.width
+        pos_y = H - ferizy_img.height
+        if pos_x < 0 or pos_y < 0:
+            pos_x = max(0, pos_x)
+            pos_y = max(0, pos_y)
 
+        bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
     except Exception as e:
-        print("⚠️ Gagal render garis vertikal 3D:", e)
-        
+        print("⚠️ Gagal paste Captain Ferizy:", e)
+
+    # --- Output PNG ---
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
