@@ -772,7 +772,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
             Image.Resampling.LANCZOS
         )
 
-        pos_x = W - Transformation_img.width - 2000
+        pos_x = W - Transformation_img.width + 80
         pos_y = H - Transformation_img.height - 80
         bg.paste(Transformation_img, (pos_x, pos_y), Transformation_img)
 
