@@ -705,8 +705,9 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
             Image.Resampling.LANCZOS
         )
         footer_y = H - footer_img.height
+
         # --- Garis Vertikal 3D (paling belakang) ---
-try:
+    try:
     draw = ImageDraw.Draw(bg)
     center_x = W // 2
 
@@ -732,6 +733,7 @@ try:
     )
 except Exception as e:
     print("⚠️ Gagal render garis vertikal 3D:", e)
+        
         
         # 2. Footer di atas garis
         bg.paste(footer_img, (0, footer_y), footer_img)
