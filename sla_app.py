@@ -515,7 +515,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
     bg = Image.new("RGB", (W, H), "white")
     draw = ImageDraw.Draw(bg)
 
-    # ---------- Logo ----------
+    # ---------- Logo ASDP ----------
     logo_h = 0
     try:
         logo_path = os.path.join(os.path.dirname(__file__), "asdp_logo.png")
@@ -526,6 +526,25 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         logo_h = logo_img.height
     except:
         pass
+
+    # ---------- Logo ASDP ----------
+logo_h = 0
+try:
+    logo_path = os.path.join(os.path.dirname(__file__), "asdp_logo.png")
+    logo_img = Image.open(logo_path).convert("RGBA")
+    
+    # skala logo
+    scale = (W * 0.15) / logo_img.width
+    logo_img = logo_img.resize((int(logo_img.width*scale), int(logo_img.height*scale)), Image.Resampling.LANCZOS)
+    
+    # posisi rata kanan
+    x_pos = W - logo_img.width - 80  # 80px margin dari kanan
+    y_pos = 80  # tetap dari atas 80px
+    
+    bg.paste(logo_img, (x_pos, y_pos), logo_img)
+    logo_h = logo_img.height
+except:
+    pass
 
     # ---------- Judul ----------
     title_text = "SLA DOKUMEN PENAGIHAN"
