@@ -717,7 +717,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         overlay_draw.line(
             (center_x, card_bottom, center_x, H),
             fill="black",
-            width=15
+            width=25
         )
         bg = Image.alpha_composite(overlay, bg)
 
