@@ -751,7 +751,7 @@ except:
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
-    return out
+        return out
     
 # ==========================================================
 # Tab Report (Poster & PDF)
