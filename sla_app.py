@@ -720,6 +720,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
 
     except Exception as e:
         print("⚠️ Gagal render garis vertikal 3D:", e)
+        
         # 2. Footer di atas garis
         bg.paste(footer_img, (0, footer_y), footer_img)
 
