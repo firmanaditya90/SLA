@@ -692,38 +692,41 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
     except Exception as e:
         print("Gagal render Kemudi/On Target:", e)
 
-
-
 import os
 import io
 import streamlit as st
 from PIL import Image, ImageDraw
 
 # --- Fungsi render poster ---
-def render_image(bg_path, W, H, card_bottom, footer_y):
-    # --- Background ---
+def render_image(W, H, card_bottom, footer_y):
+    base_dir = os.path.dirname(__file__)
+
+    # --- Paths semua file ---
+    bg_path = os.path.join(base_dir, "background.png")
+    footer_path = os.path.join(base_dir, "Footer.png")
+    ferizy_path = os.path.join(base_dir, "Captain Ferizy.png")
+
+    # --- Cek keberadaan file ---
+    for path in [bg_path, footer_path, ferizy_path]:
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"File tidak ditemukan: {path}")
+
+    # --- Load Background ---
     bg = Image.open(bg_path).convert("RGBA")
 
-    # --- Garis Vertikal 3D (paling belakang) ---
+    # --- Garis Vertikal 3D ---
     try:
         draw = ImageDraw.Draw(bg)
         center_x = W // 2
 
-        # Garis utama (hitam tebal)
         draw.line((center_x, card_bottom, center_x, H), fill="black", width=15)
-
-        # Highlight kiri → timbul
         draw.line((center_x - 4, card_bottom, center_x - 4, H), fill=(220, 220, 220), width=4)
-
-        # Bayangan kanan → kedalaman
         draw.line((center_x + 4, card_bottom, center_x + 4, H), fill=(80, 80, 80), width=4)
-
     except Exception as e:
         print("⚠️ Gagal render garis vertikal 3D:", e)
 
     # --- Paste Footer ---
     try:
-        footer_path = os.path.join(os.path.dirname(__file__), "Footer.png")
         footer_img = Image.open(footer_path).convert("RGBA")
         if footer_y + footer_img.height > H:
             footer_y = H - footer_img.height
@@ -733,26 +736,19 @@ def render_image(bg_path, W, H, card_bottom, footer_y):
 
     # --- Paste Captain Ferizy ---
     try:
-        ferizy_path = os.path.join(os.path.dirname(__file__), "Captain Ferizy.png")
         ferizy_img = Image.open(ferizy_path).convert("RGBA")
-
-        # Scale sesuai footer
         scale = (footer_img.height * 2) / ferizy_img.height
         ferizy_img = ferizy_img.resize(
             (int(ferizy_img.width * scale), int(ferizy_img.height * scale)),
             Image.Resampling.LANCZOS
         )
-
-        pos_x = W - ferizy_img.width
-        pos_y = H - ferizy_img.height
-        if pos_x < 0: pos_x = 0
-        if pos_y < 0: pos_y = 0
-
+        pos_x = max(W - ferizy_img.width, 0)
+        pos_y = max(H - ferizy_img.height, 0)
         bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
     except Exception as e:
         print("⚠️ Gagal paste Captain Ferizy:", e)
 
-    # --- Output ke BytesIO ---
+    # --- Output BytesIO ---
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
@@ -761,17 +757,18 @@ def render_image(bg_path, W, H, card_bottom, footer_y):
 # --- Streamlit App ---
 st.title("Preview Poster A4")
 
-# Contoh parameter
-bg_path = os.path.join(os.path.dirname(__file__), "background.png")  # ganti sesuai file background
-W, H = 1240, 1754  # ukuran A4 300 dpi
+# Ukuran A4 300 dpi
+W, H = 1240, 1754
 card_bottom = H // 3
 footer_y = H - 200
 
-poster_buf = render_image(bg_path, W, H, card_bottom, footer_y)
+try:
+    poster_buf = render_image(W, H, card_bottom, footer_y)
+    poster_buf.seek(0)
+    st.image(Image.open(poster_buf), caption="Preview Poster A4", use_column_width=True)
+except FileNotFoundError as e:
+    st.error(str(e))
 
-# --- Tampilkan di Streamlit ---
-poster_buf.seek(0)  # pastikan pointer di awal
-st.image(Image.open(poster_buf), caption="Preview Poster A4", use_column_width=True)
 
 # ==========================================================
 # Tab Report (Poster & PDF)
