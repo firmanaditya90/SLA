@@ -762,8 +762,23 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         pos_y = H - ferizy_img.height - 0
         bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
 
+        # 4. Transformation di depan footer
+        Transformation_path = os.path.join(os.path.dirname(__file__), "Transformation.png")
+        Transformation_img = Image.open(Transformation_path).convert("RGBA")
+
+        scale = (footer_img.height * 2) / Transformation_img.height
+        Transformation_img = Transformation_img.resize(
+            (int(Transformation_img.width * scale), int(Transformation_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
+
+        pos_x = W - Transformation_img.width - 80
+        pos_y = H - Transformation_img.height - 80
+        bg.paste(Transformation_img, (pos_x, pos_y), Transformation_img)
+
+
     except Exception as e:
-        print("⚠️ Gagal render Footer/Ferizy/Garis tengah:", e)
+        print("⚠️ Gagal render Footer/Ferizy/Garis tengah/Transformation:", e)
 
     out = io.BytesIO()
     bg.save(out, format="PNG")
