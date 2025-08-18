@@ -702,7 +702,6 @@ def render_image(W, H, card_bottom, footer_y):
     base_dir = os.path.dirname(__file__)
 
     # --- Paths semua file ---
-    bg_path = os.path.join(base_dir, "background.png")
     footer_path = os.path.join(base_dir, "Footer.png")
     ferizy_path = os.path.join(base_dir, "Captain Ferizy.png")
 
