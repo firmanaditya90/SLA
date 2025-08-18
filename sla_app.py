@@ -520,7 +520,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
     try:
         logo_path = os.path.join(os.path.dirname(__file__), "asdp_logo.png")
         logo_img = Image.open(logo_path).convert("RGBA")
-        scale = (W * 0.15) / logo_img.width
+        scale = (W * 0.3) / logo_img.width
         logo_img = logo_img.resize((int(logo_img.width*scale), int(logo_img.height*scale)), Image.Resampling.LANCZOS)
         bg.paste(logo_img, (2000, 80), logo_img)
         logo_h = logo_img.height
