@@ -691,20 +691,6 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         draw.text((text_x, text_y), text, font=font_target, fill=(0, 150, 0))
     except Exception as e:
         print("Gagal render Kemudi/On Target:", e)
-    
-    # --- Tambah Garis Tengah + Footer + Captain Ferizy ---
-    try:
-        footer_path = os.path.join(os.path.dirname(__file__), "Footer.png")
-        print("DEBUG Footer Path:", footer_path, os.path.exists(footer_path))
-        footer_img = Image.open(footer_path).convert("RGBA")
-
-        # Resize footer agar full width
-        scale = W / footer_img.width
-        footer_img = footer_img.resize(
-            (W, int(footer_img.height * scale)),
-            Image.Resampling.LANCZOS
-        )
-        footer_y = H - footer_img.height
 
     # --- Garis Vertikal 3D (paling belakang) ---
     try:
@@ -734,7 +720,6 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
 
     except Exception as e:
         print("⚠️ Gagal render garis vertikal 3D:", e)
-        
         # 2. Footer di atas garis
         bg.paste(footer_img, (0, footer_y), footer_img)
 
