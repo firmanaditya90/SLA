@@ -539,6 +539,18 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
     except:
         pass
 
+    # ---------- Logo Transformation----------
+    logo_h = 0
+    try:
+        logo_path = os.path.join(os.path.dirname(__file__), "Transformation.png")
+        logo_img = Image.open(logo_path).convert("RGBA")
+        scale = (W * 0.2) / logo_img.width
+        logo_img = logo_img.resize((int(logo_img.width*scale), int(logo_img.height*scale)), Image.Resampling.LANCZOS)
+        bg.paste(logo_img, (80, 3000), logo_img)
+        logo_h = logo_img.height
+    except:
+        pass
+
     # ---------- Judul ----------
     title_text = "SLA DOKUMEN PENAGIHAN"
     try:
