@@ -706,7 +706,7 @@ def render_image(W, H, card_bottom, footer_y):
     ferizy_path = os.path.join(base_dir, "Captain Ferizy.png")
 
     # --- Cek keberadaan file ---
-    for path in [bg_path, footer_path, ferizy_path]:
+    for path in [footer_path, ferizy_path]:
         if not os.path.exists(path):
             raise FileNotFoundError(f"File tidak ditemukan: {path}")
 
