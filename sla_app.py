@@ -703,13 +703,41 @@ except:
     except Exception as e:
         print("Gagal render Kemudi/On Target:", e)
 
-# --- Tambah Garis Tengah + Footer + Captain Ferizy ---
+import os
+import io
+from PIL import Image, ImageDraw
+
+def render_poster(bg, W, H, card_bottom):
+    """
+    bg          : Image background (RGBA)
+    W, H        : Lebar & tinggi poster
+    card_bottom : posisi Y akhir dari konten utama (sebagai start garis tengah)
+    """
+    # ---------- Logo (rata kanan) ----------
     try:
+        logo_path = os.path.join(os.path.dirname(__file__), "asdp_logo.png")
+        logo_img = Image.open(logo_path).convert("RGBA")
+
+        scale = (W * 0.15) / logo_img.width
+        logo_img = logo_img.resize(
+            (int(logo_img.width * scale), int(logo_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
+
+        # Rata kanan, margin 80px
+        x_logo = W - logo_img.width - 80
+        y_logo = 80
+        bg.paste(logo_img, (x_logo, y_logo), logo_img)
+    except Exception as e:
+        print("⚠️ Gagal render logo:", e)
+
+    # ---------- Footer + garis tengah + Ferizy ----------
+    try:
+        # Footer
         footer_path = os.path.join(os.path.dirname(__file__), "Footer.png")
         print("DEBUG Footer Path:", footer_path, os.path.exists(footer_path))
         footer_img = Image.open(footer_path).convert("RGBA")
 
-        # Resize footer agar full width
         scale = W / footer_img.width
         footer_img = footer_img.resize(
             (W, int(footer_img.height * scale)),
@@ -717,7 +745,7 @@ except:
         )
         footer_y = H - footer_img.height
 
-        # 1. Garis tengah (paling belakang) → sampai ke bawah poster
+        # Garis tengah (vertikal)
         overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
         overlay_draw = ImageDraw.Draw(overlay)
         center_x = W // 2
@@ -728,10 +756,10 @@ except:
         )
         bg = Image.alpha_composite(overlay, bg)
 
-        # 2. Footer di atas garis
+        # Paste footer
         bg.paste(footer_img, (0, footer_y), footer_img)
 
-        # 3. Captain Ferizy di depan footer
+        # Captain Ferizy
         ferizy_path = os.path.join(os.path.dirname(__file__), "Captain Ferizy.png")
         ferizy_img = Image.open(ferizy_path).convert("RGBA")
 
@@ -741,17 +769,19 @@ except:
             Image.Resampling.LANCZOS
         )
 
-        pos_x = W - ferizy_img.width - 0
-        pos_y = H - ferizy_img.height - 0
+        # Rata kanan di atas footer
+        pos_x = W - ferizy_img.width
+        pos_y = H - ferizy_img.height
         bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
 
     except Exception as e:
         print("⚠️ Gagal render Footer/Ferizy/Garis tengah:", e)
 
+    # Output ke BytesIO
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
-        return out
+    return out
     
 # ==========================================================
 # Tab Report (Poster & PDF)
