@@ -717,9 +717,6 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
             fill=(80, 80, 80),
             width=4
         )
-
-    except Exception as e:
-        print("⚠️ Gagal render garis vertikal 3D:", e)
         
         # 2. Footer di atas garis
         bg.paste(footer_img, (0, footer_y), footer_img)
@@ -739,8 +736,8 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
 
     except Exception as e:
-        print("⚠️ Gagal render Footer/Ferizy/Garis tengah:", e)
-
+        print("⚠️ Gagal render garis vertikal 3D:", e)
+        
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
