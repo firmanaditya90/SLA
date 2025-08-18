@@ -569,8 +569,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
     margin_x = 150
     draw.line((margin_x, line_y, W - margin_x, line_y), fill="black", width=12)
 
-    # ---------- Render Grafik ----------
-    chart_img = None
+    # ---------- Grafik (65% lebar poster) ----------
     try:
         fig, ax = plt.subplots(figsize=(10, 4))
         values_hari = [rata_proses_seconds[col] / 86400 for col in rata_proses_seconds.index]
@@ -581,23 +580,31 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
 
         buf = io.BytesIO()
         fig.savefig(buf, format="PNG", dpi=300, bbox_inches="tight", transparent=True)
-        buf.seek(0); plt.close(fig)
+        buf.seek(0)
+        plt.close(fig)
 
         chart_img = Image.open(buf).convert("RGBA")
-        max_chart_width = int(W * 0.65)
+        max_chart_width = int(W * 0.65)   # 👉 grafik lebih dominan
         scale = max_chart_width / chart_img.width
         chart_img = chart_img.resize(
-            (int(chart_img.width * scale), int(chart_img.height * scale)),
+            (int(chart_img.width*scale), int(chart_img.height*scale)),
             Image.Resampling.LANCZOS
         )
+
+        pos_x = 100
+        pos_y = line_y + 40
+        bg.paste(chart_img, (pos_x, pos_y), chart_img)
+        chart_bottom = pos_y + chart_img.height
     except Exception as e:
         print("Gagal render chart:", e)
+        chart_bottom = line_y + 40
 
-    # ---------- Render Tabel ----------
-    table_img = None
+    # ---------- Tabel (30% lebar poster) ----------
+    # ---------- Tabel (rata kanan, lebih besar & ada jarak) ----------
     try:
         fig, ax = plt.subplots(figsize=(5, 4))
         ax.axis('off')
+
         tbl = ax.table(
             cellText=df_proses.values,
             colLabels=df_proses.columns,
@@ -607,168 +614,46 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         tbl.auto_set_font_size(False)
         tbl.set_fontsize(12)
         tbl.scale(1.3, 1.3)
+
+        # 👉 otomatis sesuaikan lebar kolom
         tbl.auto_set_column_width([0, 1])
 
         buf = io.BytesIO()
         fig.savefig(buf, format="PNG", dpi=300, bbox_inches="tight", transparent=True)
-        buf.seek(0); plt.close(fig)
+        buf.seek(0)
+        plt.close(fig)
 
         table_img = Image.open(buf).convert("RGBA")
-        max_tbl_width = int(W * 0.30)
+        max_tbl_width = int(W * 0.35)   # lebih besar biar jelas
         scale = max_tbl_width / table_img.width
         table_img = table_img.resize(
             (int(table_img.width * scale), int(table_img.height * scale)),
             Image.Resampling.LANCZOS
         )
+
+        # 👉 kasih jarak dari grafik (gap 50 px)
+        pos_x = W - table_img.width - 150
+        pos_y = line_y + 40
+        bg.paste(table_img, (pos_x, pos_y), table_img)
     except Exception as e:
         print("Gagal render tabel:", e)
-
-    # ---------- Card Background dinamis ----------
-    card_margin_x = 80
-    card_top = line_y + 20
-    # tinggi card = tinggi terbesar dari grafik/tabel + padding
-    content_height = max(
-        chart_img.height if chart_img else 0,
-        table_img.height if table_img else 0
-    )
-    card_bottom = card_top + content_height + 80  # +padding atas/bawah
-
-    overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
-    overlay_draw = ImageDraw.Draw(overlay)
-    overlay_draw.rounded_rectangle(
-        (card_margin_x, card_top, W - card_margin_x, card_bottom),
-        radius=40,
-        outline="gray",
-        width=5,
-        fill=(240, 240, 240, 180)
-    )
-    bg = Image.alpha_composite(bg.convert("RGBA"), overlay)
-    draw = ImageDraw.Draw(bg)
-
-    # ---------- Tempel Grafik & Tabel di dalam card ----------
-    if chart_img:
-        pos_x = card_margin_x + 50
-        pos_y = card_top + 40
-        bg.paste(chart_img, (pos_x, pos_y), chart_img)
-
-    if table_img:
-        pos_x = W - table_img.width - card_margin_x - 50
-        pos_y = card_top + 40
-        bg.paste(table_img, (pos_x, pos_y), table_img)
-
-    # ---------- Tambahan Kemudi Kapal + Tulisan "ON TARGET" ----------
+    
+    # ---------- Captain Ferizy ----------
     try:
-        kemudi_path = os.path.join(os.path.dirname(__file__), "Kemudi.png")
-        kemudi_img = Image.open(kemudi_path).convert("RGBA")
-
-        # Skala kemudi proporsional
-        target_width = int(W * 0.18)
-        scale = target_width / kemudi_img.width
-        kemudi_img = kemudi_img.resize(
-            (target_width, int(kemudi_img.height * scale)),
-            Image.Resampling.LANCZOS
-        )
-
-        # Posisi: masih di samping tabel, tapi dinaikkan lebih dekat tabel
-        pos_x = W - card_margin_x - kemudi_img.width - 50
-        pos_y = card_top + table_img.height + 30   # ← sebelumnya +60, sekarang naik
-
-        bg.paste(kemudi_img, (pos_x, pos_y), kemudi_img)
-
-        # Font untuk ON TARGET
-        font_target = ImageFont.truetype(
-            os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf"), 120
-        )
-        text = "ON TARGET"
-
-        bbox = draw.textbbox((0, 0), text, font=font_target)
-        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-
-        # Posisi: tepat di bawah kemudi, center
-        text_x = pos_x + (kemudi_img.width - tw) // 2
-        text_y = pos_y + kemudi_img.height + 0
-
-        draw.text((text_x, text_y), text, font=font_target, fill=(0, 150, 0))
-    except Exception as e:
-        print("Gagal render Kemudi/On Target:", e)
-
-import os
-import io
-import streamlit as st
-from PIL import Image, ImageDraw
-
-# --- Fungsi render poster ---
-def render_image(W, H, card_bottom, footer_y):
-    base_dir = os.path.dirname(__file__)
-
-    # --- Paths semua file ---
-    footer_path = os.path.join(base_dir, "Footer.png")
-    ferizy_path = os.path.join(base_dir, "Captain Ferizy.png")
-
-    # --- Cek keberadaan file ---
-    for path in [footer_path, ferizy_path]:
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"File tidak ditemukan: {path}")
-
-    # --- Load Background ---
-    bg = Image.open(bg_path).convert("RGBA")
-
-    # --- Garis Vertikal 3D ---
-    try:
-        draw = ImageDraw.Draw(bg)
-        center_x = W // 2
-
-        draw.line((center_x, card_bottom, center_x, H), fill="black", width=15)
-        draw.line((center_x - 4, card_bottom, center_x - 4, H), fill=(220, 220, 220), width=4)
-        draw.line((center_x + 4, card_bottom, center_x + 4, H), fill=(80, 80, 80), width=4)
-    except Exception as e:
-        print("⚠️ Gagal render garis vertikal 3D:", e)
-
-    # --- Paste Footer ---
-    try:
-        footer_img = Image.open(footer_path).convert("RGBA")
-        if footer_y + footer_img.height > H:
-            footer_y = H - footer_img.height
-        bg.paste(footer_img, (0, footer_y), footer_img)
-    except Exception as e:
-        print("⚠️ Gagal paste footer:", e)
-
-    # --- Paste Captain Ferizy ---
-    try:
+        ferizy_path = os.path.join(os.path.dirname(__file__), "Captain Ferizy.png")
         ferizy_img = Image.open(ferizy_path).convert("RGBA")
-        scale = (footer_img.height * 2) / ferizy_img.height
-        ferizy_img = ferizy_img.resize(
-            (int(ferizy_img.width * scale), int(ferizy_img.height * scale)),
-            Image.Resampling.LANCZOS
-        )
-        pos_x = max(W - ferizy_img.width, 0)
-        pos_y = max(H - ferizy_img.height, 0)
+        scale = (H * 0.35) / ferizy_img.height
+        ferizy_img = ferizy_img.resize((int(ferizy_img.width*scale), int(ferizy_img.height*scale)), Image.Resampling.LANCZOS)
+        pos_x = W - ferizy_img.width - 50
+        pos_y = H - ferizy_img.height - 50
         bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
     except Exception as e:
-        print("⚠️ Gagal paste Captain Ferizy:", e)
+        print("Gagal load Captain Ferizy:", e)
 
-    # --- Output BytesIO ---
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
     return out
-
-# --- Streamlit App ---
-st.title("Preview Poster A4")
-
-# Ukuran A4 300 dpi
-W, H = 1240, 1754
-card_bottom = H // 3
-footer_y = H - 200
-
-try:
-    poster_buf = render_image(W, H, card_bottom, footer_y)
-    poster_buf.seek(0)
-    st.image(Image.open(poster_buf), caption="Preview Poster A4", use_column_width=True)
-except FileNotFoundError as e:
-    st.error(str(e))
-
-
 # ==========================================================
 # Tab Report (Poster & PDF)
 # ==========================================================
