@@ -637,6 +637,42 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         bg.paste(table_img, (pos_x, pos_y), table_img)
     except Exception as e:
         print("Gagal render tabel:", e)
+
+    try:
+        kemudi_path = os.path.join(os.path.dirname(__file__), "Kemudi.png")
+        kemudi_img = Image.open(kemudi_path).convert("RGBA")
+
+        # Skala kemudi proporsional
+        target_width = int(W * 0.18)
+        scale = target_width / kemudi_img.width
+        kemudi_img = kemudi_img.resize(
+            (target_width, int(kemudi_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
+
+        # Posisi: masih di samping tabel, tapi dinaikkan lebih dekat tabel
+        pos_x = W - card_margin_x - kemudi_img.width - 50
+        pos_y = card_top + table_img.height + 30   # ← sebelumnya +60, sekarang naik
+
+        bg.paste(kemudi_img, (pos_x, pos_y), kemudi_img)
+
+        # Font untuk ON TARGET
+        font_target = ImageFont.truetype(
+            os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf"), 120
+        )
+        text = "ON TARGET"
+
+        bbox = draw.textbbox((0, 0), text, font=font_target)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+        # Posisi: tepat di bawah kemudi, center
+        text_x = pos_x + (kemudi_img.width - tw) // 2
+        text_y = pos_y + kemudi_img.height + 1
+
+        draw.text((text_x, text_y), text, font=font_target, fill=(0, 150, 0))
+    except Exception as e:
+        print("Gagal render Kemudi/On Target:", e)
+
     
     # ---------- Captain Ferizy ----------
     try:
