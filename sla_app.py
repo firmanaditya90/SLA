@@ -766,7 +766,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         Transformation_path = os.path.join(os.path.dirname(__file__), "Transformation.png")
         Transformation_img = Image.open(Transformation_path).convert("RGBA")
 
-        scale = (footer_img.height * 2) / Transformation_img.height
+        scale = (footer_img.height * 0.35) / Transformation_img.height
         Transformation_img = Transformation_img.resize(
             (int(Transformation_img.width * scale), int(Transformation_img.height * scale)),
             Image.Resampling.LANCZOS
