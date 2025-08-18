@@ -696,18 +696,50 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
     except Exception as e:
         print("Gagal render Kemudi/On Target:", e)
 
-    
-    # ---------- Captain Ferizy ----------
+# --- Tambah Garis Tengah + Footer + Captain Ferizy ---
     try:
+        footer_path = os.path.join(os.path.dirname(__file__), "Footer.png")
+        print("DEBUG Footer Path:", footer_path, os.path.exists(footer_path))
+        footer_img = Image.open(footer_path).convert("RGBA")
+
+        # Resize footer agar full width
+        scale = W / footer_img.width
+        footer_img = footer_img.resize(
+            (W, int(footer_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
+        footer_y = H - footer_img.height
+
+        # 1. Garis tengah (paling belakang) → sampai ke bawah poster
+        overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
+        overlay_draw = ImageDraw.Draw(overlay)
+        center_x = W // 2
+        overlay_draw.line(
+            (center_x, card_bottom, center_x, H),
+            fill="black",
+            width=15
+        )
+        bg = Image.alpha_composite(overlay, bg)
+
+        # 2. Footer di atas garis
+        bg.paste(footer_img, (0, footer_y), footer_img)
+
+        # 3. Captain Ferizy di depan footer
         ferizy_path = os.path.join(os.path.dirname(__file__), "Captain Ferizy.png")
         ferizy_img = Image.open(ferizy_path).convert("RGBA")
-        scale = (H * 0.35) / ferizy_img.height
-        ferizy_img = ferizy_img.resize((int(ferizy_img.width*scale), int(ferizy_img.height*scale)), Image.Resampling.LANCZOS)
-        pos_x = W - ferizy_img.width - 50
-        pos_y = H - ferizy_img.height - 50
+
+        scale = (footer_img.height * 2) / ferizy_img.height
+        ferizy_img = ferizy_img.resize(
+            (int(ferizy_img.width * scale), int(ferizy_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
+
+        pos_x = W - ferizy_img.width - 0
+        pos_y = H - ferizy_img.height - 0
         bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
+
     except Exception as e:
-        print("Gagal load Captain Ferizy:", e)
+        print("⚠️ Gagal render Footer/Ferizy/Garis tengah:", e)
 
     out = io.BytesIO()
     bg.save(out, format="PNG")
