@@ -707,7 +707,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
         footer_y = H - footer_img.height
 
     # --- Garis Vertikal 3D (paling belakang) ---
-        try:
+    try:
         draw = ImageDraw.Draw(bg)
         center_x = W // 2
 
