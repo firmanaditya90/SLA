@@ -708,32 +708,32 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
 
         # --- Garis Vertikal 3D (paling belakang) ---
     try:
-    draw = ImageDraw.Draw(bg)
-    center_x = W // 2
+        draw = ImageDraw.Draw(bg)
+        center_x = W // 2
 
-    # Garis utama (hitam tebal)
-    draw.line(
-        (center_x, card_bottom, center_x, H),
-        fill="black",
-        width=15
-    )
+        # Garis utama (hitam tebal)
+        draw.line(
+            (center_x, card_bottom, center_x, H),
+            fill="black",
+            width=15
+        )
 
-    # Highlight (abu terang) di sisi kiri → efek timbul
-    draw.line(
-        (center_x - 4, card_bottom, center_x - 4, H),
-        fill=(220, 220, 220),
-        width=4
-    )
+        # Highlight (abu terang) di sisi kiri → efek timbul
+        draw.line(
+            (center_x - 4, card_bottom, center_x - 4, H),
+            fill=(220, 220, 220),
+            width=4
+        )
 
-    # Bayangan (abu gelap) di sisi kanan → efek kedalaman
-    draw.line(
-        (center_x + 4, card_bottom, center_x + 4, H),
-        fill=(80, 80, 80),
-        width=4
-    )
-except Exception as e:
-    print("⚠️ Gagal render garis vertikal 3D:", e)
-        
+        # Bayangan (abu gelap) di sisi kanan → efek kedalaman
+        draw.line(
+            (center_x + 4, card_bottom, center_x + 4, H),
+            fill=(80, 80, 80),
+            width=4
+        )
+
+    except Exception as e:
+        print("⚠️ Gagal render garis vertikal 3D:", e)
         
         # 2. Footer di atas garis
         bg.paste(footer_img, (0, footer_y), footer_img)
