@@ -515,24 +515,17 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
     bg = Image.new("RGB", (W, H), "white")
     draw = ImageDraw.Draw(bg)
 
-    # ---------- Logo ASDP ----------
-logo_h = 0
-try:
-    logo_path = os.path.join(os.path.dirname(__file__), "asdp_logo.png")
-    logo_img = Image.open(logo_path).convert("RGBA")
-    
-    # skala logo
-    scale = (W * 0.15) / logo_img.width
-    logo_img = logo_img.resize((int(logo_img.width*scale), int(logo_img.height*scale)), Image.Resampling.LANCZOS)
-    
-    # posisi rata kanan
-    x_pos = W - logo_img.width - 80  # 80px margin dari kanan
-    y_pos = 80  # tetap dari atas 80px
-    
-    bg.paste(logo_img, (x_pos, y_pos), logo_img)
-    logo_h = logo_img.height
-except:
-    pass
+    # ---------- Logo ----------
+    logo_h = 0
+    try:
+        logo_path = os.path.join(os.path.dirname(__file__), "asdp_logo.png")
+        logo_img = Image.open(logo_path).convert("RGBA")
+        scale = (W * 0.15) / logo_img.width
+        logo_img = logo_img.resize((int(logo_img.width*scale), int(logo_img.height*scale)), Image.Resampling.LANCZOS)
+        bg.paste(logo_img, (80, 80), logo_img)
+        logo_h = logo_img.height
+    except:
+        pass
 
     # ---------- Judul ----------
     title_text = "SLA DOKUMEN PENAGIHAN"
@@ -703,58 +696,13 @@ except:
     except Exception as e:
         print("Gagal render Kemudi/On Target:", e)
 
-import os
-import io
-from PIL import Image, ImageDraw
-
-import os
-import io
-from PIL import Image, ImageDraw, ImageFont
-
-def render_poster(bg, W, H, card_bottom, title_text="", font_title=None):
-    """
-    bg          : Image background (RGBA)
-    W, H        : Lebar & tinggi poster
-    card_bottom : posisi Y akhir dari konten utama (sebagai start garis tengah)
-    title_text  : teks judul yang ingin ditampilkan
-    font_title  : PIL.ImageFont instance untuk judul
-    """
-    # ---------- Logo (rata kanan) ----------
+# --- Tambah Garis Tengah + Footer + Captain Ferizy ---
     try:
-        logo_path = os.path.join(os.path.dirname(__file__), "asdp_logo.png")
-        logo_img = Image.open(logo_path).convert("RGBA")
-
-        scale = (W * 0.15) / logo_img.width
-        logo_img = logo_img.resize(
-            (int(logo_img.width * scale), int(logo_img.height * scale)),
-            Image.Resampling.LANCZOS
-        )
-
-        # Rata kanan, margin 80px
-        x_logo = W - logo_img.width - 80
-        y_logo = 80
-        bg.paste(logo_img, (x_logo, y_logo), logo_img)
-    except Exception as e:
-        print("⚠️ Gagal render logo:", e)
-
-    draw = ImageDraw.Draw(bg)
-
-    # ---------- Teks judul ----------
-    if title_text and font_title:
-        # Aman untuk semua versi Pillow: pakai textsize
-        text_width, text_height = draw.textsize(title_text, font=font_title)
-        # Letakkan di tengah horizontal, 50px dari atas
-        x_text = (W - text_width) // 2
-        y_text = 50
-        draw.text((x_text, y_text), title_text, font=font_title, fill="black")
-
-    # ---------- Footer + garis tengah + Ferizy ----------
-    try:
-        # Footer
         footer_path = os.path.join(os.path.dirname(__file__), "Footer.png")
         print("DEBUG Footer Path:", footer_path, os.path.exists(footer_path))
         footer_img = Image.open(footer_path).convert("RGBA")
 
+        # Resize footer agar full width
         scale = W / footer_img.width
         footer_img = footer_img.resize(
             (W, int(footer_img.height * scale)),
@@ -762,21 +710,21 @@ def render_poster(bg, W, H, card_bottom, title_text="", font_title=None):
         )
         footer_y = H - footer_img.height
 
-        # Garis tengah (vertikal)
+        # 1. Garis tengah (paling belakang) → sampai ke bawah poster
         overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
         overlay_draw = ImageDraw.Draw(overlay)
         center_x = W // 2
         overlay_draw.line(
             (center_x, card_bottom, center_x, H),
             fill="black",
-            width=25
+            width=15
         )
         bg = Image.alpha_composite(overlay, bg)
 
-        # Paste footer
+        # 2. Footer di atas garis
         bg.paste(footer_img, (0, footer_y), footer_img)
 
-        # Captain Ferizy
+        # 3. Captain Ferizy di depan footer
         ferizy_path = os.path.join(os.path.dirname(__file__), "Captain Ferizy.png")
         ferizy_img = Image.open(ferizy_path).convert("RGBA")
 
@@ -786,20 +734,17 @@ def render_poster(bg, W, H, card_bottom, title_text="", font_title=None):
             Image.Resampling.LANCZOS
         )
 
-        # Rata kanan di atas footer
-        pos_x = W - ferizy_img.width
-        pos_y = H - ferizy_img.height
+        pos_x = W - ferizy_img.width - 0
+        pos_y = H - ferizy_img.height - 0
         bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
 
     except Exception as e:
         print("⚠️ Gagal render Footer/Ferizy/Garis tengah:", e)
 
-    # Output ke BytesIO
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
     return out
-    
 # ==========================================================
 # Tab Report (Poster & PDF)
 # ==========================================================
