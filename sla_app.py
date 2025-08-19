@@ -957,6 +957,9 @@ def generate_poster_A4(
         except Exception as e:
             print("⚠️ Gagal render quotes:", e)
 
+    except Exception as e:   # <== ini penutup try besar (Footer/Ferizy/Transformation)
+        print("⚠️ Gagal render Footer/Ferizy/Transformation:", e)
+
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
