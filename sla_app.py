@@ -780,7 +780,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
     except Exception as e:
         print("⚠️ Gagal render Footer/Ferizy/Garis tengah/Transformation:", e)
 
-        # 5. Grafik Jumlah Transaksi (sebelah kiri garis tengah)
+        # 5. Grafik Jumlah Transaksi (sebelah kiri garis tengah)        # 2. Grafik jumlah transaksi (sebelah kiri garis tengah, di bawah card)
         try:
             jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name='Jumlah')
             jumlah_transaksi = jumlah_transaksi.sort_values(
@@ -789,10 +789,11 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
             )
 
             fig_trans, ax_trans = plt.subplots(figsize=(8, 5))
+            colors = plt.cm.viridis(range(len(jumlah_transaksi)))
             ax_trans.bar(
                 jumlah_transaksi[periode_col],
                 jumlah_transaksi['Jumlah'],
-                color=plt.cm.viridis(range(len(jumlah_transaksi)))  # gradasi keren
+                color=colors
             )
             ax_trans.set_title("Jumlah Transaksi per Periode", fontsize=28, weight="bold")
             ax_trans.set_xlabel("Periode")
@@ -821,8 +822,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
 
         except Exception as e:
             print("⚠️ Gagal render grafik jumlah transaksi:", e)
-
-
+            
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
