@@ -510,7 +510,7 @@ periode_info_text = f"Periode dari {start_periode} sampai {end_periode}"
 # ==========================================================
 # Poster A4 Generator
 # ==========================================================
-def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url, periode_range_text):
+def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url, periode_range_text, df_filtered, periode_col, selected_periode):
     W, H = 2480, 3508
     bg = Image.new("RGB", (W, H), "white")
     draw = ImageDraw.Draw(bg)
@@ -850,7 +850,10 @@ with tab_poster:
         rata_proses_seconds,
         df_proses,
         "Captain Ferizy.png",
-        periode_info_text
+        periode_info_text,
+        df_filtered,
+        periode_col,
+        selected_periode
         )
         st.session_state.poster_buf = poster_buf
     
