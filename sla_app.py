@@ -718,13 +718,13 @@ def generate_poster_A4(
     except Exception as e:
         print("⚠️ Gagal render Footer/Ferizy/Transformation:", e)
 
-    # ---------- Quotes Motivasi (DEBUG tengah poster) ----------
+    # ---------- Quotes Motivasi (Speech Bubble di atas Ferizy) ----------
     try:
         quotes_list = [
             "Tetap semangat, kerja tuntas kerja ikhlas!",
             "Sukses berawal dari disiplin kecil setiap hari.",
             "Inovasi dimulai dari keberanian mencoba.",
-            "Kerja tim membuat beban jadi ringan.",
+            "Kerja tim membuat beban jadi ringan!",
             "Setiap tantangan adalah peluang.",
             "Tidak ada proses yang sia-sia.",
             "Kerja keras mengalahkan bakat ketika bakat malas.",
@@ -735,38 +735,63 @@ def generate_poster_A4(
         quote = random.choice(quotes_list)
 
         try:
-            font_quote = ImageFont.truetype("Anton-Regular.ttf", 80)
+            font_quote = ImageFont.truetype("Anton-Regular.ttf", 60)
         except:
             font_quote = ImageFont.load_default()
 
-        # Bubble ukuran fix
-        bubble_w, bubble_h = 1000, 300
-        bubble_x = (W - bubble_w)//2
-        bubble_y = (H - bubble_h)//2
+        # Bungkus teks supaya rapi
+        max_quote_width = int(W * 0.4)
+        words, lines, line = quote.split(" "), [], ""
+        for w in words:
+            test_line = line + w + " "
+            tw, _ = draw.textsize(test_line, font=font_quote)
+            if tw <= max_quote_width:
+                line = test_line
+            else:
+                lines.append(line.strip()); line = w + " "
+        lines.append(line.strip())
+        text_h = len(lines) * (font_quote.size + 12)
+
+        # Ukuran & posisi bubble
+        bubble_w = max_quote_width + 60
+        bubble_h = text_h + 60
+        bubble_x = W - bubble_w - 200
+        bubble_y = H - bubble_h - 450   # fix: agak naik biar nggak kena footer
 
         print("DEBUG QUOTES POS:", bubble_x, bubble_y, bubble_w, bubble_h)
 
-        # Overlay
+        # Buat layer bubble
         bubble_overlay = Image.new("RGBA", bg.size, (255,255,255,0))
         bubble_draw = ImageDraw.Draw(bubble_overlay)
 
-        # Bubble kotak
+        # Bubble utama
         bubble_draw.rounded_rectangle(
             (bubble_x, bubble_y, bubble_x+bubble_w, bubble_y+bubble_h),
             radius=40,
-            fill=(255, 200, 0, 220),   # kuning biar jelas
-            outline="red",
-            width=6
+            fill=(255,255,255,230),   # putih semi transparan
+            outline="black",
+            width=3
         )
 
-        # Composite
-        bg = bg.convert("RGBA")
-        bg = Image.alpha_composite(bg, bubble_overlay)
+        # Tail segitiga (arah Ferizy kanan bawah)
+        tail = [
+            (bubble_x+bubble_w-80, bubble_y+bubble_h),
+            (bubble_x+bubble_w-20, bubble_y+bubble_h),
+            (W-220, H-320)
+        ]
+        bubble_draw.polygon(tail, fill=(255,255,255,230), outline="black")
+
+        # Composite bubble ke poster
+        bg = Image.alpha_composite(bg.convert("RGBA"), bubble_overlay)
         draw = ImageDraw.Draw(bg)
 
-        # Tulis quotes
-        draw.text((bubble_x+50, bubble_y+100), quote,
-                  font=font_quote, fill="black")
+        # Isi teks di dalam bubble
+        ty = bubble_y + 30
+        for line in lines:
+            tw, _ = draw.textsize(line, font=font_quote)
+            tx = bubble_x + (bubble_w - tw)//2
+            draw.text((tx, ty), line, font=font_quote, fill="black")
+            ty += font_quote.size + 12
 
     except Exception as e:
         print("⚠️ Gagal render quotes:", e)
