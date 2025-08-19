@@ -875,38 +875,86 @@ def generate_poster_A4(
                  (0, H - Transformation_img.height - 40),
                  Transformation_img)
 
-        # Quotes Motivasi (DEBUG versi sederhana)
+    # ========== Quotes Motivasi (Speech Bubble di atas Ferizy) ==========
+    try:
+        quotes_list = [
+            "Tetap semangat, kerja tuntas kerja ikhlas!",
+            "Sukses berawal dari disiplin kecil setiap hari.",
+            "Inovasi dimulai dari keberanian mencoba.",
+            "Kerja tim membuat beban jadi ringan.",
+            "Setiap tantangan adalah peluang.",
+            "Tidak ada proses yang sia-sia.",
+            "Kerja keras mengalahkan bakat ketika bakat malas.",
+            "Fokus pada solusi, bukan masalah.",
+            "Hari ini lebih baik dari kemarin.",
+            "Target tercapai, semangat tetap terjaga!"
+        ]
+        quote = random.choice(quotes_list)
+
+        # Font untuk quotes
         try:
-            bg = bg.convert("RGBA")
+            font_quote = ImageFont.truetype("Anton-Regular.ttf", 60)
+        except:
+            font_quote = ImageFont.load_default()
 
-            bubble_overlay = Image.new("RGBA", bg.size, (255,255,255,0))
-            bubble_draw = ImageDraw.Draw(bubble_overlay)
+        # Bungkus teks agar tidak kepanjangan
+        max_quote_width = int(W * 0.4)
+        words = quote.split(" ")
+        lines, line = [], ""
+        for w in words:
+            test_line = line + w + " "
+            tw, th = draw.textsize(test_line, font=font_quote)
+            if tw <= max_quote_width:
+                line = test_line
+            else:
+                lines.append(line.strip())
+                line = w + " "
+        lines.append(line.strip())
+        text_h = len(lines) * (font_quote.size + 10)
 
-            # Bubble kotak besar di tengah
-            bubble_x, bubble_y = W//4, H//3
-            bubble_w, bubble_h = W//2, 200
-            bubble_draw.rectangle(
-                (bubble_x, bubble_y, bubble_x+bubble_w, bubble_y+bubble_h),
-                fill=(255,0,0,180),  # merah semi transparan
-                outline="black",
-                width=5
-            )
+        # Bubble ukuran & posisi (di atas Ferizy)
+        bubble_w = max_quote_width + 60
+        bubble_h = text_h + 60
+        bubble_x = W - bubble_w - 200       # rata kanan dekat Ferizy
+        bubble_y = H - (footer_img.height if 'footer_img' in locals() else 300) \
+                      - (ferizy_img.height if 'ferizy_img' in locals() else 400) \
+                      - bubble_h - 50
 
-            # Composite ke bg
-            bg = Image.alpha_composite(bg, bubble_overlay)
-            draw = ImageDraw.Draw(bg)
+        bubble_overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
+        bubble_draw = ImageDraw.Draw(bubble_overlay)
 
-            # Tulis teks debug
-            try:
-                font_quote = ImageFont.truetype("Anton-Regular.ttf", 80)
-            except:
-                font_quote = ImageFont.load_default()
-            draw.text((bubble_x+40, bubble_y+60),
-                      "HELLO QUOTE",
-                      font=font_quote, fill="white")
+        # Bubble utama
+        bubble_draw.rounded_rectangle(
+            (bubble_x, bubble_y, bubble_x+bubble_w, bubble_y+bubble_h),
+            radius=40,
+            fill=(255, 255, 255, 230),   # putih semi transparan
+            outline="black",
+            width=4
+        )
 
-        except Exception as e:
-            print("⚠️ Gagal render quotes DEBUG:", e)
+        # Tail segitiga mengarah ke Ferizy (kepalanya)
+        tail = [
+            (bubble_x+bubble_w-80, bubble_y+bubble_h),
+            (bubble_x+bubble_w-20, bubble_y+bubble_h),
+            (W-200, H - (footer_img.height if 'footer_img' in locals() else 300) - 100)
+        ]
+        bubble_draw.polygon(tail, fill=(255, 255, 255, 230), outline="black")
+
+        # Composite ke background
+        bg = bg.convert("RGBA")
+        bg = Image.alpha_composite(bg, bubble_overlay)
+        draw = ImageDraw.Draw(bg)
+
+        # Tulis teks di dalam bubble
+        ty = bubble_y + 30
+        for line in lines:
+            tw, th = draw.textsize(line, font=font_quote)
+            tx = bubble_x + (bubble_w - tw) // 2
+            draw.text((tx, ty), line, font=font_quote, fill="black")
+            ty += font_quote.size + 10
+
+    except Exception as e:
+        print("⚠️ Gagal render quotes:", e)
     except Exception as e:   # <== ini penutup try besar (Footer/Ferizy/Transformation)
         print("⚠️ Gagal render Footer/Ferizy/Transformation:", e)
 
