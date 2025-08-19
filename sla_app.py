@@ -719,7 +719,7 @@ def generate_poster_A4(
             buf.seek(0); plt.close(fig_trans)
             trans_img = Image.open(buf).convert("RGBA")
             max_width = int(W * 0.40)
-            max_height = H - card_bottom - footer_img.height - 300
+            max_height = H - card_bottom - footer_img.height - 400
             scale = min(max_width / trans_img.width, max_height / trans_img.height)
             trans_img = trans_img.resize((int(trans_img.width * scale), int(trans_img.height * scale)), Image.Resampling.LANCZOS)
             pos_x = 150
@@ -727,7 +727,7 @@ def generate_poster_A4(
         except Exception as e:
             print("⚠️ Gagal render grafik jumlah transaksi:", e)
 
-        # 2b. Tabel jumlah transaksi
+        # 2b. Tabel jumlah transaksi (lebih keren, dinaikkan sedikit)
         try:
             jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name='Jumlah')
             jumlah_transaksi = jumlah_transaksi.sort_values(
@@ -746,14 +746,27 @@ def generate_poster_A4(
                 cellLoc="center"
             )
             table.auto_set_font_size(False)
-            table.set_fontsize(14)
-            table.scale(1.3, 1.3)
+            table.set_fontsize(16)
+            table.scale(1.5, 1.5)
 
-            # Bold baris TOTAL
-            for i in range(len(jumlah_transaksi)):
-                if jumlah_transaksi.iloc[i, 0] == "TOTAL":
-                    for j in range(len(jumlah_transaksi.columns)):
-                        table[(i+1, j)].set_text_props(weight="bold", color="darkred")
+            # Header style
+            for j in range(len(jumlah_transaksi.columns)):
+                cell = table[(0, j)]
+                cell.set_fontsize(18)
+                cell.set_text_props(weight="bold", color="white")
+                cell.set_facecolor("#1f77b4")
+
+            # Row styling
+            for i in range(1, len(jumlah_transaksi) + 1):
+                for j in range(len(jumlah_transaksi.columns)):
+                    cell = table[(i, j)]
+                    if i % 2 == 0:
+                        cell.set_facecolor("#f2f2f2")
+                    else:
+                        cell.set_facecolor("#ffffff")
+                    if jumlah_transaksi.iloc[i-1, 0] == "TOTAL":
+                        cell.set_text_props(weight="bold", color="darkred")
+                        cell.set_facecolor("#e6e6e6")
 
             buf = io.BytesIO()
             fig_tbl.savefig(buf, format="PNG", dpi=300, bbox_inches="tight", transparent=True)
@@ -764,7 +777,7 @@ def generate_poster_A4(
             tbl_img = tbl_img.resize((int(tbl_img.width * scale), int(tbl_img.height * scale)), Image.Resampling.LANCZOS)
             pos_x = 150
             if trans_img:
-                pos_y = pos_y_trans + trans_img.height + 40
+                pos_y = pos_y_trans + trans_img.height + 20  # lebih dekat ke grafik
             else:
                 pos_y = pos_y_trans
             bg.paste(tbl_img, (pos_x, pos_y), tbl_img)
