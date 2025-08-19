@@ -899,6 +899,21 @@ def generate_poster_A4(
 
     except Exception as e:
         print("⚠️ Gagal render quotes:", e)
+
+        # ---------- Quotes TEST ----------
+    try:
+        font_path = os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf")
+        font_quote = ImageFont.truetype(font_path, 120)
+
+        text = "🚀 Hello Quotes!"
+        tw, th = draw.textsize(text, font=font_quote)
+        tx, ty = (W - tw)//2, H - 1000  # muncul di tengah bawah poster
+
+        draw.text((tx, ty), text, font=font_quote, fill="red")
+        print("Quotes test rendered at:", tx, ty)
+    except Exception as e:
+        print("⚠️ Gagal render quotes test:", e)
+
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
