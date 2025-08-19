@@ -889,6 +889,25 @@ def generate_poster_A4(
     except Exception as e:
         print("⚠️ Gagal render quotes test:", e)
 
+        # ---------- Quotes DEBUG ----------
+    try:
+        draw = ImageDraw.Draw(bg)  # refresh context
+
+        font_path = os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf")
+        font_quote = ImageFont.truetype(font_path, 200)
+
+        # bikin kotak merah besar biar pasti kelihatan
+        debug_x, debug_y = 200, 200
+        draw.rectangle((debug_x, debug_y, debug_x+1500, debug_y+500),
+                       fill="yellow", outline="red", width=10)
+
+        draw.text((debug_x+50, debug_y+150),
+                  "🚀 QUOTES DEBUG", font=font_quote, fill="black")
+
+        print("Quotes DEBUG rendered")
+    except Exception as e:
+        print("⚠️ Gagal render quotes debug:", e)
+
     # --- output ---
     out = io.BytesIO()
     bg.save(out, format="PNG")
