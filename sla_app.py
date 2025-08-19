@@ -830,25 +830,30 @@ def generate_poster_A4(
 import io, random
 from PIL import Image, ImageDraw, ImageFont
 import textwrap
+import streamlit as st
 
-def generate_poster_simple(W=1200, H=1600):
-    bg = Image.new("RGB", (W,H), "lightblue")
+def generate_poster_with_quote():
+    W, H = 1200, 1600
+    bg = Image.new("RGB", (W, H), "lightblue")
     draw = ImageDraw.Draw(bg)
 
+    # Quote
     quote = random.choice([
         "Tetap semangat, kerja tuntas kerja ikhlas!",
         "Sukses berawal dari disiplin kecil setiap hari.",
-        "Inovasi dimulai dari keberanian mencoba."
+        "Inovasi dimulai dari keberanian mencoba.",
+        "Kerja tim membuat beban jadi ringan!"
     ])
 
-    # Font default aman
-    font = ImageFont.load_default()
-
-    # Bubble
+    # Bubble koordinat aman
     bubble_w, bubble_h = 900, 300
     bubble_x, bubble_y = W - bubble_w - 50, H - bubble_h - 100
-    draw.rounded_rectangle((bubble_x, bubble_y, bubble_x+bubble_w, bubble_y+bubble_h),
-                           radius=20, fill="white", outline="black", width=3)
+
+    # Bubble tanpa layer (langsung di bg)
+    draw.rounded_rectangle(
+        (bubble_x, bubble_y, bubble_x+bubble_w, bubble_y+bubble_h),
+        radius=30, fill="white", outline="black", width=3
+    )
 
     # Tail
     tail = [(bubble_x+bubble_w-80, bubble_y+bubble_h),
@@ -856,9 +861,12 @@ def generate_poster_simple(W=1200, H=1600):
             (W-220, H-320)]
     draw.polygon(tail, fill="white", outline="black")
 
-    # Text wrap
+    # Text
+    font = ImageFont.load_default()
+    padding = 20
+    max_width = bubble_w - 2*padding
     lines = textwrap.wrap(quote, width=30)
-    y_text = bubble_y + 20
+    y_text = bubble_y + padding
     for line in lines:
         w, h = draw.textsize(line, font=font)
         x_text = bubble_x + (bubble_w - w)//2
@@ -868,8 +876,20 @@ def generate_poster_simple(W=1200, H=1600):
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
-    print("✅ Quotes rendered:", quote)
     return out
+
+# Streamlit
+st.title("Poster Quotes Test")
+if st.button("Generate Poster"):
+    poster_buf = generate_poster_with_quote()
+    st.image(poster_buf, caption="Poster dengan Quote", use_column_width=True)
+    st.download_button(
+        "Download Poster",
+        poster_buf,
+        file_name="poster_quote.png",
+        mime="image/png"
+    )
+
 
 
 # ==========================================================
