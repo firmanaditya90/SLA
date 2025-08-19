@@ -827,13 +827,14 @@ def generate_poster_A4(
         print("⚠️ Gagal render Footer/Ferizy/Transformation:", e)
         
     # ---------- Quotes Motivasi ----------
-
-python
-Copy
-Edit
 import random
+from PIL import Image, ImageDraw, ImageFont
 import textwrap
-from PIL import ImageDraw, ImageFont, Image
+import os
+
+# Contoh background
+W, H = 1200, 1600
+bg = Image.new("RGB", (W, H), "lightblue")
 
 try:
     draw = ImageDraw.Draw(bg)
@@ -853,12 +854,13 @@ try:
     quote = random.choice(quotes_list)
 
     font_path = os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf")
-    font_size = 45  # dikurangi dari 80 supaya muat di bubble
+    font_size = 50
     font_quote = ImageFont.truetype(font_path, font_size)
 
-    # posisi bubble kanan bawah
-    bubble_x, bubble_y, bubble_w, bubble_h = W-1000, H-1000, 900, 300
+    # Bubble coordinates
+    bubble_x, bubble_y, bubble_w, bubble_h = 150, 1000, 900, 300
 
+    # Draw bubble with tail
     bubble_layer = Image.new("RGBA", bg.size, (255,255,255,0))
     bubble_draw = ImageDraw.Draw(bubble_layer)
     bubble_draw.rounded_rectangle(
@@ -872,25 +874,42 @@ try:
         (W-220, H-320)
     ]
     bubble_draw.polygon(tail, fill=(255,255,255,230), outline="black")
-
     bg.paste(bubble_layer, (0,0), bubble_layer)
 
-    # ===== wrap text agar muat di bubble =====
-    max_chars_per_line = int(bubble_w / (font_size * 0.6))
-    wrapped_text = textwrap.fill(quote, width=max_chars_per_line)
+    # ===== Textbox style =====
+    padding = 20
+    max_width = bubble_w - padding*2
 
-    draw.multiline_text(
-        (bubble_x+20, bubble_y+20),  # padding dari bubble
-        wrapped_text,
-        font=font_quote,
-        fill="black",
-        align="center",
-        spacing=6
-    )
+    # Wrap text otomatis sesuai bubble
+    words = quote.split()
+    lines = []
+    line = ""
+    for word in words:
+        test_line = line + (" " if line else "") + word
+        w, h = draw.textsize(test_line, font=font_quote)
+        if w <= max_width:
+            line = test_line
+        else:
+            lines.append(line)
+            line = word
+    if line:
+        lines.append(line)
+
+    # Gambarkan teks dalam bubble
+    y_text = bubble_y + padding
+    for line in lines:
+        w, h = draw.textsize(line, font=font_quote)
+        x_text = bubble_x + (bubble_w - w)//2  # center horizontal
+        draw.text((x_text, y_text), line, font=font_quote, fill="black")
+        y_text += h + 10  # line spacing
 
     print("✅ Quotes rendered:", quote)
 except Exception as e:
     print("⚠️ Gagal render quotes:", e)
+
+# Preview
+bg.show()
+
     
  out = io.BytesIO()
  bg.save(out, format="PNG")
