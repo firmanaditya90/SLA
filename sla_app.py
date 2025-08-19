@@ -609,7 +609,7 @@ def generate_poster_A4(
     except Exception as e:
         print("Gagal render chart:", e)
 
-    # ---------- Render Tabel ----------
+    # ---------- Render Tabel SLA ----------
     table_img = None
     try:
         fig, ax = plt.subplots(figsize=(5, 4))
@@ -635,7 +635,7 @@ def generate_poster_A4(
             Image.Resampling.LANCZOS
         )
     except Exception as e:
-        print("Gagal render tabel:", e)
+        print("Gagal render tabel SLA:", e)
 
     # ---------- Card Background ----------
     card_margin_x = 80
@@ -680,7 +680,7 @@ def generate_poster_A4(
     except Exception as e:
         print("Gagal render Kemudi/On Target:", e)
 
-    # ---------- Footer + Garis Tengah + Grafik Jumlah Transaksi ----------
+    # ---------- Footer + Garis Tengah + Grafik & Tabel Jumlah Transaksi ----------
     try:
         footer_path = os.path.join(os.path.dirname(__file__), "Footer.png")
         footer_img = Image.open(footer_path).convert("RGBA")
@@ -696,6 +696,8 @@ def generate_poster_A4(
         bg = Image.alpha_composite(bg, overlay)
 
         # 2. Grafik jumlah transaksi
+        trans_img = None
+        pos_y_trans = card_bottom + 50
         try:
             jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name='Jumlah')
             jumlah_transaksi = jumlah_transaksi.sort_values(
@@ -717,17 +719,57 @@ def generate_poster_A4(
             buf.seek(0); plt.close(fig_trans)
             trans_img = Image.open(buf).convert("RGBA")
             max_width = int(W * 0.40)
-            max_height = H - card_bottom - footer_img.height - 100
+            max_height = H - card_bottom - footer_img.height - 300
             scale = min(max_width / trans_img.width, max_height / trans_img.height)
-            trans_img = trans_img.resize(
-                (int(trans_img.width * scale), int(trans_img.height * scale)),
-                Image.Resampling.LANCZOS
-            )
+            trans_img = trans_img.resize((int(trans_img.width * scale), int(trans_img.height * scale)), Image.Resampling.LANCZOS)
             pos_x = 150
-            pos_y = card_bottom + 50
-            bg.paste(trans_img, (pos_x, pos_y), trans_img)
+            bg.paste(trans_img, (pos_x, pos_y_trans), trans_img)
         except Exception as e:
             print("⚠️ Gagal render grafik jumlah transaksi:", e)
+
+        # 2b. Tabel jumlah transaksi
+        try:
+            jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name='Jumlah')
+            jumlah_transaksi = jumlah_transaksi.sort_values(
+                by=periode_col,
+                key=lambda x: pd.Categorical(x, categories=selected_periode, ordered=True)
+            )
+            total_row = pd.DataFrame({periode_col: ["TOTAL"], "Jumlah": [jumlah_transaksi["Jumlah"].sum()]})
+            jumlah_transaksi = pd.concat([jumlah_transaksi, total_row], ignore_index=True)
+
+            fig_tbl, ax_tbl = plt.subplots(figsize=(6, 4))
+            ax_tbl.axis("off")
+            table = ax_tbl.table(
+                cellText=jumlah_transaksi.values,
+                colLabels=jumlah_transaksi.columns,
+                loc="center",
+                cellLoc="center"
+            )
+            table.auto_set_font_size(False)
+            table.set_fontsize(14)
+            table.scale(1.3, 1.3)
+
+            # Bold baris TOTAL
+            for i in range(len(jumlah_transaksi)):
+                if jumlah_transaksi.iloc[i, 0] == "TOTAL":
+                    for j in range(len(jumlah_transaksi.columns)):
+                        table[(i+1, j)].set_text_props(weight="bold", color="darkred")
+
+            buf = io.BytesIO()
+            fig_tbl.savefig(buf, format="PNG", dpi=300, bbox_inches="tight", transparent=True)
+            buf.seek(0); plt.close(fig_tbl)
+            tbl_img = Image.open(buf).convert("RGBA")
+            max_width = int(W * 0.40)
+            scale = max_width / tbl_img.width
+            tbl_img = tbl_img.resize((int(tbl_img.width * scale), int(tbl_img.height * scale)), Image.Resampling.LANCZOS)
+            pos_x = 150
+            if trans_img:
+                pos_y = pos_y_trans + trans_img.height + 40
+            else:
+                pos_y = pos_y_trans
+            bg.paste(tbl_img, (pos_x, pos_y), tbl_img)
+        except Exception as e:
+            print("⚠️ Gagal render tabel jumlah transaksi:", e)
 
         # 3. Footer
         bg.paste(footer_img, (0, footer_y), footer_img)
