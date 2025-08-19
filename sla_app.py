@@ -824,7 +824,7 @@ def generate_poster_A4(
 
     except Exception as e:
         print("⚠️ Gagal render Footer/Ferizy/Transformation:", e)
-    # ---------- Quotes Motivasi (Speech Bubble, pakai Anton-Regular.ttf) ----------
+    # ---------- Quotes Motivasi ----------
     try:
         quotes_list = [
             "Tetap semangat, kerja tuntas kerja ikhlas!",
@@ -840,80 +840,45 @@ def generate_poster_A4(
         ]
         quote = random.choice(quotes_list)
 
-        # Font pasti Anton-Regular.ttf
         font_path = os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf")
-        font_quote = ImageFont.truetype(font_path, 120)
+        font_quote = ImageFont.truetype(font_path, 80)
 
-        # Bungkus teks supaya rapi
-        max_quote_width = int(W * 0.4)
-        words, lines, line = quote.split(" "), [], ""
-        for w in words:
-            test_line = line + w + " "
-            tw, _ = draw.textsize(test_line, font=font_quote)
-            if tw <= max_quote_width:
-                line = test_line
-            else:
-                lines.append(line.strip()); line = w + " "
-        lines.append(line.strip())
-        text_h = len(lines) * (font_quote.size + 12)
+        # posisi fix di kanan bawah (pasti kelihatan)
+        bubble_x = W - 1000
+        bubble_y = H - 1000
+        bubble_w, bubble_h = 900, 300
 
-        # Ukuran & posisi bubble (naik lebih tinggi biar aman)
-        bubble_w = max_quote_width + 80
-        bubble_h = text_h + 80
-        bubble_x = W - bubble_w - 250
-        bubble_y = H - bubble_h - 800   # lebih tinggi dari footer
-
-        print("DEBUG QUOTES POS:", bubble_x, bubble_y, bubble_w, bubble_h)
-
-        # Buat layer bubble
         bubble_layer = Image.new("RGBA", bg.size, (255,255,255,0))
         bubble_draw = ImageDraw.Draw(bubble_layer)
 
-        # Bubble utama
+        # Bubble putih
         bubble_draw.rounded_rectangle(
             (bubble_x, bubble_y, bubble_x+bubble_w, bubble_y+bubble_h),
             radius=40,
             fill=(255,255,255,230),
-            outline="red",   # outline merah biar kelihatan
-            width=6
+            outline="black",
+            width=4
         )
 
-        # Tail segitiga (arah Ferizy kanan bawah)
+        # Segitiga tail
         tail = [
-            (bubble_x+bubble_w-100, bubble_y+bubble_h),
-            (bubble_x+bubble_w-40, bubble_y+bubble_h),
-            (W-220, H-500)
+            (bubble_x+bubble_w-80, bubble_y+bubble_h),
+            (bubble_x+bubble_w-20, bubble_y+bubble_h),
+            (W-220, H-320)
         ]
-        bubble_draw.polygon(tail, fill=(255,255,255,230), outline="red")
+        bubble_draw.polygon(tail, fill=(255,255,255,230), outline="black")
 
-        # Tempel bubble ke poster
+        # Tempel ke poster
         bg.paste(bubble_layer, (0,0), bubble_layer)
 
-        # Tulis teks di dalam bubble
-        ty = bubble_y + 40
-        for line in lines:
-            tw, _ = draw.textsize(line, font=font_quote)
-            tx = bubble_x + (bubble_w - tw)//2
-            draw.text((tx, ty), line, font=font_quote, fill="black")
-            ty += font_quote.size + 12
+        # Tulis teks
+        draw.text((bubble_x+40, bubble_y+100),
+                  quote, font=font_quote, fill="black")
+
+        print("Quotes rendered:", quote)
 
     except Exception as e:
         print("⚠️ Gagal render quotes:", e)
-
-        # ---------- Quotes TEST ----------
-    try:
-        font_path = os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf")
-        font_quote = ImageFont.truetype(font_path, 120)
-
-        text = "🚀 Hello Quotes!"
-        tw, th = draw.textsize(text, font=font_quote)
-        tx, ty = (W - tw)//2, H - 1000  # muncul di tengah bawah poster
-
-        draw.text((tx, ty), text, font=font_quote, fill="red")
-        print("Quotes test rendered at:", tx, ty)
-    except Exception as e:
-        print("⚠️ Gagal render quotes test:", e)
-
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
