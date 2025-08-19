@@ -827,72 +827,50 @@ def generate_poster_A4(
         print("⚠️ Gagal render Footer/Ferizy/Transformation:", e)
         
     # ---------- Quotes Motivasi ----------
-import io, os, random
+import io, random
 from PIL import Image, ImageDraw, ImageFont
 import textwrap
 
-def generate_poster_with_quote(W=1200, H=1600):
-    # ===== Background =====
-    bg = Image.new("RGB", (W, H), "lightblue")
+def generate_poster_simple(W=1200, H=1600):
+    bg = Image.new("RGB", (W,H), "lightblue")
+    draw = ImageDraw.Draw(bg)
 
-    # ===== Quotes =====
-    quotes_list = [
+    quote = random.choice([
         "Tetap semangat, kerja tuntas kerja ikhlas!",
         "Sukses berawal dari disiplin kecil setiap hari.",
-        "Inovasi dimulai dari keberanian mencoba.",
-        "Kerja tim membuat beban jadi ringan!",
-        "Setiap tantangan adalah peluang.",
-        "Tidak ada proses yang sia-sia.",
-        "Kerja keras mengalahkan bakat ketika bakat malas.",
-        "Fokus pada solusi, bukan masalah.",
-        "Hari ini lebih baik dari kemarin.",
-        "Target tercapai, semangat tetap terjaga!"
-    ]
-    quote = random.choice(quotes_list)
+        "Inovasi dimulai dari keberanian mencoba."
+    ])
 
-    # ===== Font =====
-    font_path = os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf")
-    font_size = 40
-    font = ImageFont.truetype(font_path, font_size)
+    # Font default aman
+    font = ImageFont.load_default()
 
-    # ===== Bubble =====
+    # Bubble
     bubble_w, bubble_h = 900, 300
-    bubble_x, bubble_y = W - bubble_w - 50, H - bubble_h - 100  # kanan bawah
+    bubble_x, bubble_y = W - bubble_w - 50, H - bubble_h - 100
+    draw.rounded_rectangle((bubble_x, bubble_y, bubble_x+bubble_w, bubble_y+bubble_h),
+                           radius=20, fill="white", outline="black", width=3)
 
-    bubble_layer = Image.new("RGBA", bg.size, (255,255,255,0))
-    bubble_draw = ImageDraw.Draw(bubble_layer)
-    bubble_draw.rounded_rectangle(
-        (bubble_x, bubble_y, bubble_x+bubble_w, bubble_y+bubble_h),
-        radius=40, fill=(255,255,255,230), outline="black", width=4
-    )
-    tail = [
-        (bubble_x+bubble_w-80, bubble_y+bubble_h),
-        (bubble_x+bubble_w-20, bubble_y+bubble_h),
-        (W-220, H-320)
-    ]
-    bubble_draw.polygon(tail, fill=(255,255,255,230), outline="black")
-    bg.paste(bubble_layer, (0,0), bubble_layer)
+    # Tail
+    tail = [(bubble_x+bubble_w-80, bubble_y+bubble_h),
+            (bubble_x+bubble_w-20, bubble_y+bubble_h),
+            (W-220, H-320)]
+    draw.polygon(tail, fill="white", outline="black")
 
-    # ===== Teks dalam bubble =====
-    draw = ImageDraw.Draw(bg)
-    padding = 20
-    max_width = bubble_w - padding*2
-
-    # Wrap text otomatis
-    lines = textwrap.wrap(quote, width=30)  # 30 char per line
-    y_text = bubble_y + padding
+    # Text wrap
+    lines = textwrap.wrap(quote, width=30)
+    y_text = bubble_y + 20
     for line in lines:
         w, h = draw.textsize(line, font=font)
-        x_text = bubble_x + (bubble_w - w)//2  # center horizontal
+        x_text = bubble_x + (bubble_w - w)//2
         draw.text((x_text, y_text), line, font=font, fill="black")
-        y_text += h + 10  # spacing antar line
+        y_text += h + 5
 
-    # ===== Save ke buffer =====
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
     print("✅ Quotes rendered:", quote)
     return out
+
 
 # ==========================================================
 # Tab Report (Poster & PDF)
