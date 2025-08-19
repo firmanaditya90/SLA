@@ -890,57 +890,72 @@ def generate_poster_A4(
                 "Target tercapai, semangat tetap terjaga!"
             ]
             quote = random.choice(quotes_list)
+
+            # Font untuk quotes
             try:
                 font_quote = ImageFont.truetype("Anton-Regular.ttf", 60)
             except:
                 font_quote = ImageFont.load_default()
 
-            # Bungkus teks
-            max_quote_width = int(W*0.4)
+            # Bungkus teks agar tidak melebar
+            max_quote_width = int(W * 0.4)
             words = quote.split(" ")
-            lines=[]; line=""
+            lines = []
+            line = ""
             for w in words:
-                test_line = line+w+" "
-                tw,th = draw.textsize(test_line,font=font_quote)
+                test_line = line + w + " "
+                tw, th = draw.textsize(test_line, font=font_quote)
                 if tw <= max_quote_width:
                     line = test_line
                 else:
-                    lines.append(line.strip()); line = w+" "
+                    lines.append(line.strip())
+                    line = w + " "
             lines.append(line.strip())
-            text_h = len(lines)*(font_quote.size+10)
+            text_h = len(lines) * (font_quote.size + 10)
 
-            # Bubble posisi (relatif Ferizy)
-            bubble_w = max_quote_width+60
-            bubble_h = text_h+60
-            bubble_x = pos_x - bubble_w - 40
-            bubble_y = pos_y - bubble_h - 40
+            # Bubble ukuran & posisi (relatif Ferizy)
+            bubble_w = max_quote_width + 60
+            bubble_h = text_h + 60
+            bubble_x = pos_x + ferizy_img.width // 4       # agak ke kanan
+            bubble_y = pos_y - bubble_h - 50               # tepat di atas kepala Ferizy
 
-            bubble_overlay = Image.new("RGBA", bg.size, (255,255,255,0))
+            print("DEBUG bubble:", bubble_x, bubble_y, bubble_w, bubble_h)
+
+            # Bubble overlay
+            bubble_overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
             bubble_draw = ImageDraw.Draw(bubble_overlay)
-            bubble_draw.rounded_rectangle(
-                (bubble_x,bubble_y,bubble_x+bubble_w,bubble_y+bubble_h),
-                radius=40, fill=(255,255,255,230), outline="black", width=4
-            )
-            tail=[(bubble_x+bubble_w-80,bubble_y+bubble_h),
-                  (bubble_x+bubble_w-20,bubble_y+bubble_h),
-                  (pos_x+ferizy_img.width//2,pos_y+40)]
-            bubble_draw.polygon(tail, fill=(255,255,255,230), outline="black")
 
+            # Bubble utama (pakai kuning biar kelihatan jelas dulu)
+            bubble_draw.rounded_rectangle(
+                (bubble_x, bubble_y, bubble_x+bubble_w, bubble_y+bubble_h),
+                radius=40,
+                fill=(255, 255, 150, 230),   # kuning semi transparan
+                outline="red",
+                width=4
+            )
+
+            # Tail segitiga ke arah kepala Ferizy
+            tail = [
+                (bubble_x+bubble_w-80, bubble_y+bubble_h),
+                (bubble_x+bubble_w-20, bubble_y+bubble_h),
+                (pos_x+ferizy_img.width//2, pos_y+40)
+            ]
+            bubble_draw.polygon(tail, fill=(255, 255, 150, 230), outline="red")
+
+            # Tempel bubble
             bg = Image.alpha_composite(bg.convert("RGBA"), bubble_overlay)
             draw = ImageDraw.Draw(bg)
 
-            # Isi teks
-            ty = bubble_y+30
+            # Tulis teks di bubble
+            ty = bubble_y + 30
             for line in lines:
-                tw,th = draw.textsize(line,font=font_quote)
-                tx = bubble_x+(bubble_w-tw)//2
-                draw.text((tx,ty), line, font=font_quote, fill="black")
-                ty+=font_quote.size+10
+                tw, th = draw.textsize(line, font=font_quote)
+                tx = bubble_x + (bubble_w - tw) // 2
+                draw.text((tx, ty), line, font=font_quote, fill="black")
+                ty += font_quote.size + 10
+
         except Exception as e:
             print("⚠️ Gagal render quotes:", e)
-
-    except Exception as e:
-        print("⚠️ Gagal render Footer/Ferizy/Transformation:", e)
 
     out = io.BytesIO()
     bg.save(out, format="PNG")
