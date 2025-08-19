@@ -715,7 +715,8 @@ def generate_poster_A4(
         ferizy_img = Image.open(ferizy_path).convert("RGBA")
         scale = (footer_img.height*2) / ferizy_img.height
         ferizy_img = ferizy_img.resize((int(ferizy_img.width*scale), int(ferizy_img.height*scale)), Image.Resampling.LANCZOS)
-        pos_x = W - ferizy_img.width; pos_y = H - ferizy_img.height
+        pos_x = W - ferizy_img.width
+        pos_y = H - ferizy_img.height
         bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
 
         # 5. Transformation (depan footer, kiri bawah)
@@ -725,7 +726,7 @@ def generate_poster_A4(
         Transformation_img = Transformation_img.resize((int(Transformation_img.width*scale), int(Transformation_img.height*scale)), Image.Resampling.LANCZOS)
         bg.paste(Transformation_img, (0, H - Transformation_img.height - 40), Transformation_img)
 
-        # 6. Quotes Motivasi (speech bubble)
+        # 6. Quotes Motivasi (speech bubble, di atas Ferizy)
         try:
             quotes_list = [
                 "Tetap semangat, kerja tuntas kerja ikhlas!",
@@ -740,29 +741,56 @@ def generate_poster_A4(
                 "Target tercapai, semangat tetap terjaga!"
             ]
             quote = random.choice(quotes_list)
-            try: font_quote = ImageFont.truetype("Anton-Regular.ttf", 60)
-            except: font_quote = ImageFont.load_default()
-            max_quote_width = int(W*0.45); words = quote.split(" "); lines=[]; line=""
+            try:
+                font_quote = ImageFont.truetype("Anton-Regular.ttf", 60)
+            except:
+                font_quote = ImageFont.load_default()
+
+            # Wrap text
+            max_quote_width = int(W*0.4)
+            words = quote.split(" "); lines=[]; line=""
             for w in words:
-                test_line = line+w+" "; tw,th = draw.textsize(test_line,font=font_quote)
+                test_line = line+w+" "
+                tw, th = draw.textsize(test_line,font=font_quote)
                 if tw <= max_quote_width: line = test_line
                 else: lines.append(line.strip()); line = w+" "
-            lines.append(line.strip()); text_h = len(lines)*(font_quote.size+10)
-            bubble_w = max_quote_width+60; bubble_h = text_h+60
-            bubble_x = W - bubble_w - 200; bubble_y = H - footer_img.height - ferizy_img.height - 220
-            bubble_overlay = Image.new("RGBA", bg.size, (255,255,255,0)); bubble_draw = ImageDraw.Draw(bubble_overlay)
-            bubble_draw.rounded_rectangle((bubble_x,bubble_y,bubble_x+bubble_w,bubble_y+bubble_h), radius=40, fill=(255,255,255,230), outline="black", width=4)
-            tail=[(bubble_x+bubble_w-100,bubble_y+bubble_h),(bubble_x+bubble_w-40,bubble_y+bubble_h),(W-200,H-footer_img.height-50)]
+            lines.append(line.strip())
+            text_h = len(lines)*(font_quote.size+10)
+
+            # Bubble size & position (di atas Ferizy, ke kiri sedikit)
+            bubble_w = max_quote_width+60
+            bubble_h = text_h+60
+            bubble_x = pos_x - bubble_w - 40  # kiri Ferizy
+            bubble_y = pos_y - bubble_h - 40  # di atas Ferizy
+
+            bubble_overlay = Image.new("RGBA", bg.size, (255,255,255,0))
+            bubble_draw = ImageDraw.Draw(bubble_overlay)
+
+            # Bubble utama
+            bubble_draw.rounded_rectangle(
+                (bubble_x,bubble_y,bubble_x+bubble_w,bubble_y+bubble_h),
+                radius=40, fill=(255,255,255,230), outline="black", width=4
+            )
+
+            # Tail (arah ke Ferizy)
+            tail=[(bubble_x+bubble_w-80,bubble_y+bubble_h),
+                  (bubble_x+bubble_w-20,bubble_y+bubble_h),
+                  (pos_x+ferizy_img.width//2,pos_y+40)]
             bubble_draw.polygon(tail, fill=(255,255,255,230), outline="black")
-            bg = Image.alpha_composite(bg.convert("RGBA"), bubble_overlay); draw = ImageDraw.Draw(bg)
+
+            # Composite bubble
+            bg = Image.alpha_composite(bg.convert("RGBA"), bubble_overlay)
+            draw = ImageDraw.Draw(bg)
+
+            # Tulis teks di bubble
             ty = bubble_y+30
             for line in lines:
-                tw,th = draw.textsize(line,font=font_quote); tx = bubble_x+(bubble_w-tw)//2
-                draw.text((tx,ty), line, font=font_quote, fill="black"); ty+=font_quote.size+10
-        except Exception as e: print("⚠️ Gagal render quotes:", e)
-
-    except Exception as e:
-        print("⚠️ Gagal render Footer/Ferizy/Transformation:", e)
+                tw, th = draw.textsize(line,font=font_quote)
+                tx = bubble_x+(bubble_w-tw)//2
+                draw.text((tx,ty), line, font=font_quote, fill="black")
+                ty+=font_quote.size+10
+        except Exception as e:
+            print("⚠️ Gagal render quotes:", e)
 
     out = io.BytesIO(); bg.save(out, format="PNG"); out.seek(0)
     return out
