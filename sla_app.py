@@ -519,54 +519,9 @@ def generate_poster_A4(
 
     W, H = 2480, 3508
 
-    # ---------- Gradient Background (biru → putih) ----------
-    bg = Image.new("RGB", (W, H))
-    draw_bg = ImageDraw.Draw(bg)
-    for y in range(H):
-        r = int(255 - (y / H) * 55)   # putih → biru lembut
-        g = int(255 - (y / H) * 100)
-        b = int(255 - (y / H) * 155)
-        draw_bg.line([(0, y), (W, y)], fill=(r, g, b))
+    # ---------- Background ----------
+    bg = Image.new("RGB", (W, H), "white")
     draw = ImageDraw.Draw(bg)
-
-    # ---------- Logo ASDP ----------
-    try:
-        logo_path = os.path.join(os.path.dirname(__file__), "asdp_logo.png")
-        logo_img = Image.open(logo_path).convert("RGBA")
-        scale = (W * 0.15) / logo_img.width
-        logo_img = logo_img.resize(
-            (int(logo_img.width*scale), int(logo_img.height*scale)),
-            Image.Resampling.LANCZOS
-        )
-        bg.paste(logo_img, (2000, 80), logo_img)
-    except:
-        pass
-
-    # ---------- Logo Danantara ----------
-    try:
-        logo_path = os.path.join(os.path.dirname(__file__), "Danantara.png")
-        logo_img = Image.open(logo_path).convert("RGBA")
-        scale = (W * 0.2) / logo_img.width
-        logo_img = logo_img.resize(
-            (int(logo_img.width*scale), int(logo_img.height*scale)),
-            Image.Resampling.LANCZOS
-        )
-        bg.paste(logo_img, (80, 80), logo_img)
-    except:
-        pass
-
-    # ---------- Logo Transformation (atas kiri bawah) ----------
-    try:
-        logo_path = os.path.join(os.path.dirname(__file__), "Transformation.png")
-        logo_img = Image.open(logo_path).convert("RGBA")
-        scale = (W * 0.2) / logo_img.width
-        logo_img = logo_img.resize(
-            (int(logo_img.width*scale), int(logo_img.height*scale)),
-            Image.Resampling.LANCZOS
-        )
-        bg.paste(logo_img, (80, 3000), logo_img)
-    except:
-        pass
 
     # ---------- Judul ----------
     title_text = "SLA DOKUMEN PENAGIHAN"
@@ -611,122 +566,7 @@ def generate_poster_A4(
     draw.line((margin_x, line_y, W - margin_x, line_y),
               fill="black", width=12)
 
-    # ---------- Grafik SLA Proses ----------
-    chart_img = None
-    try:
-        fig, ax = plt.subplots(figsize=(10, 4))
-        values_hari = [rata_proses_seconds[col] / 86400
-                       for col in rata_proses_seconds.index]
-        ax.bar(rata_proses_seconds.index,
-               values_hari, color='#75c8ff')
-        ax.set_title("Rata-rata SLA per Proses (hari)")
-        ax.set_ylabel("Hari")
-        ax.grid(axis='y', linestyle='--', alpha=0.7)
-        buf = io.BytesIO()
-        fig.savefig(buf, format="PNG", dpi=300,
-                    bbox_inches="tight", transparent=True)
-        buf.seek(0)
-        plt.close(fig)
-        chart_img = Image.open(buf).convert("RGBA")
-        max_chart_width = int(W * 0.65)
-        scale = max_chart_width / chart_img.width
-        chart_img = chart_img.resize(
-            (int(chart_img.width * scale),
-             int(chart_img.height * scale)),
-            Image.Resampling.LANCZOS
-        )
-    except Exception as e:
-        print("Gagal render chart:", e)
-
-    # ---------- Render Tabel SLA ----------
-    table_img = None
-    try:
-        fig, ax = plt.subplots(figsize=(5, 4))
-        ax.axis('off')
-        tbl = ax.table(cellText=df_proses.values,
-                       colLabels=df_proses.columns,
-                       rowLabels=df_proses.index,
-                       loc='center')
-        tbl.auto_set_font_size(False)
-        tbl.set_fontsize(12)
-        tbl.scale(1.3, 1.3)
-        tbl.auto_set_column_width([0, 1])
-        buf = io.BytesIO()
-        fig.savefig(buf, format="PNG", dpi=300,
-                    bbox_inches="tight", transparent=True)
-        buf.seek(0)
-        plt.close(fig)
-        table_img = Image.open(buf).convert("RGBA")
-        max_tbl_width = int(W * 0.30)
-        scale = max_tbl_width / table_img.width
-        table_img = table_img.resize(
-            (int(table_img.width * scale),
-             int(table_img.height * scale)),
-            Image.Resampling.LANCZOS
-        )
-    except Exception as e:
-        print("Gagal render tabel SLA:", e)
-
-    # ---------- Glassmorphism Card ----------
-    card_margin_x = 80
-    card_top = line_y + 20
-    content_height = max(chart_img.height if chart_img else 0,
-                         table_img.height if table_img else 0)
-    card_bottom = card_top + content_height + 80
-    card_box = (card_margin_x, card_top,
-                W - card_margin_x, card_bottom)
-
-    region = bg.crop(card_box).filter(ImageFilter.GaussianBlur(20))
-    bg.paste(region, card_box)
-
-    card_overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
-    overlay_draw = ImageDraw.Draw(card_overlay)
-    overlay_draw.rounded_rectangle(
-        card_box,
-        radius=40,
-        outline=(255, 255, 255, 200),
-        width=4,
-        fill=(255, 255, 255, 100)
-    )
-    bg = Image.alpha_composite(bg.convert("RGBA"), card_overlay)
-    draw = ImageDraw.Draw(bg)
-
-    if chart_img:
-        bg.paste(chart_img, (card_margin_x+50, card_top+40), chart_img)
-    if table_img:
-        bg.paste(table_img,
-                 (W - table_img.width - card_margin_x - 50,
-                  card_top+40),
-                 table_img)
-
-    # ---------- Kemudi + On Target ----------
-    try:
-        kemudi_path = os.path.join(os.path.dirname(__file__), "Kemudi.png")
-        kemudi_img = Image.open(kemudi_path).convert("RGBA")
-        target_width = int(W * 0.18)
-        scale = target_width / kemudi_img.width
-        kemudi_img = kemudi_img.resize(
-            (target_width, int(kemudi_img.height * scale)),
-            Image.Resampling.LANCZOS
-        )
-        pos_x = W - card_margin_x - kemudi_img.width - 50
-        pos_y = card_top + (table_img.height if table_img else 0) + 30
-        bg.paste(kemudi_img, (pos_x, pos_y), kemudi_img)
-
-        font_target = ImageFont.truetype(
-            os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf"), 120
-        )
-        text = "ON TARGET"
-        bbox = draw.textbbox((0, 0), text, font=font_target)
-        tw, th = bbox[2]-bbox[0], bbox[3]-bbox[1]
-        text_x = pos_x + (kemudi_img.width - tw)//2
-        text_y = pos_y + kemudi_img.height + 1
-        draw.text((text_x, text_y), text,
-                  font=font_target, fill=(0,150,0))
-    except Exception as e:
-        print("Gagal render Kemudi/On Target:", e)
-
-    # ---------- Footer + Grafik/Tabel Jumlah Transaksi + Ferizy + Quotes ----------
+    # ---------- Footer + Grafik/Tabel Jumlah Transaksi + Ferizy ----------
     try:
         footer_path = os.path.join(os.path.dirname(__file__), "Footer.png")
         footer_img = Image.open(footer_path).convert("RGBA")
@@ -741,13 +581,13 @@ def generate_poster_A4(
         overlay = Image.new("RGBA", bg.size, (255,255,255,0))
         overlay_draw = ImageDraw.Draw(overlay)
         center_x = W // 2
-        overlay_draw.line((center_x, card_bottom, center_x, H),
+        overlay_draw.line((center_x, line_y+20, center_x, H),
                           fill="black", width=15)
-        bg = Image.alpha_composite(bg, overlay)
+        bg = Image.alpha_composite(bg.convert("RGBA"), overlay)
 
         # Grafik jumlah transaksi
         trans_img = None
-        pos_y_trans = card_bottom + 50
+        pos_y_trans = line_y + 100
         try:
             jumlah_transaksi = df_filtered.groupby(
                 df_filtered[periode_col].astype(str)
@@ -778,7 +618,7 @@ def generate_poster_A4(
             plt.close(fig_trans)
             trans_img = Image.open(buf).convert("RGBA")
             max_width = int(W*0.40)
-            max_height = H - card_bottom - footer_img.height - 400
+            max_height = H - line_y - footer_img.height - 400
             scale = min(max_width/trans_img.width,
                         max_height/trans_img.height)
             trans_img = trans_img.resize(
@@ -862,7 +702,7 @@ def generate_poster_A4(
         pos_y = H - ferizy_img.height
         bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
 
-        # Transformation (kiri bawah)
+        # Transformation
         Transformation_path = os.path.join(os.path.dirname(__file__), "Transformation.png")
         Transformation_img = Image.open(Transformation_path).convert("RGBA")
         scale = (footer_img.height*0.35) / Transformation_img.height
@@ -874,12 +714,11 @@ def generate_poster_A4(
         bg.paste(Transformation_img,
                  (0, H - Transformation_img.height - 40),
                  Transformation_img)
+
     except Exception as e:
-        print("⚠️ Gagal render quotes:", e)
-    except Exception as e:   # <== ini penutup try besar (Footer/Ferizy/Transformation)
         print("⚠️ Gagal render Footer/Ferizy/Transformation:", e)
 
-    # ---------- Quotes Motivasi (Speech Bubble fix) ----------
+    # ---------- Quotes Motivasi ----------
     try:
         quotes_list = [
             "Tetap semangat, kerja tuntas kerja ikhlas!",
@@ -895,13 +734,12 @@ def generate_poster_A4(
         ]
         quote = random.choice(quotes_list)
 
-        # Font untuk quotes
         try:
             font_quote = ImageFont.truetype("Anton-Regular.ttf", 60)
         except:
             font_quote = ImageFont.load_default()
 
-        # Bungkus teks
+        # Wrap text
         max_quote_width = int(W * 0.4)
         words = quote.split(" ")
         lines, line = [], ""
@@ -916,40 +754,33 @@ def generate_poster_A4(
         lines.append(line.strip())
         text_h = len(lines) * (font_quote.size + 10)
 
-        # Bubble ukuran & posisi (fix: kanan bawah, di atas footer)
         bubble_w = max_quote_width + 60
         bubble_h = text_h + 60
-        bubble_x = W - bubble_w - 200   # rata kanan
-        bubble_y = H - bubble_h - 400   # 400px dari bawah
+        bubble_x = W - bubble_w - 200
+        bubble_y = H - bubble_h - 400
 
-        print("DEBUG QUOTES POS:", bubble_x, bubble_y, bubble_w, bubble_h)
-
-        bubble_overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
+        bubble_overlay = Image.new("RGBA", bg.size, (255,255,255,0))
         bubble_draw = ImageDraw.Draw(bubble_overlay)
 
-        # Bubble utama (kuning debug supaya jelas kelihatan)
         bubble_draw.rounded_rectangle(
             (bubble_x, bubble_y, bubble_x+bubble_w, bubble_y+bubble_h),
             radius=40,
-            fill=(255, 255, 150, 230),
+            fill=(255,255,255,230),
             outline="black",
-            width=4
+            width=3
         )
 
-        # Tail segitiga (ke arah kanan bawah)
         tail = [
             (bubble_x+bubble_w-80, bubble_y+bubble_h),
             (bubble_x+bubble_w-20, bubble_y+bubble_h),
             (W-200, H-300)
         ]
-        bubble_draw.polygon(tail, fill=(255, 255, 150, 230), outline="black")
+        bubble_draw.polygon(tail, fill=(255,255,255,230), outline="black")
 
-        # Composite
         bg = bg.convert("RGBA")
         bg = Image.alpha_composite(bg, bubble_overlay)
         draw = ImageDraw.Draw(bg)
 
-        # Isi teks
         ty = bubble_y + 30
         for line in lines:
             tw, th = draw.textsize(line, font=font_quote)
@@ -960,6 +791,7 @@ def generate_poster_A4(
     except Exception as e:
         print("⚠️ Gagal render quotes:", e)
 
+    # ---------- Output ----------
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
