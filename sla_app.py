@@ -824,7 +824,7 @@ def generate_poster_A4(
 
     except Exception as e:
         print("⚠️ Gagal render Footer/Ferizy/Transformation:", e)
-    # ---------- Quotes Motivasi ----------
+    # --- quotes motivasi (pasti terakhir) ---
     try:
         quotes_list = [
             "Tetap semangat, kerja tuntas kerja ikhlas!",
@@ -843,24 +843,19 @@ def generate_poster_A4(
         font_path = os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf")
         font_quote = ImageFont.truetype(font_path, 80)
 
-        # posisi fix di kanan bawah (pasti kelihatan)
-        bubble_x = W - 1000
-        bubble_y = H - 1000
-        bubble_w, bubble_h = 900, 300
+        # ukuran bubble fix biar pasti kelihatan
+        bubble_x, bubble_y, bubble_w, bubble_h = W-1000, H-1000, 900, 300
 
         bubble_layer = Image.new("RGBA", bg.size, (255,255,255,0))
         bubble_draw = ImageDraw.Draw(bubble_layer)
 
-        # Bubble putih
         bubble_draw.rounded_rectangle(
             (bubble_x, bubble_y, bubble_x+bubble_w, bubble_y+bubble_h),
-            radius=40,
-            fill=(255,255,255,230),
-            outline="black",
-            width=4
+            radius=40, fill=(255,255,255,230),
+            outline="black", width=4
         )
 
-        # Segitiga tail
+        # segitiga tail
         tail = [
             (bubble_x+bubble_w-80, bubble_y+bubble_h),
             (bubble_x+bubble_w-20, bubble_y+bubble_h),
@@ -868,22 +863,20 @@ def generate_poster_A4(
         ]
         bubble_draw.polygon(tail, fill=(255,255,255,230), outline="black")
 
-        # Tempel ke poster
         bg.paste(bubble_layer, (0,0), bubble_layer)
 
-        # Tulis teks
         draw.text((bubble_x+40, bubble_y+100),
                   quote, font=font_quote, fill="black")
 
-        print("Quotes rendered:", quote)
-
+        print("✅ Quotes rendered:", quote)
     except Exception as e:
         print("⚠️ Gagal render quotes:", e)
+
+    # --- output ---
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
     return out
-
 # ==========================================================
 # Tab Report (Poster & PDF)
 # ==========================================================
