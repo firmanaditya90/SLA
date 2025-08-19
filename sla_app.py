@@ -827,52 +827,71 @@ def generate_poster_A4(
         print("⚠️ Gagal render Footer/Ferizy/Transformation:", e)
         
     # ---------- Quotes Motivasi ----------
-    try:
-        draw = ImageDraw.Draw(bg)  # refresh context
 
-        quotes_list = [
-            "Tetap semangat, kerja tuntas kerja ikhlas!",
-            "Sukses berawal dari disiplin kecil setiap hari.",
-            "Inovasi dimulai dari keberanian mencoba.",
-            "Kerja tim membuat beban jadi ringan!",
-            "Setiap tantangan adalah peluang.",
-            "Tidak ada proses yang sia-sia.",
-            "Kerja keras mengalahkan bakat ketika bakat malas.",
-            "Fokus pada solusi, bukan masalah.",
-            "Hari ini lebih baik dari kemarin.",
-            "Target tercapai, semangat tetap terjaga!"
-        ]
-        quote = random.choice(quotes_list)
+python
+Copy
+Edit
+import random
+import textwrap
+from PIL import ImageDraw, ImageFont, Image
 
-        font_path = os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf")
-        font_quote = ImageFont.truetype(font_path, 80)
+try:
+    draw = ImageDraw.Draw(bg)
 
-        # posisi bubble kanan bawah (di atas Ferizy)
-        bubble_x, bubble_y, bubble_w, bubble_h = W-1000, H-1000, 900, 300
+    quotes_list = [
+        "Tetap semangat, kerja tuntas kerja ikhlas!",
+        "Sukses berawal dari disiplin kecil setiap hari.",
+        "Inovasi dimulai dari keberanian mencoba.",
+        "Kerja tim membuat beban jadi ringan!",
+        "Setiap tantangan adalah peluang.",
+        "Tidak ada proses yang sia-sia.",
+        "Kerja keras mengalahkan bakat ketika bakat malas.",
+        "Fokus pada solusi, bukan masalah.",
+        "Hari ini lebih baik dari kemarin.",
+        "Target tercapai, semangat tetap terjaga!"
+    ]
+    quote = random.choice(quotes_list)
 
-        bubble_layer = Image.new("RGBA", bg.size, (255,255,255,0))
-        bubble_draw = ImageDraw.Draw(bubble_layer)
-        bubble_draw.rounded_rectangle(
-            (bubble_x, bubble_y, bubble_x+bubble_w, bubble_y+bubble_h),
-            radius=40, fill=(255,255,255,230), outline="black", width=4
-        )
+    font_path = os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf")
+    font_size = 45  # dikurangi dari 80 supaya muat di bubble
+    font_quote = ImageFont.truetype(font_path, font_size)
 
-        tail = [
-            (bubble_x+bubble_w-80, bubble_y+bubble_h),
-            (bubble_x+bubble_w-20, bubble_y+bubble_h),
-            (W-220, H-320)
-        ]
-        bubble_draw.polygon(tail, fill=(255,255,255,230), outline="black")
+    # posisi bubble kanan bawah
+    bubble_x, bubble_y, bubble_w, bubble_h = W-1000, H-1000, 900, 300
 
-        bg.paste(bubble_layer, (0,0), bubble_layer)
+    bubble_layer = Image.new("RGBA", bg.size, (255,255,255,0))
+    bubble_draw = ImageDraw.Draw(bubble_layer)
+    bubble_draw.rounded_rectangle(
+        (bubble_x, bubble_y, bubble_x+bubble_w, bubble_y+bubble_h),
+        radius=40, fill=(255,255,255,230), outline="black", width=4
+    )
 
-        draw.text((bubble_x+40, bubble_y+100), quote, font=font_quote, fill="black")
+    tail = [
+        (bubble_x+bubble_w-80, bubble_y+bubble_h),
+        (bubble_x+bubble_w-20, bubble_y+bubble_h),
+        (W-220, H-320)
+    ]
+    bubble_draw.polygon(tail, fill=(255,255,255,230), outline="black")
 
-        print("✅ Quotes rendered:", quote)
-    except Exception as e:
-        
-        print("⚠️ Gagal render quotes:", e)
+    bg.paste(bubble_layer, (0,0), bubble_layer)
 
+    # ===== wrap text agar muat di bubble =====
+    max_chars_per_line = int(bubble_w / (font_size * 0.6))
+    wrapped_text = textwrap.fill(quote, width=max_chars_per_line)
+
+    draw.multiline_text(
+        (bubble_x+20, bubble_y+20),  # padding dari bubble
+        wrapped_text,
+        font=font_quote,
+        fill="black",
+        align="center",
+        spacing=6
+    )
+
+    print("✅ Quotes rendered:", quote)
+except Exception as e:
+    print("⚠️ Gagal render quotes:", e)
+    
  out = io.BytesIO()
  bg.save(out, format="PNG")
  out.seek(0)
