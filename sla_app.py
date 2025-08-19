@@ -516,7 +516,6 @@ def generate_poster_A4(
     df_filtered, periode_col, selected_periode
 ):
     W, H = 2480, 3508
-        print(">>> FUNGSI generate_poster_A4 yang aktif <<<")
 
     # ---------- Gradient Background (biru → putih) ----------
     bg = Image.new("RGB", (W, H))
@@ -825,72 +824,11 @@ def generate_poster_A4(
 
     except Exception as e:
         print("⚠️ Gagal render Footer/Ferizy/Transformation:", e)
-        
-    # ---------- Quotes Motivasi ----------
-import io, random
-from PIL import Image, ImageDraw, ImageFont
-import textwrap
-import streamlit as st
-
-def generate_poster_with_quote():
-    W, H = 1200, 1600
-    bg = Image.new("RGB", (W, H), "lightblue")
-    draw = ImageDraw.Draw(bg)
-
-    # Quote
-    quote = random.choice([
-        "Tetap semangat, kerja tuntas kerja ikhlas!",
-        "Sukses berawal dari disiplin kecil setiap hari.",
-        "Inovasi dimulai dari keberanian mencoba.",
-        "Kerja tim membuat beban jadi ringan!"
-    ])
-
-    # Bubble koordinat aman
-    bubble_w, bubble_h = 900, 300
-    bubble_x, bubble_y = W - bubble_w - 50, H - bubble_h - 100
-
-    # Bubble tanpa layer (langsung di bg)
-    draw.rounded_rectangle(
-        (bubble_x, bubble_y, bubble_x+bubble_w, bubble_y+bubble_h),
-        radius=30, fill="white", outline="black", width=3
-    )
-
-    # Tail
-    tail = [(bubble_x+bubble_w-80, bubble_y+bubble_h),
-            (bubble_x+bubble_w-20, bubble_y+bubble_h),
-            (W-220, H-320)]
-    draw.polygon(tail, fill="white", outline="black")
-
-    # Text
-    font = ImageFont.load_default()
-    padding = 20
-    max_width = bubble_w - 2*padding
-    lines = textwrap.wrap(quote, width=30)
-    y_text = bubble_y + padding
-    for line in lines:
-        w, h = draw.textsize(line, font=font)
-        x_text = bubble_x + (bubble_w - w)//2
-        draw.text((x_text, y_text), line, font=font, fill="black")
-        y_text += h + 5
 
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
     return out
-
-# Streamlit
-st.title("Poster Quotes Test")
-if st.button("Generate Poster"):
-    poster_buf = generate_poster_with_quote()
-    st.image(poster_buf, caption="Poster dengan Quote", use_column_width=True)
-    st.download_button(
-        "Download Poster",
-        poster_buf,
-        file_name="poster_quote.png",
-        mime="image/png"
-    )
-
-
 
 # ==========================================================
 # Tab Report (Poster & PDF)
