@@ -534,199 +534,348 @@ def generate_poster_A4(
         logo_path = os.path.join(os.path.dirname(__file__), "asdp_logo.png")
         logo_img = Image.open(logo_path).convert("RGBA")
         scale = (W * 0.15) / logo_img.width
-        logo_img = logo_img.resize((int(logo_img.width*scale), int(logo_img.height*scale)), Image.Resampling.LANCZOS)
+        logo_img = logo_img.resize(
+            (int(logo_img.width*scale), int(logo_img.height*scale)),
+            Image.Resampling.LANCZOS
+        )
         bg.paste(logo_img, (2000, 80), logo_img)
-    except: pass
+    except:
+        pass
 
     # ---------- Logo Danantara ----------
     try:
         logo_path = os.path.join(os.path.dirname(__file__), "Danantara.png")
         logo_img = Image.open(logo_path).convert("RGBA")
         scale = (W * 0.2) / logo_img.width
-        logo_img = logo_img.resize((int(logo_img.width*scale), int(logo_img.height*scale)), Image.Resampling.LANCZOS)
+        logo_img = logo_img.resize(
+            (int(logo_img.width*scale), int(logo_img.height*scale)),
+            Image.Resampling.LANCZOS
+        )
         bg.paste(logo_img, (80, 80), logo_img)
-    except: pass
+    except:
+        pass
 
     # ---------- Logo Transformation (atas kiri bawah) ----------
     try:
         logo_path = os.path.join(os.path.dirname(__file__), "Transformation.png")
         logo_img = Image.open(logo_path).convert("RGBA")
         scale = (W * 0.2) / logo_img.width
-        logo_img = logo_img.resize((int(logo_img.width*scale), int(logo_img.height*scale)), Image.Resampling.LANCZOS)
+        logo_img = logo_img.resize(
+            (int(logo_img.width*scale), int(logo_img.height*scale)),
+            Image.Resampling.LANCZOS
+        )
         bg.paste(logo_img, (80, 3000), logo_img)
-    except: pass
+    except:
+        pass
 
     # ---------- Judul ----------
     title_text = "SLA DOKUMEN PENAGIHAN"
-    try: font_title = ImageFont.truetype("Anton-Regular.ttf", 200)
-    except: font_title = ImageFont.load_default()
+    try:
+        font_title = ImageFont.truetype("Anton-Regular.ttf", 200)
+    except:
+        font_title = ImageFont.load_default()
     bbox_title = draw.textbbox((0, 0), title_text, font=font_title)
     title_w = bbox_title[2] - bbox_title[0]
     title_h = bbox_title[3] - bbox_title[1]
     title_y = int(H * 0.10)
-    draw.text(((W - title_w) // 2, title_y), title_text, fill="black", font=font_title)
+    draw.text(((W - title_w) // 2, title_y),
+              title_text, fill="black", font=font_title)
 
     # ---------- Periode ----------
     max_width = int(W * 0.8)
     font_size = 140
-    try: font_periode = ImageFont.truetype("Anton-Regular.ttf", font_size)
-    except: font_periode = ImageFont.load_default()
+    try:
+        font_periode = ImageFont.truetype("Anton-Regular.ttf", font_size)
+    except:
+        font_periode = ImageFont.load_default()
     while True:
-        bbox_periode = draw.textbbox((0, 0), periode_range_text, font=font_periode)
+        bbox_periode = draw.textbbox((0, 0),
+                                     periode_range_text,
+                                     font=font_periode)
         periode_w = bbox_periode[2] - bbox_periode[0]
         periode_h = bbox_periode[3] - bbox_periode[1]
-        if periode_w <= max_width or font_size <= 40: break
+        if periode_w <= max_width or font_size <= 40:
+            break
         font_size -= 10
-        try: font_periode = ImageFont.truetype("Anton-Regular.ttf", font_size)
-        except: font_periode = ImageFont.load_default()
+        try:
+            font_periode = ImageFont.truetype("Anton-Regular.ttf", font_size)
+        except:
+            font_periode = ImageFont.load_default()
     periode_y = title_y + title_h + int(H * 0.03)
-    draw.text(((W - periode_w) // 2, periode_y), periode_range_text, fill="black", font=font_periode)
+    draw.text(((W - periode_w) // 2, periode_y),
+              periode_range_text, fill="black", font=font_periode)
 
     # ---------- Garis Separator ----------
     line_y = periode_y + periode_h + 30
     margin_x = 150
-    draw.line((margin_x, line_y, W - margin_x, line_y), fill="black", width=12)
+    draw.line((margin_x, line_y, W - margin_x, line_y),
+              fill="black", width=12)
 
     # ---------- Grafik SLA Proses ----------
     chart_img = None
     try:
         fig, ax = plt.subplots(figsize=(10, 4))
-        values_hari = [rata_proses_seconds[col] / 86400 for col in rata_proses_seconds.index]
-        ax.bar(rata_proses_seconds.index, values_hari, color='#75c8ff')
+        values_hari = [rata_proses_seconds[col] / 86400
+                       for col in rata_proses_seconds.index]
+        ax.bar(rata_proses_seconds.index,
+               values_hari, color='#75c8ff')
         ax.set_title("Rata-rata SLA per Proses (hari)")
         ax.set_ylabel("Hari")
         ax.grid(axis='y', linestyle='--', alpha=0.7)
-        buf = io.BytesIO(); fig.savefig(buf, format="PNG", dpi=300, bbox_inches="tight", transparent=True)
-        buf.seek(0); plt.close(fig)
+        buf = io.BytesIO()
+        fig.savefig(buf, format="PNG", dpi=300,
+                    bbox_inches="tight", transparent=True)
+        buf.seek(0)
+        plt.close(fig)
         chart_img = Image.open(buf).convert("RGBA")
         max_chart_width = int(W * 0.65)
         scale = max_chart_width / chart_img.width
-        chart_img = chart_img.resize((int(chart_img.width * scale), int(chart_img.height * scale)), Image.Resampling.LANCZOS)
-    except Exception as e: print("Gagal render chart:", e)
+        chart_img = chart_img.resize(
+            (int(chart_img.width * scale),
+             int(chart_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
+    except Exception as e:
+        print("Gagal render chart:", e)
 
     # ---------- Render Tabel SLA ----------
     table_img = None
     try:
         fig, ax = plt.subplots(figsize=(5, 4))
         ax.axis('off')
-        tbl = ax.table(cellText=df_proses.values, colLabels=df_proses.columns, rowLabels=df_proses.index, loc='center')
-        tbl.auto_set_font_size(False); tbl.set_fontsize(12); tbl.scale(1.3, 1.3); tbl.auto_set_column_width([0, 1])
-        buf = io.BytesIO(); fig.savefig(buf, format="PNG", dpi=300, bbox_inches="tight", transparent=True)
-        buf.seek(0); plt.close(fig)
+        tbl = ax.table(cellText=df_proses.values,
+                       colLabels=df_proses.columns,
+                       rowLabels=df_proses.index,
+                       loc='center')
+        tbl.auto_set_font_size(False)
+        tbl.set_fontsize(12)
+        tbl.scale(1.3, 1.3)
+        tbl.auto_set_column_width([0, 1])
+        buf = io.BytesIO()
+        fig.savefig(buf, format="PNG", dpi=300,
+                    bbox_inches="tight", transparent=True)
+        buf.seek(0)
+        plt.close(fig)
         table_img = Image.open(buf).convert("RGBA")
         max_tbl_width = int(W * 0.30)
         scale = max_tbl_width / table_img.width
-        table_img = table_img.resize((int(table_img.width * scale), int(table_img.height * scale)), Image.Resampling.LANCZOS)
-    except Exception as e: print("Gagal render tabel SLA:", e)
+        table_img = table_img.resize(
+            (int(table_img.width * scale),
+             int(table_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
+    except Exception as e:
+        print("Gagal render tabel SLA:", e)
 
     # ---------- Glassmorphism Card ----------
     card_margin_x = 80
     card_top = line_y + 20
-    content_height = max(chart_img.height if chart_img else 0, table_img.height if table_img else 0)
+    content_height = max(chart_img.height if chart_img else 0,
+                         table_img.height if table_img else 0)
     card_bottom = card_top + content_height + 80
-    card_box = (card_margin_x, card_top, W - card_margin_x, card_bottom)
-    region = bg.crop(card_box).filter(ImageFilter.GaussianBlur(20)); bg.paste(region, card_box)
+    card_box = (card_margin_x, card_top,
+                W - card_margin_x, card_bottom)
+
+    region = bg.crop(card_box).filter(ImageFilter.GaussianBlur(20))
+    bg.paste(region, card_box)
+
     card_overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
     overlay_draw = ImageDraw.Draw(card_overlay)
-    overlay_draw.rounded_rectangle(card_box, radius=40, outline=(255,255,255,200), width=4, fill=(255,255,255,100))
-    bg = Image.alpha_composite(bg.convert("RGBA"), card_overlay); draw = ImageDraw.Draw(bg)
-    if chart_img: bg.paste(chart_img, (card_margin_x+50, card_top+40), chart_img)
-    if table_img: bg.paste(table_img, (W-table_img.width-card_margin_x-50, card_top+40), table_img)
+    overlay_draw.rounded_rectangle(
+        card_box,
+        radius=40,
+        outline=(255, 255, 255, 200),
+        width=4,
+        fill=(255, 255, 255, 100)
+    )
+    bg = Image.alpha_composite(bg.convert("RGBA"), card_overlay)
+    draw = ImageDraw.Draw(bg)
+
+    if chart_img:
+        bg.paste(chart_img, (card_margin_x+50, card_top+40), chart_img)
+    if table_img:
+        bg.paste(table_img,
+                 (W - table_img.width - card_margin_x - 50,
+                  card_top+40),
+                 table_img)
 
     # ---------- Kemudi + On Target ----------
     try:
         kemudi_path = os.path.join(os.path.dirname(__file__), "Kemudi.png")
         kemudi_img = Image.open(kemudi_path).convert("RGBA")
-        target_width = int(W * 0.18); scale = target_width / kemudi_img.width
-        kemudi_img = kemudi_img.resize((target_width, int(kemudi_img.height*scale)), Image.Resampling.LANCZOS)
-        pos_x = W - card_margin_x - kemudi_img.width - 50; pos_y = card_top + table_img.height + 30
+        target_width = int(W * 0.18)
+        scale = target_width / kemudi_img.width
+        kemudi_img = kemudi_img.resize(
+            (target_width, int(kemudi_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
+        pos_x = W - card_margin_x - kemudi_img.width - 50
+        pos_y = card_top + (table_img.height if table_img else 0) + 30
         bg.paste(kemudi_img, (pos_x, pos_y), kemudi_img)
-        font_target = ImageFont.truetype(os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf"), 120)
-        text = "ON TARGET"; bbox = draw.textbbox((0, 0), text, font=font_target)
-        tw, th = bbox[2]-bbox[0], bbox[3]-bbox[1]; text_x = pos_x + (kemudi_img.width - tw)//2; text_y = pos_y + kemudi_img.height + 1
-        draw.text((text_x, text_y), text, font=font_target, fill=(0,150,0))
-    except Exception as e: print("Gagal render Kemudi/On Target:", e)
 
-    # ---------- Footer + Garis Tengah + Grafik & Tabel Jumlah Transaksi ----------
+        font_target = ImageFont.truetype(
+            os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf"), 120
+        )
+        text = "ON TARGET"
+        bbox = draw.textbbox((0, 0), text, font=font_target)
+        tw, th = bbox[2]-bbox[0], bbox[3]-bbox[1]
+        text_x = pos_x + (kemudi_img.width - tw)//2
+        text_y = pos_y + kemudi_img.height + 1
+        draw.text((text_x, text_y), text,
+                  font=font_target, fill=(0,150,0))
+    except Exception as e:
+        print("Gagal render Kemudi/On Target:", e)
+
+    # ---------- Footer + Grafik/Tabel Jumlah Transaksi + Ferizy + Quotes ----------
     try:
         footer_path = os.path.join(os.path.dirname(__file__), "Footer.png")
         footer_img = Image.open(footer_path).convert("RGBA")
-        scale = W / footer_img.width; footer_img = footer_img.resize((W, int(footer_img.height*scale)), Image.Resampling.LANCZOS)
+        scale = W / footer_img.width
+        footer_img = footer_img.resize(
+            (W, int(footer_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
         footer_y = H - footer_img.height
 
-        # 1. Garis tengah
-        overlay = Image.new("RGBA", bg.size, (255,255,255,0)); overlay_draw = ImageDraw.Draw(overlay)
-        center_x = W // 2; overlay_draw.line((center_x, card_bottom, center_x, H), fill="black", width=15)
+        # Garis tengah
+        overlay = Image.new("RGBA", bg.size, (255,255,255,0))
+        overlay_draw = ImageDraw.Draw(overlay)
+        center_x = W // 2
+        overlay_draw.line((center_x, card_bottom, center_x, H),
+                          fill="black", width=15)
         bg = Image.alpha_composite(bg, overlay)
 
-        # 2. Grafik jumlah transaksi
-        trans_img = None; pos_y_trans = card_bottom + 50
+        # Grafik jumlah transaksi
+        trans_img = None
+        pos_y_trans = card_bottom + 50
         try:
-            jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name='Jumlah')
-            jumlah_transaksi = jumlah_transaksi.sort_values(by=periode_col, key=lambda x: pd.Categorical(x, categories=selected_periode, ordered=True))
+            jumlah_transaksi = df_filtered.groupby(
+                df_filtered[periode_col].astype(str)
+            ).size().reset_index(name='Jumlah')
+            jumlah_transaksi = jumlah_transaksi.sort_values(
+                by=periode_col,
+                key=lambda x: pd.Categorical(x,
+                                             categories=selected_periode,
+                                             ordered=True)
+            )
             fig_trans, ax_trans = plt.subplots(figsize=(8,5))
             colors = plt.cm.viridis(range(len(jumlah_transaksi)))
-            ax_trans.bar(jumlah_transaksi[periode_col], jumlah_transaksi['Jumlah'], color=colors)
-            ax_trans.set_title("Jumlah Transaksi per Periode", fontsize=28, weight="bold")
-            ax_trans.set_xlabel("Periode"); ax_trans.set_ylabel("Jumlah")
+            ax_trans.bar(jumlah_transaksi[periode_col],
+                         jumlah_transaksi['Jumlah'],
+                         color=colors)
+            ax_trans.set_title("Jumlah Transaksi per Periode",
+                               fontsize=28, weight="bold")
+            ax_trans.set_xlabel("Periode")
+            ax_trans.set_ylabel("Jumlah")
             ax_trans.grid(axis='y', linestyle='--', alpha=0.6)
-            for label in ax_trans.get_xticklabels(): label.set_rotation(45); label.set_ha('right')
-            buf = io.BytesIO(); fig_trans.savefig(buf, format="PNG", dpi=300, bbox_inches="tight", transparent=True)
-            buf.seek(0); plt.close(fig_trans)
+            for label in ax_trans.get_xticklabels():
+                label.set_rotation(45)
+                label.set_ha('right')
+            buf = io.BytesIO()
+            fig_trans.savefig(buf, format="PNG", dpi=300,
+                              bbox_inches="tight", transparent=True)
+            buf.seek(0)
+            plt.close(fig_trans)
             trans_img = Image.open(buf).convert("RGBA")
-            max_width = int(W*0.40); max_height = H - card_bottom - footer_img.height - 400
-            scale = min(max_width/trans_img.width, max_height/trans_img.height)
-            trans_img = trans_img.resize((int(trans_img.width*scale), int(trans_img.height*scale)), Image.Resampling.LANCZOS)
+            max_width = int(W*0.40)
+            max_height = H - card_bottom - footer_img.height - 400
+            scale = min(max_width/trans_img.width,
+                        max_height/trans_img.height)
+            trans_img = trans_img.resize(
+                (int(trans_img.width*scale),
+                 int(trans_img.height*scale)),
+                Image.Resampling.LANCZOS
+            )
             bg.paste(trans_img, (150, pos_y_trans), trans_img)
-        except Exception as e: print("⚠️ Gagal render grafik jumlah transaksi:", e)
+        except Exception as e:
+            print("⚠️ Gagal render grafik jumlah transaksi:", e)
 
-        # 2b. Tabel jumlah transaksi (styling keren)
+        # Tabel jumlah transaksi
         try:
-            jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name='Jumlah')
-            jumlah_transaksi = jumlah_transaksi.sort_values(by=periode_col, key=lambda x: pd.Categorical(x, categories=selected_periode, ordered=True))
-            total_row = pd.DataFrame({periode_col:["TOTAL"], "Jumlah":[jumlah_transaksi["Jumlah"].sum()]})
-            jumlah_transaksi = pd.concat([jumlah_transaksi, total_row], ignore_index=True)
-            fig_tbl, ax_tbl = plt.subplots(figsize=(6,4)); ax_tbl.axis("off")
-            table = ax_tbl.table(cellText=jumlah_transaksi.values, colLabels=jumlah_transaksi.columns, loc="center", cellLoc="center")
-            table.auto_set_font_size(False); table.set_fontsize(16); table.scale(1.5,1.5)
+            jumlah_transaksi = df_filtered.groupby(
+                df_filtered[periode_col].astype(str)
+            ).size().reset_index(name='Jumlah')
+            jumlah_transaksi = jumlah_transaksi.sort_values(
+                by=periode_col,
+                key=lambda x: pd.Categorical(x,
+                                             categories=selected_periode,
+                                             ordered=True)
+            )
+            total_row = pd.DataFrame({periode_col:["TOTAL"],
+                                      "Jumlah":[jumlah_transaksi["Jumlah"].sum()]})
+            jumlah_transaksi = pd.concat([jumlah_transaksi, total_row],
+                                         ignore_index=True)
+            fig_tbl, ax_tbl = plt.subplots(figsize=(6,4))
+            ax_tbl.axis("off")
+            table = ax_tbl.table(
+                cellText=jumlah_transaksi.values,
+                colLabels=jumlah_transaksi.columns,
+                loc="center", cellLoc="center"
+            )
+            table.auto_set_font_size(False)
+            table.set_fontsize(16)
+            table.scale(1.5,1.5)
             for j in range(len(jumlah_transaksi.columns)):
-                cell = table[(0,j)]; cell.set_fontsize(18); cell.set_text_props(weight="bold", color="white"); cell.set_facecolor("#1f77b4")
+                cell = table[(0,j)]
+                cell.set_fontsize(18)
+                cell.set_text_props(weight="bold", color="white")
+                cell.set_facecolor("#1f77b4")
             for i in range(1,len(jumlah_transaksi)+1):
                 for j in range(len(jumlah_transaksi.columns)):
                     cell = table[(i,j)]
                     if i%2==0: cell.set_facecolor("#f2f2f2")
                     else: cell.set_facecolor("#ffffff")
                     if jumlah_transaksi.iloc[i-1,0]=="TOTAL":
-                        cell.set_text_props(weight="bold", color="darkred"); cell.set_facecolor("#e6e6e6")
-            buf = io.BytesIO(); fig_tbl.savefig(buf, format="PNG", dpi=300, bbox_inches="tight", transparent=True)
-            buf.seek(0); plt.close(fig_tbl)
-            tbl_img = Image.open(buf).convert("RGBA"); max_width = int(W*0.40)
+                        cell.set_text_props(weight="bold", color="darkred")
+                        cell.set_facecolor("#e6e6e6")
+            buf = io.BytesIO()
+            fig_tbl.savefig(buf, format="PNG", dpi=300,
+                            bbox_inches="tight", transparent=True)
+            buf.seek(0)
+            plt.close(fig_tbl)
+            tbl_img = Image.open(buf).convert("RGBA")
+            max_width = int(W*0.40)
             scale = max_width / tbl_img.width
-            tbl_img = tbl_img.resize((int(tbl_img.width*scale), int(tbl_img.height*scale)), Image.Resampling.LANCZOS)
+            tbl_img = tbl_img.resize(
+                (int(tbl_img.width*scale),
+                 int(tbl_img.height*scale)),
+                Image.Resampling.LANCZOS
+            )
             pos_y = pos_y_trans + (trans_img.height if trans_img else 0) + 20
             bg.paste(tbl_img, (150, pos_y), tbl_img)
-        except Exception as e: print("⚠️ Gagal render tabel jumlah transaksi:", e)
+        except Exception as e:
+            print("⚠️ Gagal render tabel jumlah transaksi:", e)
 
-        # 3. Footer
+        # Footer
         bg.paste(footer_img, (0, footer_y), footer_img)
 
-        # 4. Captain Ferizy
+        # Captain Ferizy
         ferizy_path = os.path.join(os.path.dirname(__file__), "Captain Ferizy.png")
         ferizy_img = Image.open(ferizy_path).convert("RGBA")
         scale = (footer_img.height*2) / ferizy_img.height
-        ferizy_img = ferizy_img.resize((int(ferizy_img.width*scale), int(ferizy_img.height*scale)), Image.Resampling.LANCZOS)
+        ferizy_img = ferizy_img.resize(
+            (int(ferizy_img.width*scale),
+             int(ferizy_img.height*scale)),
+            Image.Resampling.LANCZOS
+        )
         pos_x = W - ferizy_img.width
         pos_y = H - ferizy_img.height
         bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
 
-        # 5. Transformation (depan footer, kiri bawah)
+        # Transformation (kiri bawah)
         Transformation_path = os.path.join(os.path.dirname(__file__), "Transformation.png")
         Transformation_img = Image.open(Transformation_path).convert("RGBA")
         scale = (footer_img.height*0.35) / Transformation_img.height
-        Transformation_img = Transformation_img.resize((int(Transformation_img.width*scale), int(Transformation_img.height*scale)), Image.Resampling.LANCZOS)
-        bg.paste(Transformation_img, (0, H - Transformation_img.height - 40), Transformation_img)
+        Transformation_img = Transformation_img.resize(
+            (int(Transformation_img.width*scale),
+             int(Transformation_img.height*scale)),
+            Image.Resampling.LANCZOS
+        )
+        bg.paste(Transformation_img,
+                 (0, H - Transformation_img.height - 40),
+                 Transformation_img)
 
-        # 6. Quotes Motivasi (speech bubble, di atas Ferizy)
+        # Quotes Motivasi (bubble, di atas Ferizy)
         try:
             quotes_list = [
                 "Tetap semangat, kerja tuntas kerja ikhlas!",
@@ -746,53 +895,56 @@ def generate_poster_A4(
             except:
                 font_quote = ImageFont.load_default()
 
-            # Wrap text
+            # Bungkus teks
             max_quote_width = int(W*0.4)
-            words = quote.split(" "); lines=[]; line=""
+            words = quote.split(" ")
+            lines=[]; line=""
             for w in words:
                 test_line = line+w+" "
-                tw, th = draw.textsize(test_line,font=font_quote)
-                if tw <= max_quote_width: line = test_line
-                else: lines.append(line.strip()); line = w+" "
+                tw,th = draw.textsize(test_line,font=font_quote)
+                if tw <= max_quote_width:
+                    line = test_line
+                else:
+                    lines.append(line.strip()); line = w+" "
             lines.append(line.strip())
             text_h = len(lines)*(font_quote.size+10)
 
-            # Bubble size & position (di atas Ferizy, ke kiri sedikit)
+            # Bubble posisi (relatif Ferizy)
             bubble_w = max_quote_width+60
             bubble_h = text_h+60
-            bubble_x = pos_x - bubble_w - 40  # kiri Ferizy
-            bubble_y = pos_y - bubble_h - 40  # di atas Ferizy
+            bubble_x = pos_x - bubble_w - 40
+            bubble_y = pos_y - bubble_h - 40
 
             bubble_overlay = Image.new("RGBA", bg.size, (255,255,255,0))
             bubble_draw = ImageDraw.Draw(bubble_overlay)
-
-            # Bubble utama
             bubble_draw.rounded_rectangle(
                 (bubble_x,bubble_y,bubble_x+bubble_w,bubble_y+bubble_h),
                 radius=40, fill=(255,255,255,230), outline="black", width=4
             )
-
-            # Tail (arah ke Ferizy)
             tail=[(bubble_x+bubble_w-80,bubble_y+bubble_h),
                   (bubble_x+bubble_w-20,bubble_y+bubble_h),
                   (pos_x+ferizy_img.width//2,pos_y+40)]
             bubble_draw.polygon(tail, fill=(255,255,255,230), outline="black")
 
-            # Composite bubble
             bg = Image.alpha_composite(bg.convert("RGBA"), bubble_overlay)
             draw = ImageDraw.Draw(bg)
 
-            # Tulis teks di bubble
+            # Isi teks
             ty = bubble_y+30
             for line in lines:
-                tw, th = draw.textsize(line,font=font_quote)
+                tw,th = draw.textsize(line,font=font_quote)
                 tx = bubble_x+(bubble_w-tw)//2
                 draw.text((tx,ty), line, font=font_quote, fill="black")
                 ty+=font_quote.size+10
         except Exception as e:
             print("⚠️ Gagal render quotes:", e)
 
-    out = io.BytesIO(); bg.save(out, format="PNG"); out.seek(0)
+    except Exception as e:
+        print("⚠️ Gagal render Footer/Ferizy/Transformation:", e)
+
+    out = io.BytesIO()
+    bg.save(out, format="PNG")
+    out.seek(0)
     return out
 
 # ==========================================================
