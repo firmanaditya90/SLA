@@ -743,7 +743,7 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
             fill="black",
             width=15
         )
-        bg = Image.alpha_composite(overlay, bg)
+        bg = Image.alpha_composite(bg, overlay)
 
         # 2. Footer di atas garis
         bg.paste(footer_img, (0, footer_y), footer_img)
