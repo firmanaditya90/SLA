@@ -516,6 +516,7 @@ def generate_poster_A4(
     df_filtered, periode_col, selected_periode
 ):
     W, H = 2480, 3508
+        print(">>> FUNGSI generate_poster_A4 yang aktif <<<")
 
     # ---------- Gradient Background (biru → putih) ----------
     bg = Image.new("RGB", (W, H))
