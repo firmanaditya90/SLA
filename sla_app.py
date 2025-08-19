@@ -508,7 +508,7 @@ def seconds_to_sla_format(seconds):
 periode_info_text = f"Periode dari {start_periode} sampai {end_periode}"
 
 # ==========================================================
-# Poster A4 Generator
+# Poster A4 Generator (Gradient BG + Glassmorphism Card)
 # ==========================================================
 def generate_poster_A4(
     sla_text_dict, rata_proses_seconds, df_proses,
@@ -516,7 +516,16 @@ def generate_poster_A4(
     df_filtered, periode_col, selected_periode
 ):
     W, H = 2480, 3508
-    bg = Image.new("RGB", (W, H), "white")
+
+    # ---------- Gradient Background (biru → putih) ----------
+    bg = Image.new("RGB", (W, H))
+    draw_bg = ImageDraw.Draw(bg)
+    for y in range(H):
+        r = int(255 - (y / H) * 55)   # putih → biru lembut
+        g = int(255 - (y / H) * 100)
+        b = int(255 - (y / H) * 155)
+        draw_bg.line([(0, y), (W, y)], fill=(r, g, b))
+
     draw = ImageDraw.Draw(bg)
 
     # ---------- Logo ASDP ----------
@@ -637,18 +646,28 @@ def generate_poster_A4(
     except Exception as e:
         print("Gagal render tabel SLA:", e)
 
-    # ---------- Card Background ----------
+    # ---------- Glassmorphism Card ----------
     card_margin_x = 80
     card_top = line_y + 20
     content_height = max(chart_img.height if chart_img else 0, table_img.height if table_img else 0)
     card_bottom = card_top + content_height + 80
-    overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
-    overlay_draw = ImageDraw.Draw(overlay)
+    card_box = (card_margin_x, card_top, W - card_margin_x, card_bottom)
+
+    # Blur background dalam area card
+    region = bg.crop(card_box).filter(ImageFilter.GaussianBlur(20))
+    bg.paste(region, card_box)
+
+    # Semi transparan overlay
+    card_overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
+    overlay_draw = ImageDraw.Draw(card_overlay)
     overlay_draw.rounded_rectangle(
-        (card_margin_x, card_top, W - card_margin_x, card_bottom),
-        radius=40, outline="gray", width=5, fill=(240, 240, 240, 180)
+        card_box,
+        radius=40,
+        outline=(255, 255, 255, 200),
+        width=4,
+        fill=(255, 255, 255, 100)
     )
-    bg = Image.alpha_composite(bg.convert("RGBA"), overlay)
+    bg = Image.alpha_composite(bg.convert("RGBA"), card_overlay)
     draw = ImageDraw.Draw(bg)
 
     if chart_img:
@@ -658,9 +677,7 @@ def generate_poster_A4(
     if table_img:
         pos_x = W - table_img.width - card_margin_x - 50
         pos_y = card_top + 40
-        bg.paste(table_img, (pos_x, pos_y), table_img)
-
-    # ---------- Kemudi + On Target ----------
+        bg.paste(table_img, (pos_x, pos_y), table_img)    # ---------- Kemudi + On Target ----------
     try:
         kemudi_path = os.path.join(os.path.dirname(__file__), "Kemudi.png")
         kemudi_img = Image.open(kemudi_path).convert("RGBA")
