@@ -829,86 +829,69 @@ def generate_poster_A4(
     # ---------- Quotes Motivasi ----------
 import random
 from PIL import Image, ImageDraw, ImageFont
-import textwrap
 import os
+import textwrap
 
-# Contoh background
+# ===== Background =====
 W, H = 1200, 1600
 bg = Image.new("RGB", (W, H), "lightblue")
 
-try:
-    draw = ImageDraw.Draw(bg)
+# ===== Quotes =====
+quotes_list = [
+    "Tetap semangat, kerja tuntas kerja ikhlas!",
+    "Sukses berawal dari disiplin kecil setiap hari.",
+    "Inovasi dimulai dari keberanian mencoba.",
+    "Kerja tim membuat beban jadi ringan!",
+    "Setiap tantangan adalah peluang.",
+    "Tidak ada proses yang sia-sia.",
+    "Kerja keras mengalahkan bakat ketika bakat malas.",
+    "Fokus pada solusi, bukan masalah.",
+    "Hari ini lebih baik dari kemarin.",
+    "Target tercapai, semangat tetap terjaga!"
+]
+quote = random.choice(quotes_list)
 
-    quotes_list = [
-        "Tetap semangat, kerja tuntas kerja ikhlas!",
-        "Sukses berawal dari disiplin kecil setiap hari.",
-        "Inovasi dimulai dari keberanian mencoba.",
-        "Kerja tim membuat beban jadi ringan!",
-        "Setiap tantangan adalah peluang.",
-        "Tidak ada proses yang sia-sia.",
-        "Kerja keras mengalahkan bakat ketika bakat malas.",
-        "Fokus pada solusi, bukan masalah.",
-        "Hari ini lebih baik dari kemarin.",
-        "Target tercapai, semangat tetap terjaga!"
-    ]
-    quote = random.choice(quotes_list)
+# ===== Font =====
+font_path = os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf")
+font_size = 40
+font_quote = ImageFont.truetype(font_path, font_size)
 
-    font_path = os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf")
-    font_size = 50
-    font_quote = ImageFont.truetype(font_path, font_size)
+# ===== Bubble =====
+bubble_w, bubble_h = 900, 300
+bubble_x, bubble_y = W - bubble_w - 50, H - bubble_h - 100  # relatif dari kanan bawah
 
-    # Bubble coordinates
-    bubble_x, bubble_y, bubble_w, bubble_h = 150, 1000, 900, 300
+bubble_layer = Image.new("RGBA", bg.size, (255,255,255,0))
+bubble_draw = ImageDraw.Draw(bubble_layer)
+bubble_draw.rounded_rectangle(
+    (bubble_x, bubble_y, bubble_x+bubble_w, bubble_y+bubble_h),
+    radius=40, fill=(255,255,255,230), outline="black", width=4
+)
 
-    # Draw bubble with tail
-    bubble_layer = Image.new("RGBA", bg.size, (255,255,255,0))
-    bubble_draw = ImageDraw.Draw(bubble_layer)
-    bubble_draw.rounded_rectangle(
-        (bubble_x, bubble_y, bubble_x+bubble_w, bubble_y+bubble_h),
-        radius=40, fill=(255,255,255,230), outline="black", width=4
-    )
+tail = [
+    (bubble_x+bubble_w-80, bubble_y+bubble_h),
+    (bubble_x+bubble_w-20, bubble_y+bubble_h),
+    (W-220, H-320)
+]
+bubble_draw.polygon(tail, fill=(255,255,255,230), outline="black")
+bg.paste(bubble_layer, (0,0), bubble_layer)
 
-    tail = [
-        (bubble_x+bubble_w-80, bubble_y+bubble_h),
-        (bubble_x+bubble_w-20, bubble_y+bubble_h),
-        (W-220, H-320)
-    ]
-    bubble_draw.polygon(tail, fill=(255,255,255,230), outline="black")
-    bg.paste(bubble_layer, (0,0), bubble_layer)
+# ===== Textbox =====
+draw = ImageDraw.Draw(bg)
+padding = 20
+max_width = bubble_w - padding*2
 
-    # ===== Textbox style =====
-    padding = 20
-    max_width = bubble_w - padding*2
+# wrap teks
+lines = textwrap.wrap(quote, width=30)  # 30 karakter per line kira-kira
+y_text = bubble_y + padding
+for line in lines:
+    w, h = draw.textsize(line, font=font_quote)
+    x_text = bubble_x + (bubble_w - w)//2
+    draw.text((x_text, y_text), line, font=font_quote, fill="black")
+    y_text += h + 10  # spacing antar line
 
-    # Wrap text otomatis sesuai bubble
-    words = quote.split()
-    lines = []
-    line = ""
-    for word in words:
-        test_line = line + (" " if line else "") + word
-        w, h = draw.textsize(test_line, font=font_quote)
-        if w <= max_width:
-            line = test_line
-        else:
-            lines.append(line)
-            line = word
-    if line:
-        lines.append(line)
-
-    # Gambarkan teks dalam bubble
-    y_text = bubble_y + padding
-    for line in lines:
-        w, h = draw.textsize(line, font=font_quote)
-        x_text = bubble_x + (bubble_w - w)//2  # center horizontal
-        draw.text((x_text, y_text), line, font=font_quote, fill="black")
-        y_text += h + 10  # line spacing
-
-    print("✅ Quotes rendered:", quote)
-except Exception as e:
-    print("⚠️ Gagal render quotes:", e)
-
-# Preview
+print("✅ Quotes rendered:", quote)
 bg.show()
+)
 
     
  out = io.BytesIO()
