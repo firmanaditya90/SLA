@@ -879,7 +879,7 @@ def generate_poster_A4(
     except Exception as e:   # <== ini penutup try besar (Footer/Ferizy/Transformation)
         print("⚠️ Gagal render Footer/Ferizy/Transformation:", e)
 
-    # ---------- Quotes Motivasi (Speech Bubble di atas Ferizy) ----------
+    # ---------- Quotes Motivasi (Speech Bubble fix) ----------
     try:
         quotes_list = [
             "Tetap semangat, kerja tuntas kerja ikhlas!",
@@ -901,7 +901,7 @@ def generate_poster_A4(
         except:
             font_quote = ImageFont.load_default()
 
-        # Bungkus teks agar tidak kepanjangan
+        # Bungkus teks
         max_quote_width = int(W * 0.4)
         words = quote.split(" ")
         lines, line = [], ""
@@ -916,40 +916,40 @@ def generate_poster_A4(
         lines.append(line.strip())
         text_h = len(lines) * (font_quote.size + 10)
 
-        # Bubble ukuran & posisi (relatif Ferizy di kanan bawah)
+        # Bubble ukuran & posisi (fix: kanan bawah, di atas footer)
         bubble_w = max_quote_width + 60
         bubble_h = text_h + 60
-        bubble_x = W - bubble_w - 200    # agak ke kanan
-        bubble_y = H - (footer_img.height if 'footer_img' in locals() else 300) \
-                      - (ferizy_img.height if 'ferizy_img' in locals() else 400) \
-                      - bubble_h - 50
+        bubble_x = W - bubble_w - 200   # rata kanan
+        bubble_y = H - bubble_h - 400   # 400px dari bawah
+
+        print("DEBUG QUOTES POS:", bubble_x, bubble_y, bubble_w, bubble_h)
 
         bubble_overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
         bubble_draw = ImageDraw.Draw(bubble_overlay)
 
-        # Bubble utama (putih transparan elegan)
+        # Bubble utama (kuning debug supaya jelas kelihatan)
         bubble_draw.rounded_rectangle(
             (bubble_x, bubble_y, bubble_x+bubble_w, bubble_y+bubble_h),
             radius=40,
-            fill=(255, 255, 255, 230),
+            fill=(255, 255, 150, 230),
             outline="black",
-            width=3
+            width=4
         )
 
-        # Tail segitiga mengarah ke Ferizy (kepalanya)
+        # Tail segitiga (ke arah kanan bawah)
         tail = [
             (bubble_x+bubble_w-80, bubble_y+bubble_h),
             (bubble_x+bubble_w-20, bubble_y+bubble_h),
-            (W-200, H - (footer_img.height if 'footer_img' in locals() else 300) - 120)
+            (W-200, H-300)
         ]
-        bubble_draw.polygon(tail, fill=(255, 255, 255, 230), outline="black")
+        bubble_draw.polygon(tail, fill=(255, 255, 150, 230), outline="black")
 
-        # Composite ke background
+        # Composite
         bg = bg.convert("RGBA")
         bg = Image.alpha_composite(bg, bubble_overlay)
         draw = ImageDraw.Draw(bg)
 
-        # Tulis teks di dalam bubble
+        # Isi teks
         ty = bubble_y + 30
         for line in lines:
             tw, th = draw.textsize(line, font=font_quote)
