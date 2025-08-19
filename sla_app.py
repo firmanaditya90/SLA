@@ -825,6 +825,7 @@ def generate_poster_A4(
 
     except Exception as e:
         print("⚠️ Gagal render Footer/Ferizy/Transformation:", e)
+        
     # ---------- Quotes Motivasi ----------
     try:
         draw = ImageDraw.Draw(bg)  # refresh context
@@ -862,15 +863,14 @@ def generate_poster_A4(
             (W-220, H-320)
         ]
         bubble_draw.polygon(tail, fill=(255,255,255,230), outline="black")
-        # Composite ke bg
-            bg = Image.alpha_composite(bg, bubble_overlay)
-            draw = ImageDraw.Draw(bg)
+
         bg.paste(bubble_layer, (0,0), bubble_layer)
 
         draw.text((bubble_x+40, bubble_y+100), quote, font=font_quote, fill="black")
 
         print("✅ Quotes rendered:", quote)
     except Exception as e:
+        
         print("⚠️ Gagal render quotes:", e)
 
 
