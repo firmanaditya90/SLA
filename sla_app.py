@@ -84,6 +84,9 @@ def load_data(file_path):
 # ==============================
 # Styling: CSS untuk look modern (TIDAK DIUBAH)
 # ==============================
+# ==============================
+# KPI Ringkasan (Modern + Sparkline)
+# ==============================
 st.markdown("## 📈 Ringkasan")
 
 c1, c2, c3, c4 = st.columns(4)
@@ -91,7 +94,7 @@ c1, c2, c3, c4 = st.columns(4)
 # 1. Jumlah Transaksi
 with c1:
     transaksi_trend = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().tolist()
-    spark = render_sparkline(transaksi_trend, color="#ff9f7f") if transaksi_trend else ""
+    spark = render_sparkline(transaksi_trend, color="#ff9f7f")
     st.markdown(f"""
         <div class="summary-card">
             <div class="summary-icon">🧾</div>
@@ -106,11 +109,14 @@ with c2:
     if "TOTAL WAKTU" in available_sla_cols and len(df_filtered) > 0:
         avg_total = float(df_filtered["TOTAL WAKTU"].mean())
         avg_total_text = seconds_to_sla_format(avg_total)
-        total_trend = (df_filtered.groupby(df_filtered[periode_col].astype(str))["TOTAL WAKTU"].mean() / 86400).round(2).tolist()
+        total_trend = (
+            df_filtered.groupby(df_filtered[periode_col].astype(str))["TOTAL WAKTU"]
+            .mean() / 86400
+        ).round(2).tolist()
     else:
         avg_total_text = "-"
         total_trend = []
-    spark = render_sparkline(total_trend, color="#9467bd") if total_trend else ""
+    spark = render_sparkline(total_trend, color="#9467bd")
     st.markdown(f"""
         <div class="summary-card">
             <div class="summary-icon">⏱️</div>
@@ -132,10 +138,13 @@ with c3:
                 fastest_label = c
 
     if fastest_label != "-" and fastest_label in available_sla_cols:
-        fastest_trend = (df_filtered.groupby(df_filtered[periode_col].astype(str))[fastest_label].mean() / 86400).round(2).tolist()
+        fastest_trend = (
+            df_filtered.groupby(df_filtered[periode_col].astype(str))[fastest_label]
+            .mean() / 86400
+        ).round(2).tolist()
     else:
         fastest_trend = []
-    spark = render_sparkline(fastest_trend, color="#00c6ff") if fastest_trend else ""
+    spark = render_sparkline(fastest_trend, color="#00c6ff")
     st.markdown(f"""
         <div class="summary-card">
             <div class="summary-icon">⚡</div>
@@ -147,11 +156,14 @@ with c3:
 
 # 4. Kualitas Periode
 with c4:
-    valid_ratio = (df_filtered[periode_col].notna().mean() * 100.0) if len(df_filtered) > 0 else 0.0
+    valid_ratio = (
+        df_filtered[periode_col].notna().mean() * 100.0
+    ) if len(df_filtered) > 0 else 0.0
     valid_trend = []
     if len(df_filtered) > 0:
-        valid_trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[periode_col].apply(lambda x: x.notna().mean() * 100).tolist()
-    spark = render_sparkline(valid_trend, color="#00ff9d") if valid_trend else ""
+        valid_trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[periode_col] \
+            .apply(lambda x: x.notna().mean() * 100).tolist()
+    spark = render_sparkline(valid_trend, color="#00ff9d")
     st.markdown(f"""
         <div class="summary-card">
             <div class="summary-icon">✅</div>
