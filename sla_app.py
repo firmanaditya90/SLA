@@ -85,6 +85,39 @@ def load_data(file_path):
 # ==============================
 st.markdown("""
 <style>
+/* Ringkasan Cards */
+.summary-card {
+  background: rgba(25, 30, 55, 0.55);
+  border-radius: 18px;
+  padding: 18px 20px;
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+  backdrop-filter: blur(10px);
+  text-align: center;
+  transition: all 0.25s ease;
+}
+.summary-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+}
+.summary-icon {
+  font-size: 28px;
+  margin-bottom: 6px;
+  opacity: 0.9;
+}
+.summary-label {
+  font-size: 13px;
+  text-transform: uppercase;
+  opacity: 0.7;
+  margin-bottom: 2px;
+}
+.summary-value {
+  font-size: 26px;
+  font-weight: 800;
+  background: linear-gradient(90deg, #00eaff, #00ff9d);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
 /* Modern KPI Cards */
 .kpi-card {
   background: rgba(20, 25, 45, 0.55);
@@ -372,34 +405,101 @@ with st.status("⏱️ Memproses kolom SLA setelah filter...", expanded=False) a
         df_filtered[col] = df_filtered[col].apply(parse_sla)
     status.update(label="✅ Parsing SLA selesai", state="complete")
 
+import io, base64
+
+def render_sparkline(data, width=180, height=60, color="#00eaff"):
+    """Render sparkline sederhana (line chart kecil) sebagai PNG base64"""
+    if not data or len(data) == 0:
+        return ""
+    fig, ax = plt.subplots(figsize=(width/100, height/100))
+    ax.plot(data, color=color, linewidth=2, marker='o', markersize=3)
+    ax.set_facecolor("none")
+    ax.axis('off')
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", transparent=True)
+    buf.seek(0)
+    plt.close(fig)
+    return f"data:image/png;base64,{base64.b64encode(buf.read()).decode()}"
+
 # ==============================
 # KPI Ringkasan (TIDAK DIUBAH)
 # ==============================
 st.markdown("## 📈 Ringkasan")
-k1, k2, k3, k4 = st.columns(4)
-with k1:
-    st.markdown('<div class="card kpi"><div class="label">Jumlah Transaksi</div><div class="value">{:,}</div></div>'.format(len(df_filtered)), unsafe_allow_html=True)
-with k2:
+
+c1, c2, c3, c4 = st.columns(4)
+
+# 1. Jumlah Transaksi
+with c1:
+    transaksi_trend = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().tolist()
+    spark = render_sparkline(transaksi_trend, color="#ff9f7f")
+    st.markdown(f"""
+        <div class="summary-card">
+            <div class="summary-icon">🧾</div>
+            <div class="summary-label">Jumlah Transaksi</div>
+            <div class="summary-value">{len(df_filtered):,}</div>
+            {'<img src="'+spark+'" width="100%"/>' if spark else ''}
+        </div>
+    """, unsafe_allow_html=True)
+
+# 2. Rata-rata TOTAL WAKTU
+with c2:
     if "TOTAL WAKTU" in available_sla_cols and len(df_filtered) > 0:
         avg_total = float(df_filtered["TOTAL WAKTU"].mean())
-        st.markdown(f'<div class="card kpi"><div class="label">Rata-rata TOTAL WAKTU</div><div class="value">{seconds_to_sla_format(avg_total)}</div></div>', unsafe_allow_html=True)
+        avg_total_text = seconds_to_sla_format(avg_total)
+        total_trend = (df_filtered.groupby(df_filtered[periode_col].astype(str))["TOTAL WAKTU"].mean() / 86400).round(2).tolist()
     else:
-        st.markdown('<div class="card kpi"><div class="label">Rata-rata TOTAL WAKTU</div><div class="value">-</div></div>', unsafe_allow_html=True)
-with k3:
+        avg_total_text = "-"
+        total_trend = []
+    spark = render_sparkline(total_trend, color="#9467bd")
+    st.markdown(f"""
+        <div class="summary-card">
+            <div class="summary-icon">⏱️</div>
+            <div class="summary-label">Rata-rata TOTAL WAKTU</div>
+            <div class="summary-value">{avg_total_text}</div>
+            {'<img src="'+spark+'" width="100%"/>' if spark else ''}
+        </div>
+    """, unsafe_allow_html=True)
+
+# 3. Proses Tercepat
+with c3:
     fastest_label = "-"
     fastest_value = None
     for c in [x for x in available_sla_cols if x != "TOTAL WAKTU"]:
         val = df_filtered[c].mean()
         if val is not None and not (isinstance(val, float) and math.isnan(val)):
             if fastest_value is None or val < fastest_value:
-                fastest_value = val; fastest_label = c
-    st.markdown(f'<div class="card kpi"><div class="label">Proses Tercepat</div><div class="value">{fastest_label}</div></div>', unsafe_allow_html=True)
-with k4:
+                fastest_value = val
+                fastest_label = c
+
+    if fastest_label != "-" and fastest_label in available_sla_cols:
+        fastest_trend = (df_filtered.groupby(df_filtered[periode_col].astype(str))[fastest_label].mean() / 86400).round(2).tolist()
+    else:
+        fastest_trend = []
+    spark = render_sparkline(fastest_trend, color="#00c6ff")
+    st.markdown(f"""
+        <div class="summary-card">
+            <div class="summary-icon">⚡</div>
+            <div class="summary-label">Proses Tercepat</div>
+            <div class="summary-value">{fastest_label}</div>
+            {'<img src="'+spark+'" width="100%"/>' if spark else ''}
+        </div>
+    """, unsafe_allow_html=True)
+
+# 4. Kualitas Periode
+with c4:
     valid_ratio = (df_filtered[periode_col].notna().mean() * 100.0) if len(df_filtered) > 0 else 0.0
-    st.markdown(f'<div class="card kpi"><div class="label">Kualitas Periode (Valid)</div><div class="value">{valid_ratio:.1f}%</div></div>', unsafe_allow_html=True)
-
-st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
-
+    valid_trend = []
+    if len(df_filtered) > 0:
+        valid_trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[periode_col].apply(lambda x: x.notna().mean() * 100).tolist()
+    spark = render_sparkline(valid_trend, color="#00ff9d")
+    st.markdown(f"""
+        <div class="summary-card">
+            <div class="summary-icon">✅</div>
+            <div class="summary-label">Kualitas Periode (Valid)</div>
+            <div class="summary-value">{valid_ratio:.1f}%</div>
+            {'<img src="'+spark+'" width="100%"/>' if spark else ''}
+        </div>
+    """, unsafe_allow_html=True)
 # ==============================
 # Tabs untuk konten (TIDAK DIUBAH)
 # ==============================
