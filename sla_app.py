@@ -1,6 +1,7 @@
 # =========================================
 # app.py — SLA Payment Analyzer + Poster A4
 # =========================================
+
 import streamlit as st
 import pandas as pd
 import re
@@ -12,24 +13,6 @@ import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
 import requests
-import json
-
-KPI_FILE = os.path.join("data", "kpi_target.json")
-
-def load_kpi():
-    if os.path.exists(KPI_FILE):
-        try:
-            with open(KPI_FILE, "r") as f:
-                return json.load(f).get("target_kpi", None)
-        except:
-            return None
-    return None
-
-def save_kpi(value):
-    os.makedirs("data", exist_ok=True)
-    with open(KPI_FILE, "w") as f:
-        json.dump({"target_kpi": value}, f)
-
 
 def format_duration(seconds):
     """Convert detik jadi 'xx hari xx jam xx menit xx detik'"""
@@ -84,96 +67,52 @@ def load_data(file_path):
 # ==============================
 # Styling: CSS untuk look modern (TIDAK DIUBAH)
 # ==============================
-# ==============================
-# KPI Ringkasan (Modern + Sparkline)
-# ==============================
-if "df_filtered" in locals() and df_filtered is not None and len(df_filtered) > 0:
+st.markdown("""
+<style>
+/* Hero gradient title */
+.hero {
+  text-align: center;
+  padding: 12px 0 6px 0;
+}
+.hero h1 {
+  margin: 0;
+  background: linear-gradient(90deg, #00BFFF 0%, #7F7FD5 50%, #86A8E7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+.hero p {
+  opacity: 0.85;
+  margin: 8px 0 0 0;
+}
+/* Glass cards */
+.card {
+  background: rgba(255,255,255,0.06);
+  border-radius: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.12);
+}
+.kpi {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.kpi .label { font-size: 12px; opacity: 0.7; }
+.kpi .value { font-size: 22px; font-weight: 700; }
+.small {
+  font-size: 12px; opacity: 0.75;
+}
+hr.soft { border: none; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent); margin: 10px 0 14px 0; }
+</style>
+""", unsafe_allow_html=True)
 
-    st.markdown("## 📈 Ringkasan")
-    c1, c2, c3, c4 = st.columns(4)
+st.markdown("""
+<div class="hero">
+<h1 class="hero">🚢 SLA Payment Analyzer</h1>
+  <p>Dashboard modern untuk melihat & menganalisis SLA dokumen penagihan</p>
+</div>
+""", unsafe_allow_html=True)
 
-    # 1. Jumlah Transaksi
-    with c1:
-        transaksi_trend = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().tolist()
-        spark = render_sparkline(transaksi_trend, color="#ff9f7f")
-        st.markdown(f"""
-            <div class="summary-card">
-                <div class="summary-icon">🧾</div>
-                <div class="summary-label">Jumlah Transaksi</div>
-                <div class="summary-value">{len(df_filtered):,}</div>
-                {'<img src="'+spark+'" width="100%"/>' if spark else ''}
-            </div>
-        """, unsafe_allow_html=True)
-
-    # 2. Rata-rata TOTAL WAKTU
-    with c2:
-        if "TOTAL WAKTU" in available_sla_cols:
-            avg_total = float(df_filtered["TOTAL WAKTU"].mean())
-            avg_total_text = seconds_to_sla_format(avg_total)
-            total_trend = (
-                df_filtered.groupby(df_filtered[periode_col].astype(str))["TOTAL WAKTU"]
-                .mean() / 86400
-            ).round(2).tolist()
-        else:
-            avg_total_text = "-"
-            total_trend = []
-        spark = render_sparkline(total_trend, color="#9467bd")
-        st.markdown(f"""
-            <div class="summary-card">
-                <div class="summary-icon">⏱️</div>
-                <div class="summary-label">Rata-rata TOTAL WAKTU</div>
-                <div class="summary-value">{avg_total_text}</div>
-                {'<img src="'+spark+'" width="100%"/>' if spark else ''}
-            </div>
-        """, unsafe_allow_html=True)
-
-    # 3. Proses Tercepat
-    with c3:
-        fastest_label = "-"
-        fastest_value = None
-        for c in [x for x in available_sla_cols if x != "TOTAL WAKTU"]:
-            val = df_filtered[c].mean()
-            if val is not None and not (isinstance(val, float) and math.isnan(val)):
-                if fastest_value is None or val < fastest_value:
-                    fastest_value = val
-                    fastest_label = c
-
-        if fastest_label != "-" and fastest_label in available_sla_cols:
-            fastest_trend = (
-                df_filtered.groupby(df_filtered[periode_col].astype(str))[fastest_label]
-                .mean() / 86400
-            ).round(2).tolist()
-        else:
-            fastest_trend = []
-        spark = render_sparkline(fastest_trend, color="#00c6ff")
-        st.markdown(f"""
-            <div class="summary-card">
-                <div class="summary-icon">⚡</div>
-                <div class="summary-label">Proses Tercepat</div>
-                <div class="summary-value">{fastest_label}</div>
-                {'<img src="'+spark+'" width="100%"/>' if spark else ''}
-            </div>
-        """, unsafe_allow_html=True)
-
-    # 4. Kualitas Periode
-    with c4:
-        valid_ratio = (
-            df_filtered[periode_col].notna().mean() * 100.0
-        )
-        valid_trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[periode_col] \
-            .apply(lambda x: x.notna().mean() * 100).tolist()
-        spark = render_sparkline(valid_trend, color="#00ff9d")
-        st.markdown(f"""
-            <div class="summary-card">
-                <div class="summary-icon">✅</div>
-                <div class="summary-label">Kualitas Periode (Valid)</div>
-                <div class="summary-value">{valid_ratio:.1f}%</div>
-                {'<img src="'+spark+'" width="100%"/>' if spark else ''}
-            </div>
-        """, unsafe_allow_html=True)
-
-else:
-    st.info("⚠️ Data belum tersedia atau filter tidak menghasilkan data.")
 # ==============================
 # Logo di Sidebar (TIDAK DIUBAH)
 # ==============================
@@ -376,62 +315,29 @@ with st.status("⏱️ Memproses kolom SLA setelah filter...", expanded=False) a
 # KPI Ringkasan (TIDAK DIUBAH)
 # ==============================
 st.markdown("## 📈 Ringkasan")
-
-c1, c2, c3, c4 = st.columns(4)
-
-# Jumlah Transaksi
-with c1:
-    st.markdown(f"""
-        <div class="summary-card">
-            <div class="summary-icon">🧾</div>
-            <div class="summary-label">Jumlah Transaksi</div>
-            <div class="summary-value">{len(df_filtered):,}</div>
-        </div>
-    """, unsafe_allow_html=True)
-
-# Rata-rata TOTAL WAKTU
-with c2:
+k1, k2, k3, k4 = st.columns(4)
+with k1:
+    st.markdown('<div class="card kpi"><div class="label">Jumlah Transaksi</div><div class="value">{:,}</div></div>'.format(len(df_filtered)), unsafe_allow_html=True)
+with k2:
     if "TOTAL WAKTU" in available_sla_cols and len(df_filtered) > 0:
         avg_total = float(df_filtered["TOTAL WAKTU"].mean())
-        avg_total_text = seconds_to_sla_format(avg_total)
+        st.markdown(f'<div class="card kpi"><div class="label">Rata-rata TOTAL WAKTU</div><div class="value">{seconds_to_sla_format(avg_total)}</div></div>', unsafe_allow_html=True)
     else:
-        avg_total_text = "-"
-    st.markdown(f"""
-        <div class="summary-card">
-            <div class="summary-icon">⏱️</div>
-            <div class="summary-label">Rata-rata TOTAL WAKTU</div>
-            <div class="summary-value">{avg_total_text}</div>
-        </div>
-    """, unsafe_allow_html=True)
-
-# Proses Tercepat
-with c3:
+        st.markdown('<div class="card kpi"><div class="label">Rata-rata TOTAL WAKTU</div><div class="value">-</div></div>', unsafe_allow_html=True)
+with k3:
     fastest_label = "-"
     fastest_value = None
     for c in [x for x in available_sla_cols if x != "TOTAL WAKTU"]:
         val = df_filtered[c].mean()
         if val is not None and not (isinstance(val, float) and math.isnan(val)):
             if fastest_value is None or val < fastest_value:
-                fastest_value = val
-                fastest_label = c
-    st.markdown(f"""
-        <div class="summary-card">
-            <div class="summary-icon">⚡</div>
-            <div class="summary-label">Proses Tercepat</div>
-            <div class="summary-value">{fastest_label}</div>
-        </div>
-    """, unsafe_allow_html=True)
-
-# Kualitas Periode
-with c4:
+                fastest_value = val; fastest_label = c
+    st.markdown(f'<div class="card kpi"><div class="label">Proses Tercepat</div><div class="value">{fastest_label}</div></div>', unsafe_allow_html=True)
+with k4:
     valid_ratio = (df_filtered[periode_col].notna().mean() * 100.0) if len(df_filtered) > 0 else 0.0
-    st.markdown(f"""
-        <div class="summary-card">
-            <div class="summary-icon">✅</div>
-            <div class="summary-label">Kualitas Periode (Valid)</div>
-            <div class="summary-value">{valid_ratio:.1f}%</div>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f'<div class="card kpi"><div class="label">Kualitas Periode (Valid)</div><div class="value">{valid_ratio:.1f}%</div></div>', unsafe_allow_html=True)
+
+st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
 
 # ==============================
 # Tabs untuk konten (TIDAK DIUBAH)
@@ -439,144 +345,11 @@ with c4:
 tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_report = st.tabs(
     ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi", "📥 Download Report"]
 )
+
 with tab_overview:
-    st.subheader("📊 KPI Verifikasi Dokumen Penagihan")
+    st.subheader("📄 Sampel Data (50 baris)")
+    st.dataframe(df_filtered.head(50), use_container_width=True)
 
-    # Hitung rata-rata SLA Keuangan
-    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
-        avg_keu_seconds = df_filtered["KEUANGAN"].mean()
-        avg_keu_days = round(avg_keu_seconds / 86400, 2)  # format desimal hari
-        avg_keu_text = seconds_to_sla_format(avg_keu_seconds)  # format hari jam menit detik
-    else:
-        avg_keu_seconds = None
-        avg_keu_days = None
-        avg_keu_text = "-"
-
-    # Load target KPI dari file
-    saved_kpi = load_kpi()
-
-    # Input Target KPI (hanya admin)
-    if is_admin:
-        st.markdown("### 🎯 Atur Target KPI (Admin Only)")
-        new_kpi = st.number_input(
-            "Target KPI (hari, desimal)", 
-            min_value=0.0, step=0.1,
-            value=saved_kpi if saved_kpi else 1.5,
-            key="target_kpi_input"
-        )
-        if st.button("💾 Simpan Target KPI"):
-            save_kpi(new_kpi)
-            st.success(f"Target KPI berhasil disimpan: {new_kpi} hari")
-            saved_kpi = new_kpi
-    else:
-        if saved_kpi is None:
-            st.info("Belum ada Target KPI yang ditentukan admin.")
-
-    # Layout 3 kolom KPI
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.markdown(f"""
-            <div class="kpi-card">
-                <div class="kpi-label">Target KPI Verifikasi Dokumen</div>
-                <div class="kpi-value">{saved_kpi if saved_kpi else "-" } hari</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with col2:
-        st.markdown(f"""
-            <div class="kpi-card">
-                <div class="kpi-label">Pencapaian</div>
-                <div class="kpi-value">{avg_keu_text}</div>
-                <div class="kpi-sub">({avg_keu_days if avg_keu_days is not None else "-"} hari)</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with col3:
-        if saved_kpi and avg_keu_days is not None:
-            if avg_keu_days <= saved_kpi:
-                st.markdown("""
-                    <div class="kpi-card">
-                        <div class="kpi-label">Status</div>
-                        <div class="kpi-status-on">✅ ON TARGET</div>
-                    </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown("""
-                    <div class="kpi-card">
-                        <div class="kpi-label">Status</div>
-                        <div class="kpi-status-off">❌ NOT ON TARGET</div>
-                    </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.markdown("""
-                <div class="kpi-card">
-                    <div class="kpi-label">Status</div>
-                    <div class="kpi-value">-</div>
-                </div>
-            """, unsafe_allow_html=True)
-    # ==============================
-    # Tabel Rata-rata SLA Keuangan per Periode (wide format)
-    # ==============================
-    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
-        st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
-        st.subheader("📊 Tabel Rata-rata SLA Keuangan (Hari) per Periode")
-
-        # Hitung rata-rata per periode
-        trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
-        trend_keu["PERIODE_SORTED"] = pd.Categorical(trend_keu[periode_col], categories=selected_periode, ordered=True)
-        trend_keu = trend_keu.sort_values("PERIODE_SORTED")
-
-        # Konversi ke hari desimal
-        trend_keu["Rata-rata SLA (hari)"] = (trend_keu["KEUANGAN"] / 86400).round(2)
-
-        # Bentuk tabel wide format
-        table_data = pd.DataFrame(
-            [trend_keu["Rata-rata SLA (hari)"].tolist()],
-            columns=trend_keu[periode_col].tolist(),
-            index=["SLA Verifikasi Dokumen Penagihan"]
-        )
-
-        # Tampilkan tabel dengan styling
-        st.dataframe(table_data.style.format("{:.2f}"), use_container_width=True)
-
-    
-    # ==============================
-    # Grafik SLA Keuangan per Periode (dengan label angka)
-    # ==============================
-    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
-        st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
-        st.subheader("📈 Trend Rata-rata SLA Keuangan per Periode")
-
-        # Hitung rata-rata per periode
-        trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
-        trend_keu["PERIODE_SORTED"] = pd.Categorical(trend_keu[periode_col], categories=selected_periode, ordered=True)
-        trend_keu = trend_keu.sort_values("PERIODE_SORTED")
-
-        # Konversi ke hari desimal
-        trend_keu["Rata-rata SLA (hari)"] = (trend_keu["KEUANGAN"] / 86400).round(2)
-
-        # Plot line chart dengan label di dot
-        fig, ax = plt.subplots(figsize=(10, 5))
-        ax.plot(trend_keu[periode_col], trend_keu["Rata-rata SLA (hari)"], marker='o', color='#1f77b4')
-
-        # Label angka
-        for i, val in enumerate(trend_keu["Rata-rata SLA (hari)"]):
-            ax.text(i, val, f"{val}", ha='center', va='bottom', fontsize=9, color="black", weight="bold")
-
-        ax.set_title("Trend Rata-rata SLA Keuangan per Periode")
-        ax.set_xlabel("Periode")
-        ax.set_ylabel("Rata-rata SLA (hari)")
-        ax.grid(True, linestyle='--', alpha=0.7)
-
-        for label in ax.get_xticklabels():
-            label.set_rotation(45)
-            label.set_ha('right')
-
-        st.pyplot(fig)
-    else:
-        st.info("Tidak ada kolom SLA Keuangan yang bisa ditampilkan.")
-            
 with tab_proses:
     if available_sla_cols:
         st.subheader("📌 Rata-rata SLA per Proses (format hari jam menit detik)")
@@ -622,27 +395,10 @@ with tab_vendor:
 
         if df_vendor_filtered.shape[0] > 0 and available_sla_cols:
             st.subheader("📌 Rata-rata SLA per Vendor")
-
-            # Hitung rata-rata SLA dan jumlah transaksi per vendor
             rata_vendor = df_vendor_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean().reset_index()
-            jumlah_transaksi = df_vendor_filtered.groupby("NAMA VENDOR").size().reset_index(name="Jumlah Transaksi")
-
-            # Gabungkan
-            rata_vendor = pd.merge(jumlah_transaksi, rata_vendor, on="NAMA VENDOR")
-
-            # Konversi SLA detik → format hari/jam/menit
             for col in available_sla_cols:
                 rata_vendor[col] = rata_vendor[col].apply(seconds_to_sla_format)
-
-            # Susun ulang kolom
-            ordered_cols = ["NAMA VENDOR", "Jumlah Transaksi"] + [
-                c for c in rata_vendor.columns if c not in ["NAMA VENDOR", "Jumlah Transaksi"]
-            ]
-            rata_vendor = rata_vendor[ordered_cols]
-
-            # Tampilkan tabel
             st.dataframe(rata_vendor, use_container_width=True)
-
         else:
             st.info("Tidak ada data untuk vendor yang dipilih.")
     else:
