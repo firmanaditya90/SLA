@@ -1136,27 +1136,6 @@ with tab_poster:
     """, unsafe_allow_html=True)
 
     # ==============================
-    # Grafik jumlah transaksi per periode
-    # ==============================
-    transaksi_summary = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name="Jumlah Transaksi")
-
-    if len(transaksi_summary) > 0:
-        fig, ax = plt.subplots(figsize=(6,3))
-        ax.bar(transaksi_summary[periode_col], transaksi_summary["Jumlah Transaksi"], color="#1f77b4")
-        ax.set_xlabel("Periode")
-        ax.set_ylabel("Jumlah Transaksi")
-        ax.set_title("Jumlah Transaksi per Periode")
-        st.pyplot(fig)
-
-        # ==============================
-        # Tabel ringkasan jumlah transaksi
-        # ==============================
-        st.dataframe(transaksi_summary.set_index(periode_col), use_container_width=True)
-    else:
-        st.info("Tidak ada transaksi pada periode yang dipilih.")
-
-    # ==============================
-    # ==============================
 # Generate Poster A4 (Export PNG)
 # ==============================
 if st.button("🎨 Generate Poster A4"):
