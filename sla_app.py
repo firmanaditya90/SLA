@@ -436,6 +436,45 @@ with tab_overview:
                 </div>
             ''', unsafe_allow_html=True)
 
+# ==============================
+    # Rata-rata SLA Keuangan per Periode
+    # ==============================
+    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
+        st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
+        st.subheader("📈 Rata-rata SLA Keuangan per Periode")
+
+        # Hitung rata-rata per periode
+        trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
+        trend_keu["PERIODE_SORTED"] = pd.Categorical(trend_keu[periode_col], categories=selected_periode, ordered=True)
+        trend_keu = trend_keu.sort_values("PERIODE_SORTED")
+
+        # Tambahkan kolom format waktu dan hari desimal
+        trend_keu["Rata-rata SLA (format)"] = trend_keu["KEUANGAN"].apply(seconds_to_sla_format)
+        trend_keu["Rata-rata SLA (hari)"] = (trend_keu["KEUANGAN"] / 86400).round(2)
+
+        # Tampilkan tabel
+        st.dataframe(
+            trend_keu[[periode_col, "Rata-rata SLA (format)", "Rata-rata SLA (hari)"]],
+            use_container_width=True
+        )
+
+        # Tampilkan grafik
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.plot(trend_keu[periode_col], trend_keu["Rata-rata SLA (hari)"], marker='o', color='#1f77b4')
+        ax.set_title("Trend Rata-rata SLA Keuangan per Periode")
+        ax.set_xlabel("Periode")
+        ax.set_ylabel("Rata-rata SLA (hari)")
+        ax.grid(True, linestyle='--', alpha=0.7)
+
+        # Rotasi label periode agar rapi
+        for label in ax.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
+
+        st.pyplot(fig)
+    else:
+        st.info("Tidak ada kolom SLA Keuangan yang bisa ditampilkan.")
+
 with tab_proses:
     if available_sla_cols:
         st.subheader("📌 Rata-rata SLA per Proses (format hari jam menit detik)")
