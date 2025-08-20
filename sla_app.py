@@ -422,7 +422,32 @@ with tab_overview:
                     <div class="kpi-value">-</div>
                 </div>
             """, unsafe_allow_html=True)
+    # ==============================
+    # Tabel Rata-rata SLA Keuangan per Periode (wide format)
+    # ==============================
+    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
+        st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
+        st.subheader("📊 Tabel Rata-rata SLA Keuangan (Hari) per Periode")
 
+        # Hitung rata-rata per periode
+        trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
+        trend_keu["PERIODE_SORTED"] = pd.Categorical(trend_keu[periode_col], categories=selected_periode, ordered=True)
+        trend_keu = trend_keu.sort_values("PERIODE_SORTED")
+
+        # Konversi ke hari desimal
+        trend_keu["Rata-rata SLA (hari)"] = (trend_keu["KEUANGAN"] / 86400).round(2)
+
+        # Bentuk tabel wide format
+        table_data = pd.DataFrame(
+            [trend_keu["Rata-rata SLA (hari)"].tolist()],
+            columns=trend_keu[periode_col].tolist(),
+            index=["SLA Verifikasi Dokumen Penagihan"]
+        )
+
+        # Tampilkan tabel dengan styling
+        st.dataframe(table_data.style.format("{:.2f}"), use_container_width=True)
+
+    
     # ==============================
     # Grafik SLA Keuangan per Periode (dengan label angka)
     # ==============================
