@@ -345,10 +345,8 @@ st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
 tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_report = st.tabs(
     ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi", "📥 Download Report"]
 )
-
 with tab_overview:
     st.subheader("📊 KPI Verifikasi Dokumen Penagihan")
-
     # Hitung rata-rata SLA Keuangan
     if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
         avg_keu_seconds = df_filtered["KEUANGAN"].mean()
@@ -410,7 +408,6 @@ with tab_overview:
                     <div class="value">-</div>
                 </div>
             ''', unsafe_allow_html=True)
-
 
 with tab_proses:
     if available_sla_cols:
