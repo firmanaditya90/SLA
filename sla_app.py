@@ -1115,6 +1115,129 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
     bg.save(out, format="PNG")
     out.seek(0)
     return out
+
+import io, os
+import matplotlib.pyplot as plt
+import pandas as pd
+from PIL import Image, ImageDraw, ImageFont
+
+def generate_poster_A4(transaksi_summary, rata_proses_seconds, df_proses, footer_image, periode_info_text):
+    try:
+        # Ukuran A4 300 DPI
+        W, H = 2480, 3508
+        bg = Image.new("RGBA", (W, H), (255, 255, 255, 255))
+        draw = ImageDraw.Draw(bg)
+
+        # -----------------------------
+        # 1. Background Gradient
+        # -----------------------------
+        for y in range(H):
+            r = int(26 + (178-26) * y / H)
+            g = int(42 + (31-42) * y / H)
+            b = int(108 + (29-108) * y / H)
+            draw.line((0, y, W, y), fill=(r, g, b))
+
+        # -----------------------------
+        # 2. Judul
+        # -----------------------------
+        font_path = os.path.join(os.path.dirname(__file__), "arial.ttf")
+        font_title = ImageFont.truetype(font_path, 80)
+        draw.text((W//2, 100), "📊 SLA Dashboard", font=font_title, fill="white", anchor="mm")
+
+        font_sub = ImageFont.truetype(font_path, 48)
+        draw.text((W//2, 200), periode_info_text, font=font_sub, fill="white", anchor="mm")
+
+        # -----------------------------
+        # 3. Grafik Jumlah Transaksi
+        # -----------------------------
+        if transaksi_summary is not None and len(transaksi_summary) > 0:
+            fig, ax = plt.subplots(figsize=(8,4))
+            ax.bar(transaksi_summary.iloc[:,0], transaksi_summary["Jumlah Transaksi"], color="#1f77b4")
+            ax.set_xlabel("Periode")
+            ax.set_ylabel("Jumlah Transaksi")
+            ax.set_title("Jumlah Transaksi per Periode")
+            fig.tight_layout()
+
+            buf = io.BytesIO()
+            fig.savefig(buf, format="PNG", dpi=200, transparent=True)
+            buf.seek(0)
+            plt.close(fig)
+
+            chart_img = Image.open(buf).convert("RGBA")
+            chart_w, chart_h = chart_img.size
+            bg.paste(chart_img, (200, 400), chart_img)
+
+        # -----------------------------
+        # 4. Tabel Rata-rata SLA per Proses
+        # -----------------------------
+        if df_proses is not None and not df_proses.empty:
+            fig, ax = plt.subplots(figsize=(6,4))
+            ax.axis('off')
+            tbl = ax.table(cellText=df_proses.values,
+                           rowLabels=df_proses.index,
+                           colLabels=df_proses.columns,
+                           loc='center')
+            tbl.auto_set_font_size(False)
+            tbl.set_fontsize(10)
+            tbl.scale(1.2, 1.2)
+            fig.tight_layout()
+
+            buf = io.BytesIO()
+            fig.savefig(buf, format="PNG", dpi=200, transparent=True)
+            buf.seek(0)
+            plt.close(fig)
+
+            table_img = Image.open(buf).convert("RGBA")
+            bg.paste(table_img, (W//2+50, 400), table_img)
+
+        # -----------------------------
+        # 5. Garis Tengah
+        # -----------------------------
+        overlay = Image.new("RGBA", bg.size, (255,255,255,0))
+        overlay_draw = ImageDraw.Draw(overlay)
+        center_x = W // 2
+        overlay_draw.line((center_x, 350, center_x, H), fill="white", width=15)
+        bg = Image.alpha_composite(bg, overlay)
+
+        # -----------------------------
+        # 6. Footer
+        # -----------------------------
+        footer_path = os.path.join(os.path.dirname(__file__), footer_image)
+        footer_img = Image.open(footer_path).convert("RGBA")
+        scale = W / footer_img.width
+        footer_img = footer_img.resize((W, int(footer_img.height*scale)), Image.Resampling.LANCZOS)
+        footer_y = H - footer_img.height
+        bg.paste(footer_img, (0, footer_y), footer_img)
+
+        # Captain Ferizy
+        ferizy_path = os.path.join(os.path.dirname(__file__), "Captain Ferizy.png")
+        ferizy_img = Image.open(ferizy_path).convert("RGBA")
+        scale = (footer_img.height*2) / ferizy_img.height
+        ferizy_img = ferizy_img.resize((int(ferizy_img.width*scale), int(ferizy_img.height*scale)), Image.Resampling.LANCZOS)
+        pos_x = W - ferizy_img.width - 0
+        pos_y = H - ferizy_img.height - 0
+        bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
+
+        # Transformation logo
+        trans_path = os.path.join(os.path.dirname(__file__), "Transformation.png")
+        trans_img = Image.open(trans_path).convert("RGBA")
+        scale = (footer_img.height*0.35) / trans_img.height
+        trans_img = trans_img.resize((int(trans_img.width*scale), int(trans_img.height*scale)), Image.Resampling.LANCZOS)
+        pos_x = 0
+        pos_y = H - trans_img.height - 40
+        bg.paste(trans_img, (pos_x, pos_y), trans_img)
+
+        # -----------------------------
+        # Output
+        # -----------------------------
+        out = io.BytesIO()
+        bg.save(out, format="PNG")
+        out.seek(0)
+        return out
+
+    except Exception as e:
+        print("⚠️ Gagal generate poster:", e)
+        return None
 # ==========================================================
 # Tab Report (Poster & PDF)
 # ==========================================================
