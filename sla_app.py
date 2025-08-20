@@ -556,6 +556,7 @@ with tab_vendor:
     else:
         st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
 
+
 with tab_tren:
     if available_sla_cols:
         st.subheader("📈 Trend Rata-rata SLA per Periode")
