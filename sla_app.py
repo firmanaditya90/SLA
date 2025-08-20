@@ -1167,12 +1167,16 @@ with tab_poster:
             ]
         }, index=rata_proses_seconds.index)
 
-        poster_buf = generate_poster_A4(
-            {},
-            rata_proses_seconds,
-            df_proses,
-            "Captain Ferizy.png",
-            periode_info_text
+        # Ringkasan jumlah transaksi per periode 
+transaksi_summary = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name="Jumlah Transaksi")
+
+poster_buf = generate_poster_A4(
+    transaksi_summary,          # ⬅️ ini jangan kosong
+    rata_proses_seconds,
+    df_proses,
+    "Captain Ferizy.png",
+    periode_info_text
+)
         )
         st.session_state.poster_buf = poster_buf
 
