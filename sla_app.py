@@ -1156,29 +1156,32 @@ with tab_poster:
         st.info("Tidak ada transaksi pada periode yang dipilih.")
 
     # ==============================
-    # Generate Poster A4 (Export PNG)
     # ==============================
-    if st.button("🎨 Generate Poster A4"):
-        rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
+# Generate Poster A4 (Export PNG)
+# ==============================
+if st.button("🎨 Generate Poster A4"):
+    rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
 
-        df_proses = pd.DataFrame({
-            "Rata-rata SLA": [
-                format_duration(rata_proses_seconds[col]) for col in rata_proses_seconds.index
-            ]
-        }, index=rata_proses_seconds.index)
+    df_proses = pd.DataFrame({
+        "Rata-rata SLA": [
+            format_duration(rata_proses_seconds[col]) for col in rata_proses_seconds.index
+        ]
+    }, index=rata_proses_seconds.index)
 
-        # Ringkasan jumlah transaksi per periode 
-transaksi_summary = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name="Jumlah Transaksi")
+    # Ringkasan jumlah transaksi per periode
+    transaksi_summary = df_filtered.groupby(df_filtered[periode_col].astype(str)) \
+                                   .size().reset_index(name="Jumlah Transaksi")
 
-poster_buf = generate_poster_A4(
-    transaksi_summary,          # ⬅️ ini jangan kosong
-    rata_proses_seconds,
-    df_proses,
-    "Captain Ferizy.png",
-    periode_info_text
-)
-        )
-        st.session_state.poster_buf = poster_buf
+    poster_buf = generate_poster_A4(
+        transaksi_summary,          # ⬅️ isi data transaksi, jangan kosong
+        rata_proses_seconds,
+        df_proses,
+        "Captain Ferizy.png",
+        periode_info_text
+    )
+
+    st.session_state.poster_buf = poster_buf
+    # ==============================
 
     if "poster_buf" in st.session_state:
         st.image(st.session_state.poster_buf,
