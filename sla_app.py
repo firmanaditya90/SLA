@@ -1284,11 +1284,17 @@ if st.button("🎨 Generate Poster A4"):
 
     st.session_state.poster_buf = poster_buf
     # ==============================
-if "poster_buf" in st.session_state:
-    from PIL import Image
+import io
+from PIL import Image
 
-    st.session_state.poster_buf.seek(0)   # ⬅️ reset pointer
-    poster_img = Image.open(st.session_state.poster_buf)
+if "poster_buf" in st.session_state:
+    poster_bytes = st.session_state.poster_buf
+    if isinstance(poster_bytes, bytes):
+        buf = io.BytesIO(poster_bytes)
+    else:
+        buf = poster_bytes  # sudah BytesIO
+
+    poster_img = Image.open(buf)
 
     st.image(
         poster_img,
@@ -1296,6 +1302,12 @@ if "poster_buf" in st.session_state:
         use_column_width=True
     )
 
+    st.download_button(
+        "💾 Download Poster (PNG, A4 - 300 DPI)",
+        poster_bytes,
+        file_name="Poster_SLA_A4.png",
+        mime="image/png"
+    )
     st.download_button(
         "💾 Download Poster (PNG, A4 - 300 DPI)",
         st.session_state.poster_buf,
