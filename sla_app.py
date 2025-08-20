@@ -197,6 +197,25 @@ st.markdown("""
   font-size: 12px; opacity: 0.75;
 }
 hr.soft { border: none; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent); margin: 10px 0 14px 0; }
+.poster {
+  background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
+  border-radius: 20px;
+  padding: 25px;
+  margin: 20px 0;
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.poster-left {
+  flex: 1;
+  padding-right: 20px;
+  border-right: 2px solid rgba(255,255,255,0.4);
+}
+.poster-right {
+  flex: 2;
+  padding-left: 20px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1104,25 +1123,59 @@ with tab_report:
 
 with tab_poster:
     st.subheader("📥 Download Poster")
+    st.markdown("""
+    <div class="poster">
+        <div class="poster-left">
+            <h2>📊 SLA Dashboard</h2>
+            <p>Ringkasan kinerja SLA dokumen penagihan</p>
+        </div>
+        <div class="poster-right">
+            <h3>Jumlah Transaksi per Periode</h3>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
+    # ==============================
+    # Grafik jumlah transaksi per periode
+    # ==============================
+    transaksi_summary = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name="Jumlah Transaksi")
+
+    if len(transaksi_summary) > 0:
+        fig, ax = plt.subplots(figsize=(6,3))
+        ax.bar(transaksi_summary[periode_col], transaksi_summary["Jumlah Transaksi"], color="#1f77b4")
+        ax.set_xlabel("Periode")
+        ax.set_ylabel("Jumlah Transaksi")
+        ax.set_title("Jumlah Transaksi per Periode")
+        st.pyplot(fig)
+
+        # ==============================
+        # Tabel ringkasan jumlah transaksi
+        # ==============================
+        st.dataframe(transaksi_summary.set_index(periode_col), use_container_width=True)
+    else:
+        st.info("Tidak ada transaksi pada periode yang dipilih.")
+
+    # ==============================
+    # Generate Poster A4 (Export PNG)
+    # ==============================
     if st.button("🎨 Generate Poster A4"):
         rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
-        
+
         df_proses = pd.DataFrame({
             "Rata-rata SLA": [
                 format_duration(rata_proses_seconds[col]) for col in rata_proses_seconds.index
             ]
         }, index=rata_proses_seconds.index)
-        
+
         poster_buf = generate_poster_A4(
-        {},
-        rata_proses_seconds,
-        df_proses,
-        "Captain Ferizy.png",
-        periode_info_text
+            {},
+            rata_proses_seconds,
+            df_proses,
+            "Captain Ferizy.png",
+            periode_info_text
         )
         st.session_state.poster_buf = poster_buf
-    
+
     if "poster_buf" in st.session_state:
         st.image(st.session_state.poster_buf,
                  caption="Preview Poster A4",
