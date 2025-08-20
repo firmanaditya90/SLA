@@ -119,8 +119,6 @@ st.markdown("""
   font-size: 12px; opacity: 0.75;
 }
 hr.soft { border: none; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent); margin: 10px 0 14px 0; }
-</style>
-""", unsafe_allow_html=True)
 /* Modern KPI Cards */
 .kpi-card {
   background: rgba(20, 25, 45, 0.55);
@@ -167,6 +165,8 @@ hr.soft { border: none; height: 1px; background: linear-gradient(90deg, transpar
   text-shadow: 0 0 8px rgba(255,80,100,0.7);
 }
 
+</style>
+""", unsafe_allow_html=True)
 
 st.markdown("""
 <div class="hero">
