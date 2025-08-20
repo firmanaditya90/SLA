@@ -13,22 +13,6 @@ import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
 import requests
-import json
-
-KPI_FILE = os.path.join("data", "kpi_target.json")
-
-def load_kpi():
-    if os.path.exists(KPI_FILE):
-        try:
-            with open(KPI_FILE, "r") as f:
-                return json.load(f).get("target_kpi", None)
-        except:
-            return None
-    return None
-
-def save_kpi(value):
-    with open(KPI_FILE, "w") as f:
-        json.dump({"target_kpi": value}, f)
 
 def format_duration(seconds):
     """Convert detik jadi 'xx hari xx jam xx menit xx detik'"""
@@ -119,52 +103,6 @@ st.markdown("""
   font-size: 12px; opacity: 0.75;
 }
 hr.soft { border: none; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent); margin: 10px 0 14px 0; }
-/* Modern KPI Cards */
-.kpi-card {
-  background: rgba(20, 25, 45, 0.55);
-  border-radius: 20px;
-  padding: 18px 20px;
-  border: 1px solid rgba(255,255,255,0.15);
-  box-shadow: 0 8px 25px rgba(0,0,0,0.25);
-  backdrop-filter: blur(12px);
-  text-align: center;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-.kpi-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 32px rgba(0,0,0,0.35);
-}
-.kpi-label {
-  font-size: 13px;
-  opacity: 0.75;
-  margin-bottom: 4px;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-}
-.kpi-value {
-  font-size: 28px;
-  font-weight: 800;
-  background: linear-gradient(90deg, #00eaff, #00ff9d);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-.kpi-sub {
-  font-size: 12px;
-  opacity: 0.65;
-}
-.kpi-status-on {
-  font-size: 24px;
-  font-weight: 800;
-  color: #00ffb0;
-  text-shadow: 0 0 8px rgba(0,255,160,0.7);
-}
-.kpi-status-off {
-  font-size: 24px;
-  font-weight: 800;
-  color: #ff4f70;
-  text-shadow: 0 0 8px rgba(255,80,100,0.7);
-}
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -409,142 +347,27 @@ tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_r
 )
 
 with tab_overview:
-    st.subheader("📊 KPI Verifikasi Dokumen Penagihan")
+    st.subheader("📄 Sampel Data (50 baris)")
+    st.dataframe(df_filtered.head(50), use_container_width=True)
 
-    # Hitung rata-rata SLA Keuangan
-    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
-        avg_keu_seconds = df_filtered["KEUANGAN"].mean()
-        avg_keu_days = round(avg_keu_seconds / 86400, 2)  # format desimal hari
-        avg_keu_text = seconds_to_sla_format(avg_keu_seconds)  # format hari jam menit detik
-    else:
-        avg_keu_seconds = None
-        avg_keu_days = None
-        avg_keu_text = "-"
+with tab_proses:
+    if available_sla_cols:
+        st.subheader("📌 Rata-rata SLA per Proses (format hari jam menit detik)")
+        rata_proses_seconds = df_filtered[available_sla_cols].mean()
+        rata_proses = rata_proses_seconds.reset_index()
+        rata_proses.columns = ["Proses", "Rata-rata (detik)"]
+        rata_proses["Rata-rata SLA"] = rata_proses["Rata-rata (detik)"].apply(seconds_to_sla_format)
+        st.dataframe(rata_proses[["Proses", "Rata-rata SLA"]], use_container_width=True)
 
-    # Load target KPI dari file
-    saved_kpi = load_kpi()
-
-    # Input Target KPI (hanya admin)
-    if is_admin:
-        st.markdown("### 🎯 Atur Target KPI (Admin Only)")
-        new_kpi = st.number_input(
-            "Target KPI (hari, desimal)", 
-            min_value=0.0, step=0.1,
-            value=saved_kpi if saved_kpi else 1.5,
-            key="target_kpi_input"
-        )
-        if st.button("💾 Simpan Target KPI"):
-            save_kpi(new_kpi)
-            st.success(f"Target KPI berhasil disimpan: {new_kpi} hari")
-            saved_kpi = new_kpi
-    else:
-        if saved_kpi is None:
-            st.info("Belum ada Target KPI yang ditentukan admin.")
-
-    # Layout 3 kolom KPI
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.markdown(f"""
-            <div class="kpi-card">
-                <div class="kpi-label">Target KPI Verifikasi Dokumen</div>
-                <div class="kpi-value">{saved_kpi if saved_kpi else "-" } hari</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with col2:
-        st.markdown(f"""
-            <div class="kpi-card">
-                <div class="kpi-label">Pencapaian</div>
-                <div class="kpi-value">{avg_keu_text}</div>
-                <div class="kpi-sub">({avg_keu_days if avg_keu_days is not None else "-"} hari)</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with col3:
-        if saved_kpi and avg_keu_days is not None:
-            if avg_keu_days <= saved_kpi:
-                st.markdown("""
-                    <div class="kpi-card">
-                        <div class="kpi-label">Status</div>
-                        <div class="kpi-status-on">✅ ON TARGET</div>
-                    </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown("""
-                    <div class="kpi-card">
-                        <div class="kpi-label">Status</div>
-                        <div class="kpi-status-off">❌ NOT ON TARGET</div>
-                    </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.markdown("""
-                <div class="kpi-card">
-                    <div class="kpi-label">Status</div>
-                    <div class="kpi-value">-</div>
-                </div>
-            """, unsafe_allow_html=True)
-    # ==============================
-    # Tabel Rata-rata SLA Keuangan per Periode (wide format)
-    # ==============================
-    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
-        st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
-        st.subheader("📊 Tabel Rata-rata SLA Keuangan (Hari) per Periode")
-
-        # Hitung rata-rata per periode
-        trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
-        trend_keu["PERIODE_SORTED"] = pd.Categorical(trend_keu[periode_col], categories=selected_periode, ordered=True)
-        trend_keu = trend_keu.sort_values("PERIODE_SORTED")
-
-        # Konversi ke hari desimal
-        trend_keu["Rata-rata SLA (hari)"] = (trend_keu["KEUANGAN"] / 86400).round(2)
-
-        # Bentuk tabel wide format
-        table_data = pd.DataFrame(
-            [trend_keu["Rata-rata SLA (hari)"].tolist()],
-            columns=trend_keu[periode_col].tolist(),
-            index=["SLA Verifikasi Dokumen Penagihan"]
-        )
-
-        # Tampilkan tabel dengan styling
-        st.dataframe(table_data.style.format("{:.2f}"), use_container_width=True)
-
-    
-    # ==============================
-    # Grafik SLA Keuangan per Periode (dengan label angka)
-    # ==============================
-    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
-        st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
-        st.subheader("📈 Trend Rata-rata SLA Keuangan per Periode")
-
-        # Hitung rata-rata per periode
-        trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
-        trend_keu["PERIODE_SORTED"] = pd.Categorical(trend_keu[periode_col], categories=selected_periode, ordered=True)
-        trend_keu = trend_keu.sort_values("PERIODE_SORTED")
-
-        # Konversi ke hari desimal
-        trend_keu["Rata-rata SLA (hari)"] = (trend_keu["KEUANGAN"] / 86400).round(2)
-
-        # Plot line chart dengan label di dot
-        fig, ax = plt.subplots(figsize=(10, 5))
-        ax.plot(trend_keu[periode_col], trend_keu["Rata-rata SLA (hari)"], marker='o', color='#1f77b4')
-
-        # Label angka
-        for i, val in enumerate(trend_keu["Rata-rata SLA (hari)"]):
-            ax.text(i, val, f"{val}", ha='center', va='bottom', fontsize=9, color="black", weight="bold")
-
-        ax.set_title("Trend Rata-rata SLA Keuangan per Periode")
-        ax.set_xlabel("Periode")
-        ax.set_ylabel("Rata-rata SLA (hari)")
-        ax.grid(True, linestyle='--', alpha=0.7)
-
-        for label in ax.get_xticklabels():
-            label.set_rotation(45)
-            label.set_ha('right')
-
-        st.pyplot(fig)
-    else:
-        st.info("Tidak ada kolom SLA Keuangan yang bisa ditampilkan.")
+        if proses_grafik_cols:
+            fig2, ax2 = plt.subplots(figsize=(8, 4))
+            values_hari = [rata_proses_seconds[col] / 86400 for col in proses_grafik_cols]
+            ax2.bar(proses_grafik_cols, values_hari, color='#75c8ff')
+            ax2.set_title("Rata-rata SLA per Proses (hari)")
+            ax2.set_ylabel("Rata-rata SLA (hari)")
+            ax2.set_xlabel("Proses")
+            ax2.grid(axis='y', linestyle='--', alpha=0.7)
+            st.pyplot(fig2)
 
 with tab_transaksi:
     if "JENIS TRANSAKSI" in df_filtered.columns and available_sla_cols:
@@ -572,32 +395,14 @@ with tab_vendor:
 
         if df_vendor_filtered.shape[0] > 0 and available_sla_cols:
             st.subheader("📌 Rata-rata SLA per Vendor")
-
-            # Hitung rata-rata SLA dan jumlah transaksi per vendor
             rata_vendor = df_vendor_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean().reset_index()
-            jumlah_transaksi = df_vendor_filtered.groupby("NAMA VENDOR").size().reset_index(name="Jumlah Transaksi")
-
-            # Gabungkan
-            rata_vendor = pd.merge(jumlah_transaksi, rata_vendor, on="NAMA VENDOR")
-
-            # Konversi SLA detik → format hari/jam/menit
             for col in available_sla_cols:
                 rata_vendor[col] = rata_vendor[col].apply(seconds_to_sla_format)
-
-            # Susun ulang kolom
-            ordered_cols = ["NAMA VENDOR", "Jumlah Transaksi"] + [
-                c for c in rata_vendor.columns if c not in ["NAMA VENDOR", "Jumlah Transaksi"]
-            ]
-            rata_vendor = rata_vendor[ordered_cols]
-
-            # Tampilkan tabel
             st.dataframe(rata_vendor, use_container_width=True)
-
         else:
             st.info("Tidak ada data untuk vendor yang dipilih.")
     else:
         st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
-
 
 with tab_tren:
     if available_sla_cols:
@@ -703,53 +508,46 @@ def seconds_to_sla_format(seconds):
 periode_info_text = f"Periode dari {start_periode} sampai {end_periode}"
 
 # ==========================================================
-# Poster A4 Generator (Gradient BG + Glassmorphism Card)
+# Poster A4 Generator
 # ==========================================================
-def generate_poster_A4(
-    sla_text_dict, rata_proses_seconds, df_proses,
-    image_url, periode_range_text,
-    df_filtered, periode_col, selected_periode
-):
+def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url, periode_range_text):
     W, H = 2480, 3508
-
-    # ---------- Gradient Background (biru → putih) ----------
-    bg = Image.new("RGB", (W, H))
-    draw_bg = ImageDraw.Draw(bg)
-    for y in range(H):
-        r = int(255 - (y / H) * 55)   # putih → biru lembut
-        g = int(255 - (y / H) * 100)
-        b = int(255 - (y / H) * 155)
-        draw_bg.line([(0, y), (W, y)], fill=(r, g, b))
-
+    bg = Image.new("RGB", (W, H), "white")
     draw = ImageDraw.Draw(bg)
 
     # ---------- Logo ASDP ----------
+    logo_h = 0
     try:
         logo_path = os.path.join(os.path.dirname(__file__), "asdp_logo.png")
         logo_img = Image.open(logo_path).convert("RGBA")
         scale = (W * 0.15) / logo_img.width
         logo_img = logo_img.resize((int(logo_img.width*scale), int(logo_img.height*scale)), Image.Resampling.LANCZOS)
         bg.paste(logo_img, (2000, 80), logo_img)
+        logo_h = logo_img.height
     except:
         pass
 
-    # ---------- Logo Danantara ----------
+    # ---------- Logo Danantara----------
+    logo_h = 0
     try:
         logo_path = os.path.join(os.path.dirname(__file__), "Danantara.png")
         logo_img = Image.open(logo_path).convert("RGBA")
         scale = (W * 0.2) / logo_img.width
         logo_img = logo_img.resize((int(logo_img.width*scale), int(logo_img.height*scale)), Image.Resampling.LANCZOS)
         bg.paste(logo_img, (80, 80), logo_img)
+        logo_h = logo_img.height
     except:
         pass
 
-    # ---------- Logo Transformation (atas kiri bawah) ----------
+    # ---------- Logo Transformation----------
+    logo_h = 0
     try:
         logo_path = os.path.join(os.path.dirname(__file__), "Transformation.png")
         logo_img = Image.open(logo_path).convert("RGBA")
         scale = (W * 0.2) / logo_img.width
         logo_img = logo_img.resize((int(logo_img.width*scale), int(logo_img.height*scale)), Image.Resampling.LANCZOS)
         bg.paste(logo_img, (80, 3000), logo_img)
+        logo_h = logo_img.height
     except:
         pass
 
@@ -759,10 +557,12 @@ def generate_poster_A4(
         font_title = ImageFont.truetype("Anton-Regular.ttf", 200)
     except:
         font_title = ImageFont.load_default()
+
     bbox_title = draw.textbbox((0, 0), title_text, font=font_title)
     title_w = bbox_title[2] - bbox_title[0]
     title_h = bbox_title[3] - bbox_title[1]
-    title_y = int(H * 0.10)
+
+    title_y = int(H * 0.10)   # naik sedikit
     draw.text(((W - title_w) // 2, title_y), title_text, fill="black", font=font_title)
 
     # ---------- Periode ----------
@@ -772,6 +572,7 @@ def generate_poster_A4(
         font_periode = ImageFont.truetype("Anton-Regular.ttf", font_size)
     except:
         font_periode = ImageFont.load_default()
+
     while True:
         bbox_periode = draw.textbbox((0, 0), periode_range_text, font=font_periode)
         periode_w = bbox_periode[2] - bbox_periode[0]
@@ -783,7 +584,8 @@ def generate_poster_A4(
             font_periode = ImageFont.truetype("Anton-Regular.ttf", font_size)
         except:
             font_periode = ImageFont.load_default()
-    periode_y = title_y + title_h + int(H * 0.03)
+
+    periode_y = title_y + title_h + int(H * 0.03)   # jarak proporsional
     draw.text(((W - periode_w) // 2, periode_y), periode_range_text, fill="black", font=font_periode)
 
     # ---------- Garis Separator ----------
@@ -791,7 +593,11 @@ def generate_poster_A4(
     margin_x = 150
     draw.line((margin_x, line_y, W - margin_x, line_y), fill="black", width=12)
 
-    # ---------- Grafik SLA Proses ----------
+    # ---------- Grafik (65% lebar poster) ----------
+    
+
+    # ---------- Card Background untuk Grafik + Tabel ----------
+    # ---------- Render Grafik ----------
     chart_img = None
     try:
         fig, ax = plt.subplots(figsize=(10, 4))
@@ -800,9 +606,11 @@ def generate_poster_A4(
         ax.set_title("Rata-rata SLA per Proses (hari)")
         ax.set_ylabel("Hari")
         ax.grid(axis='y', linestyle='--', alpha=0.7)
+
         buf = io.BytesIO()
         fig.savefig(buf, format="PNG", dpi=300, bbox_inches="tight", transparent=True)
         buf.seek(0); plt.close(fig)
+
         chart_img = Image.open(buf).convert("RGBA")
         max_chart_width = int(W * 0.65)
         scale = max_chart_width / chart_img.width
@@ -813,7 +621,7 @@ def generate_poster_A4(
     except Exception as e:
         print("Gagal render chart:", e)
 
-    # ---------- Render Tabel SLA ----------
+    # ---------- Render Tabel ----------
     table_img = None
     try:
         fig, ax = plt.subplots(figsize=(5, 4))
@@ -828,9 +636,11 @@ def generate_poster_A4(
         tbl.set_fontsize(12)
         tbl.scale(1.3, 1.3)
         tbl.auto_set_column_width([0, 1])
+
         buf = io.BytesIO()
         fig.savefig(buf, format="PNG", dpi=300, bbox_inches="tight", transparent=True)
         buf.seek(0); plt.close(fig)
+
         table_img = Image.open(buf).convert("RGBA")
         max_tbl_width = int(W * 0.30)
         scale = max_tbl_width / table_img.width
@@ -839,192 +649,141 @@ def generate_poster_A4(
             Image.Resampling.LANCZOS
         )
     except Exception as e:
-        print("Gagal render tabel SLA:", e)
+        print("Gagal render tabel:", e)
 
-    # ---------- Glassmorphism Card ----------
+    # ---------- Card Background dinamis ----------
     card_margin_x = 80
     card_top = line_y + 20
-    content_height = max(chart_img.height if chart_img else 0, table_img.height if table_img else 0)
-    card_bottom = card_top + content_height + 80
-    card_box = (card_margin_x, card_top, W - card_margin_x, card_bottom)
-
-    # Blur background dalam area card
-    region = bg.crop(card_box).filter(ImageFilter.GaussianBlur(20))
-    bg.paste(region, card_box)
-
-    # Semi transparan overlay
-    card_overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
-    overlay_draw = ImageDraw.Draw(card_overlay)
-    overlay_draw.rounded_rectangle(
-        card_box,
-        radius=40,
-        outline=(255, 255, 255, 200),
-        width=4,
-        fill=(255, 255, 255, 100)
+    # tinggi card = tinggi terbesar dari grafik/tabel + padding
+    content_height = max(
+        chart_img.height if chart_img else 0,
+        table_img.height if table_img else 0
     )
-    bg = Image.alpha_composite(bg.convert("RGBA"), card_overlay)
+    card_bottom = card_top + content_height + 80  # +padding atas/bawah
+
+    overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
+    overlay_draw = ImageDraw.Draw(overlay)
+    overlay_draw.rounded_rectangle(
+        (card_margin_x, card_top, W - card_margin_x, card_bottom),
+        radius=40,
+        outline="gray",
+        width=5,
+        fill=(240, 240, 240, 180)
+    )
+    bg = Image.alpha_composite(bg.convert("RGBA"), overlay)
     draw = ImageDraw.Draw(bg)
 
+    # ---------- Tempel Grafik & Tabel di dalam card ----------
     if chart_img:
         pos_x = card_margin_x + 50
         pos_y = card_top + 40
         bg.paste(chart_img, (pos_x, pos_y), chart_img)
+
     if table_img:
         pos_x = W - table_img.width - card_margin_x - 50
         pos_y = card_top + 40
-        bg.paste(table_img, (pos_x, pos_y), table_img)    # ---------- Kemudi + On Target ----------
+        bg.paste(table_img, (pos_x, pos_y), table_img)
+
+    
     try:
         kemudi_path = os.path.join(os.path.dirname(__file__), "Kemudi.png")
         kemudi_img = Image.open(kemudi_path).convert("RGBA")
+
+        # Skala kemudi proporsional
         target_width = int(W * 0.18)
         scale = target_width / kemudi_img.width
-        kemudi_img = kemudi_img.resize((target_width, int(kemudi_img.height * scale)), Image.Resampling.LANCZOS)
+        kemudi_img = kemudi_img.resize(
+            (target_width, int(kemudi_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
+
+        # Posisi: masih di samping tabel, tapi dinaikkan lebih dekat tabel
         pos_x = W - card_margin_x - kemudi_img.width - 50
-        pos_y = card_top + table_img.height + 30
+        pos_y = card_top + table_img.height + 30   # ← sebelumnya +60, sekarang naik
+
         bg.paste(kemudi_img, (pos_x, pos_y), kemudi_img)
-        font_target = ImageFont.truetype(os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf"), 120)
+
+        # Font untuk ON TARGET
+        font_target = ImageFont.truetype(
+            os.path.join(os.path.dirname(__file__), "Anton-Regular.ttf"), 120
+        )
         text = "ON TARGET"
+
         bbox = draw.textbbox((0, 0), text, font=font_target)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+        # Posisi: tepat di bawah kemudi, center
         text_x = pos_x + (kemudi_img.width - tw) // 2
         text_y = pos_y + kemudi_img.height + 1
+
         draw.text((text_x, text_y), text, font=font_target, fill=(0, 150, 0))
     except Exception as e:
         print("Gagal render Kemudi/On Target:", e)
 
-    # ---------- Footer + Garis Tengah + Grafik & Tabel Jumlah Transaksi ----------
+# --- Tambah Garis Tengah + Footer + Captain Ferizy ---
     try:
         footer_path = os.path.join(os.path.dirname(__file__), "Footer.png")
+        print("DEBUG Footer Path:", footer_path, os.path.exists(footer_path))
         footer_img = Image.open(footer_path).convert("RGBA")
+
+        # Resize footer agar full width
         scale = W / footer_img.width
-        footer_img = footer_img.resize((W, int(footer_img.height * scale)), Image.Resampling.LANCZOS)
+        footer_img = footer_img.resize(
+            (W, int(footer_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
         footer_y = H - footer_img.height
 
-        # 1. Garis tengah
+        # 1. Garis tengah (paling belakang) → sampai ke bawah poster
         overlay = Image.new("RGBA", bg.size, (255, 255, 255, 0))
         overlay_draw = ImageDraw.Draw(overlay)
         center_x = W // 2
-        overlay_draw.line((center_x, card_bottom, center_x, H), fill="black", width=15)
-        bg = Image.alpha_composite(bg, overlay)
+        overlay_draw.line(
+            (center_x, card_bottom, center_x, H),
+            fill="black",
+            width=15
+        )
+        bg = Image.alpha_composite(overlay, bg)
 
-        # 2. Grafik jumlah transaksi
-        trans_img = None
-        pos_y_trans = card_bottom + 50
-        try:
-            jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name='Jumlah')
-            jumlah_transaksi = jumlah_transaksi.sort_values(
-                by=periode_col,
-                key=lambda x: pd.Categorical(x, categories=selected_periode, ordered=True)
-            )
-            fig_trans, ax_trans = plt.subplots(figsize=(8, 5))
-            colors = plt.cm.viridis(range(len(jumlah_transaksi)))
-            ax_trans.bar(jumlah_transaksi[periode_col], jumlah_transaksi['Jumlah'], color=colors)
-            ax_trans.set_title("Jumlah Transaksi per Periode", fontsize=28, weight="bold")
-            ax_trans.set_xlabel("Periode")
-            ax_trans.set_ylabel("Jumlah")
-            ax_trans.grid(axis='y', linestyle='--', alpha=0.6)
-            for label in ax_trans.get_xticklabels():
-                label.set_rotation(45)
-                label.set_ha('right')
-            buf = io.BytesIO()
-            fig_trans.savefig(buf, format="PNG", dpi=300, bbox_inches="tight", transparent=True)
-            buf.seek(0); plt.close(fig_trans)
-            trans_img = Image.open(buf).convert("RGBA")
-            max_width = int(W * 0.40)
-            max_height = H - card_bottom - footer_img.height - 400
-            scale = min(max_width / trans_img.width, max_height / trans_img.height)
-            trans_img = trans_img.resize((int(trans_img.width * scale), int(trans_img.height * scale)), Image.Resampling.LANCZOS)
-            pos_x = 150
-            bg.paste(trans_img, (pos_x, pos_y_trans), trans_img)
-        except Exception as e:
-            print("⚠️ Gagal render grafik jumlah transaksi:", e)
-
-        # 2b. Tabel jumlah transaksi (lebih keren, dinaikkan sedikit)
-        try:
-            jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name='Jumlah')
-            jumlah_transaksi = jumlah_transaksi.sort_values(
-                by=periode_col,
-                key=lambda x: pd.Categorical(x, categories=selected_periode, ordered=True)
-            )
-            total_row = pd.DataFrame({periode_col: ["TOTAL"], "Jumlah": [jumlah_transaksi["Jumlah"].sum()]})
-            jumlah_transaksi = pd.concat([jumlah_transaksi, total_row], ignore_index=True)
-
-            fig_tbl, ax_tbl = plt.subplots(figsize=(6, 4))
-            ax_tbl.axis("off")
-            table = ax_tbl.table(
-                cellText=jumlah_transaksi.values,
-                colLabels=jumlah_transaksi.columns,
-                loc="center",
-                cellLoc="center"
-            )
-            table.auto_set_font_size(False)
-            table.set_fontsize(16)
-            table.scale(1.5, 1.5)
-
-            # Header style
-            for j in range(len(jumlah_transaksi.columns)):
-                cell = table[(0, j)]
-                cell.set_fontsize(18)
-                cell.set_text_props(weight="bold", color="white")
-                cell.set_facecolor("#1f77b4")
-
-            # Row styling
-            for i in range(1, len(jumlah_transaksi) + 1):
-                for j in range(len(jumlah_transaksi.columns)):
-                    cell = table[(i, j)]
-                    if i % 2 == 0:
-                        cell.set_facecolor("#f2f2f2")
-                    else:
-                        cell.set_facecolor("#ffffff")
-                    if jumlah_transaksi.iloc[i-1, 0] == "TOTAL":
-                        cell.set_text_props(weight="bold", color="darkred")
-                        cell.set_facecolor("#e6e6e6")
-
-            buf = io.BytesIO()
-            fig_tbl.savefig(buf, format="PNG", dpi=300, bbox_inches="tight", transparent=True)
-            buf.seek(0); plt.close(fig_tbl)
-            tbl_img = Image.open(buf).convert("RGBA")
-            max_width = int(W * 0.40)
-            scale = max_width / tbl_img.width
-            tbl_img = tbl_img.resize((int(tbl_img.width * scale), int(tbl_img.height * scale)), Image.Resampling.LANCZOS)
-            pos_x = 150
-            if trans_img:
-                pos_y = pos_y_trans + trans_img.height + 20  # lebih dekat ke grafik
-            else:
-                pos_y = pos_y_trans
-            bg.paste(tbl_img, (pos_x, pos_y), tbl_img)
-        except Exception as e:
-            print("⚠️ Gagal render tabel jumlah transaksi:", e)
-
-        # 3. Footer
+        # 2. Footer di atas garis
         bg.paste(footer_img, (0, footer_y), footer_img)
 
-        # 4. Captain Ferizy
+        # 3. Captain Ferizy di depan footer
         ferizy_path = os.path.join(os.path.dirname(__file__), "Captain Ferizy.png")
         ferizy_img = Image.open(ferizy_path).convert("RGBA")
+
         scale = (footer_img.height * 2) / ferizy_img.height
-        ferizy_img = ferizy_img.resize((int(ferizy_img.width * scale), int(ferizy_img.height * scale)), Image.Resampling.LANCZOS)
-        pos_x = W - ferizy_img.width
-        pos_y = H - ferizy_img.height
+        ferizy_img = ferizy_img.resize(
+            (int(ferizy_img.width * scale), int(ferizy_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
+
+        pos_x = W - ferizy_img.width - 0
+        pos_y = H - ferizy_img.height - 0
         bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
 
-        # 5. Transformation (depan footer, kiri bawah)
+        # 4. Transformation di depan footer
         Transformation_path = os.path.join(os.path.dirname(__file__), "Transformation.png")
         Transformation_img = Image.open(Transformation_path).convert("RGBA")
+
         scale = (footer_img.height * 0.35) / Transformation_img.height
-        Transformation_img = Transformation_img.resize((int(Transformation_img.width * scale), int(Transformation_img.height * scale)), Image.Resampling.LANCZOS)
+        Transformation_img = Transformation_img.resize(
+            (int(Transformation_img.width * scale), int(Transformation_img.height * scale)),
+            Image.Resampling.LANCZOS
+        )
+
         pos_x = 0
         pos_y = H - Transformation_img.height - 40
         bg.paste(Transformation_img, (pos_x, pos_y), Transformation_img)
 
+
     except Exception as e:
-        print("⚠️ Gagal render Footer/Ferizy/Transformation:", e)
+        print("⚠️ Gagal render Footer/Ferizy/Garis tengah/Transformation:", e)
 
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
     return out
-
 # ==========================================================
 # Tab Report (Poster & PDF)
 # ==========================================================
@@ -1048,10 +807,7 @@ with tab_poster:
         rata_proses_seconds,
         df_proses,
         "Captain Ferizy.png",
-        periode_info_text,
-        df_filtered,
-        periode_col,
-        selected_periode
+        periode_info_text
         )
         st.session_state.poster_buf = poster_buf
     
