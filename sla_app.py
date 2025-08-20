@@ -371,7 +371,7 @@ with tab_overview:
         avg_keu_seconds = None
         avg_keu_days = None
         avg_keu_text = "-"
-    
+
     # Input Target KPI (hanya admin)
     if is_admin:
         target_kpi = st.number_input(
@@ -385,7 +385,7 @@ with tab_overview:
 
     # Layout 3 kolom
     col1, col2, col3 = st.columns(3)
-    
+
     # Target KPI
     with col1:
         st.markdown(f'''
@@ -394,7 +394,7 @@ with tab_overview:
                 <div class="value">{target_kpi if target_kpi else "-" } hari</div>
             </div>
         ''', unsafe_allow_html=True)
-    
+
     # Pencapaian
     with col2:
         st.markdown(f'''
@@ -423,7 +423,6 @@ with tab_overview:
                     <div class="value">-</div>
                 </div>
             ''', unsafe_allow_html=True)
-
 
 with tab_proses:
     if available_sla_cols:
