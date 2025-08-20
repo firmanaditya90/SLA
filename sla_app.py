@@ -347,8 +347,69 @@ tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_r
 )
 
 with tab_overview:
-    st.subheader("📄 Sampel Data (50 baris)")
-    st.dataframe(df_filtered.head(50), use_container_width=True)
+    st.subheader("📊 KPI Verifikasi Dokumen Penagihan")
+
+    # Hitung rata-rata SLA Keuangan
+    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
+        avg_keu_seconds = df_filtered["KEUANGAN"].mean()
+        avg_keu_days = round(avg_keu_seconds / 86400, 2)  # format desimal hari
+        avg_keu_text = seconds_to_sla_format(avg_keu_seconds)  # format hari jam menit detik
+    else:
+        avg_keu_seconds = None
+        avg_keu_days = None
+        avg_keu_text = "-"
+    
+    # Input Target KPI (hanya admin)
+    if is_admin:
+        target_kpi = st.number_input(
+            "🎯 Target KPI (hari, desimal)", 
+            min_value=0.0, step=0.1,
+            value=st.session_state.get("target_kpi", 1.5),
+            key="target_kpi"
+        )
+    else:
+        target_kpi = st.session_state.get("target_kpi", None)
+
+    # Layout 3 kolom
+    col1, col2, col3 = st.columns(3)
+    
+    # Target KPI
+    with col1:
+        st.markdown(f'''
+            <div class="card kpi">
+                <div class="label">Target KPI Verifikasi Dokumen</div>
+                <div class="value">{target_kpi if target_kpi else "-" } hari</div>
+            </div>
+        ''', unsafe_allow_html=True)
+    
+    # Pencapaian
+    with col2:
+        st.markdown(f'''
+            <div class="card kpi">
+                <div class="label">Pencapaian</div>
+                <div class="value">{avg_keu_text}</div>
+                <div class="small">({avg_keu_days if avg_keu_days is not None else "-"} hari)</div>
+            </div>
+        ''', unsafe_allow_html=True)
+
+    # Status
+    with col3:
+        if target_kpi and avg_keu_days is not None:
+            status = "✅ ON TARGET" if avg_keu_days <= target_kpi else "❌ NOT ON TARGET"
+            color = "green" if avg_keu_days <= target_kpi else "red"
+            st.markdown(f'''
+                <div class="card kpi">
+                    <div class="label">Status</div>
+                    <div class="value" style="color:{color};">{status}</div>
+                </div>
+            ''', unsafe_allow_html=True)
+        else:
+            st.markdown('''
+                <div class="card kpi">
+                    <div class="label">Status</div>
+                    <div class="value">-</div>
+                </div>
+            ''', unsafe_allow_html=True)
 
 with tab_proses:
     if available_sla_cols:
