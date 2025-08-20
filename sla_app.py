@@ -85,6 +85,51 @@ def load_data(file_path):
 # ==============================
 st.markdown("""
 <style>
+/* Modern KPI Cards */
+.kpi-card {
+  background: rgba(20, 25, 45, 0.55);
+  border-radius: 20px;
+  padding: 18px 20px;
+  border: 1px solid rgba(255,255,255,0.15);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.25);
+  backdrop-filter: blur(12px);
+  text-align: center;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.kpi-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.35);
+}
+.kpi-label {
+  font-size: 13px;
+  opacity: 0.75;
+  margin-bottom: 4px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.kpi-value {
+  font-size: 28px;
+  font-weight: 800;
+  background: linear-gradient(90deg, #00eaff, #00ff9d);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.kpi-sub {
+  font-size: 12px;
+  opacity: 0.65;
+}
+.kpi-status-on {
+  font-size: 24px;
+  font-weight: 800;
+  color: #00ffb0;
+  text-shadow: 0 0 8px rgba(0,255,160,0.7);
+}
+.kpi-status-off {
+  font-size: 24px;
+  font-weight: 800;
+  color: #ff4f70;
+  text-shadow: 0 0 8px rgba(255,80,100,0.7);
+}
 /* Hero gradient title */
 .hero {
   text-align: center;
@@ -440,6 +485,88 @@ with tab_overview:
     # Grafik SLA Keuangan per Periode (dengan label angka)
     # ==============================
     if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
+
+with tab_overview:
+    st.subheader("📊 KPI Verifikasi Dokumen Penagihan")
+
+    # Hitung rata-rata SLA Keuangan
+    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
+        avg_keu_seconds = df_filtered["KEUANGAN"].mean()
+        avg_keu_days = round(avg_keu_seconds / 86400, 2)  # format desimal hari
+        avg_keu_text = seconds_to_sla_format(avg_keu_seconds)  # format hari jam menit detik
+    else:
+        avg_keu_seconds = None
+        avg_keu_days = None
+        avg_keu_text = "-"
+
+    # Load target KPI dari file
+    saved_kpi = load_kpi()
+
+    # Input Target KPI (hanya admin)
+    if is_admin:
+        st.markdown("### 🎯 Atur Target KPI (Admin Only)")
+        new_kpi = st.number_input(
+            "Target KPI (hari, desimal)", 
+            min_value=0.0, step=0.1,
+            value=saved_kpi if saved_kpi else 1.5,
+            key="target_kpi_input"
+        )
+        if st.button("💾 Simpan Target KPI"):
+            save_kpi(new_kpi)
+            st.success(f"Target KPI berhasil disimpan: {new_kpi} hari")
+            saved_kpi = new_kpi
+    else:
+        if saved_kpi is None:
+            st.info("Belum ada Target KPI yang ditentukan admin.")
+
+    # Layout 3 kolom KPI
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-label">Target KPI Verifikasi Dokumen</div>
+                <div class="kpi-value">{saved_kpi if saved_kpi else "-" } hari</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-label">Pencapaian</div>
+                <div class="kpi-value">{avg_keu_text}</div>
+                <div class="kpi-sub">({avg_keu_days if avg_keu_days is not None else "-"} hari)</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    with col3:
+        if saved_kpi and avg_keu_days is not None:
+            if avg_keu_days <= saved_kpi:
+                st.markdown("""
+                    <div class="kpi-card">
+                        <div class="kpi-label">Status</div>
+                        <div class="kpi-status-on">✅ ON TARGET</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                    <div class="kpi-card">
+                        <div class="kpi-label">Status</div>
+                        <div class="kpi-status-off">❌ NOT ON TARGET</div>
+                    </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+                <div class="kpi-card">
+                    <div class="kpi-label">Status</div>
+                    <div class="kpi-value">-</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+    # ==============================
+    # Grafik SLA Keuangan per Periode (dengan label angka)
+    # ==============================
+    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
         st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
         st.subheader("📈 Trend Rata-rata SLA Keuangan per Periode")
 
@@ -451,23 +578,19 @@ with tab_overview:
         # Konversi ke hari desimal
         trend_keu["Rata-rata SLA (hari)"] = (trend_keu["KEUANGAN"] / 86400).round(2)
 
-        # Plot line chart
+        # Plot line chart dengan label di dot
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.plot(trend_keu[periode_col], trend_keu["Rata-rata SLA (hari)"], marker='o', color='#1f77b4')
 
-        # Tambahkan label angka di setiap dot
+        # Label angka
         for i, val in enumerate(trend_keu["Rata-rata SLA (hari)"]):
-            ax.text(
-                i, val, f"{val}", ha='center', va='bottom',
-                fontsize=9, color="black", weight="bold"
-            )
+            ax.text(i, val, f"{val}", ha='center', va='bottom', fontsize=9, color="black", weight="bold")
 
         ax.set_title("Trend Rata-rata SLA Keuangan per Periode")
         ax.set_xlabel("Periode")
         ax.set_ylabel("Rata-rata SLA (hari)")
         ax.grid(True, linestyle='--', alpha=0.7)
 
-        # Rotasi label periode agar rapi
         for label in ax.get_xticklabels():
             label.set_rotation(45)
             label.set_ha('right')
@@ -475,7 +598,6 @@ with tab_overview:
         st.pyplot(fig)
     else:
         st.info("Tidak ada kolom SLA Keuangan yang bisa ditampilkan.")
-    
 
 with tab_proses:
     if available_sla_cols:
