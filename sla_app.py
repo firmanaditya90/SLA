@@ -1286,7 +1286,10 @@ if st.button("🎨 Generate Poster A4"):
     # ==============================
 if "poster_buf" in st.session_state:
     from PIL import Image
+
+    st.session_state.poster_buf.seek(0)   # ⬅️ reset pointer
     poster_img = Image.open(st.session_state.poster_buf)
+
     st.image(
         poster_img,
         caption="Preview Poster A4",
