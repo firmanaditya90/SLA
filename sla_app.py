@@ -1284,21 +1284,21 @@ if st.button("🎨 Generate Poster A4"):
 
     st.session_state.poster_buf = poster_buf
     # ==============================
-
     if "poster_buf" in st.session_state:
-        from PIL import Image
+    from PIL import Image
+    poster_img = Image.open(st.session_state.poster_buf)
+    st.image(poster_img,
+             caption="Preview Poster A4",
+             use_column_width=True)
 
-poster_img = Image.open(st.session_state.poster_buf)
-st.image(poster_img,
-         caption="Preview Poster A4",
-         use_column_width=True)
-        st.download_button(
-            "💾 Download Poster (PNG, A4 - 300 DPI)",
-            st.session_state.poster_buf,
-            file_name="Poster_SLA_A4.png",
-            mime="image/png"
-        )
+    st.download_button(
+        "💾 Download Poster (PNG, A4 - 300 DPI)",
+        st.session_state.poster_buf,
+        file_name="Poster_SLA_A4.png",
+        mime="image/png"
+    )
 
+    
     with tab_pdf:
         st.subheader("📥 Download PDF")
         st.info("Fitur PDF belum tersedia.")
