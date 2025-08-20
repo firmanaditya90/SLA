@@ -159,10 +159,13 @@ with c4:
     valid_ratio = (
         df_filtered[periode_col].notna().mean() * 100.0
     ) if len(df_filtered) > 0 else 0.0
-    valid_trend = []
+
     if len(df_filtered) > 0:
         valid_trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[periode_col] \
             .apply(lambda x: x.notna().mean() * 100).tolist()
+    else:
+        valid_trend = []
+
     spark = render_sparkline(valid_trend, color="#00ff9d")
     st.markdown(f"""
         <div class="summary-card">
@@ -172,54 +175,6 @@ with c4:
             {'<img src="'+spark+'" width="100%"/>' if spark else ''}
         </div>
     """, unsafe_allow_html=True)
-
-st.markdown("""
-<style>
-/* Ringkasan Cards */
-.summary-card {
-  background: rgba(25, 30, 55, 0.55);
-  border-radius: 18px;
-  padding: 18px 20px;
-  border: 1px solid rgba(255,255,255,0.12);
-  box-shadow: 0 6px 20px rgba(0,0,0,0.25);
-  backdrop-filter: blur(10px);
-  text-align: center;
-  transition: all 0.25s ease;
-}
-.summary-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 10px 28px rgba(0,0,0,0.35);
-}
-.summary-icon {
-  font-size: 28px;
-  margin-bottom: 6px;
-  opacity: 0.9;
-}
-.summary-label {
-  font-size: 13px;
-  text-transform: uppercase;
-  opacity: 0.7;
-  margin-bottom: 2px;
-}
-.summary-value {
-  font-size: 26px;
-  font-weight: 800;
-  background: linear-gradient(90deg, #00eaff, #00ff9d);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-</style>
-""", unsafe_allow_html=True)
-
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-<div class="hero">
-<h1 class="hero">🚢 SLA Payment Analyzer</h1>
-  <p>Dashboard modern untuk melihat & menganalisis SLA dokumen penagihan</p>
-</div>
-""", unsafe_allow_html=True)
 
 # ==============================
 # Logo di Sidebar (TIDAK DIUBAH)
