@@ -528,12 +528,27 @@ with tab_vendor:
         else:
             df_vendor_filtered = df_filtered[df_filtered["NAMA VENDOR"].isin(selected_vendors)]
 
-        if df_vendor_filtered.shape[0] > 0 and available_sla_cols:
-            st.subheader("📌 Rata-rata SLA per Vendor")
-            rata_vendor = df_vendor_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean().reset_index()
-            for col in available_sla_cols:
-                rata_vendor[col] = rata_vendor[col].apply(seconds_to_sla_format)
-            st.dataframe(rata_vendor, use_container_width=True)
+if df_vendor_filtered.shape[0] > 0 and available_sla_cols:
+    st.subheader("📌 Rata-rata SLA per Vendor")
+
+    # Hitung rata-rata SLA dan jumlah transaksi per vendor
+    rata_vendor = df_vendor_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean().reset_index()
+    jumlah_transaksi = df_vendor_filtered.groupby("NAMA VENDOR").size().reset_index(name="Jumlah Transaksi")
+
+    # Gabungkan
+    rata_vendor = pd.merge(jumlah_transaksi, rata_vendor, on="NAMA VENDOR")
+
+    # Konversi SLA detik → format hari/jam/menit
+    for col in available_sla_cols:
+        rata_vendor[col] = rata_vendor[col].apply(seconds_to_sla_format)
+
+    # Susun ulang kolom: Jumlah Transaksi sebelum FUNGSIONAL
+    ordered_cols = ["NAMA VENDOR", "Jumlah Transaksi"] + [c for c in rata_vendor.columns if c not in ["NAMA VENDOR", "Jumlah Transaksi"]]
+    rata_vendor = rata_vendor[ordered_cols]
+
+    # Tampilkan tabel
+    st.dataframe(rata_vendor, use_container_width=True)
+
         else:
             st.info("Tidak ada data untuk vendor yang dipilih.")
     else:
