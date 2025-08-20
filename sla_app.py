@@ -1284,61 +1284,57 @@ with tab_report:
             st.info("Tidak ada transaksi pada periode yang dipilih.")
 
         # ==============================
-        # Generate Poster A4 (Export PNG)
         # ==============================
-        if st.button("🎨 Generate Poster A4"):
-            rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
+# Generate Poster A4 (Export PNG)
+# ==============================
+if st.button("🎨 Generate Poster A4"):
+    rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
 
-            df_proses = pd.DataFrame({
-                "Rata-rata SLA": [
-                    format_duration(rata_proses_seconds[col]) for col in rata_proses_seconds.index
-                ]
-            }, index=rata_proses_seconds.index)
+    df_proses = pd.DataFrame({
+        "Rata-rata SLA": [
+            format_duration(rata_proses_seconds[col]) for col in rata_proses_seconds.index
+        ]
+    }, index=rata_proses_seconds.index)
 
-            # Ringkasan jumlah transaksi per periode
-            transaksi_summary = df_filtered.groupby(df_filtered[periode_col].astype(str)) \
-                                           .size().reset_index(name="Jumlah Transaksi")
+    # Ringkasan jumlah transaksi per periode
+    transaksi_summary = df_filtered.groupby(df_filtered[periode_col].astype(str)) \
+                                   .size().reset_index(name="Jumlah Transaksi")
 
-            poster_buf = generate_poster_A4(
-                transaksi_summary,          # ⬅️ isi data transaksi
-                rata_proses_seconds,
-                df_proses,
-                "Captain Ferizy.png",
-                periode_info_text
-            )
+    poster_buf = generate_poster_A4(
+        transaksi_summary,
+        rata_proses_seconds,
+        df_proses,
+        "Captain Ferizy.png",
+        periode_info_text
+    )
 
-            st.session_state.poster_buf = poster_buf
+    # Simpan sebagai bytes agar konsisten
+    st.session_state.poster_buf = poster_buf.getvalue()
 
-        # ==============================
-        # Preview + Download Poster
-        # ==============================
-        if "poster_buf" in st.session_state:
-            import io
-            from PIL import Image
 
-            poster_bytes = st.session_state.poster_buf
+# ==============================
+# Preview + Download Poster
+# ==============================
+if "poster_buf" in st.session_state:
+    from PIL import Image
+    import io
 
-            # Normalisasi agar selalu bisa dibaca PIL
-            if isinstance(poster_bytes, bytes):
-                buf = io.BytesIO(poster_bytes)
-            else:
-                buf = poster_bytes
+    # Buka ulang dari bytes untuk preview
+    poster_img = Image.open(io.BytesIO(st.session_state.poster_buf))
 
-            poster_img = Image.open(buf)
+    st.image(
+        poster_img,
+        caption="Preview Poster A4",
+        use_column_width=True
+    )
 
-            st.image(
-                poster_img,
-                caption="Preview Poster A4",
-                use_column_width=True
-            )
-
-            st.download_button(
-                "💾 Download Poster (PNG, A4 - 300 DPI)",
-                poster_bytes,
-                file_name="Poster_SLA_A4.png",
-                mime="image/png"
-            )
-
+    # Download button pakai bytes langsung
+    st.download_button(
+        "💾 Download Poster (PNG, A4 - 300 DPI)",
+        st.session_state.poster_buf,
+        file_name="Poster_SLA_A4.png",
+        mime="image/png"
+    )
     # ------------------------------
     # TAB PDF (placeholder)
     # ------------------------------
