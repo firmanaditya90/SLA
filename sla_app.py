@@ -359,7 +359,6 @@ tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_r
 )
 
 with tab_overview:
-with tab_overview:
     st.subheader("📊 KPI Verifikasi Dokumen Penagihan")
 
     # Hitung rata-rata SLA Keuangan
