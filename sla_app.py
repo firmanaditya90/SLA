@@ -347,27 +347,118 @@ tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_r
 )
 
 with tab_overview:
-    st.subheader("📄 Sampel Data (50 baris)")
-    st.dataframe(df_filtered.head(50), use_container_width=True)
+    st.subheader("📊 KPI Verifikasi Dokumen Penagihan")
 
-with tab_proses:
-    if available_sla_cols:
-        st.subheader("📌 Rata-rata SLA per Proses (format hari jam menit detik)")
-        rata_proses_seconds = df_filtered[available_sla_cols].mean()
-        rata_proses = rata_proses_seconds.reset_index()
-        rata_proses.columns = ["Proses", "Rata-rata (detik)"]
-        rata_proses["Rata-rata SLA"] = rata_proses["Rata-rata (detik)"].apply(seconds_to_sla_format)
-        st.dataframe(rata_proses[["Proses", "Rata-rata SLA"]], use_container_width=True)
+    # Hitung rata-rata SLA Keuangan
+    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
+        avg_keu_seconds = df_filtered["KEUANGAN"].mean()
+        avg_keu_days = round(avg_keu_seconds / 86400, 2)  # format desimal hari
+        avg_keu_text = seconds_to_sla_format(avg_keu_seconds)  # format hari jam menit detik
+    else:
+        avg_keu_seconds = None
+        avg_keu_days = None
+        avg_keu_text = "-"
 
-        if proses_grafik_cols:
-            fig2, ax2 = plt.subplots(figsize=(8, 4))
-            values_hari = [rata_proses_seconds[col] / 86400 for col in proses_grafik_cols]
-            ax2.bar(proses_grafik_cols, values_hari, color='#75c8ff')
-            ax2.set_title("Rata-rata SLA per Proses (hari)")
-            ax2.set_ylabel("Rata-rata SLA (hari)")
-            ax2.set_xlabel("Proses")
-            ax2.grid(axis='y', linestyle='--', alpha=0.7)
-            st.pyplot(fig2)
+    # Load target KPI dari file
+    saved_kpi = load_kpi()
+
+    # Input Target KPI (hanya admin)
+    if is_admin:
+        st.markdown("### 🎯 Atur Target KPI (Admin Only)")
+        new_kpi = st.number_input(
+            "Target KPI (hari, desimal)", 
+            min_value=0.0, step=0.1,
+            value=saved_kpi if saved_kpi else 1.5,
+            key="target_kpi_input"
+        )
+        if st.button("💾 Simpan Target KPI"):
+            save_kpi(new_kpi)
+            st.success(f"Target KPI berhasil disimpan: {new_kpi} hari")
+            saved_kpi = new_kpi
+    else:
+        if saved_kpi is None:
+            st.info("Belum ada Target KPI yang ditentukan admin.")
+
+    # Layout 3 kolom
+    col1, col2, col3 = st.columns(3)
+
+    # Target KPI
+    with col1:
+        st.markdown(f'''
+            <div class="card kpi">
+                <div class="label">Target KPI Verifikasi Dokumen</div>
+                <div class="value">{saved_kpi if saved_kpi else "-" } hari</div>
+            </div>
+        ''', unsafe_allow_html=True)
+
+    # Pencapaian
+    with col2:
+        st.markdown(f'''
+            <div class="card kpi">
+                <div class="label">Pencapaian</div>
+                <div class="value">{avg_keu_text}</div>
+                <div class="small">({avg_keu_days if avg_keu_days is not None else "-"} hari)</div>
+            </div>
+        ''', unsafe_allow_html=True)
+
+    # Status
+    with col3:
+        if saved_kpi and avg_keu_days is not None:
+            status = "✅ ON TARGET" if avg_keu_days <= saved_kpi else "❌ NOT ON TARGET"
+            color = "green" if avg_keu_days <= saved_kpi else "red"
+            st.markdown(f'''
+                <div class="card kpi">
+                    <div class="label">Status</div>
+                    <div class="value" style="color:{color};">{status}</div>
+                </div>
+            ''', unsafe_allow_html=True)
+        else:
+            st.markdown('''
+                <div class="card kpi">
+                    <div class="label">Status</div>
+                    <div class="value">-</div>
+                </div>
+            ''', unsafe_allow_html=True)
+
+    # ==============================
+    # Grafik SLA Keuangan per Periode (dengan label angka)
+    # ==============================
+    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
+        st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
+        st.subheader("📈 Trend Rata-rata SLA Keuangan per Periode")
+
+        # Hitung rata-rata per periode
+        trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
+        trend_keu["PERIODE_SORTED"] = pd.Categorical(trend_keu[periode_col], categories=selected_periode, ordered=True)
+        trend_keu = trend_keu.sort_values("PERIODE_SORTED")
+
+        # Konversi ke hari desimal
+        trend_keu["Rata-rata SLA (hari)"] = (trend_keu["KEUANGAN"] / 86400).round(2)
+
+        # Plot line chart
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.plot(trend_keu[periode_col], trend_keu["Rata-rata SLA (hari)"], marker='o', color='#1f77b4')
+
+        # Tambahkan label angka di setiap dot
+        for i, val in enumerate(trend_keu["Rata-rata SLA (hari)"]):
+            ax.text(
+                i, val, f"{val}", ha='center', va='bottom',
+                fontsize=9, color="black", weight="bold"
+            )
+
+        ax.set_title("Trend Rata-rata SLA Keuangan per Periode")
+        ax.set_xlabel("Periode")
+        ax.set_ylabel("Rata-rata SLA (hari)")
+        ax.grid(True, linestyle='--', alpha=0.7)
+
+        # Rotasi label periode agar rapi
+        for label in ax.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
+
+        st.pyplot(fig)
+    else:
+        st.info("Tidak ada kolom SLA Keuangan yang bisa ditampilkan.")
 
 with tab_transaksi:
     if "JENIS TRANSAKSI" in df_filtered.columns and available_sla_cols:
