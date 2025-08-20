@@ -13,6 +13,22 @@ import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
 import requests
+import json
+
+KPI_FILE = os.path.join("data", "kpi_target.json")
+
+def load_kpi():
+    if os.path.exists(KPI_FILE):
+        try:
+            with open(KPI_FILE, "r") as f:
+                return json.load(f).get("target_kpi", None)
+        except:
+            return None
+    return None
+
+def save_kpi(value):
+    with open(KPI_FILE, "w") as f:
+        json.dump({"target_kpi": value}, f)
 
 def format_duration(seconds):
     """Convert detik jadi 'xx hari xx jam xx menit xx detik'"""
@@ -358,30 +374,39 @@ with tab_overview:
         avg_keu_seconds = None
         avg_keu_days = None
         avg_keu_text = "-"
-    
+
+    # Load target KPI dari file
+    saved_kpi = load_kpi()
+
     # Input Target KPI (hanya admin)
     if is_admin:
-        target_kpi = st.number_input(
-            "🎯 Target KPI (hari, desimal)", 
+        st.markdown("### 🎯 Atur Target KPI (Admin Only)")
+        new_kpi = st.number_input(
+            "Target KPI (hari, desimal)", 
             min_value=0.0, step=0.1,
-            value=st.session_state.get("target_kpi", 1.5),
-            key="target_kpi"
+            value=saved_kpi if saved_kpi else 1.5,
+            key="target_kpi_input"
         )
+        if st.button("💾 Simpan Target KPI"):
+            save_kpi(new_kpi)
+            st.success(f"Target KPI berhasil disimpan: {new_kpi} hari")
+            saved_kpi = new_kpi
     else:
-        target_kpi = st.session_state.get("target_kpi", None)
+        if saved_kpi is None:
+            st.info("Belum ada Target KPI yang ditentukan admin.")
 
     # Layout 3 kolom
     col1, col2, col3 = st.columns(3)
-    
+
     # Target KPI
     with col1:
         st.markdown(f'''
             <div class="card kpi">
                 <div class="label">Target KPI Verifikasi Dokumen</div>
-                <div class="value">{target_kpi if target_kpi else "-" } hari</div>
+                <div class="value">{saved_kpi if saved_kpi else "-" } hari</div>
             </div>
         ''', unsafe_allow_html=True)
-    
+
     # Pencapaian
     with col2:
         st.markdown(f'''
@@ -394,9 +419,9 @@ with tab_overview:
 
     # Status
     with col3:
-        if target_kpi and avg_keu_days is not None:
-            status = "✅ ON TARGET" if avg_keu_days <= target_kpi else "❌ NOT ON TARGET"
-            color = "green" if avg_keu_days <= target_kpi else "red"
+        if saved_kpi and avg_keu_days is not None:
+            status = "✅ ON TARGET" if avg_keu_days <= saved_kpi else "❌ NOT ON TARGET"
+            color = "green" if avg_keu_days <= saved_kpi else "red"
             st.markdown(f'''
                 <div class="card kpi">
                     <div class="label">Status</div>
