@@ -13,12 +13,11 @@ import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
 import requests
-import os, json
+import json
 
 KPI_FILE = os.path.join("data", "kpi_target.json")
 
 def load_kpi():
-    """Baca nilai target KPI dari file JSON"""
     if os.path.exists(KPI_FILE):
         try:
             with open(KPI_FILE, "r") as f:
@@ -28,11 +27,8 @@ def load_kpi():
     return None
 
 def save_kpi(value):
-    """Simpan nilai target KPI ke file JSON"""
-    os.makedirs("data", exist_ok=True)
     with open(KPI_FILE, "w") as f:
         json.dump({"target_kpi": value}, f)
-
 
 def format_duration(seconds):
     """Convert detik jadi 'xx hari xx jam xx menit xx detik'"""
