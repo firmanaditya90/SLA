@@ -379,46 +379,49 @@ with tab_overview:
         if saved_kpi is None:
             st.info("Belum ada Target KPI yang ditentukan admin.")
 
-    # Layout 3 kolom
+    # Layout 3 kolom KPI
     col1, col2, col3 = st.columns(3)
 
-    # Target KPI
     with col1:
-        st.markdown(f'''
-            <div class="card kpi">
-                <div class="label">Target KPI Verifikasi Dokumen</div>
-                <div class="value">{saved_kpi if saved_kpi else "-" } hari</div>
+        st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-label">Target KPI Verifikasi Dokumen</div>
+                <div class="kpi-value">{saved_kpi if saved_kpi else "-" } hari</div>
             </div>
-        ''', unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
-    # Pencapaian
     with col2:
-        st.markdown(f'''
-            <div class="card kpi">
-                <div class="label">Pencapaian</div>
-                <div class="value">{avg_keu_text}</div>
-                <div class="small">({avg_keu_days if avg_keu_days is not None else "-"} hari)</div>
+        st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-label">Pencapaian</div>
+                <div class="kpi-value">{avg_keu_text}</div>
+                <div class="kpi-sub">({avg_keu_days if avg_keu_days is not None else "-"} hari)</div>
             </div>
-        ''', unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
-    # Status
     with col3:
         if saved_kpi and avg_keu_days is not None:
-            status = "✅ ON TARGET" if avg_keu_days <= saved_kpi else "❌ NOT ON TARGET"
-            color = "green" if avg_keu_days <= saved_kpi else "red"
-            st.markdown(f'''
-                <div class="card kpi">
-                    <div class="label">Status</div>
-                    <div class="value" style="color:{color};">{status}</div>
-                </div>
-            ''', unsafe_allow_html=True)
+            if avg_keu_days <= saved_kpi:
+                st.markdown("""
+                    <div class="kpi-card">
+                        <div class="kpi-label">Status</div>
+                        <div class="kpi-status-on">✅ ON TARGET</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                    <div class="kpi-card">
+                        <div class="kpi-label">Status</div>
+                        <div class="kpi-status-off">❌ NOT ON TARGET</div>
+                    </div>
+                """, unsafe_allow_html=True)
         else:
-            st.markdown('''
-                <div class="card kpi">
-                    <div class="label">Status</div>
-                    <div class="value">-</div>
+            st.markdown("""
+                <div class="kpi-card">
+                    <div class="kpi-label">Status</div>
+                    <div class="kpi-value">-</div>
                 </div>
-            ''', unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
     # ==============================
     # Grafik SLA Keuangan per Periode (dengan label angka)
@@ -435,23 +438,19 @@ with tab_overview:
         # Konversi ke hari desimal
         trend_keu["Rata-rata SLA (hari)"] = (trend_keu["KEUANGAN"] / 86400).round(2)
 
-        # Plot line chart
+        # Plot line chart dengan label di dot
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.plot(trend_keu[periode_col], trend_keu["Rata-rata SLA (hari)"], marker='o', color='#1f77b4')
 
-        # Tambahkan label angka di setiap dot
+        # Label angka
         for i, val in enumerate(trend_keu["Rata-rata SLA (hari)"]):
-            ax.text(
-                i, val, f"{val}", ha='center', va='bottom',
-                fontsize=9, color="black", weight="bold"
-            )
+            ax.text(i, val, f"{val}", ha='center', va='bottom', fontsize=9, color="black", weight="bold")
 
         ax.set_title("Trend Rata-rata SLA Keuangan per Periode")
         ax.set_xlabel("Periode")
         ax.set_ylabel("Rata-rata SLA (hari)")
         ax.grid(True, linestyle='--', alpha=0.7)
 
-        # Rotasi label periode agar rapi
         for label in ax.get_xticklabels():
             label.set_rotation(45)
             label.set_ha('right')
