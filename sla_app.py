@@ -1284,12 +1284,14 @@ if st.button("🎨 Generate Poster A4"):
 
     st.session_state.poster_buf = poster_buf
     # ==============================
-    if "poster_buf" in st.session_state:
+if "poster_buf" in st.session_state:
     from PIL import Image
     poster_img = Image.open(st.session_state.poster_buf)
-    st.image(poster_img,
-             caption="Preview Poster A4",
-             use_column_width=True)
+    st.image(
+        poster_img,
+        caption="Preview Poster A4",
+        use_column_width=True
+    )
 
     st.download_button(
         "💾 Download Poster (PNG, A4 - 300 DPI)",
