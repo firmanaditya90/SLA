@@ -310,6 +310,28 @@ with st.status("⏱️ Memproses kolom SLA setelah filter...", expanded=False) a
     for col in available_sla_cols:
         df_filtered[col] = df_filtered[col].apply(parse_sla)
     status.update(label="✅ Parsing SLA selesai", state="complete")
+    
+# ==============================
+# Admin tools untuk input Target KPI
+# ==============================
+with st.sidebar:
+    if is_admin:
+        target_kpi = st.number_input("Target KPI Verifikasi Dokumen (dalam hari, desimal)", min_value=0.0, step=0.1)
+        st.session_state.target_kpi = target_kpi
+    else:
+        target_kpi = st.session_state.get('target_kpi', 0.0)
+
+st.markdown(f"**Target KPI Verifikasi Dokumen:** {target_kpi} hari")
+
+# ==============================
+# Menghitung Pencapaian (Average SLA Keuangan)
+# ==============================
+if "KEUANGAN" in df_raw.columns:
+    rata_sla_keuangan_seconds = df_raw["KEUANGAN"].mean()
+    pencapaian = rata_sla_keuangan_seconds / 86400  # Mengkonversi detik ke desimal hari
+    st.markdown(f"**Pencapaian:** {pencapaian:.2f} hari")
+else:
+    st.markdown("**Pencapaian:** -")
 
 # ==============================
 # KPI Ringkasan (TIDAK DIUBAH)
@@ -347,8 +369,13 @@ tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_r
 )
 
 with tab_overview:
-    st.subheader("📄 Sampel Data (50 baris)")
-    st.dataframe(df_filtered.head(50), use_container_width=True)
+    st.subheader("📄 Overview KPI Verifikasi Dokumen")
+    st.markdown(f"**Target KPI Verifikasi Dokumen:** {target_kpi} hari")
+    if "KEUANGAN" in df_raw.columns:
+        rata_sla_keuangan_seconds = df_raw["KEUANGAN"].mean()
+        pencapaian_formatted = format_duration(rata_sla_keuangan_seconds)  # Format asli
+        pencapaian = rata_sla_keuangan_seconds / 86400  # Format desimal
+        st.markdown(f"**Pencapaian:** {pencapaian_formatted} (format waktu), {pencapaian:.2f} hari (format desimal)")
 
 with tab_proses:
     if available_sla_cols:
