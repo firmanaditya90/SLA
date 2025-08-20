@@ -1313,14 +1313,26 @@ if st.button("🎨 Generate Poster A4"):
 
 
 # ==============================
+# ==============================
 # Preview + Download Poster
 # ==============================
 if "poster_buf" in st.session_state:
     from PIL import Image
     import io
 
-    # Buka ulang dari bytes untuk preview
-    poster_img = Image.open(io.BytesIO(st.session_state.poster_buf))
+    poster_data = st.session_state.poster_buf
+
+    # Jika sudah bytes langsung -> bungkus BytesIO
+    if isinstance(poster_data, bytes):
+        buf = io.BytesIO(poster_data)
+    # Jika masih BytesIO -> reset pointer
+    elif hasattr(poster_data, "read"):
+        poster_data.seek(0)
+        buf = poster_data
+    else:
+        buf = io.BytesIO(poster_data)
+
+    poster_img = Image.open(buf)
 
     st.image(
         poster_img,
@@ -1328,10 +1340,15 @@ if "poster_buf" in st.session_state:
         use_column_width=True
     )
 
-    # Download button pakai bytes langsung
+    # Download pakai bytes
+    if isinstance(poster_data, bytes):
+        download_bytes = poster_data
+    else:
+        download_bytes = poster_data.getvalue()
+
     st.download_button(
         "💾 Download Poster (PNG, A4 - 300 DPI)",
-        st.session_state.poster_buf,
+        download_bytes,
         file_name="Poster_SLA_A4.png",
         mime="image/png"
     )
