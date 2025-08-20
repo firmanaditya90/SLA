@@ -310,56 +310,6 @@ with st.status("⏱️ Memproses kolom SLA setelah filter...", expanded=False) a
     for col in available_sla_cols:
         df_filtered[col] = df_filtered[col].apply(parse_sla)
     status.update(label="✅ Parsing SLA selesai", state="complete")
-    
-# ==============================
-# Admin tools untuk input Target KPI
-# ==============================
-# Path untuk menyimpan file Target KPI
-TARGET_KPI_FILE = "target_kpi.json"
-
-def load_target_kpi():
-    """Membaca nilai Target KPI dari file jika ada"""
-    if os.path.exists(TARGET_KPI_FILE):
-        with open(TARGET_KPI_FILE, "r") as f:
-            return json.load(f)
-    else:
-        return {"target_kpi": 0.0}  # Default jika file belum ada
-
-def save_target_kpi(target_kpi):
-    """Menyimpan nilai Target KPI ke file"""
-    with open(TARGET_KPI_FILE, "w") as f:
-        json.dump({"target_kpi": target_kpi}, f)
-
-# ==============================
-# Inisialisasi dan Load Data
-# ==============================
-target_kpi_data = load_target_kpi()  # Memuat nilai Target KPI yang tersimpan
-
-# ==============================
-# Admin tools untuk input Target KPI
-# ==============================
-if is_admin:
-    # Menampilkan dan memperbarui Target KPI
-    new_target_kpi = st.number_input("Target KPI Verifikasi Dokumen (dalam hari, desimal)", min_value=0.0, step=0.1, value=target_kpi_data["target_kpi"])
-    if new_target_kpi != target_kpi_data["target_kpi"]:
-        save_target_kpi(new_target_kpi)  # Simpan perubahan ke file
-        target_kpi_data = load_target_kpi()  # Muat ulang data setelah penyimpanan
-        st.success("Target KPI berhasil diperbarui!")
-else:
-    # Jika bukan admin, tampilkan Target KPI yang tersimpan
-    target_kpi = target_kpi_data["target_kpi"]
-    st.markdown(f"**Target KPI Verifikasi Dokumen:** {target_kpi} hari")
-
-# ==============================
-# Menampilkan Pencapaian
-# ==============================
-if "KEUANGAN" in df_raw.columns:
-    rata_sla_keuangan_seconds = df_raw["KEUANGAN"].mean()
-    pencapaian = rata_sla_keuangan_seconds / 86400  # Mengkonversi detik ke desimal hari
-    pencapaian_formatted = format_duration(rata_sla_keuangan_seconds)  # Format asli
-    st.markdown(f"**Pencapaian:** {pencapaian_formatted} (format waktu), {pencapaian:.2f} hari (format desimal)")
-else:
-    st.markdown("**Pencapaian:** -")
 
 # ==============================
 # KPI Ringkasan (TIDAK DIUBAH)
@@ -397,65 +347,8 @@ tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_r
 )
 
 with tab_overview:
-    st.subheader("📄 Overview KPI Verifikasi Dokumen")
-    st.markdown(f"**Target KPI Verifikasi Dokumen:** {target_kpi} hari")
-    if "KEUANGAN" in df_raw.columns:
-        rata_sla_keuangan_seconds = df_raw["KEUANGAN"].mean()
-        pencapaian_formatted = format_duration(rata_sla_keuangan_seconds)  # Format asli
-        pencapaian = rata_sla_keuangan_seconds / 86400  # Format desimal
-        st.markdown(f"**Pencapaian:** {pencapaian_formatted} (format waktu), {pencapaian:.2f} hari (format desimal)")
-
-    # Input Target KPI (hanya admin)
-    if is_admin:
-        target_kpi = st.number_input(
-            "🎯 Target KPI (hari, desimal)", 
-            min_value=0.0, step=0.1,
-            value=st.session_state.get("target_kpi", 1.5),
-            key="target_kpi"
-        )
-    else:
-        target_kpi = st.session_state.get("target_kpi", None)
-
-    # Layout 3 kolom
-    col1, col2, col3 = st.columns(3)
-
-    # Target KPI
-    with col1:
-        st.markdown(f'''
-            <div class="card kpi">
-                <div class="label">Target KPI Verifikasi Dokumen</div>
-                <div class="value">{target_kpi if target_kpi else "-" } hari</div>
-            </div>
-        ''', unsafe_allow_html=True)
-
-    # Pencapaian
-    with col2:
-        st.markdown(f'''
-            <div class="card kpi">
-                <div class="label">Pencapaian</div>
-                <div class="value">{avg_keu_text}</div>
-                <div class="small">({avg_keu_days if avg_keu_days is not None else "-"} hari)</div>
-            </div>
-        ''', unsafe_allow_html=True)
-
-    # Status
-    with col3:
-        if target_kpi and avg_keu_days is not None:
-            status = "✅ ON TARGET" if avg_keu_days <= target_kpi else "❌ NOT ON TARGET"
-            color = "green" if avg_keu_days <= target_kpi else "red"
-            st.markdown(f'''
-                <div class="card kpi">
-                    <div class="label">Status</div>
-                    <div class="value" style="color:{color};">{status}</div>
-                </div>
-            ''', unsafe_allow_html=True)
-        else:
-            st.markdown('''
-                <div class="card kpi">
-                    <div class="label">Status</div>
-                    <div class="value">-</div>
-                </div>
-            ''', unsafe_allow_html=True)
+    st.subheader("📄 Sampel Data (50 baris)")
+    st.dataframe(df_filtered.head(50), use_container_width=True)
 
 with tab_proses:
     if available_sla_cols:
