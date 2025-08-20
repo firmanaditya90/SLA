@@ -364,7 +364,6 @@ tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_r
     ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi", "📥 Download Report"]
 )
 with tab_overview:
-with tab_overview:
     st.subheader("📊 KPI Verifikasi Dokumen Penagihan")
 
     # Hitung rata-rata SLA Keuangan
