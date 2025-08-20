@@ -324,16 +324,6 @@ with st.sidebar:
 st.markdown(f"**Target KPI Verifikasi Dokumen:** {target_kpi} hari")
 
 # ==============================
-# Menghitung Pencapaian (Average SLA Keuangan)
-# ==============================
-if "KEUANGAN" in df_raw.columns:
-    rata_sla_keuangan_seconds = df_raw["KEUANGAN"].mean()
-    pencapaian = rata_sla_keuangan_seconds / 86400  # Mengkonversi detik ke desimal hari
-    st.markdown(f"**Pencapaian:** {pencapaian:.2f} hari")
-else:
-    st.markdown("**Pencapaian:** -")
-
-# ==============================
 # KPI Ringkasan (TIDAK DIUBAH)
 # ==============================
 st.markdown("## 📈 Ringkasan")
