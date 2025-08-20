@@ -1244,79 +1244,104 @@ def generate_poster_A4(transaksi_summary, rata_proses_seconds, df_proses, footer
 with tab_report:
     tab_poster, tab_pdf = st.tabs(["🎨 Poster", "📄 PDF"])
 
-with tab_poster:
-    st.subheader("📥 Download Poster")
-    st.markdown("""
-    <div class="poster">
-        <div class="poster-left">
-            <h2>📊 SLA Dashboard</h2>
-            <p>Ringkasan kinerja SLA dokumen penagihan</p>
+    # ------------------------------
+    # TAB POSTER
+    # ------------------------------
+    with tab_poster:
+        st.subheader("📥 Download Poster")
+
+        st.markdown("""
+        <div class="poster">
+            <div class="poster-left">
+                <h2>📊 SLA Dashboard</h2>
+                <p>Ringkasan kinerja SLA dokumen penagihan</p>
+            </div>
+            <div class="poster-right">
+                <h3>Jumlah Transaksi per Periode</h3>
+            </div>
         </div>
-        <div class="poster-right">
-            <h3>Jumlah Transaksi per Periode</h3>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
-    # ==============================
-# Generate Poster A4 (Export PNG)
-# ==============================
-if st.button("🎨 Generate Poster A4"):
-    rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
+        # ==============================
+        # Grafik jumlah transaksi per periode
+        # ==============================
+        transaksi_summary = df_filtered.groupby(df_filtered[periode_col].astype(str)) \
+                                       .size().reset_index(name="Jumlah Transaksi")
 
-    df_proses = pd.DataFrame({
-        "Rata-rata SLA": [
-            format_duration(rata_proses_seconds[col]) for col in rata_proses_seconds.index
-        ]
-    }, index=rata_proses_seconds.index)
+        if len(transaksi_summary) > 0:
+            fig, ax = plt.subplots(figsize=(6,3))
+            ax.bar(transaksi_summary[periode_col], transaksi_summary["Jumlah Transaksi"], color="#1f77b4")
+            ax.set_xlabel("Periode")
+            ax.set_ylabel("Jumlah Transaksi")
+            ax.set_title("Jumlah Transaksi per Periode")
+            st.pyplot(fig)
 
-    # Ringkasan jumlah transaksi per periode
-    transaksi_summary = df_filtered.groupby(df_filtered[periode_col].astype(str)) \
-                                   .size().reset_index(name="Jumlah Transaksi")
+            # ==============================
+            # Tabel ringkasan jumlah transaksi
+            # ==============================
+            st.dataframe(transaksi_summary.set_index(periode_col), use_container_width=True)
+        else:
+            st.info("Tidak ada transaksi pada periode yang dipilih.")
 
-    poster_buf = generate_poster_A4(
-        transaksi_summary,          # ⬅️ isi data transaksi, jangan kosong
-        rata_proses_seconds,
-        df_proses,
-        "Captain Ferizy.png",
-        periode_info_text
-    )
+        # ==============================
+        # Generate Poster A4 (Export PNG)
+        # ==============================
+        if st.button("🎨 Generate Poster A4"):
+            rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
 
-    st.session_state.poster_buf = poster_buf
-    # ==============================
-import io
-from PIL import Image
+            df_proses = pd.DataFrame({
+                "Rata-rata SLA": [
+                    format_duration(rata_proses_seconds[col]) for col in rata_proses_seconds.index
+                ]
+            }, index=rata_proses_seconds.index)
 
-if "poster_buf" in st.session_state:
-    poster_bytes = st.session_state.poster_buf
-    if isinstance(poster_bytes, bytes):
-        buf = io.BytesIO(poster_bytes)
-    else:
-        buf = poster_bytes  # sudah BytesIO
+            # Ringkasan jumlah transaksi per periode
+            transaksi_summary = df_filtered.groupby(df_filtered[periode_col].astype(str)) \
+                                           .size().reset_index(name="Jumlah Transaksi")
 
-    poster_img = Image.open(buf)
+            poster_buf = generate_poster_A4(
+                transaksi_summary,          # ⬅️ isi data transaksi
+                rata_proses_seconds,
+                df_proses,
+                "Captain Ferizy.png",
+                periode_info_text
+            )
 
-    st.image(
-        poster_img,
-        caption="Preview Poster A4",
-        use_column_width=True
-    )
+            st.session_state.poster_buf = poster_buf
 
-    st.download_button(
-        "💾 Download Poster (PNG, A4 - 300 DPI)",
-        poster_bytes,
-        file_name="Poster_SLA_A4.png",
-        mime="image/png"
-    )
-    st.download_button(
-        "💾 Download Poster (PNG, A4 - 300 DPI)",
-        st.session_state.poster_buf,
-        file_name="Poster_SLA_A4.png",
-        mime="image/png"
-    )
+        # ==============================
+        # Preview + Download Poster
+        # ==============================
+        if "poster_buf" in st.session_state:
+            import io
+            from PIL import Image
 
-    
+            poster_bytes = st.session_state.poster_buf
+
+            # Normalisasi agar selalu bisa dibaca PIL
+            if isinstance(poster_bytes, bytes):
+                buf = io.BytesIO(poster_bytes)
+            else:
+                buf = poster_bytes
+
+            poster_img = Image.open(buf)
+
+            st.image(
+                poster_img,
+                caption="Preview Poster A4",
+                use_column_width=True
+            )
+
+            st.download_button(
+                "💾 Download Poster (PNG, A4 - 300 DPI)",
+                poster_bytes,
+                file_name="Poster_SLA_A4.png",
+                mime="image/png"
+            )
+
+    # ------------------------------
+    # TAB PDF (placeholder)
+    # ------------------------------
     with tab_pdf:
         st.subheader("📥 Download PDF")
         st.info("Fitur PDF belum tersedia.")
-
