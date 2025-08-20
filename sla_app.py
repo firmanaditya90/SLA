@@ -437,30 +437,31 @@ with tab_overview:
             ''', unsafe_allow_html=True)
 
     # ==============================
-    # Rata-rata SLA Keuangan per Periode
+    # Grafik SLA Keuangan per Periode (dengan label angka)
     # ==============================
     if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
         st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
-        st.subheader("📈 Rata-rata SLA Keuangan per Periode")
+        st.subheader("📈 Trend Rata-rata SLA Keuangan per Periode")
 
         # Hitung rata-rata per periode
         trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
         trend_keu["PERIODE_SORTED"] = pd.Categorical(trend_keu[periode_col], categories=selected_periode, ordered=True)
         trend_keu = trend_keu.sort_values("PERIODE_SORTED")
 
-        # Tambahkan kolom format waktu dan hari desimal
-        trend_keu["Rata-rata SLA (format)"] = trend_keu["KEUANGAN"].apply(seconds_to_sla_format)
+        # Konversi ke hari desimal
         trend_keu["Rata-rata SLA (hari)"] = (trend_keu["KEUANGAN"] / 86400).round(2)
 
-        # Tampilkan tabel
-        st.dataframe(
-            trend_keu[[periode_col, "Rata-rata SLA (format)", "Rata-rata SLA (hari)"]],
-            use_container_width=True
-        )
-
-        # Tampilkan grafik
+        # Plot line chart
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.plot(trend_keu[periode_col], trend_keu["Rata-rata SLA (hari)"], marker='o', color='#1f77b4')
+
+        # Tambahkan label angka di setiap dot
+        for i, val in enumerate(trend_keu["Rata-rata SLA (hari)"]):
+            ax.text(
+                i, val, f"{val}", ha='center', va='bottom',
+                fontsize=9, color="black", weight="bold"
+            )
+
         ax.set_title("Trend Rata-rata SLA Keuangan per Periode")
         ax.set_xlabel("Periode")
         ax.set_ylabel("Rata-rata SLA (hari)")
@@ -474,7 +475,6 @@ with tab_overview:
         st.pyplot(fig)
     else:
         st.info("Tidak ada kolom SLA Keuangan yang bisa ditampilkan.")
-
             
 with tab_proses:
     if available_sla_cols:
