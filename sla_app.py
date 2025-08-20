@@ -86,40 +86,51 @@ def load_data(file_path):
 # ==============================
 st.markdown("""
 <style>
-/* Hero gradient title */
-.hero {
+/* Modern KPI Cards */
+.kpi-card {
+  background: rgba(20, 25, 45, 0.55);
+  border-radius: 20px;
+  padding: 18px 20px;
+  border: 1px solid rgba(255,255,255,0.15);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.25);
+  backdrop-filter: blur(12px);
   text-align: center;
-  padding: 12px 0 6px 0;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
-.hero h1 {
-  margin: 0;
-  background: linear-gradient(90deg, #00BFFF 0%, #7F7FD5 50%, #86A8E7 100%);
+.kpi-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.35);
+}
+.kpi-label {
+  font-size: 13px;
+  opacity: 0.75;
+  margin-bottom: 4px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.kpi-value {
+  font-size: 28px;
+  font-weight: 800;
+  background: linear-gradient(90deg, #00eaff, #00ff9d);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+}
+.kpi-sub {
+  font-size: 12px;
+  opacity: 0.65;
+}
+.kpi-status-on {
+  font-size: 24px;
   font-weight: 800;
-  letter-spacing: 0.5px;
+  color: #00ffb0;
+  text-shadow: 0 0 8px rgba(0,255,160,0.7);
 }
-.hero p {
-  opacity: 0.85;
-  margin: 8px 0 0 0;
+.kpi-status-off {
+  font-size: 24px;
+  font-weight: 800;
+  color: #ff4f70;
+  text-shadow: 0 0 8px rgba(255,80,100,0.7);
 }
-/* Glass cards */
-.card {
-  background: rgba(255,255,255,0.06);
-  border-radius: 16px;
-  padding: 14px 16px;
-  border: 1px solid rgba(255,255,255,0.08);
-  box-shadow: 0 6px 24px rgba(0,0,0,0.12);
-}
-.kpi {
-  display: flex; flex-direction: column; gap: 6px;
-}
-.kpi .label { font-size: 12px; opacity: 0.7; }
-.kpi .value { font-size: 22px; font-weight: 700; }
-.small {
-  font-size: 12px; opacity: 0.75;
-}
-hr.soft { border: none; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent); margin: 10px 0 14px 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -395,46 +406,49 @@ with tab_overview:
         if saved_kpi is None:
             st.info("Belum ada Target KPI yang ditentukan admin.")
 
-    # Layout 3 kolom
+    # Layout 3 kolom KPI
     col1, col2, col3 = st.columns(3)
 
-    # Target KPI
     with col1:
-        st.markdown(f'''
-            <div class="card kpi">
-                <div class="label">Target KPI Verifikasi Dokumen</div>
-                <div class="value">{saved_kpi if saved_kpi else "-" } hari</div>
+        st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-label">Target KPI Verifikasi Dokumen</div>
+                <div class="kpi-value">{saved_kpi if saved_kpi else "-" } hari</div>
             </div>
-        ''', unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
-    # Pencapaian
     with col2:
-        st.markdown(f'''
-            <div class="card kpi">
-                <div class="label">Pencapaian</div>
-                <div class="value">{avg_keu_text}</div>
-                <div class="small">({avg_keu_days if avg_keu_days is not None else "-"} hari)</div>
+        st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-label">Pencapaian</div>
+                <div class="kpi-value">{avg_keu_text}</div>
+                <div class="kpi-sub">({avg_keu_days if avg_keu_days is not None else "-"} hari)</div>
             </div>
-        ''', unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
-    # Status
     with col3:
         if saved_kpi and avg_keu_days is not None:
-            status = "✅ ON TARGET" if avg_keu_days <= saved_kpi else "❌ NOT ON TARGET"
-            color = "green" if avg_keu_days <= saved_kpi else "red"
-            st.markdown(f'''
-                <div class="card kpi">
-                    <div class="label">Status</div>
-                    <div class="value" style="color:{color};">{status}</div>
-                </div>
-            ''', unsafe_allow_html=True)
+            if avg_keu_days <= saved_kpi:
+                st.markdown("""
+                    <div class="kpi-card">
+                        <div class="kpi-label">Status</div>
+                        <div class="kpi-status-on">✅ ON TARGET</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                    <div class="kpi-card">
+                        <div class="kpi-label">Status</div>
+                        <div class="kpi-status-off">❌ NOT ON TARGET</div>
+                    </div>
+                """, unsafe_allow_html=True)
         else:
-            st.markdown('''
-                <div class="card kpi">
-                    <div class="label">Status</div>
-                    <div class="value">-</div>
+            st.markdown("""
+                <div class="kpi-card">
+                    <div class="kpi-label">Status</div>
+                    <div class="kpi-value">-</div>
                 </div>
-            ''', unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
     # ==============================
     # Grafik SLA Keuangan per Periode (dengan label angka)
@@ -451,23 +465,19 @@ with tab_overview:
         # Konversi ke hari desimal
         trend_keu["Rata-rata SLA (hari)"] = (trend_keu["KEUANGAN"] / 86400).round(2)
 
-        # Plot line chart
+        # Plot line chart dengan label di dot
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.plot(trend_keu[periode_col], trend_keu["Rata-rata SLA (hari)"], marker='o', color='#1f77b4')
 
-        # Tambahkan label angka di setiap dot
+        # Label angka
         for i, val in enumerate(trend_keu["Rata-rata SLA (hari)"]):
-            ax.text(
-                i, val, f"{val}", ha='center', va='bottom',
-                fontsize=9, color="black", weight="bold"
-            )
+            ax.text(i, val, f"{val}", ha='center', va='bottom', fontsize=9, color="black", weight="bold")
 
         ax.set_title("Trend Rata-rata SLA Keuangan per Periode")
         ax.set_xlabel("Periode")
         ax.set_ylabel("Rata-rata SLA (hari)")
         ax.grid(True, linestyle='--', alpha=0.7)
 
-        # Rotasi label periode agar rapi
         for label in ax.get_xticklabels():
             label.set_rotation(45)
             label.set_ha('right')
