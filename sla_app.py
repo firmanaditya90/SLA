@@ -314,14 +314,52 @@ with st.status("⏱️ Memproses kolom SLA setelah filter...", expanded=False) a
 # ==============================
 # Admin tools untuk input Target KPI
 # ==============================
-with st.sidebar:
-    if is_admin:
-        target_kpi = st.number_input("Target KPI Verifikasi Dokumen (dalam hari, desimal)", min_value=0.0, step=0.1)
-        st.session_state.target_kpi = target_kpi
-    else:
-        target_kpi = st.session_state.get('target_kpi', 0.0)
+# Path untuk menyimpan file Target KPI
+TARGET_KPI_FILE = "target_kpi.json"
 
-st.markdown(f"**Target KPI Verifikasi Dokumen:** {target_kpi} hari")
+def load_target_kpi():
+    """Membaca nilai Target KPI dari file jika ada"""
+    if os.path.exists(TARGET_KPI_FILE):
+        with open(TARGET_KPI_FILE, "r") as f:
+            return json.load(f)
+    else:
+        return {"target_kpi": 0.0}  # Default jika file belum ada
+
+def save_target_kpi(target_kpi):
+    """Menyimpan nilai Target KPI ke file"""
+    with open(TARGET_KPI_FILE, "w") as f:
+        json.dump({"target_kpi": target_kpi}, f)
+
+# ==============================
+# Inisialisasi dan Load Data
+# ==============================
+target_kpi_data = load_target_kpi()  # Memuat nilai Target KPI yang tersimpan
+
+# ==============================
+# Admin tools untuk input Target KPI
+# ==============================
+if is_admin:
+    # Menampilkan dan memperbarui Target KPI
+    new_target_kpi = st.number_input("Target KPI Verifikasi Dokumen (dalam hari, desimal)", min_value=0.0, step=0.1, value=target_kpi_data["target_kpi"])
+    if new_target_kpi != target_kpi_data["target_kpi"]:
+        save_target_kpi(new_target_kpi)  # Simpan perubahan ke file
+        target_kpi_data = load_target_kpi()  # Muat ulang data setelah penyimpanan
+        st.success("Target KPI berhasil diperbarui!")
+else:
+    # Jika bukan admin, tampilkan Target KPI yang tersimpan
+    target_kpi = target_kpi_data["target_kpi"]
+    st.markdown(f"**Target KPI Verifikasi Dokumen:** {target_kpi} hari")
+
+# ==============================
+# Menampilkan Pencapaian
+# ==============================
+if "KEUANGAN" in df_raw.columns:
+    rata_sla_keuangan_seconds = df_raw["KEUANGAN"].mean()
+    pencapaian = rata_sla_keuangan_seconds / 86400  # Mengkonversi detik ke desimal hari
+    pencapaian_formatted = format_duration(rata_sla_keuangan_seconds)  # Format asli
+    st.markdown(f"**Pencapaian:** {pencapaian_formatted} (format waktu), {pencapaian:.2f} hari (format desimal)")
+else:
+    st.markdown("**Pencapaian:** -")
 
 # ==============================
 # KPI Ringkasan (TIDAK DIUBAH)
@@ -359,17 +397,13 @@ tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_r
 )
 
 with tab_overview:
-    st.subheader("📊 KPI Verifikasi Dokumen Penagihan")
-
-    # Hitung rata-rata SLA Keuangan
-    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
-        avg_keu_seconds = df_filtered["KEUANGAN"].mean()
-        avg_keu_days = round(avg_keu_seconds / 86400, 2)  # format desimal hari
-        avg_keu_text = seconds_to_sla_format(avg_keu_seconds)  # format hari jam menit detik
-    else:
-        avg_keu_seconds = None
-        avg_keu_days = None
-        avg_keu_text = "-"
+    st.subheader("📄 Overview KPI Verifikasi Dokumen")
+    st.markdown(f"**Target KPI Verifikasi Dokumen:** {target_kpi} hari")
+    if "KEUANGAN" in df_raw.columns:
+        rata_sla_keuangan_seconds = df_raw["KEUANGAN"].mean()
+        pencapaian_formatted = format_duration(rata_sla_keuangan_seconds)  # Format asli
+        pencapaian = rata_sla_keuangan_seconds / 86400  # Format desimal
+        st.markdown(f"**Pencapaian:** {pencapaian_formatted} (format waktu), {pencapaian:.2f} hari (format desimal)")
 
     # Input Target KPI (hanya admin)
     if is_admin:
