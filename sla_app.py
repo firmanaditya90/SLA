@@ -121,6 +121,52 @@ st.markdown("""
 hr.soft { border: none; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent); margin: 10px 0 14px 0; }
 </style>
 """, unsafe_allow_html=True)
+/* Modern KPI Cards */
+.kpi-card {
+  background: rgba(20, 25, 45, 0.55);
+  border-radius: 20px;
+  padding: 18px 20px;
+  border: 1px solid rgba(255,255,255,0.15);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.25);
+  backdrop-filter: blur(12px);
+  text-align: center;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.kpi-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.35);
+}
+.kpi-label {
+  font-size: 13px;
+  opacity: 0.75;
+  margin-bottom: 4px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.kpi-value {
+  font-size: 28px;
+  font-weight: 800;
+  background: linear-gradient(90deg, #00eaff, #00ff9d);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.kpi-sub {
+  font-size: 12px;
+  opacity: 0.65;
+}
+.kpi-status-on {
+  font-size: 24px;
+  font-weight: 800;
+  color: #00ffb0;
+  text-shadow: 0 0 8px rgba(0,255,160,0.7);
+}
+.kpi-status-off {
+  font-size: 24px;
+  font-weight: 800;
+  color: #ff4f70;
+  text-shadow: 0 0 8px rgba(255,80,100,0.7);
+}
+
 
 st.markdown("""
 <div class="hero">
