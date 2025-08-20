@@ -84,45 +84,82 @@ def load_data(file_path):
 # ==============================
 # Styling: CSS untuk look modern (TIDAK DIUBAH)
 # ==============================
-st.markdown("""
-<style>
-/* Ringkasan Cards */
-.summary-card {
-  background: rgba(25, 30, 55, 0.55);
-  border-radius: 18px;
-  padding: 18px 20px;
-  border: 1px solid rgba(255,255,255,0.12);
-  box-shadow: 0 6px 20px rgba(0,0,0,0.25);
-  backdrop-filter: blur(10px);
-  text-align: center;
-  transition: all 0.25s ease;
-}
-.summary-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 10px 28px rgba(0,0,0,0.35);
-}
-.summary-icon {
-  font-size: 28px;
-  margin-bottom: 6px;
-  opacity: 0.9;
-}
-.summary-label {
-  font-size: 13px;
-  text-transform: uppercase;
-  opacity: 0.7;
-  margin-bottom: 2px;
-}
-.summary-value {
-  font-size: 26px;
-  font-weight: 800;
-  background: linear-gradient(90deg, #00eaff, #00ff9d);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-.summary-sub {
-  font-size: 12px;
-  opacity: 0.65;
-}
+st.markdown("## 📈 Ringkasan")
+
+c1, c2, c3, c4 = st.columns(4)
+
+# 1. Jumlah Transaksi
+with c1:
+    transaksi_trend = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().tolist()
+    spark = render_sparkline(transaksi_trend, color="#ff9f7f") if transaksi_trend else ""
+    st.markdown(f"""
+        <div class="summary-card">
+            <div class="summary-icon">🧾</div>
+            <div class="summary-label">Jumlah Transaksi</div>
+            <div class="summary-value">{len(df_filtered):,}</div>
+            {'<img src="'+spark+'" width="100%"/>' if spark else ''}
+        </div>
+    """, unsafe_allow_html=True)
+
+# 2. Rata-rata TOTAL WAKTU
+with c2:
+    if "TOTAL WAKTU" in available_sla_cols and len(df_filtered) > 0:
+        avg_total = float(df_filtered["TOTAL WAKTU"].mean())
+        avg_total_text = seconds_to_sla_format(avg_total)
+        total_trend = (df_filtered.groupby(df_filtered[periode_col].astype(str))["TOTAL WAKTU"].mean() / 86400).round(2).tolist()
+    else:
+        avg_total_text = "-"
+        total_trend = []
+    spark = render_sparkline(total_trend, color="#9467bd") if total_trend else ""
+    st.markdown(f"""
+        <div class="summary-card">
+            <div class="summary-icon">⏱️</div>
+            <div class="summary-label">Rata-rata TOTAL WAKTU</div>
+            <div class="summary-value">{avg_total_text}</div>
+            {'<img src="'+spark+'" width="100%"/>' if spark else ''}
+        </div>
+    """, unsafe_allow_html=True)
+
+# 3. Proses Tercepat
+with c3:
+    fastest_label = "-"
+    fastest_value = None
+    for c in [x for x in available_sla_cols if x != "TOTAL WAKTU"]:
+        val = df_filtered[c].mean()
+        if val is not None and not (isinstance(val, float) and math.isnan(val)):
+            if fastest_value is None or val < fastest_value:
+                fastest_value = val
+                fastest_label = c
+
+    if fastest_label != "-" and fastest_label in available_sla_cols:
+        fastest_trend = (df_filtered.groupby(df_filtered[periode_col].astype(str))[fastest_label].mean() / 86400).round(2).tolist()
+    else:
+        fastest_trend = []
+    spark = render_sparkline(fastest_trend, color="#00c6ff") if fastest_trend else ""
+    st.markdown(f"""
+        <div class="summary-card">
+            <div class="summary-icon">⚡</div>
+            <div class="summary-label">Proses Tercepat</div>
+            <div class="summary-value">{fastest_label}</div>
+            {'<img src="'+spark+'" width="100%"/>' if spark else ''}
+        </div>
+    """, unsafe_allow_html=True)
+
+# 4. Kualitas Periode
+with c4:
+    valid_ratio = (df_filtered[periode_col].notna().mean() * 100.0) if len(df_filtered) > 0 else 0.0
+    valid_trend = []
+    if len(df_filtered) > 0:
+        valid_trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[periode_col].apply(lambda x: x.notna().mean() * 100).tolist()
+    spark = render_sparkline(valid_trend, color="#00ff9d") if valid_trend else ""
+    st.markdown(f"""
+        <div class="summary-card">
+            <div class="summary-icon">✅</div>
+            <div class="summary-label">Kualitas Periode (Valid)</div>
+            <div class="summary-value">{valid_ratio:.1f}%</div>
+            {'<img src="'+spark+'" width="100%"/>' if spark else ''}
+        </div>
+    """, unsafe_allow_html=True)
 
 /* Modern KPI Cards */
 .kpi-card {
