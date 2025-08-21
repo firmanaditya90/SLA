@@ -1203,6 +1203,158 @@ with tab_poster:
         )
 
     with tab_pdf:
-        st.subheader("📥 Download PDF")
-        st.info("Fitur PDF belum tersedia.")
+        st.subheader("📑 Laporan SLA (Versi Elegan PDF via Browser Print)")
+        st.caption("Klik tombol di bawah untuk mencetak atau simpan laporan ini ke PDF.")
+
+    # Tombol print (Javascript)
+    print_button = """
+    <script>
+    function printPage() {
+        window.print();
+    }
+    </script>
+    <button onclick="printPage()" style="
+        background: linear-gradient(90deg,#0F172A,#1E293B);
+        color:white;
+        font-size:16px;
+        border:none;
+        padding:10px 25px;
+        border-radius:8px;
+        cursor:pointer;
+        margin:10px 0;
+    ">🖨️ Cetak / Simpan sebagai PDF</button>
+    """
+    st.markdown(print_button, unsafe_allow_html=True)
+
+    # CSS styling untuk PDF
+    st.markdown("""
+    <style>
+    @media print {
+        .pagebreak { page-break-before: always; }
+        button { display: none; } /* hide buttons in print */
+    }
+    .cover {
+        text-align: center;
+        padding-top: 100px;
+    }
+    .cover h1 {
+        font-size: 36px;
+        color: #0F172A;
+    }
+    .cover h2 {
+        font-size: 20px;
+        color: #334155;
+    }
+    .cover img {
+        margin-top: 40px;
+        width: 200px;
+    }
+    .toc h2 {
+        font-size: 24px;
+        margin-bottom: 10px;
+        color: #0F172A;
+    }
+    .toc ul {
+        font-size: 16px;
+        line-height: 1.8;
+    }
+    h2 {
+        color: #0F172A;
+        border-bottom: 2px solid #CBD5E1;
+        padding-bottom: 4px;
+        margin-top: 30px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ---------------- COVER ----------------
+    st.markdown(f"""
+    <div class='cover'>
+        <h1>Laporan SLA Payment Analyzer</h1>
+        <h2>Periode: {selected_periode[0]} s.d. {selected_periode[-1] if selected_periode else '-'}</h2>
+        <h2>Tanggal Terbit: {datetime.now().strftime('%d %B %Y')}</h2>
+        <img src="https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png" alt="Logo Perusahaan">
+    </div>
+    <div class='pagebreak'></div>
+    """, unsafe_allow_html=True)
+
+    # ---------------- TOC ----------------
+    st.markdown("""
+    <div class='toc'>
+        <h2>Daftar Isi</h2>
+        <ul>
+            <li>Bab 1. Ringkasan Eksekutif</li>
+            <li>Bab 2. KPI SLA</li>
+            <li>Bab 3. Analisis Per Proses</li>
+            <li>Bab 4. Analisis Vendor</li>
+            <li>Bab 5. Tren SLA</li>
+            <li>Bab 6. Kesimpulan & Rekomendasi</li>
+        </ul>
+    </div>
+    <div class='pagebreak'></div>
+    """, unsafe_allow_html=True)
+
+    # ---------------- BAB 1 ----------------
+    st.markdown("## Bab 1. Ringkasan Eksekutif")
+    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
+        avg_sec = float(df_filtered["KEUANGAN"].mean())
+        st.write(f"Rata-rata SLA Keuangan: **{seconds_to_sla_format(avg_sec)}** (~{avg_sec/86400:.2f} hari)")
+    if "TOTAL WAKTU" in available_sla_cols:
+        avg_tot = float(df_filtered["TOTAL WAKTU"].mean())
+        st.write(f"Rata-rata TOTAL WAKTU: **{avg_tot/86400:.2f} hari**")
+
+    if "KEUANGAN" in df_filtered.columns:
+        trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
+        fig, ax = plt.subplots(figsize=(6,3))
+        ax.plot(trend_keu[periode_col], trend_keu["KEUANGAN"]/86400, marker="o")
+        ax.set_title("Trend Rata-rata SLA Keuangan (hari)")
+        ax.set_ylabel("Hari")
+        plt.xticks(rotation=45, ha="right")
+        st.pyplot(fig)
+
+    st.markdown("<div class='pagebreak'></div>", unsafe_allow_html=True)
+
+    # ---------------- BAB 2 ----------------
+    st.markdown("## Bab 2. KPI SLA")
+    saved_kpi = load_kpi()
+    if "KEUANGAN" in df_filtered.columns:
+        avg_sec = float(df_filtered["KEUANGAN"].mean())
+        avg_days = avg_sec / 86400
+        status = "✅ ON TARGET" if saved_kpi and avg_days <= saved_kpi else "⚠️ NOT ON TARGET"
+        st.write(f"Target KPI: {saved_kpi if saved_kpi else '-'} hari") 
+        st.write(f"Pencapaian rata-rata: {avg_days:.2f} hari") 
+        st.write(f"Status: {status}")
+
+    st.markdown("<div class='pagebreak'></div>", unsafe_allow_html=True)
+
+    # ---------------- BAB 3 ----------------
+    st.markdown("## Bab 3. Analisis Per Proses")
+    if proses_grafik_cols:
+        rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
+        st.dataframe(rata_proses_seconds.apply(seconds_to_sla_format))
+
+    st.markdown("<div class='pagebreak'></div>", unsafe_allow_html=True)
+
+    # ---------------- BAB 4 ----------------
+    st.markdown("## Bab 4. Analisis Vendor")
+    if "NAMA VENDOR" in df_filtered.columns and available_sla_cols:
+        vendor_summary = df_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean()/86400
+        st.dataframe(vendor_summary)
+
+    st.markdown("<div class='pagebreak'></div>", unsafe_allow_html=True)
+
+    # ---------------- BAB 5 ----------------
+    st.markdown("## Bab 5. Tren SLA")
+    trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[available_sla_cols].mean()/86400
+    st.dataframe(trend)
+
+    st.markdown("<div class='pagebreak'></div>", unsafe_allow_html=True)
+
+    # ---------------- BAB 6 ----------------
+    st.markdown("## Bab 6. Kesimpulan & Rekomendasi")
+    st.write("""
+    Secara umum, metrik SLA menunjukkan performa yang konsisten.  
+    Fokus perbaikan diarahkan ke proses dengan rata-rata hari tertinggi,  
+    dan kolaborasi dengan vendor yang memiliki rata-rata SLA terlama.
+    """)
 
