@@ -1234,7 +1234,7 @@ with tab_pdf:
 
         # Membuat PDF
         output_pdf_path = "sla_report.pdf"
-        generate_pdf(df_filtered, start_periode, end_periode, poster_path, output_pdf_path)
+        generate_pdf(df_filtered, periode_range_text)
 
         # Memberikan link download untuk PDF
         with open(output_pdf_path, "rb") as f:
@@ -1261,7 +1261,10 @@ def seconds_to_sla_format(seconds):
     return f"{days}d {hours}h {minutes}m"
 
 # Fungsi untuk menghasilkan laporan PDF
-def generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pdf_path):
+def generate_pdf(    
+    sla_text_dict, rata_proses_seconds, df_proses,
+    image_url, periode_range_text,
+    df_filtered, periode_col, selected_periode):
     # Membuat dokumen PDF dengan SimpleDocTemplate
     doc = SimpleDocTemplate(output_pdf_path, pagesize=A4)
     elements = []
@@ -1387,7 +1390,7 @@ with st.form(key='pdf_form'):
 
     if submit_button:
         # Generate PDF ketika tombol submit ditekan
-        generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pdf_path)
+        generate_pdf(df_filtered, periode_range_text)
 
 # Memberikan link download untuk PDF
 with open(output_pdf_path, "rb") as f:
