@@ -1203,31 +1203,26 @@ with tab_poster:
             mime="image/png"
         )
 
-import streamlit.components.v1 as components
+
+
+import base64
 from datetime import datetime
+import streamlit.components.v1 as components
+
+def fig_to_base64(fig):
+    buf = BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight")
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode("utf-8")
 
 with tab_pdf:
     st.subheader("📑 Laporan SLA (Versi Elegan PDF via Browser Print)")
 
-    if st.button("🖨️ Cetak / Simpan sebagai PDF"):
-        components.html("<script>window.print()</script>", height=0, width=0)
+    # ================= Build HTML Report =================
+    html_parts = []
 
-    # Styling hanya untuk tab ini
-    st.markdown("""
-    <style>
-    @media print {
-        .pagebreak { page-break-before: always; }
-        button, .stButton { display: none; }
-    }
-    .cover { text-align: center; padding-top: 100px; }
-    .cover h1 { font-size: 36px; color: #0F172A; }
-    .cover h2 { font-size: 20px; color: #334155; }
-    .cover img { margin-top: 40px; width: 200px; }
-    </style>
-    """, unsafe_allow_html=True)
-
-    # COVER
-    st.markdown(f"""
+    # ---------------- Cover ----------------
+    html_parts.append(f"""
     <div class='cover'>
         <h1>Laporan SLA Payment Analyzer</h1>
         <h2>Periode: {selected_periode[0]} s.d. {selected_periode[-1] if selected_periode else '-'}</h2>
@@ -1235,10 +1230,10 @@ with tab_pdf:
         <img src="https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png">
     </div>
     <div class='pagebreak'></div>
-    """, unsafe_allow_html=True)
+    """)
 
-    # TOC
-    st.markdown("""
+    # ---------------- TOC ----------------
+    html_parts.append("""
     <h2>Daftar Isi</h2>
     <ul>
         <li>Bab 1. Ringkasan Eksekutif</li>
@@ -1249,9 +1244,93 @@ with tab_pdf:
         <li>Bab 6. Kesimpulan & Rekomendasi</li>
     </ul>
     <div class='pagebreak'></div>
-    """, unsafe_allow_html=True)
+    """)
 
-    # ... lanjutkan isi bab
+    # ---------------- Bab 1 ----------------
+    summary_html = "<h2>Bab 1. Ringkasan Eksekutif</h2>"
+    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
+        avg_sec = float(df_filtered["KEUANGAN"].mean())
+        summary_html += f"<p>Rata-rata SLA Keuangan: <b>{seconds_to_sla_format(avg_sec)}</b> (~{avg_sec/86400:.2f} hari)</p>"
+    if "TOTAL WAKTU" in available_sla_cols:
+        avg_tot = float(df_filtered["TOTAL WAKTU"].mean())
+        summary_html += f"<p>Rata-rata TOTAL WAKTU: <b>{avg_tot/86400:.2f} hari</b></p>"
 
+    # grafik trend keuangan
+    if "KEUANGAN" in df_filtered.columns:
+        trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
+        fig, ax = plt.subplots(figsize=(6,3))
+        ax.plot(trend_keu[periode_col], trend_keu["KEUANGAN"]/86400, marker="o")
+        ax.set_title("Trend Rata-rata SLA Keuangan (hari)")
+        ax.set_ylabel("Hari")
+        plt.xticks(rotation=45, ha="right")
+        img_b64 = fig_to_base64(fig); plt.close(fig)
+        summary_html += f'<img src="data:image/png;base64,{img_b64}" style="width:100%;">'
 
+    html_parts.append(summary_html + "<div class='pagebreak'></div>")
 
+    # ---------------- Bab 2 ----------------
+    kpi_html = "<h2>Bab 2. KPI SLA</h2>"
+    saved_kpi = load_kpi()
+    if "KEUANGAN" in df_filtered.columns:
+        avg_sec = float(df_filtered["KEUANGAN"].mean())
+        avg_days = avg_sec / 86400
+        status = "✅ ON TARGET" if saved_kpi and avg_days <= saved_kpi else "⚠️ NOT ON TARGET"
+        kpi_html += f"<p>Target KPI: {saved_kpi if saved_kpi else '-'} hari<br>"
+        kpi_html += f"Pencapaian rata-rata: {avg_days:.2f} hari<br>"
+        kpi_html += f"Status: {status}</p>"
+    html_parts.append(kpi_html + "<div class='pagebreak'></div>")
+
+    # ---------------- Bab 3 ----------------
+    proses_html = "<h2>Bab 3. Analisis Per Proses</h2>"
+    if proses_grafik_cols:
+        rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
+        rata_proses_days = (rata_proses_seconds/86400).round(2)
+        proses_html += rata_proses_days.to_frame("Rata-rata (hari)").to_html(border=0, justify="left")
+    html_parts.append(proses_html + "<div class='pagebreak'></div>")
+
+    # ---------------- Bab 4 ----------------
+    vendor_html = "<h2>Bab 4. Analisis Vendor</h2>"
+    if "NAMA VENDOR" in df_filtered.columns and available_sla_cols:
+        vendor_summary = (df_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean()/86400).round(2)
+        vendor_html += vendor_summary.to_html(border=0, justify="left")
+    html_parts.append(vendor_html + "<div class='pagebreak'></div>")
+
+    # ---------------- Bab 5 ----------------
+    tren_html = "<h2>Bab 5. Tren SLA</h2>"
+    trend = (df_filtered.groupby(df_filtered[periode_col].astype(str))[available_sla_cols].mean()/86400).round(2)
+    tren_html += trend.to_html(border=0, justify="left")
+    html_parts.append(tren_html + "<div class='pagebreak'></div>")
+
+    # ---------------- Bab 6 ----------------
+    kesimpulan_html = "<h2>Bab 6. Kesimpulan & Rekomendasi</h2>"
+    kesimpulan_html += """
+    <p>Secara umum, metrik SLA menunjukkan performa yang konsisten.<br>
+    Fokus perbaikan diarahkan ke proses dengan rata-rata hari tertinggi,<br>
+    dan kolaborasi dengan vendor yang memiliki rata-rata SLA terlama.</p>
+    """
+    html_parts.append(kesimpulan_html)
+
+    # ================= Combine HTML =================
+    full_html = """
+    <style>
+    @media print {
+        .pagebreak { page-break-before: always; }
+        button, .stButton { display: none; }
+    }
+    .cover { text-align: center; padding-top: 100px; }
+    .cover h1 { font-size: 36px; color: #0F172A; }
+    .cover h2 { font-size: 20px; color: #334155; }
+    .cover img { margin-top: 40px; width: 200px; }
+    h2 { color: #0F172A; border-bottom: 2px solid #CBD5E1; padding-bottom: 4px; margin-top: 30px; }
+    table { border-collapse: collapse; margin-top: 15px; }
+    table, th, td { border: 1px solid #CBD5E1; padding: 6px; }
+    th { background: #E2E8F0; }
+    </style>
+    """ + "".join(html_parts)
+
+    # tampilkan preview laporan di tab
+    st.components.v1.html(full_html, height=800, scrolling=True)
+
+    # tombol print → save as PDF
+    if st.button("🖨️ Cetak / Simpan sebagai PDF"):
+        components.html("<script>window.print()</script>", height=0, width=0)
