@@ -539,7 +539,6 @@ with tab_overview:
         avg_keu_days = None
         avg_keu_text = "-"
 
-
     # Load target KPI dari file
     saved_kpi = load_kpi()
 
@@ -1203,77 +1202,7 @@ with tab_poster:
             mime="image/png"
         )
 
-from fpdf import FPDF
+    with tab_pdf:
+        st.subheader("📥 Download PDF")
+        st.info("Fitur PDF belum tersedia.")
 
-# Fungsi untuk membuat PDF
-def generate_pdf(df_filtered, selected_periode, rata_proses_seconds, trend_keu, avg_keu_text):
-    # Membuat objek FPDF
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-
-    # Set font untuk judul
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, txt="Laporan SLA Payment Analyzer", ln=True, align="C")
-    
-    # Set font untuk konten
-    pdf.set_font("Arial", size=12)
-    
-    # Menambahkan informasi periode
-    pdf.ln(10)  # line break
-    pdf.cell(200, 10, txt=f"Periode dari {selected_periode[0]} sampai {selected_periode[-1]}", ln=True)
-    
-    # Menambahkan ringkasan KPI (misalnya Rata-rata SLA Keuangan)
-    pdf.ln(5)
-    pdf.cell(200, 10, txt=f"Rata-rata SLA Keuangan: {avg_keu_text}", ln=True)
-
-    # Menambahkan tabel rata-rata SLA per proses
-    pdf.ln(10)
-    pdf.cell(200, 10, txt="Tabel Rata-rata SLA per Proses", ln=True)
-    
-    # Menambahkan tabel data rata_proses_seconds
-    for index, value in rata_proses_seconds.items():
-        pdf.cell(100, 10, txt=f"{index}: {seconds_to_sla_format(value)}", ln=True)
-    
-    # Menambahkan grafik trend keuangan
-    pdf.ln(10)
-    pdf.cell(200, 10, txt="Grafik Trend Rata-rata SLA Keuangan per Periode", ln=True)
-    # Simpan grafik sebagai gambar sementara
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(trend_keu['PERIODE_SORTED'], trend_keu["Rata-rata SLA (hari)"], marker='o', color='#1f77b4')
-    ax.set_title("Trend Rata-rata SLA Keuangan per Periode")
-    ax.set_xlabel("Periode")
-    ax.set_ylabel("Rata-rata SLA (hari)")
-    ax.grid(True, linestyle='--', alpha=0.7)
-    
-    # Simpan gambar ke buffer
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight", transparent=True)
-    buf.seek(0)
-    fig.close()
-    
-    # Menambahkan gambar ke PDF
-    pdf.ln(10)
-    pdf.image(buf, x=10, y=pdf.get_y(), w=180)
-
-    # Menyimpan PDF ke file
-    pdf_output = "/mnt/data/slapayment_report.pdf"
-    pdf.output(pdf_output)
-    return pdf_output
-
-# Update bagian tab_pdf untuk memanggil fungsi generate_pdf
-with tab_pdf:
-    st.subheader("📥 Download PDF")
-    
-    if st.button("🎨 Generate PDF Report"):
-        # Panggil fungsi untuk membuat PDF
-        pdf_path = generate_pdf(df_filtered, selected_periode, rata_proses_seconds, trend_keu, avg_keu_text)
-        
-        # Tampilkan tombol untuk mengunduh PDF
-        st.success("PDF berhasil dibuat!")
-        st.download_button(
-            label="💾 Unduh PDF",
-            data=open(pdf_path, "rb").read(),
-            file_name="SLA_Payment_Report.pdf",
-            mime="application/pdf"
-        )
