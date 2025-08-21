@@ -6,3 +6,7 @@ plotly
 fpdf
 openpyxl
 reportlab
+streamlit
+pandas
+matplotlib
+reportlab
