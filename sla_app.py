@@ -1241,71 +1241,125 @@ with tab_pdf:
             pdf_data = f.read()  # Membaca data PDF yang telah dibuat
             st.download_button("💾 Download PDF", pdf_data, file_name="sla_report.pdf", mime="application/pdf")  # Tombol untuk mengunduh PDF
 
+import io
+import pandas as pd
+import streamlit as st
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import SimpleDocTemplate, Paragraph
 
+# Fungsi untuk mengonversi detik ke format SLA
+def seconds_to_sla_format(seconds):
+    """Konversi detik ke format SLA: 'Xd Yh Zm'"""
+    if seconds is None:
+        return "0d 0h 0m"
+    days = int(seconds // 86400)
+    hours = int((seconds % 86400) // 3600)
+    minutes = int((seconds % 3600) // 60)
+    return f"{days}d {hours}h {minutes}m"
+
+# Fungsi untuk menghasilkan laporan PDF
 def generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pdf_path):
     # Membuat dokumen PDF dengan SimpleDocTemplate
     doc = SimpleDocTemplate(output_pdf_path, pagesize=A4)
     elements = []
 
-    # Membuat canvas untuk menggambar judul dan periode
-    c = canvas.Canvas(output_pdf_path, pagesize=A4)
-    W, H = A4  # Ukuran halaman A4
+    # Membuat canvas untuk menggambar
+    c = canvas.Canvas(output_pdf_path, pagesize=A4)  # Ukuran A4
+    W, H = A4  # A4 size in points
+
+    # ---------- Halaman 1: Judul ----------
     title_text = "SLA DOKUMEN PENAGIHAN"
-    periode_range_text = f"Periode dari {start_periode} sampai {end_periode}"
-
-    # ---------- Judul ----------
-    try:
-        font_title = "Helvetica-Bold"
-        font_size = 80
-        c.setFont(font_title, font_size)
-    except:
-        font_title = "Helvetica"
-        font_size = 80
-
+    font_title = "Helvetica-Bold"
+    font_size = 80
+    c.setFont(font_title, font_size)
     bbox_title = c.stringWidth(title_text, font_title, font_size)
     title_w = bbox_title
     title_h = font_size
     title_y = H * 0.80  # Tempatkan sedikit lebih tinggi dari tengah halaman
-
     c.drawString((W - title_w) / 2, title_y, title_text)  # Gambar judul di tengah
-
-    # ---------- Periode ----------
-    try:
-        font_periode = "Helvetica"
-        font_size = 40
-        c.setFont(font_periode, font_size)
-    except:
-        font_periode = "Helvetica"
-        font_size = 40
-
-    max_width = W * 0.8  # Lebar maksimal untuk subjudul
-    while True:
-        bbox_periode = c.stringWidth(periode_range_text, font_periode, font_size)
-        periode_w = bbox_periode
-        if periode_w <= max_width or font_size <= 20:
-            break
-        font_size -= 5
-        c.setFont(font_periode, font_size)
-
-    periode_y = title_y - title_h - 30  # Jarak antara judul dan periode
-    c.drawString((W - periode_w) / 2, periode_y, periode_range_text)  # Gambar periode di tengah
-
     c.showPage()
 
-    # Menambahkan gambar poster pada halaman berikutnya
+    # ---------- Halaman 2: Poster ----------
     if poster_img:
         c.drawImage(poster_img, 100, 400, width=400, height=300)  # Gambar poster
     c.showPage()
 
-    # Menyelesaikan PDF
+    # ---------- Halaman 3: Daftar Isi ----------
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(100, 800, "Daftar Isi:")
+    c.setFont("Helvetica", 12)
+    c.drawString(100, 780, "1. Overview")
+    c.drawString(100, 760, "2. Proses")
+    c.drawString(100, 740, "3. Vendor")
+    c.drawString(100, 720, "4. Transaksi")
+    c.drawString(100, 700, "5. Tren")
+    c.showPage()
+
+    # ---------- Halaman 4: Overview ----------
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(100, 800, "1. Overview")
+    c.setFont("Helvetica", 12)
+    overview_text = "Narasi tentang Overview ... Menampilkan grafik dan tabel tentang overview."
+    c.drawString(100, 780, overview_text)
+    # Menambahkan tabel untuk overview
+    overview_data = [["Proses", "Jumlah Transaksi", "Rata-rata SLA"]]
+    for process, count, sla in zip(df_filtered["NAMA VENDOR"], df_filtered["Jumlah Transaksi"], df_filtered["Rata-rata SLA"]):
+        overview_data.append([process, count, sla])
+    table = Table(overview_data)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    table.wrapOn(c, W, H)
+    table.drawOn(c, 100, 500)  # Posisi tabel
+    c.showPage()
+
+    # ---------- Halaman 5: Proses ----------
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(100, 800, "2. Proses")
+    c.setFont("Helvetica", 12)
+    proses_text = "Narasi tentang Proses ... Menampilkan grafik dan tabel tentang proses."
+    c.drawString(100, 780, proses_text)
+    c.showPage()
+
+    # ---------- Halaman 6 dan seterusnya ----------
+    # Misalnya untuk tab_vendor:
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(100, 800, "3. Vendor")
+    c.setFont("Helvetica", 12)
+    vendor_text = "Narasi tentang Vendor ... Menampilkan grafik dan tabel tentang vendor."
+    c.drawString(100, 780, vendor_text)
+    # Menambahkan tabel untuk vendor
+    vendor_data = [["Vendor", "Jumlah Transaksi", "Rata-rata SLA"]]
+    for vendor, count, sla in zip(df_filtered["NAMA VENDOR"], df_filtered["Jumlah Transaksi"], df_filtered["Rata-rata SLA"]):
+        vendor_data.append([vendor, count, sla])
+    table = Table(vendor_data)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    table.wrapOn(c, W, H)
+    table.drawOn(c, 100, 500)  # Posisi tabel
+    c.showPage()
+
+    # ---------- Menyelesaikan PDF ----------
     c.save()
 
-# Data contoh untuk pengujian
+# Streamlit part
+st.title("Generate SLA PDF Report")
+
+# Menyaring Data berdasarkan Periode (Start Periode dan End Periode secara otomatis)
 df_filtered = pd.DataFrame({
     "NAMA VENDOR": ["Vendor A", "Vendor B", "Vendor C"],
     "Jumlah Transaksi": [120, 85, 60],
@@ -1313,22 +1367,17 @@ df_filtered = pd.DataFrame({
     "Tanggal": pd.to_datetime(["2023-01-01", "2023-02-01", "2023-03-01"])  # Contoh tanggal
 })
 
+# Menentukan rentang periode secara otomatis berdasarkan data yang difilter
 start_periode = df_filtered["Tanggal"].min().strftime("%Y-%m-%d")
 end_periode = df_filtered["Tanggal"].max().strftime("%Y-%m-%d")
-poster_img = "poster_a4.png"  # Path ke file gambar poster
-output_pdf_path = "sla_report.pdf"
 
-# Panggil fungsi generate_pdf
-generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pdf_path)
-
-# Streamlit part
-import streamlit as st
-
-st.title("Generate SLA PDF Report")
-
-# Menyaring Data berdasarkan Periode (Start Periode dan End Periode secara otomatis)
+# Menampilkan Rentang Periode
 st.write(f"Start Periode: {start_periode}")
 st.write(f"End Periode: {end_periode}")
+
+# Generate Poster di tab_poster (contoh penggunaan gambar dari tab_poster)
+# Di sini kita menyimulasikan proses generate poster yang telah dilakukan di tab_poster
+poster_img = "poster_a4.png"  # Path ke file gambar poster
 
 # Form untuk menghasilkan PDF
 with st.form(key='pdf_form'):
