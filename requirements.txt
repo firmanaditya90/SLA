@@ -1,20 +1,8 @@
-# ---- Core ----
-streamlit==1.36.0
-streamlit-lottie==0.0.5
-
-# ---- Data Handling ----
-pandas==2.2.2
-openpyxl==3.1.5
-
-# ---- Visualization ----
-matplotlib==3.9.2
-plotly==5.22.0
-
-# ---- Images ----
-pillow==10.4.0   # (PIL)
-
-# ---- PDF Generation ----
-reportlab==3.6.12
-
-# ---- Networking ----
-requests==2.32.3
+streamlit
+streamlit-lottie
+matplotlib
+pandas
+plotly
+openpyxl
+reportlab
+pillow
