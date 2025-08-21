@@ -1228,6 +1228,10 @@ with tab_pdf:
         with open(poster_path, "wb") as f:
             f.write(poster_buf.getvalue())  # Menyimpan gambar poster ke file
 
+        # Mendefinisikan start_periode dan end_periode berdasarkan filter
+        start_periode = selected_periode[0]  # Ambil periode awal dari filter
+        end_periode = selected_periode[-1]  # Ambil periode akhir dari filter
+
         # Membuat PDF
         output_pdf_path = "sla_report.pdf"
         generate_pdf(df_filtered, start_periode, end_periode, poster_path, output_pdf_path)
