@@ -1243,6 +1243,7 @@ with tab_pdf:
 
 import io
 import pandas as pd
+import streamlit as st
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas
@@ -1331,40 +1332,39 @@ def generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pdf
     # Menyelesaikan PDF dengan elemen-elemen yang telah dibuat
     doc.build(elements)
 
-# Data contoh untuk pengujian
-# Menggunakan data dummy atau data yang sudah diproses
-data = {
-    "NAMA VENDOR": ["Vendor A", "Vendor B", "Vendor C"],
-    "Jumlah Transaksi": [120, 85, 60],
-    "Rata-rata SLA": [300000, 450000, 320000]  # dalam detik
-}
-df_filtered = pd.DataFrame(data)
-start_periode = "2023-01-01"
-end_periode = "2023-12-31"
-poster_img = "poster_a4.png"  # Pastikan path gambar sudah benar
-output_pdf_path = "sla_report.pdf"
-
-# Panggil fungsi generate_pdf
-generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pdf_path)
-
 # Streamlit part
-import streamlit as st
-
 st.title("Generate SLA PDF Report")
 
+# Menyaring Data berdasarkan Periode (Start Periode dan End Periode secara otomatis)
+df_filtered = pd.DataFrame({
+    "NAMA VENDOR": ["Vendor A", "Vendor B", "Vendor C"],
+    "Jumlah Transaksi": [120, 85, 60],
+    "Rata-rata SLA": [300000, 450000, 320000],  # dalam detik
+    "Tanggal": pd.to_datetime(["2023-01-01", "2023-02-01", "2023-03-01"])  # Contoh tanggal
+})
+
+# Menentukan rentang periode secara otomatis berdasarkan data yang difilter
+start_periode = df_filtered["Tanggal"].min().strftime("%Y-%m-%d")
+end_periode = df_filtered["Tanggal"].max().strftime("%Y-%m-%d")
+
+# Menampilkan Rentang Periode
+st.write(f"Start Periode: {start_periode}")
+st.write(f"End Periode: {end_periode}")
+
+# Generate Poster di tab_poster (contoh penggunaan gambar dari tab_poster)
+# Di sini kita menyimulasikan proses generate poster yang telah dilakukan di tab_poster
+poster_img = "poster_a4.png"  # Path ke file gambar poster
+
+# Form untuk menghasilkan PDF
 with st.form(key='pdf_form'):
-    start_periode = st.text_input("Start Periode", "2023-01-01")
-    end_periode = st.text_input("End Periode", "2023-12-31")
-    poster_path = st.text_input("Poster Image Path", "poster_a4.png")
     output_pdf_path = st.text_input("Output PDF Path", "sla_report.pdf")
-    
     submit_button = st.form_submit_button(label='Generate PDF')
 
     if submit_button:
-        # Generate the PDF when the form is submitted
-        generate_pdf(df_filtered, start_periode, end_periode, poster_path, output_pdf_path)
+        # Generate PDF ketika tombol submit ditekan
+        generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pdf_path)
         
-        # Provide download link for PDF
+        # Memberikan link download untuk PDF
         with open(output_pdf_path, "rb") as f:
             pdf_data = f.read()
             st.download_button("Download PDF", pdf_data, file_name="sla_report.pdf", mime="application/pdf")
