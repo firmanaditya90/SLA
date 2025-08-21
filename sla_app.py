@@ -1214,12 +1214,10 @@ with tab_poster:
 
 
 # =====================[ TAB PDF: HTML → PRINT ]=====================
-
 from datetime import datetime
 from io import BytesIO
 import base64
 import matplotlib.pyplot as plt
-import streamlit.components.v1 as components
 
 def _fig_to_base64(fig):
     buf = BytesIO()
@@ -1229,37 +1227,152 @@ def _fig_to_base64(fig):
     plt.close(fig)
     return b64
 
+def build_html_report(df_filtered, selected_periode, available_sla_cols, proses_grafik_cols):
+    # Periode text
+    periode_str = f"{selected_periode[0]} s.d. {selected_periode[-1]}" if selected_periode else "-"
+
+    # --- Start HTML ---
+    html = """
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        h1,h2 { color: #0F172A; }
+        h1 { text-align:center; }
+        h3,h4 { text-align:center; color:#334155; }
+        hr { margin:20px 0; }
+        table { border-collapse: collapse; margin-top: 10px; width: 100%; }
+        table, th, td { border: 1px solid #CBD5E1; padding: 6px; font-size:11pt; }
+        th { background: #E2E8F0; }
+        .chart { width:100%; margin:10px 0; }
+        .pagebreak { page-break-before: always; }
+        @page { margin: 20mm; }
+      </style>
+    </head>
+    <body>
+    """
+
+    # Cover
+    html += f"""
+      <h1>Laporan SLA Payment Analyzer</h1>
+      <h3>Periode: {periode_str}</h3>
+      <h4>Terbit: {datetime.now().strftime('%d %B %Y')}</h4>
+      <hr>
+      <h2>Daftar Isi</h2>
+      <ol>
+        <li>Ringkasan Eksekutif</li>
+        <li>KPI SLA</li>
+        <li>Analisis Per Proses</li>
+        <li>Analisis Jumlah Transaksi</li>
+        <li>Tren SLA</li>
+        <li>Kesimpulan & Rekomendasi</li>
+      </ol>
+      <div class="pagebreak"></div>
+    """
+
+    # ---------- Bab 1 ----------
+    html += "<h2>Bab 1. Ringkasan Eksekutif</h2>"
+    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
+        avg_sec = float(df_filtered["KEUANGAN"].mean())
+        html += f"<p>Rata-rata SLA Keuangan: <b>{avg_sec/86400:.2f} hari</b></p>"
+    if "TOTAL WAKTU" in available_sla_cols:
+        avg_tot = float(df_filtered["TOTAL WAKTU"].mean())
+        html += f"<p>Rata-rata TOTAL WAKTU: <b>{avg_tot/86400:.2f} hari</b></p>"
+
+    if "KEUANGAN" in df_filtered.columns:
+        trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
+        if len(trend_keu) > 0:
+            fig, ax = plt.subplots(figsize=(6,3))
+            ax.plot(trend_keu[periode_col], trend_keu["KEUANGAN"]/86400, marker="o")
+            ax.set_title("Trend Rata-rata SLA Keuangan (hari)")
+            ax.set_ylabel("Hari")
+            plt.xticks(rotation=45, ha="right")
+            html += f'<img src="data:image/png;base64,{_fig_to_base64(fig)}" class="chart">'
+    html += '<div class="pagebreak"></div>'
+
+    # ---------- Bab 2 ----------
+    html += "<h2>Bab 2. KPI SLA</h2>"
+    saved_kpi = load_kpi()
+    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
+        avg_days = float(df_filtered["KEUANGAN"].mean()) / 86400
+        status = "✅ ON TARGET" if (saved_kpi and avg_days <= saved_kpi) else "⚠️ NOT ON TARGET"
+        html += f"""
+        <table>
+          <tr><th>Target KPI</th><th>Rata-rata Aktual</th><th>Status</th></tr>
+          <tr><td>{saved_kpi if saved_kpi else '-' } hari</td>
+              <td>{avg_days:.2f} hari</td>
+              <td>{status}</td></tr>
+        </table>
+        """
+    html += '<div class="pagebreak"></div>'
+
+    # ---------- Bab 3 ----------
+    html += "<h2>Bab 3. Analisis Per Proses</h2>"
+    if proses_grafik_cols:
+        rata_proses_days = (df_filtered[proses_grafik_cols].mean()/86400).round(2)
+        html += rata_proses_days.to_frame("Rata-rata (hari)").to_html(border=0)
+
+        ser = rata_proses_days.sort_values(ascending=False)
+        fig, ax = plt.subplots(figsize=(6,3))
+        ax.bar(ser.index, ser.values)
+        ax.set_title("Rata-rata SLA per Proses (hari)")
+        ax.set_ylabel("Hari")
+        plt.xticks(rotation=45, ha="right")
+        html += f'<img src="data:image/png;base64,{_fig_to_base64(fig)}" class="chart">'
+    html += '<div class="pagebreak"></div>'
+
+    # ---------- Bab 4 ----------
+    html += "<h2>Bab 4. Analisis Jumlah Transaksi</h2>"
+    transaksi_periode = df_filtered.groupby(df_filtered[periode_col].astype(str)).size()
+    html += transaksi_periode.to_frame("Jumlah Transaksi").to_html(border=0)
+
+    fig, ax = plt.subplots(figsize=(6,3))
+    transaksi_periode.plot(kind="bar", ax=ax)
+    ax.set_title("Jumlah Transaksi per Periode")
+    ax.set_ylabel("Jumlah")
+    plt.xticks(rotation=45, ha="right")
+    html += f'<img src="data:image/png;base64,{_fig_to_base64(fig)}" class="chart">'
+    html += '<div class="pagebreak"></div>'
+
+    # ---------- Bab 5 ----------
+    html += "<h2>Bab 5. Tren SLA</h2>"
+    if available_sla_cols:
+        trend_df = (df_filtered.groupby(df_filtered[periode_col].astype(str))[available_sla_cols].mean()/86400).round(2)
+        html += trend_df.to_html(border=0)
+
+        fig, ax = plt.subplots(figsize=(7,3.5))
+        for col in trend_df.columns:
+            ax.plot(trend_df.index, trend_df[col], marker="o", label=col)
+        ax.set_title("Tren SLA (hari)")
+        ax.set_ylabel("Hari")
+        plt.xticks(rotation=45, ha="right")
+        ax.legend(fontsize=8)
+        html += f'<img src="data:image/png;base64,{_fig_to_base64(fig)}" class="chart">'
+    html += '<div class="pagebreak"></div>'
+
+    # ---------- Bab 6 ----------
+    html += """
+    <h2>Bab 6. Kesimpulan & Rekomendasi</h2>
+    <ul>
+      <li>SLA Keuangan relatif stabil, rata-rata mendekati target.</li>
+      <li>Proses dengan SLA tertinggi perlu prioritas perbaikan.</li>
+      <li>Jumlah transaksi meningkat pada periode tertentu → resource tambahan perlu disiapkan.</li>
+      <li>Monitoring vendor tetap penting untuk mengurangi risiko keterlambatan.</li>
+    </ul>
+    """
+
+    html += "</body></html>"
+    return html
+
 with tab_pdf:
-    st.subheader("📑 Laporan SLA (PDF via Browser Print) — Edisi Elegan")
+    st.subheader("📑 Laporan SLA (Download HTML → Save as PDF)")
 
-    # Tombol Print → simpan PDF
-    if st.button("🖨️ Cetak / Simpan sebagai PDF"):
-        components.html("<script>window.print()</script>", height=0, width=0)
-
-    # CSS global utk styling & page-break
-    st.markdown("""
-    <style>
-    @page { size: A4; margin: 14mm; }
-    @media print {
-      .stButton, header, footer { display: none !important; }
-      .page { page-break-after: always; }
-    }
-    .cover { text-align: center; padding-top: 100px; }
-    .cover h1 { font-size: 36px; color: #0F172A; }
-    .cover h2 { font-size: 20px; color: #334155; }
-    .cover img { margin-top: 40px; width: 200px; }
-    h2 { color:#0F172A; border-bottom:2px solid #CBD5E1; padding-bottom:4px; margin-top:30px; }
-    table { border-collapse: collapse; margin-top: 15px; font-size: 11pt; }
-    table, th, td { border: 1px solid #CBD5E1; padding: 6px; }
-    th { background: #E2E8F0; }
-    .chart { width:100%; margin: 10px 0; }
-    </style>
-    """, unsafe_allow_html=True)
-
-    # ========== Cover ==========
-    st.markdown(f"""
-    <div class="page cover">
-        <h1>Laporan SLA Payment Analyzer</h1>
-        <h2>Periode: {selected_periode[0]} s.d. {selected_periode[-1] if selected_periode else '-'}</h2>
-        <h2>Terbit: {datetime.now().strftime('%d %B %Y')}</h2>
-        <img src="https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png
+    html_report = build_html_report(df_filtered, selected_periode, available_sla_cols, proses_grafik_cols)
+    st.download_button(
+        "💾 Download Laporan (HTML)",
+        data=html_report,
+        file_name="laporan_SLA.html",
+        mime="text/html"
+    )
+    st.info("👉 Setelah di-download, buka file .html di browser lalu pilih **Print → Save as PDF**.")
