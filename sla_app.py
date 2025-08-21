@@ -1241,16 +1241,33 @@ with tab_pdf:
             pdf_data = f.read()  # Membaca data PDF yang telah dibuat
             st.download_button("💾 Download PDF", pdf_data, file_name="sla_report.pdf", mime="application/pdf")  # Tombol untuk mengunduh PDF
 
+import io
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
-import io
+import pandas as pd
 
+# Fungsi untuk mengonversi detik ke format SLA
+def seconds_to_sla_format(seconds):
+    """Konversi detik ke format SLA: 'Xd Yh Zm'"""
+    if seconds is None:
+        return "0d 0h 0m"
+    days = int(seconds // 86400)
+    hours = int((seconds % 86400) // 3600)
+    minutes = int((seconds % 3600) // 60)
+    return f"{days}d {hours}h {minutes}m"
+
+# Fungsi untuk menghasilkan laporan PDF
 def generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pdf_path):
     # Membuat dokumen PDF dengan SimpleDocTemplate
     doc = SimpleDocTemplate(output_pdf_path, pagesize=A4)
     elements = []
+
+    # Memeriksa apakah kolom yang dibutuhkan ada di DataFrame
+    if "NAMA VENDOR" not in df_filtered.columns or "Jumlah Transaksi" not in df_filtered.columns or "Rata-rata SLA" not in df_filtered.columns:
+        print("Salah satu atau lebih kolom yang diperlukan tidak ditemukan di DataFrame.")
+        return  # Menghentikan proses jika kolom tidak ditemukan
 
     # Halaman 1: Judul dan Periode
     c = canvas.Canvas(output_pdf_path, pagesize=A4)
@@ -1298,6 +1315,7 @@ def generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pdf
     for vendor, count, sla in zip(df_filtered["NAMA VENDOR"], df_filtered["Jumlah Transaksi"], df_filtered["Rata-rata SLA"]):
         vendor_data.append([vendor, count, sla])
 
+    # Membuat tabel vendor
     table = Table(vendor_data)
     table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
@@ -1313,6 +1331,18 @@ def generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pdf
     # Menyelesaikan PDF dengan elemen-elemen yang telah dibuat
     doc.build(elements)
 
-# Memanggil fungsi generate_pdf
+# Data contoh untuk pengujian
+# Menggunakan data dummy atau data yang sudah diproses
+data = {
+    "NAMA VENDOR": ["Vendor A", "Vendor B", "Vendor C"],
+    "Jumlah Transaksi": [120, 85, 60],
+    "Rata-rata SLA": [300000, 450000, 320000]  # dalam detik
+}
+df_filtered = pd.DataFrame(data)
+start_periode = "2023-01-01"
+end_periode = "2023-12-31"
+poster_img = "poster_a4.png"  # Pastikan path gambar sudah benar
 output_pdf_path = "sla_report.pdf"
-generate_pdf(df_filtered, start_periode, end_periode, "poster_a4.png", output_pdf_path)
+
+# Panggil fungsi generate_pdf
+generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pdf_path)
