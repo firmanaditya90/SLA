@@ -1201,6 +1201,35 @@ with tab_poster:
             file_name="Poster_SLA_A4.png",
             mime="image/png"
         )
+with tab_pdf:
+    st.subheader("📥 Download PDF")
+        
+    # Generasi PDF ketika tombol ditekan
+    if st.button("🎯 Generate PDF Report"):
+        # Menyimpan poster A4 terlebih dahulu
+        poster_buf = generate_poster_A4( # generate_poster_A4 harus disesuaikan dengan bagian sebelumnya
+            {},
+            rata_proses_seconds,
+            df_proses,
+            "Captain Ferizy.png",
+            periode_info_text,
+            df_filtered,
+            periode_col,
+            selected_periode
+            )
+            poster_path = "poster_a4.png"
+            with open(poster_path, "wb") as f:
+                f.write(poster_buf.getvalue())
+
+            # Membuat PDF
+            output_pdf_path = "sla_report.pdf"
+            generate_pdf(df_filtered, start_periode, end_periode, poster_path, output_pdf_path)
+            
+            # Memberikan link download untuk PDF
+            with open(output_pdf_path, "rb") as f:
+            pdf_data = f.read()
+            st.download_button("💾 Download PDF", pdf_data, file_name="sla_report.pdf", mime="application/pdf")
+
 import io
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib import colors
@@ -1274,31 +1303,4 @@ def generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pat
 
 # Modifikasi pada subtab PDF
 
-    with tab_pdf:
-        st.subheader("📥 Download PDF")
-        
-        # Generasi PDF ketika tombol ditekan
-        if st.button("🎯 Generate PDF Report"):
-            # Menyimpan poster A4 terlebih dahulu
-            poster_buf = generate_poster_A4( # generate_poster_A4 harus disesuaikan dengan bagian sebelumnya
-                {},
-                rata_proses_seconds,
-                df_proses,
-                "Captain Ferizy.png",
-                periode_info_text,
-                df_filtered,
-                periode_col,
-                selected_periode
-            )
-            poster_path = "poster_a4.png"
-            with open(poster_path, "wb") as f:
-                f.write(poster_buf.getvalue())
 
-            # Membuat PDF
-            output_pdf_path = "sla_report.pdf"
-            generate_pdf(df_filtered, start_periode, end_periode, poster_path, output_pdf_path)
-            
-            # Memberikan link download untuk PDF
-            with open(output_pdf_path, "rb") as f:
-                pdf_data = f.read()
-                st.download_button("💾 Download PDF", pdf_data, file_name="sla_report.pdf", mime="application/pdf")
