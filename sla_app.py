@@ -1363,8 +1363,8 @@ with st.form(key='pdf_form'):
     if submit_button:
         # Generate PDF ketika tombol submit ditekan
         generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pdf_path)
-        
-        # Memberikan link download untuk PDF
-        with open(output_pdf_path, "rb") as f:
-            pdf_data = f.read()
-            st.download_button("Download PDF", pdf_data, file_name="sla_report.pdf", mime="application/pdf")
+
+# Memberikan link download untuk PDF
+with open(output_pdf_path, "rb") as f:
+    pdf_data = f.read()
+    st.download_button("Download PDF", pdf_data, file_name="sla_report.pdf", mime="application/pdf")
