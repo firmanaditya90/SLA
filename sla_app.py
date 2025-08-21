@@ -1214,12 +1214,11 @@ with tab_poster:
 
 
 # =====================[ TAB PDF: HTML → PRINT ]=====================
-# Pastikan di bagian import file kamu sudah ada:
-# from datetime import datetime
-# from io import BytesIO
-# import base64
-# import streamlit.components.v1 as components
-# import matplotlib.pyplot as plt
+from datetime import datetime
+from io import BytesIO
+import base64
+import matplotlib.pyplot as plt
+import streamlit.components.v1 as components
 
 def _fig_to_base64(fig):
     buf = BytesIO()
@@ -1232,240 +1231,127 @@ def _fig_to_base64(fig):
 with tab_pdf:
     st.subheader("📑 Laporan SLA (PDF via Browser Print) — Edisi Elegan")
 
-    # ================= Build sections as HTML strings =================
-    sections = []
-
-    # ---------- COVER ----------
-    periode_str = f"{selected_periode[0]} s.d. {selected_periode[-1]}" if selected_periode else "-"
-    cover_html = f"""
-    <section class="page cover-page">
-      <div class="cover-hero">
-        <div class="brand">
-          <img src="https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png" alt="Logo" />
-        </div>
-        <div class="titles">
-          <h1>Laporan SLA Payment Analyzer</h1>
-          <h3>Periode: {periode_str}</h3>
-          <h4>Terbit: {datetime.now().strftime('%d %B %Y')}</h4>
-        </div>
-      </div>
-      <div class="cover-meta">
-        <div class="chip">Confidential</div>
-        <div class="chip">Automated Report</div>
-      </div>
-    </section>
-    """
-    sections.append(cover_html)
-
-    # ---------- TOC ----------
-    toc_html = """
-    <section class="page">
-      <h2>Daftar Isi</h2>
-      <ol class="toc">
-        <li>Bab 1. Ringkasan Eksekutif</li>
-        <li>Bab 2. KPI SLA</li>
-        <li>Bab 3. Analisis Per Proses</li>
-        <li>Bab 4. Analisis Vendor</li>
-        <li>Bab 5. Tren SLA</li>
-        <li>Bab 6. Kesimpulan & Rekomendasi</li>
-      </ol>
-    </section>
-    """
-    sections.append(toc_html)
-
-    # ---------- Bab 1: Ringkasan ----------
-    bab1 = ['<section class="page"><h2>Bab 1. Ringkasan Eksekutif</h2>']
-    if len(df_filtered) > 0:
-        if "KEUANGAN" in df_filtered.columns:
-            avg_sec = float(df_filtered["KEUANGAN"].mean())
-            bab1.append(f"<p>Rata-rata SLA Keuangan: <b>{seconds_to_sla_format(avg_sec)}</b> (~{avg_sec/86400:.2f} hari).</p>")
-        if "TOTAL WAKTU" in available_sla_cols:
-            avg_tot = float(df_filtered["TOTAL WAKTU"].mean())
-            bab1.append(f"<p>Rata-rata TOTAL WAKTU: <b>{avg_tot/86400:.2f} hari</b>.</p>")
-
-        # Grafik trend keuangan (hari)
-        if "KEUANGAN" in df_filtered.columns:
-            trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
-            if len(trend_keu) > 0:
-                fig, ax = plt.subplots(figsize=(7,3))
-                ax.plot(trend_keu[periode_col], trend_keu["KEUANGAN"]/86400, marker="o")
-                ax.set_title("Trend Rata-rata SLA Keuangan (hari)")
-                ax.set_ylabel("Hari"); ax.set_xlabel("Periode")
-                plt.xticks(rotation=45, ha="right")
-                b64 = _fig_to_base64(fig)
-                bab1.append(f'<img class="chart" src="data:image/png;base64,{b64}" />')
-
-    bab1.append("</section>")
-    sections.append("".join(bab1))
-
-    # ---------- Bab 2: KPI ----------
-    bab2 = ['<section class="page"><h2>Bab 2. KPI SLA</h2>']
-    saved_kpi = load_kpi()
-    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
-        avg_days = float(df_filtered["KEUANGAN"].mean()) / 86400
-        status = "✅ ON TARGET" if (saved_kpi and avg_days <= saved_kpi) else "⚠️ NOT ON TARGET"
-        bab2.append(f"""
-        <div class="kpi-grid">
-          <div class="kpi-card"><div class="kpi-title">Target KPI</div><div class="kpi-value">{saved_kpi if saved_kpi else '-' } hari</div></div>
-          <div class="kpi-card"><div class="kpi-title">Rata-rata Aktual</div><div class="kpi-value">{avg_days:.2f} hari</div></div>
-          <div class="kpi-card"><div class="kpi-title">Status</div><div class="kpi-value">{status}</div></div>
-        </div>
-        """)
-    else:
-        bab2.append("<p>Data KPI tidak tersedia.</p>")
-    bab2.append("</section>")
-    sections.append("".join(bab2))
-
-    # ---------- Bab 3: Per Proses ----------
-    bab3 = ['<section class="page"><h2>Bab 3. Analisis Per Proses</h2>']
-    if proses_grafik_cols:
-        rata_proses_days = (df_filtered[proses_grafik_cols].mean()/86400).round(2)
-        table_html = rata_proses_days.to_frame("Rata-rata (hari)").to_html(border=0, justify="left", classes="tbl")
-        bab3.append(table_html)
-
-        # Bar chart rata-rata per proses
-        try:
-            ser = (df_filtered[proses_grafik_cols].mean()/86400).sort_values(ascending=False)
-            fig, ax = plt.subplots(figsize=(7,3.5))
-            ax.bar(ser.index, ser.values)
-            ax.set_title("Rata-rata SLA per Proses (hari)")
-            ax.set_ylabel("Hari"); ax.set_xlabel("Proses")
-            plt.xticks(rotation=45, ha="right")
-            b64 = _fig_to_base64(fig)
-            bab3.append(f'<img class="chart" src="data:image/png;base64,{b64}" />')
-        except Exception:
-            pass
-    else:
-        bab3.append("<p>Tidak ada kolom proses untuk dianalisis.</p>")
-    bab3.append("</section>")
-    sections.append("".join(bab3))
-
-    # ---------- Bab 4: Vendor ----------
-    bab4 = ['<section class="page"><h2>Bab 4. Analisis Vendor</h2>']
-    if "NAMA VENDOR" in df_filtered.columns and available_sla_cols:
-        vendor_mean = (df_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean()/86400).round(2)
-        if len(vendor_mean) > 0:
-            bab4.append(vendor_mean.to_html(border=0, justify="left", classes="tbl"))
-
-            # Grafik: Top 10 vendor (by TOTAL WAKTU kalau ada, else KEUANGAN, else kolom pertama)
-            metric_for_rank = None
-            if "TOTAL WAKTU" in vendor_mean.columns: metric_for_rank = "TOTAL WAKTU"
-            elif "KEUANGAN" in vendor_mean.columns: metric_for_rank = "KEUANGAN"
-            else:
-                metric_for_rank = vendor_mean.columns[0]
-
-            top10 = vendor_mean.sort_values(by=metric_for_rank, ascending=False).head(10)
-            fig, ax = plt.subplots(figsize=(7,3.8))
-            ax.barh(top10.index, top10[metric_for_rank])
-            ax.invert_yaxis()
-            ax.set_title(f"Top 10 Vendor berdasarkan {metric_for_rank} (hari)")
-            ax.set_xlabel("Hari")
-            b64 = _fig_to_base64(fig)
-            bab4.append(f'<img class="chart" src="data:image/png;base64,{b64}" />')
-        else:
-            bab4.append("<p>Ringkasan vendor kosong.</p>")
-    else:
-        bab4.append("<p>Kolom vendor atau metrik SLA tidak tersedia.</p>")
-    bab4.append("</section>")
-    sections.append("".join(bab4))
-
-    # ---------- Bab 5: Tren Multi-Metrik ----------
-    bab5 = ['<section class="page"><h2>Bab 5. Tren SLA</h2>']
-    if available_sla_cols:
-        trend_df = (df_filtered.groupby(df_filtered[periode_col].astype(str))[available_sla_cols].mean()/86400).round(2)
-        if len(trend_df) > 0:
-            # Tabel tren
-            bab5.append(trend_df.to_html(border=0, justify="left", classes="tbl"))
-            # Line chart multi-metrik
-            try:
-                fig, ax = plt.subplots(figsize=(7,3.5))
-                for col in trend_df.columns:
-                    ax.plot(trend_df.index, trend_df[col], marker="o", label=col)
-                ax.set_title("Tren Rata-rata SLA (hari)")
-                ax.set_ylabel("Hari"); ax.set_xlabel("Periode")
-                plt.xticks(rotation=45, ha="right")
-                ax.legend(fontsize=8)
-                b64 = _fig_to_base64(fig)
-                bab5.append(f'<img class="chart" src="data:image/png;base64,{b64}" />')
-            except Exception:
-                pass
-        else:
-            bab5.append("<p>Data tren tidak tersedia.</p>")
-    else:
-        bab5.append("<p>Tidak ada metrik SLA yang tersedia untuk tren.</p>")
-    bab5.append("</section>")
-    sections.append("".join(bab5))
-
-    # ---------- Bab 6: Kesimpulan ----------
-    bab6 = """
-    <section class="page">
-      <h2>Bab 6. Kesimpulan & Rekomendasi</h2>
-      <p>
-        Secara umum, metrik SLA menunjukkan performa yang konsisten. 
-        Prioritaskan perbaikan pada proses dengan rata-rata hari tertinggi, 
-        tindak lanjuti vendor dengan SLA terlama, dan lakukan review target KPI 
-        jika tren mendekati batas target.
-      </p>
-      <ul>
-        <li>Perkuat koordinasi di tahapan proses kritikal.</li>
-        <li>Negosiasi ulang SLA dengan vendor yang underperform.</li>
-        <li>Bangun early-warning lewat dashboard harian/mingguan.</li>
-      </ul>
-    </section>
-    """
-    sections.append(bab6)
-
-    # ================= Styles + Wrapper =================
-    styles = """
-    <style>
-      @page { size: A4; margin: 14mm; }
-      @media print {
-        .stButton, button, [data-testid="stToolbar"], header, footer { display: none !important; }
-        .page { page-break-after: always; }
-      }
-      .page { margin: 0 auto; max-width: 800px; }
-      h1,h2,h3,h4 { color:#0F172A; margin:0 0 10px 0; }
-      p, li { color:#334155; font-size:12.5pt; }
-      .tbl { border-collapse: collapse; width: 100%; margin-top: 10px; font-size: 11pt; }
-      .tbl th, .tbl td { border: 1px solid #CBD5E1; padding: 6px 8px; }
-      .tbl th { background:#E2E8F0; text-align:left; }
-      .chart { width:100%; margin: 10px 0 0 0; }
-
-      /* Cover */
-      .cover-page { padding:0; }
-      .cover-hero {
-        background: linear-gradient(135deg, #0ea5e9 0%, #0f172a 100%);
-        color: white; border-radius: 16px; padding: 60px 30px; position: relative;
-        min-height: 420px; display:flex; flex-direction:column; align-items:center; justify-content:center;
-      }
-      .cover-hero .brand img { width: 160px; filter: drop-shadow(0 6px 16px rgba(0,0,0,.25)); margin-bottom: 18px; }
-      .cover-hero .titles h1 { font-size: 30pt; margin: 6px 0; color: #FFFFFF; }
-      .cover-hero .titles h3, .cover-hero .titles h4 { margin: 4px 0; color: #E5F6FF; font-weight: 400; }
-      .cover-meta { display:flex; gap:10px; margin-top: 14px; }
-      .chip { border:1px solid #94a3b8; color:#334155; padding:6px 10px; border-radius:999px; font-size:10pt; display:inline-block; }
-
-      /* KPI Cards */
-      .kpi-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-top: 10px; }
-      .kpi-card { border:1px solid #E2E8F0; border-radius:12px; padding:12px 14px; background:#F8FAFC; }
-      .kpi-title { font-size:10pt; color:#64748B; }
-      .kpi-value { font-size:14pt; font-weight:700; color:#0F172A; }
-
-      /* TOC */
-      .toc { line-height: 1.7; font-size: 12.5pt; }
-    </style>
-    """
-
-    full_html = f"""
-    <div id="report-root">
-      {styles}
-      {''.join(sections)}
-    </div>
-    """
-
-    # Preview laporan (yang inilah nanti ikut tercetak)
-    components.html(full_html, height=900, scrolling=True)
-
-    # Tombol cetak (print dialog)
+    # Tombol Print → simpan PDF
     if st.button("🖨️ Cetak / Simpan sebagai PDF"):
         components.html("<script>window.print()</script>", height=0, width=0)
-# =====================[ /TAB PDF ]=====================
+
+    # CSS global utk styling & page-break
+    st.markdown("""
+    <style>
+    @page { size: A4; margin: 14mm; }
+    @media print {
+      .stButton, header, footer { display: none !important; }
+      .page { page-break-after: always; }
+    }
+    .cover { text-align: center; padding-top: 100px; }
+    .cover h1 { font-size: 36px; color: #0F172A; }
+    .cover h2 { font-size: 20px; color: #334155; }
+    .cover img { margin-top: 40px; width: 200px; }
+    h2 { color:#0F172A; border-bottom:2px solid #CBD5E1; padding-bottom:4px; margin-top:30px; }
+    table { border-collapse: collapse; margin-top: 15px; font-size: 11pt; }
+    table, th, td { border: 1px solid #CBD5E1; padding: 6px; }
+    th { background: #E2E8F0; }
+    .chart { width:100%; margin: 10px 0; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ========== Cover ==========
+    st.markdown(f"""
+    <div class="page cover">
+        <h1>Laporan SLA Payment Analyzer</h1>
+        <h2>Periode: {selected_periode[0]} s.d. {selected_periode[-1] if selected_periode else '-'}</h2>
+        <h2>Terbit: {datetime.now().strftime('%d %B %Y')}</h2>
+        <img src="https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png">
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ========== TOC ==========
+    st.markdown("""
+    <div class="page">
+        <h2>Daftar Isi</h2>
+        <ol>
+            <li>Bab 1. Ringkasan Eksekutif</li>
+            <li>Bab 2. KPI SLA</li>
+            <li>Bab 3. Analisis Per Proses</li>
+            <li>Bab 4. Analisis Jumlah Transaksi</li>
+            <li>Bab 5. Tren SLA</li>
+            <li>Bab 6. Kesimpulan & Rekomendasi</li>
+        </ol>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ========== Bab 1 ==========
+    st.markdown("## Bab 1. Ringkasan Eksekutif")
+    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
+        avg_sec = float(df_filtered["KEUANGAN"].mean())
+        st.markdown(f"Rata-rata SLA Keuangan: **{seconds_to_sla_format(avg_sec)}** (~{avg_sec/86400:.2f} hari)")
+    if "TOTAL WAKTU" in available_sla_cols:
+        avg_tot = float(df_filtered["TOTAL WAKTU"].mean())
+        st.markdown(f"Rata-rata TOTAL WAKTU: **{avg_tot/86400:.2f} hari**")
+
+    if "KEUANGAN" in df_filtered.columns:
+        trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
+        if len(trend_keu) > 0:
+            fig, ax = plt.subplots(figsize=(6,3))
+            ax.plot(trend_keu[periode_col], trend_keu["KEUANGAN"]/86400, marker="o")
+            ax.set_title("Trend Rata-rata SLA Keuangan (hari)")
+            ax.set_ylabel("Hari")
+            plt.xticks(rotation=45, ha="right")
+            st.image(_fig_to_base64(fig))
+
+    # ========== Bab 2 ==========
+    st.markdown("## Bab 2. KPI SLA")
+    saved_kpi = load_kpi()
+    if "KEUANGAN" in df_filtered.columns:
+        avg_days = float(df_filtered["KEUANGAN"].mean()) / 86400
+        status = "✅ ON TARGET" if (saved_kpi and avg_days <= saved_kpi) else "⚠️ NOT ON TARGET"
+        st.markdown(f"""
+        - Target KPI: {saved_kpi if saved_kpi else '-'} hari  
+        - Rata-rata Aktual: {avg_days:.2f} hari  
+        - Status: {status}
+        """)
+
+    # ========== Bab 3 ==========
+    st.markdown("## Bab 3. Analisis Per Proses")
+    if proses_grafik_cols:
+        rata_proses_days = (df_filtered[proses_grafik_cols].mean()/86400).round(2)
+        st.dataframe(rata_proses_days.to_frame("Rata-rata (hari)"))
+
+    # ========== Bab 4 ==========
+    st.markdown("## Bab 4. Analisis Jumlah Transaksi")
+    transaksi_periode = df_filtered.groupby(df_filtered[periode_col].astype(str)).size()
+    st.dataframe(transaksi_periode.to_frame("Jumlah Transaksi"))
+
+    fig, ax = plt.subplots(figsize=(6,3))
+    transaksi_periode.plot(kind="bar", ax=ax)
+    ax.set_title("Jumlah Transaksi per Periode")
+    ax.set_ylabel("Jumlah")
+    plt.xticks(rotation=45, ha="right")
+    st.image(_fig_to_base64(fig))
+
+    # ========== Bab 5 ==========
+    st.markdown("## Bab 5. Tren SLA")
+    if available_sla_cols:
+        trend_df = (df_filtered.groupby(df_filtered[periode_col].astype(str))[available_sla_cols].mean()/86400).round(2)
+        st.dataframe(trend_df)
+
+        fig, ax = plt.subplots(figsize=(7,3.5))
+        for col in trend_df.columns:
+            ax.plot(trend_df.index, trend_df[col], marker="o", label=col)
+        ax.set_title("Tren SLA (hari)")
+        ax.set_ylabel("Hari")
+        plt.xticks(rotation=45, ha="right")
+        ax.legend(fontsize=8)
+        st.image(_fig_to_base64(fig))
+
+    # ========== Bab 6 ==========
+    st.markdown("## Bab 6. Kesimpulan & Rekomendasi")
+    st.markdown("""
+    - SLA Keuangan relatif stabil, rata-rata mendekati target.  
+    - Perlu perhatian khusus pada proses dengan rata-rata SLA tertinggi.  
+    - Jumlah transaksi meningkat pada periode tertentu → perlu alokasi resource lebih.  
+    - Vendor dengan SLA terlama sebaiknya jadi fokus monitoring.  
+    """)
+
+            
+
