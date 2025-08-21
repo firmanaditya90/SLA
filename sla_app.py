@@ -14,7 +14,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
 import requests
 import json
-=========================================================
+
 import streamlit as st
 import pandas as pd
 import io
