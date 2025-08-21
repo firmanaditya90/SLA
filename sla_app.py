@@ -1278,13 +1278,15 @@ def generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pdf
     bbox_title = c.stringWidth(title_text, font_title, font_size)
     title_w = bbox_title
     title_h = font_size
-    title_y = H * 0.80  # Tempatkan sedikit lebih tinggi dari tengah halaman
+    title_y = H * 0.85  # Tempatkan judul di bagian atas halaman dengan sedikit margin
     c.drawString((W - title_w) / 2, title_y, title_text)  # Gambar judul di tengah
-    c.showPage()
 
     # ---------- Halaman 2: Poster ----------
+    c.showPage()  # Membuat halaman baru untuk poster
     if poster_img:
-        c.drawImage(poster_img, 100, 400, width=400, height=300)  # Gambar poster
+        poster_width = 595  # Lebar poster sama dengan lebar halaman A4
+        poster_height = 842  # Tinggi poster sama dengan tinggi halaman A4
+        c.drawImage(poster_img, 0, 0, width=poster_width, height=poster_height)  # Gambar poster dengan ukuran halaman
     c.showPage()
 
     # ---------- Halaman 3: Daftar Isi ----------
@@ -1329,8 +1331,7 @@ def generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pdf
     c.drawString(100, 780, proses_text)
     c.showPage()
 
-    # ---------- Halaman 6 dan seterusnya ----------
-    # Misalnya untuk tab_vendor:
+    # ---------- Halaman 6: Vendor ----------
     c.setFont("Helvetica-Bold", 14)
     c.drawString(100, 800, "3. Vendor")
     c.setFont("Helvetica", 12)
