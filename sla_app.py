@@ -1242,11 +1242,11 @@ with tab_pdf:
             st.download_button("💾 Download PDF", pdf_data, file_name="sla_report.pdf", mime="application/pdf")  # Tombol untuk mengunduh PDF
 
 import io
+import pandas as pd
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
-import pandas as pd
 
 # Fungsi untuk mengonversi detik ke format SLA
 def seconds_to_sla_format(seconds):
@@ -1346,3 +1346,25 @@ output_pdf_path = "sla_report.pdf"
 
 # Panggil fungsi generate_pdf
 generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pdf_path)
+
+# Streamlit part
+import streamlit as st
+
+st.title("Generate SLA PDF Report")
+
+with st.form(key='pdf_form'):
+    start_periode = st.text_input("Start Periode", "2023-01-01")
+    end_periode = st.text_input("End Periode", "2023-12-31")
+    poster_path = st.text_input("Poster Image Path", "poster_a4.png")
+    output_pdf_path = st.text_input("Output PDF Path", "sla_report.pdf")
+    
+    submit_button = st.form_submit_button(label='Generate PDF')
+
+    if submit_button:
+        # Generate the PDF when the form is submitted
+        generate_pdf(df_filtered, start_periode, end_periode, poster_path, output_pdf_path)
+        
+        # Provide download link for PDF
+        with open(output_pdf_path, "rb") as f:
+            pdf_data = f.read()
+            st.download_button("Download PDF", pdf_data, file_name="sla_report.pdf", mime="application/pdf")
