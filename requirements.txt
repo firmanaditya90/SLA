@@ -1,8 +1,9 @@
-streamlit
-streamlit-lottie
-matplotlib
-pandas
-plotly
-openpyxl
-reportlab
-pillow
+streamlit==1.36.0
+streamlit-lottie==0.0.5
+pandas==2.2.2
+openpyxl==3.1.5
+matplotlib==3.9.2
+plotly==5.22.0
+pillow==10.4.0
+fpdf2==2.7.8
+requests==2.32.3
