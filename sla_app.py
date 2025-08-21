@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
 import requests
 import json
+from datetime import datetime
 
 KPI_FILE = os.path.join("data", "kpi_target.json")
 
