@@ -1202,7 +1202,326 @@ with tab_poster:
             mime="image/png"
         )
 
-    with tab_pdf:
-        st.subheader("📥 Download PDF")
-        st.info("Fitur PDF belum tersedia.")
+# ==============================
+# 📄 FULL E‑BOOK PDF REPORT (ADD‑ON)
+# — Paste this block **below** your existing "Tab Report (Poster & PDF)" section,
+#   replacing only the current placeholder content inside `with tab_pdf:`.
+# — It **does not** change any other app structure.
+# — Requires: reportlab (pip install reportlab)
+# ==============================
+
+from io import BytesIO
+from datetime import datetime
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import cm
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, PageBreak, Image as RLImage,
+    Table, TableStyle, TableOfContents, KeepTogether
+)
+from reportlab.pdfgen import canvas as pdfcanvas
+
+# ---------- Small helpers (self‑contained; won't clash with your existing names) ----------
+def _fmt_seconds_verbose(seconds: float | int | None) -> str:
+    if seconds is None: return "-"
+    s = int(round(float(seconds)))
+    d, r = divmod(s, 86400)
+    h, r = divmod(r, 3600)
+    m, s = divmod(r, 60)
+    return f"{d} hari {h} jam {m} menit {s} detik"
+
+def _save_matplot_to_buffer(fig, dpi=200):
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
+    buf.seek(0)
+    return buf
+
+# Header/Footer template (logo optional)
+def _page_decor(canvas, doc, company_logo_path=None):
+    w, h = A4
+    canvas.setFillColorRGB(0.06, 0.1, 0.18)
+    canvas.rect(0, h-2.0*cm, w, 2.0*cm, stroke=0, fill=1)
+    canvas.setFillColor(colors.white)
+    canvas.setFont("Helvetica-Bold", 12)
+    canvas.drawString(1.6*cm, h-1.2*cm, "SLA Payment Analyzer — Laporan Periode")
+    # Page number
+    canvas.setFont("Helvetica", 10)
+    canvas.drawRightString(w-1.2*cm, 1.2*cm, f"Hal. {doc.page}")
+    # Bottom line
+    canvas.setStrokeColorRGB(0.85, 0.85, 0.85)
+    canvas.line(1.2*cm, 2*cm, w-1.2*cm, 2*cm)
+    # Logo (optional)
+    if company_logo_path:
+        try:
+            canvas.drawImage(company_logo_path, w-3.8*cm, h-1.85*cm, width=2.4*cm, height=1.2*cm, preserveAspectRatio=True, mask='auto')
+        except Exception:
+            pass
+
+# Build all figures/images needed for the PDF
+
+def _build_charts(df_filtered, periode_col, selected_periode, available_sla_cols, proses_grafik_cols):
+    figs = {}
+    # Trend SLA Keuangan
+    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
+        trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
+        trend_keu["PERIODE_SORTED"] = pd.Categorical(trend_keu[periode_col], categories=selected_periode, ordered=True)
+        trend_keu = trend_keu.sort_values("PERIODE_SORTED")
+        fig, ax = plt.subplots(figsize=(8, 3))
+        ax.plot(trend_keu[periode_col], (trend_keu["KEUANGAN"]/86400).round(2), marker='o')
+        ax.set_title("Trend Rata-rata SLA Keuangan (hari)")
+        ax.set_xlabel("Periode"); ax.set_ylabel("Hari"); ax.grid(True, linestyle='--', alpha=0.6)
+        for lbl in ax.get_xticklabels(): lbl.set_rotation(45); lbl.set_ha('right')
+        figs['trend_keu'] = _save_matplot_to_buffer(fig); plt.close(fig)
+
+    # Rata-rata SLA per Proses (bar)
+    if proses_grafik_cols:
+        rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
+        fig2, ax2 = plt.subplots(figsize=(7.5, 3))
+        values_hari = [rata_proses_seconds[c]/86400 for c in proses_grafik_cols]
+        ax2.bar(proses_grafik_cols, values_hari)
+        ax2.set_title("Rata-rata SLA per Proses (hari)")
+        ax2.set_ylabel("Hari"); ax2.grid(axis='y', linestyle='--', alpha=0.6)
+        figs['bar_proses'] = _save_matplot_to_buffer(fig2); plt.close(fig2)
+
+    # Trend TOTAL WAKTU (opsional)
+    if "TOTAL WAKTU" in available_sla_cols:
+        trend = df_filtered.groupby(df_filtered[periode_col].astype(str))["TOTAL WAKTU"].mean().reset_index()
+        trend["PERIODE_SORTED"] = pd.Categorical(trend[periode_col], categories=selected_periode, ordered=True)
+        trend = trend.sort_values("PERIODE_SORTED")
+        fig3, ax3 = plt.subplots(figsize=(8, 3))
+        ax3.plot(trend[periode_col], trend["TOTAL WAKTU"]/86400, marker='o')
+        ax3.set_title("Trend Rata-rata TOTAL WAKTU (hari)")
+        ax3.set_xlabel("Periode"); ax3.set_ylabel("Hari"); ax3.grid(True, linestyle='--', alpha=0.6)
+        for lbl in ax3.get_xticklabels(): lbl.set_rotation(45); lbl.set_ha('right')
+        figs['trend_total'] = _save_matplot_to_buffer(fig3); plt.close(fig3)
+
+    # Jumlah Transaksi per Periode (bar)
+    jumlah = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name='Jumlah')
+    jumlah = jumlah.sort_values(by=periode_col, key=lambda x: pd.Categorical(x, categories=selected_periode, ordered=True))
+    fig4, ax4 = plt.subplots(figsize=(8, 3))
+    ax4.bar(jumlah[periode_col], jumlah['Jumlah'])
+    ax4.set_title("Jumlah Transaksi per Periode"); ax4.set_xlabel("Periode"); ax4.set_ylabel("Jumlah")
+    ax4.grid(axis='y', linestyle='--', alpha=0.6)
+    for lbl in ax4.get_xticklabels(): lbl.set_rotation(45); lbl.set_ha('right')
+    figs['bar_transaksi'] = _save_matplot_to_buffer(fig4); plt.close(fig4)
+
+    return figs
+
+# Narrative builders
+
+def _build_narrative(df_filtered, available_sla_cols):
+    total_rows = len(df_filtered)
+    nar = []
+    if "KEUANGAN" in df_filtered.columns and total_rows>0:
+        avg_sec = float(df_filtered["KEUANGAN"].mean())
+        nar.append(f"Rata-rata SLA Keuangan pada periode ini adalah {_fmt_seconds_verbose(avg_sec)} (~{avg_sec/86400:.2f} hari).")
+    if "TOTAL WAKTU" in available_sla_cols:
+        avg_tot = float(df_filtered["TOTAL WAKTU"].mean())
+        nar.append(f"Rata-rata TOTAL WAKTU adalah ~{avg_tot/86400:.2f} hari.")
+    return " ".join(nar) if nar else "Data SLA tidak lengkap untuk ringkasan."
+
+# Build PDF and return bytes
+
+def build_pdf_report(df_filtered, periode_col, selected_periode, available_sla_cols, proses_grafik_cols,
+                     company_logo_path=None):
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=2*cm, rightMargin=2*cm, topMargin=3.2*cm, bottomMargin=2.3*cm)
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name='Caption', fontSize=9, textColor=colors.grey))
+    styles.add(ParagraphStyle(name='H1', parent=styles['Heading1'], textColor=colors.HexColor('#0E1117')))
+    styles.add(ParagraphStyle(name='H2', parent=styles['Heading2'], textColor=colors.HexColor('#0E1117')))
+    body = styles['BodyText']
+
+    story = []
+
+    # ---------- COVER ----------
+    title = "Laporan Analisis SLA Dokumen Penagihan"
+    periode_text = f"Periode: {selected_periode[0]} s.d. {selected_periode[-1]}" if selected_periode else "Periode: -"
+    today_text = datetime.now().strftime('%d %B %Y')
+
+    story.append(Spacer(1, 4*cm))
+    story.append(Paragraph(title, styles['Title']))
+    story.append(Spacer(1, 0.4*cm))
+    story.append(Paragraph(periode_text, styles['Normal']))
+    story.append(Paragraph(f"Tanggal terbit: {today_text}", styles['Normal']))
+    story.append(PageBreak())
+
+    # ---------- TOC ----------
+    story.append(Paragraph("Daftar Isi", styles['H1']))
+    toc = TableOfContents()
+    toc.levelStyles = [
+        ParagraphStyle(fontName='Helvetica-Bold', name='TOCHeading1', fontSize=12, leftIndent=10, firstLineIndent=-10, spaceAfter=4),
+        ParagraphStyle(fontName='Helvetica', name='TOCHeading2', fontSize=10, leftIndent=20, firstLineIndent=-10, spaceAfter=2)
+    ]
+    story.append(toc)
+    story.append(PageBreak())
+
+    # ---------- BAB 1: RINGKASAN EKSEKUTIF ----------
+    story.append(Paragraph("Bab 1. Ringkasan Eksekutif", styles['H1']))
+    story.append(Paragraph(_build_narrative(df_filtered, available_sla_cols), body))
+    story.append(Spacer(1, 0.4*cm))
+
+    figs = _build_charts(df_filtered, periode_col, selected_periode, available_sla_cols, proses_grafik_cols)
+    if 'trend_keu' in figs:
+        story.append(Paragraph("Gambar 1. Trend Rata-rata SLA Keuangan", styles['Caption']))
+        story.append(RLImage(figs['trend_keu'], width=16*cm, height=6*cm))
+    story.append(PageBreak())
+
+    # ---------- BAB 2: KPI SLA ----------
+    story.append(Paragraph("Bab 2. KPI SLA", styles['H1']))
+    # Target KPI dari file json (gunakan helper existing)
+    try:
+        kpi_target = load_kpi()
+    except Exception:
+        kpi_target = None
+    if "KEUANGAN" in df_filtered.columns and len(df_filtered)>0:
+        avg_sec = float(df_filtered["KEUANGAN"].mean())
+        avg_days = avg_sec/86400
+        bullet = [
+            ["KPI Target (hari)", f"{kpi_target if kpi_target is not None else '-'}"],
+            ["Pencapaian rata-rata (hari)", f"{avg_days:.2f}"],
+            ["Pencapaian (format)", _fmt_seconds_verbose(avg_sec)],
+            ["Status", "ON TARGET" if (kpi_target is not None and avg_days <= float(kpi_target)) else ("NOT ON TARGET" if kpi_target is not None else "-")]
+        ]
+        t = Table(bullet, hAlign='LEFT', colWidths=[6*cm, 10*cm])
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F1F5F9')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.HexColor('#0F172A')),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('GRID', (0,0), (-1,-1), 0.3, colors.grey),
+            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F8FAFC')])
+        ]))
+        story.append(t)
+        story.append(Spacer(1, 0.3*cm))
+    if 'bar_proses' in figs:
+        story.append(Paragraph("Gambar 2. Rata-rata SLA per Proses", styles['Caption']))
+        story.append(RLImage(figs['bar_proses'], width=16*cm, height=6*cm))
+    story.append(PageBreak())
+
+    # ---------- BAB 3: Analisis Per Proses ----------
+    story.append(Paragraph("Bab 3. Analisis Per Proses", styles['H1']))
+    if proses_grafik_cols:
+        rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
+        tbl_data = [["Proses", "Rata-rata (detik)", "Format Panjang"]]
+        for c in proses_grafik_cols:
+            tbl_data.append([c, f"{rata_proses_seconds[c]:.0f}", _fmt_seconds_verbose(rata_proses_seconds[c])])
+        table = Table(tbl_data, hAlign='LEFT', colWidths=[5*cm, 4*cm, 7*cm])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#E2E8F0')),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('GRID', (0,0), (-1,-1), 0.3, colors.grey),
+            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F8FAFC')])
+        ]))
+        story.append(table)
+    if 'trend_total' in figs:
+        story.append(Spacer(1, 0.3*cm))
+        story.append(Paragraph("Gambar 3. Trend Total Waktu", styles['Caption']))
+        story.append(RLImage(figs['trend_total'], width=16*cm, height=6*cm))
+    story.append(PageBreak())
+
+    # ---------- BAB 4: Analisis Vendor ----------
+    story.append(Paragraph("Bab 4. Analisis Vendor", styles['H1']))
+    if "NAMA VENDOR" in df_filtered.columns and available_sla_cols:
+        group = df_filtered.groupby("NAMA VENDOR")[available_sla_cols].agg(['mean','count']).reset_index()
+        # Build compact table: Vendor | Count | Keu(mean) | Fungsional(mean) ...
+        head = ["Vendor", "Jumlah"] + [f"{c} (mean hari)" for c in available_sla_cols]
+        rows = []
+        for _, row in group.iterrows():
+            vendor = row['NAMA VENDOR']
+            cnt = int(row[(available_sla_cols[0], 'count')]) if (available_sla_cols[0], 'count') in row else int(row[(available_sla_cols[0],'count')])
+            means = []
+            for c in available_sla_cols:
+                means.append(f"{(row[(c,'mean')] / 86400):.2f}")
+            rows.append([vendor, cnt] + means)
+        data = [head] + rows[:40]  # cap at 40 rows for readability
+        vend_table = Table(data, repeatRows=1, colWidths=[5*cm, 2*cm] + [2.3*cm]*len(available_sla_cols))
+        vend_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#E2E8F0')),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('GRID', (0,0), (-1,-1), 0.25, colors.grey),
+            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F8FAFC')])
+        ]))
+        story.append(vend_table)
+    else:
+        story.append(Paragraph("Data vendor tidak tersedia.", body))
+    story.append(PageBreak())
+
+    # ---------- BAB 5: Tren SLA ----------
+    story.append(Paragraph("Bab 5. Tren SLA", styles['H1']))
+    trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[available_sla_cols].mean().reset_index()
+    trend["PERIODE_SORTED"] = pd.Categorical(trend[periode_col], categories=selected_periode, ordered=True)
+    trend = trend.sort_values("PERIODE_SORTED")
+    # Make compact table with formatted hh:mm (days)
+    head = ["Periode"] + available_sla_cols
+    rows = []
+    for _, r in trend.iterrows():
+        vals = []
+        for c in available_sla_cols:
+            vals.append(f"{(r[c]/86400):.2f}")
+        rows.append([r[periode_col]] + vals)
+    t = Table([head] + rows, repeatRows=1, colWidths=[3.6*cm] + [2.2*cm]*len(available_sla_cols))
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#E2E8F0')),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('GRID', (0,0), (-1,-1), 0.25, colors.grey),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F8FAFC')])
+    ]))
+    story.append(t)
+    if 'bar_transaksi' in figs:
+        story.append(Spacer(1, 0.3*cm))
+        story.append(Paragraph("Gambar 4. Jumlah Transaksi per Periode", styles['Caption']))
+        story.append(RLImage(figs['bar_transaksi'], width=16*cm, height=6*cm))
+    story.append(PageBreak())
+
+    # ---------- BAB 6: Kesimpulan & Rekomendasi ----------
+    story.append(Paragraph("Bab 6. Kesimpulan & Rekomendasi", styles['H1']))
+    story.append(Paragraph(
+        "Secara umum, metrik SLA menunjukkan performa yang konsisten. Fokus perbaikan dapat diarahkan ke proses dengan rata-rata hari tertinggi, dan kolaborasi dengan vendor yang memiliki rata-rata SLA terlama.",
+        body
+    ))
+
+    # Build with header/footer
+    def _on_first(canvas, doc):
+        _page_decor(canvas, doc, company_logo_path)
+    def _on_later(canvas, doc):
+        _page_decor(canvas, doc, company_logo_path)
+
+    doc.build(story, onFirstPage=_on_first, onLaterPages=_on_later)
+    buf.seek(0)
+    return buf
+
+# ==============================
+# 🔽 STREAMLIT: insert into your existing `with tab_pdf:` block
+# ==============================
+with tab_pdf:
+    st.subheader("📥 Download PDF (E‑Book Laporan)")
+    st.caption("Report lengkap: cover, daftar isi, narasi, grafik dan tabel.")
+
+    # Optional: path logo perusahaan di header PDF (biarkan kosong jika tidak ada)
+    company_logo_path = None  # contoh: os.path.join("assets", "asdp_logo.png")
+
+    if st.button("🧾 Generate PDF Report"):
+        try:
+            pdf_buf = build_pdf_report(
+                df_filtered=df_filtered,
+                periode_col=periode_col,
+                selected_periode=selected_periode,
+                available_sla_cols=available_sla_cols,
+                proses_grafik_cols=proses_grafik_cols,
+                company_logo_path=company_logo_path
+            )
+            st.session_state['pdf_report_bytes'] = pdf_buf.getvalue()
+            st.success("PDF berhasil dibuat.")
+        except Exception as e:
+            st.error(f"Gagal membuat PDF: {e}")
+
+    if 'pdf_report_bytes' in st.session_state:
+        st.download_button(
+            label="💾 Download PDF",
+            data=st.session_state['pdf_report_bytes'],
+            file_name="Laporan_SLA_EBook.pdf",
+            mime="application/pdf"
+        )
+
 
