@@ -539,6 +539,7 @@ with tab_overview:
         avg_keu_days = None
         avg_keu_text = "-"
 
+
     # Load target KPI dari file
     saved_kpi = load_kpi()
 
@@ -1205,7 +1206,7 @@ with tab_poster:
 from fpdf import FPDF
 
 # Fungsi untuk membuat PDF
-def generate_pdf(df_filtered, selected_periode, rata_proses_seconds, trend_keu, rata_keu_text):
+def generate_pdf(df_filtered, selected_periode, rata_proses_seconds, trend_keu, avg_keu_text):
     # Membuat objek FPDF
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -1266,7 +1267,7 @@ with tab_pdf:
     
     if st.button("🎨 Generate PDF Report"):
         # Panggil fungsi untuk membuat PDF
-        pdf_path = generate_pdf(df_filtered, selected_periode, rata_proses_seconds, trend_keu, rata_keu_text)
+        pdf_path = generate_pdf(df_filtered, selected_periode, rata_proses_seconds, trend_keu, avg_keu_text)
         
         # Tampilkan tombol untuk mengunduh PDF
         st.success("PDF berhasil dibuat!")
