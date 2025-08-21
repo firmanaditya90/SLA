@@ -1201,8 +1201,104 @@ with tab_poster:
             file_name="Poster_SLA_A4.png",
             mime="image/png"
         )
+import io
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib import colors
+from reportlab.pdfgen import canvas
+from reportlab.platypus import SimpleDocTemplate, PageBreak, Table, TableStyle
+import os
+import pandas as pd
+
+# Fungsi untuk membuat PDF
+def generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_path="sla_report.pdf"):
+    # Membuat dokumen PDF
+    doc = SimpleDocTemplate(output_path, pagesize=A4)
+    elements = []
+    
+    # Halaman 1: Judul dan Periode
+    c = canvas.Canvas(output_path, pagesize=A4)
+    c.setFont("Helvetica-Bold", 20)
+    c.drawString(100, 800, "SLA Dokumen Penagihan")
+    c.setFont("Helvetica", 12)
+    c.drawString(100, 780, f"Periode dari {start_periode} sampai {end_periode}")
+    c.showPage()
+
+    # Halaman 2: Poster
+    if poster_img:
+        c.drawImage(poster_img, 100, 400, width=400, height=300)  # Gambar poster
+    c.showPage()
+
+    # Halaman 3: Daftar Isi
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(100, 800, "Daftar Isi:")
+    c.setFont("Helvetica", 12)
+    c.drawString(100, 780, "1. Overview")
+    c.drawString(100, 760, "2. Proses")
+    c.drawString(100, 740, "3. Vendor")
+    c.drawString(100, 720, "4. Transaksi")
+    c.drawString(100, 700, "5. Tren")
+    c.showPage()
+
+    # Halaman 4: Overview (Contoh untuk tab_overview)
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(100, 800, "1. Overview")
+    c.setFont("Helvetica", 12)
+    overview_text = "Narasi tentang Overview ... Menampilkan grafik dan tabel tentang overview."
+    c.drawString(100, 780, overview_text)
+    c.showPage()
+
+    # Halaman 5: Proses (Contoh untuk tab_proses)
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(100, 800, "2. Proses")
+    c.setFont("Helvetica", 12)
+    proses_text = "Narasi tentang Proses ... Menampilkan grafik dan tabel tentang proses."
+    c.drawString(100, 780, proses_text)
+    c.showPage()
+
+    # Menambahkan grafik dan tabel dari tab_proses, tab_vendor, dll, sesuai kebutuhan
+    # Misalnya untuk tab_vendor: 
+    vendor_data = [["Vendor", "Jumlah Transaksi", "Rata-rata SLA"]]
+    for vendor, count, sla in zip(df_filtered["NAMA VENDOR"], df_filtered["Jumlah Transaksi"], df_filtered["Rata-rata SLA"]):
+        vendor_data.append([vendor, count, sla])
+    table = Table(vendor_data)
+    table.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                               ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                               ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                               ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                               ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                               ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                               ('GRID', (0, 0), (-1, -1), 1, colors.black)]))
+    elements.append(table)
+    
+    doc.build(elements)
+
+# Modifikasi pada subtab PDF
 
     with tab_pdf:
         st.subheader("📥 Download PDF")
-        st.info("Fitur PDF belum tersedia.")
+        
+        # Generasi PDF ketika tombol ditekan
+        if st.button("🎯 Generate PDF Report"):
+            # Menyimpan poster A4 terlebih dahulu
+            poster_buf = generate_poster_A4( # generate_poster_A4 harus disesuaikan dengan bagian sebelumnya
+                {},
+                rata_proses_seconds,
+                df_proses,
+                "Captain Ferizy.png",
+                periode_info_text,
+                df_filtered,
+                periode_col,
+                selected_periode
+            )
+            poster_path = "poster_a4.png"
+            with open(poster_path, "wb") as f:
+                f.write(poster_buf.getvalue())
 
+            # Membuat PDF
+            output_pdf_path = "sla_report.pdf"
+            generate_pdf(df_filtered, start_periode, end_periode, poster_path, output_pdf_path)
+            
+            # Memberikan link download untuk PDF
+            with open(output_pdf_path, "rb") as f:
+                pdf_data = f.read()
+                st.download_button("💾 Download PDF", pdf_data, file_name="sla_report.pdf", mime="application/pdf")
