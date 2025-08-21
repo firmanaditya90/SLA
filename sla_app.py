@@ -126,7 +126,11 @@ if st.button("Generate PDF"):
     pdf_file = generate_pdf(df_filtered, start_periode, end_periode)
     with open(pdf_file, "rb") as f:
         st.download_button("Download Laporan PDF", f, file_name="laporan_SLA.pdf", mime="application/pdf")
-================================================================================================================================
+
+
+
+
+
 
 KPI_FILE = os.path.join("data", "kpi_target.json")
 
