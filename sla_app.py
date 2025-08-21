@@ -1225,7 +1225,7 @@ def generate_pdf(df_filtered, selected_periode, rata_proses_seconds, trend_keu, 
     
     # Menambahkan ringkasan KPI (misalnya Rata-rata SLA Keuangan)
     pdf.ln(5)
-    pdf.cell(200, 10, txt=f"Rata-rata SLA Keuangan: {rata_keu_text}", ln=True)
+    pdf.cell(200, 10, txt=f"Rata-rata SLA Keuangan: {avg_keu_text}", ln=True)
 
     # Menambahkan tabel rata-rata SLA per proses
     pdf.ln(10)
