@@ -1214,6 +1214,7 @@ with tab_poster:
 
 
 # =====================[ TAB PDF: HTML → PRINT ]=====================
+
 from datetime import datetime
 from io import BytesIO
 import base64
@@ -1229,7 +1230,7 @@ def _fig_to_base64(fig):
     return b64
 
 with tab_pdf:
-    st.subheader("📑 Laporan SLA (PDF via Browser Print) — Edisi Elegan")
+    st.subheader("📑 Laporan SLA (Versi PDF Elegan via Browser Print)")
 
     # Tombol Print → simpan PDF
     if st.button("🖨️ Cetak / Simpan sebagai PDF"):
@@ -1248,7 +1249,7 @@ with tab_pdf:
     .cover h2 { font-size: 20px; color: #334155; }
     .cover img { margin-top: 40px; width: 200px; }
     h2 { color:#0F172A; border-bottom:2px solid #CBD5E1; padding-bottom:4px; margin-top:30px; }
-    table { border-collapse: collapse; margin-top: 15px; font-size: 11pt; }
+    table { border-collapse: collapse; margin-top: 15px; font-size: 11pt; width:100%; }
     table, th, td { border: 1px solid #CBD5E1; padding: 6px; }
     th { background: #E2E8F0; }
     .chart { width:100%; margin: 10px 0; }
@@ -1282,12 +1283,13 @@ with tab_pdf:
 
     # ========== Bab 1 ==========
     st.markdown("## Bab 1. Ringkasan Eksekutif")
+    bab1_html = ""
     if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
         avg_sec = float(df_filtered["KEUANGAN"].mean())
-        st.markdown(f"Rata-rata SLA Keuangan: **{seconds_to_sla_format(avg_sec)}** (~{avg_sec/86400:.2f} hari)")
+        bab1_html += f"<p>Rata-rata SLA Keuangan: <b>{seconds_to_sla_format(avg_sec)}</b> (~{avg_sec/86400:.2f} hari)</p>"
     if "TOTAL WAKTU" in available_sla_cols:
         avg_tot = float(df_filtered["TOTAL WAKTU"].mean())
-        st.markdown(f"Rata-rata TOTAL WAKTU: **{avg_tot/86400:.2f} hari**")
+        bab1_html += f"<p>Rata-rata TOTAL WAKTU: <b>{avg_tot/86400:.2f} hari</b></p>"
 
     if "KEUANGAN" in df_filtered.columns:
         trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
@@ -1297,43 +1299,65 @@ with tab_pdf:
             ax.set_title("Trend Rata-rata SLA Keuangan (hari)")
             ax.set_ylabel("Hari")
             plt.xticks(rotation=45, ha="right")
-            st.image(_fig_to_base64(fig))
+            bab1_html += f'<img src="data:image/png;base64,{_fig_to_base64(fig)}" class="chart">'
+    st.markdown(bab1_html, unsafe_allow_html=True)
 
     # ========== Bab 2 ==========
     st.markdown("## Bab 2. KPI SLA")
+    bab2_html = ""
     saved_kpi = load_kpi()
     if "KEUANGAN" in df_filtered.columns:
         avg_days = float(df_filtered["KEUANGAN"].mean()) / 86400
         status = "✅ ON TARGET" if (saved_kpi and avg_days <= saved_kpi) else "⚠️ NOT ON TARGET"
-        st.markdown(f"""
-        - Target KPI: {saved_kpi if saved_kpi else '-'} hari  
-        - Rata-rata Aktual: {avg_days:.2f} hari  
-        - Status: {status}
-        """)
+        bab2_html += f"""
+        <table>
+          <tr><th>Target KPI</th><th>Rata-rata Aktual</th><th>Status</th></tr>
+          <tr><td>{saved_kpi if saved_kpi else '-' } hari</td>
+              <td>{avg_days:.2f} hari</td>
+              <td>{status}</td></tr>
+        </table>
+        """
+    st.markdown(bab2_html, unsafe_allow_html=True)
 
     # ========== Bab 3 ==========
     st.markdown("## Bab 3. Analisis Per Proses")
     if proses_grafik_cols:
         rata_proses_days = (df_filtered[proses_grafik_cols].mean()/86400).round(2)
-        st.dataframe(rata_proses_days.to_frame("Rata-rata (hari)"))
+        st.markdown(rata_proses_days.to_frame("Rata-rata (hari)").to_html(classes="table", border=0),
+                    unsafe_allow_html=True)
+
+        ser = rata_proses_days.sort_values(ascending=False)
+        fig, ax = plt.subplots(figsize=(6,3))
+        ax.bar(ser.index, ser.values)
+        ax.set_title("Rata-rata SLA per Proses (hari)")
+        ax.set_ylabel("Hari")
+        plt.xticks(rotation=45, ha="right")
+        st.markdown(
+            f'<img src="data:image/png;base64,{_fig_to_base64(fig)}" class="chart">',
+            unsafe_allow_html=True
+        )
 
     # ========== Bab 4 ==========
     st.markdown("## Bab 4. Analisis Jumlah Transaksi")
     transaksi_periode = df_filtered.groupby(df_filtered[periode_col].astype(str)).size()
-    st.dataframe(transaksi_periode.to_frame("Jumlah Transaksi"))
+    st.markdown(transaksi_periode.to_frame("Jumlah Transaksi").to_html(classes="table", border=0),
+                unsafe_allow_html=True)
 
     fig, ax = plt.subplots(figsize=(6,3))
     transaksi_periode.plot(kind="bar", ax=ax)
     ax.set_title("Jumlah Transaksi per Periode")
     ax.set_ylabel("Jumlah")
     plt.xticks(rotation=45, ha="right")
-    st.image(_fig_to_base64(fig))
+    st.markdown(
+        f'<img src="data:image/png;base64,{_fig_to_base64(fig)}" class="chart">',
+        unsafe_allow_html=True
+    )
 
     # ========== Bab 5 ==========
     st.markdown("## Bab 5. Tren SLA")
     if available_sla_cols:
         trend_df = (df_filtered.groupby(df_filtered[periode_col].astype(str))[available_sla_cols].mean()/86400).round(2)
-        st.dataframe(trend_df)
+        st.markdown(trend_df.to_html(classes="table", border=0), unsafe_allow_html=True)
 
         fig, ax = plt.subplots(figsize=(7,3.5))
         for col in trend_df.columns:
@@ -1342,16 +1366,19 @@ with tab_pdf:
         ax.set_ylabel("Hari")
         plt.xticks(rotation=45, ha="right")
         ax.legend(fontsize=8)
-        st.image(_fig_to_base64(fig))
+        st.markdown(
+            f'<img src="data:image/png;base64,{_fig_to_base64(fig)}" class="chart">',
+            unsafe_allow_html=True
+        )
 
     # ========== Bab 6 ==========
     st.markdown("## Bab 6. Kesimpulan & Rekomendasi")
     st.markdown("""
-    - SLA Keuangan relatif stabil, rata-rata mendekati target.  
-    - Perlu perhatian khusus pada proses dengan rata-rata SLA tertinggi.  
-    - Jumlah transaksi meningkat pada periode tertentu → perlu alokasi resource lebih.  
-    - Vendor dengan SLA terlama sebaiknya jadi fokus monitoring.  
-    """)
-
-            
+    <ul>
+      <li>SLA Keuangan relatif stabil, rata-rata mendekati target.</li>
+      <li>Proses dengan SLA tertinggi perlu prioritas perbaikan.</li>
+      <li>Jumlah transaksi meningkat pada periode tertentu → resource tambahan perlu disiapkan.</li>
+      <li>Monitoring vendor tetap penting untuk mengurangi risiko keterlambatan.</li>
+    </ul>
+    """, unsafe_allow_html=True)
 
