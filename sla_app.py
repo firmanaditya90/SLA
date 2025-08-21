@@ -1241,22 +1241,19 @@ with tab_pdf:
             pdf_data = f.read()  # Membaca data PDF yang telah dibuat
             st.download_button("💾 Download PDF", pdf_data, file_name="sla_report.pdf", mime="application/pdf")  # Tombol untuk mengunduh PDF
 
-import io
-from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas
-from reportlab.platypus import SimpleDocTemplate, PageBreak, Table, TableStyle
-import os
-import pandas as pd
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+import io
 
-# Fungsi untuk membuat PDF
-def generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_path="sla_report.pdf"):
-    # Membuat dokumen PDF
-    doc = SimpleDocTemplate(output_path, pagesize=A4)
+def generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pdf_path):
+    # Membuat dokumen PDF dengan SimpleDocTemplate
+    doc = SimpleDocTemplate(output_pdf_path, pagesize=A4)
     elements = []
-    
+
     # Halaman 1: Judul dan Periode
-    c = canvas.Canvas(output_path, pagesize=A4)
+    c = canvas.Canvas(output_pdf_path, pagesize=A4)
     c.setFont("Helvetica-Bold", 20)
     c.drawString(100, 800, "SLA Dokumen Penagihan")
     c.setFont("Helvetica", 12)
@@ -1296,20 +1293,26 @@ def generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pat
     c.showPage()
 
     # Menambahkan grafik dan tabel dari tab_proses, tab_vendor, dll, sesuai kebutuhan
-    # Misalnya untuk tab_vendor: 
+    # Misalnya untuk tab_vendor:
     vendor_data = [["Vendor", "Jumlah Transaksi", "Rata-rata SLA"]]
     for vendor, count, sla in zip(df_filtered["NAMA VENDOR"], df_filtered["Jumlah Transaksi"], df_filtered["Rata-rata SLA"]):
         vendor_data.append([vendor, count, sla])
+
     table = Table(vendor_data)
-    table.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                               ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                               ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                               ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                               ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                               ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-                               ('GRID', (0, 0), (-1, -1), 1, colors.black)]))
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
     elements.append(table)
-    
+
+    # Menyelesaikan PDF dengan elemen-elemen yang telah dibuat
     doc.build(elements)
 
-
+# Memanggil fungsi generate_pdf
+output_pdf_path = "sla_report.pdf"
+generate_pdf(df_filtered, start_periode, end_periode, "poster_a4.png", output_pdf_path)
