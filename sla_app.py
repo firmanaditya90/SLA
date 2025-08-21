@@ -1323,8 +1323,8 @@ with tab_pdf:
     st.subheader("📥 Download PDF")
     st.info("Fitur PDF telah tersedia!")
 
-    # Tombol untuk generate PDF
-    if st.button("Generate PDF"):
+    # Tombol untuk generate PDF dengan key unik
+    if st.button("Generate PDF", key="generate_pdf_button"):
         # Ambil data yang difilter sesuai dengan periode yang dipilih
         df_filtered = pd.DataFrame({
             'PERIODE': ['2025-01', '2025-02', '2025-03'],  # Ganti dengan data yang sesuai
@@ -1338,3 +1338,4 @@ with tab_pdf:
         # Menyediakan link untuk mengunduh PDF
         with open(pdf_file, "rb") as f:
             st.download_button("Download Laporan PDF", f, file_name="laporan_SLA.pdf", mime="application/pdf")
+
