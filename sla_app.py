@@ -1051,6 +1051,9 @@ def generate_poster_A4(sla_text_dict, rata_proses_seconds, df_proses, image_url,
     except Exception as e:
         print("Gagal render Kemudi/On Target:", e)
 
+# ==========================================================
+#   Fungsi generate poster A4 dengan Captain Ferizy
+# ==========================================================
 def generate_poster_A4(
     kpi_info,              # (dict atau kosong) untuk extensibility
     rata_proses_seconds,   # Series: rata-rata SLA per proses
@@ -1061,9 +1064,15 @@ def generate_poster_A4(
     periode_col,           # Nama kolom periode
     selected_periode       # List periode terpilih
 ):
-    W, H = 2480, 3508  # A4 300dpi
+    # Ukuran A4 @300dpi
+    W, H = 2480, 3508
     bg = Image.new("RGB", (W, H), (255, 255, 255))
     draw = ImageDraw.Draw(bg)
+
+    # Helper aman untuk ukur teks
+    def get_text_size(draw, text, font):
+        bbox = draw.textbbox((0, 0), text, font=font)
+        return bbox[2] - bbox[0], bbox[3] - bbox[1]
 
     # Font fallback
     try:
@@ -1075,30 +1084,86 @@ def generate_poster_A4(
         font_sub = ImageFont.load_default()
         font_text = ImageFont.load_default()
 
-    # Judul
+    # ================= HEADER =================
     title = "🚢 SLA PAYMENT ANALYZER"
-    w, h = draw.textsize(title, font=font_title)
+    w, h = get_text_size(draw, title, font_title)
     draw.text(((W - w) / 2, 100), title, fill=(0, 70, 150), font=font_title)
 
     # Info Periode
     draw.text((200, 300), f"Periode: {periode_info_text}", font=font_sub, fill=(0, 0, 0))
 
-    # Ringkasan SLA per proses
+    # ================= RINGKASAN SLA PER PROSES =================
     draw.text((200, 500), "📌 Rata-rata SLA per Proses:", font=font_sub, fill=(0, 0, 0))
-    for i, (proc, val) in enumerate(rata_proses_seconds.items()):
-        draw.text((250, 600 + i*60), f"{proc}: {format_duration(val)}", font=font_text, fill=(0, 0, 0))
+    if rata_proses_seconds is not None and len(rata_proses_seconds) > 0:
+        for i, (proc, val) in enumerate(rata_proses_seconds.items()):
+            dur = format_duration(val) if pd.notna(val) else "-"
+            draw.text((250, 600 + i*60), f"{proc}: {dur}", font=font_text, fill=(0, 0, 0))
+    else:
+        draw.text((250, 600), "Tidak ada data SLA proses", font=font_text, fill=(120, 120, 120))
 
-    # Sisipkan Captain Ferizy
+    # ================= TREND SLA KEUANGAN =================
+    chart_y = 1100
+    draw.text((200, chart_y), "📈 Trend SLA Keuangan per Periode:", font=font_sub, fill=(0, 0, 0))
+    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
+        trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
+        trend_keu["Hari"] = (trend_keu["KEUANGAN"] / 86400).round(2)
+
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.plot(trend_keu[periode_col], trend_keu["Hari"], marker="o", color="#1f77b4")
+        ax.set_title("Trend SLA Keuangan (hari)")
+        ax.set_xlabel("Periode")
+        ax.set_ylabel("Hari")
+        ax.grid(True, linestyle="--", alpha=0.7)
+        for label in ax.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha("right")
+
+        buf_chart = io.BytesIO()
+        fig.savefig(buf_chart, format="PNG", bbox_inches="tight")
+        buf_chart.seek(0)
+        plt.close(fig)
+        chart_img = Image.open(buf_chart)
+        chart_img = chart_img.resize((1800, 600))
+        bg.paste(chart_img, (200, chart_y + 100))
+    else:
+        draw.text((250, chart_y + 100), "Tidak ada data SLA Keuangan", font=font_text, fill=(120, 120, 120))
+
+    # ================= JUMLAH TRANSAKSI =================
+    chart2_y = 1900
+    draw.text((200, chart2_y), "📊 Jumlah Transaksi per Periode:", font=font_sub, fill=(0, 0, 0))
+    jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name="Jumlah")
+    if len(jumlah_transaksi) > 0:
+        fig2, ax2 = plt.subplots(figsize=(8, 4))
+        ax2.bar(jumlah_transaksi[periode_col], jumlah_transaksi["Jumlah"], color="#ff9f7f")
+        ax2.set_title("Jumlah Transaksi per Periode")
+        ax2.set_xlabel("Periode")
+        ax2.set_ylabel("Jumlah")
+        ax2.grid(axis="y", linestyle="--", alpha=0.7)
+        for label in ax2.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha("right")
+
+        buf_chart2 = io.BytesIO()
+        fig2.savefig(buf_chart2, format="PNG", bbox_inches="tight")
+        buf_chart2.seek(0)
+        plt.close(fig2)
+        chart_img2 = Image.open(buf_chart2)
+        chart_img2 = chart_img2.resize((1800, 600))
+        bg.paste(chart_img2, (200, chart2_y + 100))
+    else:
+        draw.text((250, chart2_y + 100), "Tidak ada data transaksi", font=font_text, fill=(120, 120, 120))
+
+    # ================= CAPTAIN FERIZY =================
     try:
         ferizy_img = Image.open(os.path.join(os.path.dirname(__file__), ferizy_path)).convert("RGBA")
-        ferizy_img = ferizy_img.resize((800, 800), Image.Resampling.LANCZOS)
+        ferizy_img = ferizy_img.resize((600, 600), Image.Resampling.LANCZOS)
         pos_x = W - ferizy_img.width - 100
-        pos_y = H - ferizy_img.height - 300
+        pos_y = H - ferizy_img.height - 400
         bg.paste(ferizy_img, (pos_x, pos_y), ferizy_img)
     except Exception as e:
         print("⚠️ Gagal render Captain Ferizy:", e)
 
-    # Sisipkan Transformation.png (footer kiri bawah)
+    # ================= TRANSFORMATION LOGO =================
     try:
         Transformation_path = os.path.join(os.path.dirname(__file__), "Transformation.png")
         Transformation_img = Image.open(Transformation_path).convert("RGBA")
@@ -1113,6 +1178,12 @@ def generate_poster_A4(
     except Exception as e:
         print("⚠️ Gagal render Transformation:", e)
 
+    # ================= FOOTER =================
+    footer_text = "Generated by SLA Payment Analyzer"
+    w, h = get_text_size(draw, footer_text, font_text)
+    draw.text(((W - w) / 2, H - 150), footer_text, font=font_text, fill=(80, 80, 80))
+
+    # Output buffer
     out = io.BytesIO()
     bg.save(out, format="PNG")
     out.seek(0)
