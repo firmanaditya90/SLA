@@ -1203,11 +1203,18 @@ with tab_poster:
         )
 with tab_pdf:
     st.subheader("📥 Download PDF")
-        
+
     # Generasi PDF ketika tombol ditekan
     if st.button("🎯 Generate PDF Report"):
+        # Mendefinisikan df_proses dengan data yang relevan
+        rata_proses_seconds = df_filtered[proses_grafik_cols].mean()  # Hitung rata-rata SLA per proses
+        df_proses = pd.DataFrame({
+            "Proses": rata_proses_seconds.index,
+            "Rata-rata SLA": [seconds_to_sla_format(x) for x in rata_proses_seconds]
+        })
+
         # Menyimpan poster A4 terlebih dahulu
-        poster_buf = generate_poster_A4(  # generate_poster_A4 harus disesuaikan dengan bagian sebelumnya
+        poster_buf = generate_poster_A4(  # Pastikan generate_poster_A4 menerima df_proses
             {},
             rata_proses_seconds,
             df_proses,
@@ -1217,7 +1224,6 @@ with tab_pdf:
             periode_col,
             selected_periode
         )
-        
         poster_path = "poster_a4.png"
         with open(poster_path, "wb") as f:
             f.write(poster_buf.getvalue())  # Menyimpan gambar poster ke file
