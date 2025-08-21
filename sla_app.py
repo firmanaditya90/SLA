@@ -14,6 +14,13 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
 import requests
 import json
+try:
+    from fpdf import FPDF
+except ImportError:
+    import os
+    os.system("pip install fpdf2")
+    from fpdf import FPDF
+
 
 KPI_FILE = os.path.join("data", "kpi_target.json")
 
