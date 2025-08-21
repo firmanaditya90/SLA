@@ -14,6 +14,119 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
 import requests
 import json
+=========================================================
+import streamlit as st
+import pandas as pd
+import io
+import os
+from fpdf import FPDF
+import matplotlib.pyplot as plt
+from PIL import Image
+import base64
+
+# Menyertakan pustaka PDF
+class PDF(FPDF):
+    def header(self):
+        self.set_font("Arial", 'B', 16)
+        self.cell(200, 10, "Laporan SLA Dokumen Penagihan", ln=True, align='C')
+        self.ln(10)
+    
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Arial', 'I', 8)
+        self.cell(0, 10, f'Halaman {self.page_no()}', 0, 0, 'C')
+
+    def chapter_title(self, title):
+        self.set_font('Arial', 'B', 12)
+        self.cell(0, 10, title, 0, 1, 'L')
+        self.ln(4)
+
+    def chapter_body(self, body):
+        self.set_font('Arial', '', 12)
+        self.multi_cell(0, 10, body)
+        self.ln()
+
+    def add_image(self, img_path, w=190):
+        self.image(img_path, x=10, w=w)
+        self.ln()
+
+    def add_table(self, df):
+        self.set_font('Arial', '', 12)
+        for i in range(df.shape[0]):
+            self.cell(40, 10, str(df.iloc[i, 0]), border=1, align='C')
+            self.cell(40, 10, str(df.iloc[i, 1]), border=1, align='C')
+            self.cell(40, 10, str(df.iloc[i, 2]), border=1, align='C')
+            self.cell(40, 10, str(df.iloc[i, 3]), border=1, align='C')
+            self.ln()
+
+# Fungsi untuk generate PDF
+def generate_pdf(df_filtered, start_periode, end_periode):
+    pdf = PDF()
+    pdf.add_page()
+
+    # Halaman 1: Judul dan Periode
+    pdf.chapter_title("SLA Dokumen Penagihan")
+    pdf.chapter_body(f"Periode dari {start_periode} sampai {end_periode}")
+    pdf.add_page()
+
+    # Halaman 2: Poster (contoh gambar poster dari aplikasi)
+    poster_path = "path_to_poster_image.png"  # Ganti dengan path poster
+    pdf.add_image(poster_path)
+
+    # Halaman 3: Daftar Isi
+    pdf.add_page()
+    pdf.chapter_title("Daftar Isi")
+    pdf.chapter_body("1. Overview\n2. Proses\n3. Transaksi\n4. Vendor\n5. Tren\n6. Jumlah Transaksi\n")
+
+    # Halaman 4: Overview (contoh grafik dan narasi)
+    pdf.add_page()
+    pdf.chapter_title("Overview")
+    pdf.chapter_body("Ini adalah narasi otomatis tentang overview dari data yang ditampilkan. "
+                      "Ini menjelaskan tabel dan grafik di halaman ini, memberikan wawasan tentang SLA "
+                      "dan performa keseluruhan.")
+
+    # Menambahkan tabel (misalnya data rata-rata SLA Keuangan per periode)
+    df_overview = df_filtered.groupby('PERIODE').mean()  # Mengambil contoh data dari df_filtered
+    pdf.add_table(df_overview)
+    
+    # Halaman 5: Proses (grafik dan narasi)
+    pdf.add_page()
+    pdf.chapter_title("Proses")
+    pdf.chapter_body("Ini adalah narasi otomatis tentang data proses. "
+                      "Penjelasan lebih lanjut tentang tren dan analisis SLA per proses.")
+    # Menambahkan grafik jika ada
+    fig, ax = plt.subplots()
+    ax.plot(df_filtered['PERIODE'], df_filtered['KEUANGAN'])  # Contoh grafik SLA Keuangan
+    img_path = "plot.png"
+    fig.savefig(img_path)
+    pdf.add_image(img_path)
+
+    # Simpan PDF
+    output_path = "laporan_SLA.pdf"
+    pdf.output(output_path)
+    return output_path
+
+# Streamlit interface
+st.title("SLA Payment Analyzer")
+
+# Filter periode
+start_periode = st.date_input("Periode Mulai")
+end_periode = st.date_input("Periode Akhir")
+
+# Tombol generate PDF
+if st.button("Generate PDF"):
+    # Ambil data (misalnya df_filtered yang sudah ada di aplikasi)
+    df_filtered = pd.DataFrame({
+        'PERIODE': ['2025-01', '2025-02', '2025-03'],
+        'KEUANGAN': [10000, 20000, 30000],
+        'VENDOR': [5000, 6000, 7000]
+    })  # Data dummy
+
+    # Generate PDF dan berikan link download
+    pdf_file = generate_pdf(df_filtered, start_periode, end_periode)
+    with open(pdf_file, "rb") as f:
+        st.download_button("Download Laporan PDF", f, file_name="laporan_SLA.pdf", mime="application/pdf")
+================================================================================================================================
 
 KPI_FILE = os.path.join("data", "kpi_target.json")
 
@@ -1202,7 +1315,22 @@ with tab_poster:
             mime="image/png"
         )
 
-    with tab_pdf:
-        st.subheader("📥 Download PDF")
-        st.info("Fitur PDF belum tersedia.")
+with tab_pdf:
+    st.subheader("📥 Download PDF")
+    st.info("Fitur PDF telah tersedia!")
 
+    # Tombol untuk generate PDF
+    if st.button("Generate PDF"):
+        # Ambil data yang difilter sesuai dengan periode yang dipilih
+        df_filtered = pd.DataFrame({
+            'PERIODE': ['2025-01', '2025-02', '2025-03'],  # Ganti dengan data yang sesuai
+            'KEUANGAN': [10000, 20000, 30000],  # Ganti dengan data yang sesuai
+            'VENDOR': [5000, 6000, 7000]  # Ganti dengan data yang sesuai
+        })  # Data dummy, ganti dengan df_filtered yang sesuai
+
+        # Generate PDF dan simpan
+        pdf_file = generate_pdf(df_filtered, start_periode, end_periode)
+        
+        # Menyediakan link untuk mengunduh PDF
+        with open(pdf_file, "rb") as f:
+            st.download_button("Download Laporan PDF", f, file_name="laporan_SLA.pdf", mime="application/pdf")
