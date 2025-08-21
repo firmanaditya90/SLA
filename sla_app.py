@@ -1207,7 +1207,7 @@ with tab_pdf:
     # Generasi PDF ketika tombol ditekan
     if st.button("🎯 Generate PDF Report"):
         # Menyimpan poster A4 terlebih dahulu
-        poster_buf = generate_poster_A4( # generate_poster_A4 harus disesuaikan dengan bagian sebelumnya
+        poster_buf = generate_poster_A4(  # generate_poster_A4 harus disesuaikan dengan bagian sebelumnya
             {},
             rata_proses_seconds,
             df_proses,
@@ -1216,19 +1216,20 @@ with tab_pdf:
             df_filtered,
             periode_col,
             selected_periode
-            )
-            poster_path = "poster_a4.png"
-            with open(poster_path, "wb") as f:
-                f.write(poster_buf.getvalue())
+        )
+        
+        poster_path = "poster_a4.png"
+        with open(poster_path, "wb") as f:
+            f.write(poster_buf.getvalue())  # Menyimpan gambar poster ke file
 
-            # Membuat PDF
-            output_pdf_path = "sla_report.pdf"
-            generate_pdf(df_filtered, start_periode, end_periode, poster_path, output_pdf_path)
-            
-            # Memberikan link download untuk PDF
-            with open(output_pdf_path, "rb") as f:
-            pdf_data = f.read()
-            st.download_button("💾 Download PDF", pdf_data, file_name="sla_report.pdf", mime="application/pdf")
+        # Membuat PDF
+        output_pdf_path = "sla_report.pdf"
+        generate_pdf(df_filtered, start_periode, end_periode, poster_path, output_pdf_path)
+
+        # Memberikan link download untuk PDF
+        with open(output_pdf_path, "rb") as f:
+            pdf_data = f.read()  # Membaca data PDF yang telah dibuat
+            st.download_button("💾 Download PDF", pdf_data, file_name="sla_report.pdf", mime="application/pdf")  # Tombol untuk mengunduh PDF
 
 import io
 from reportlab.lib.pagesizes import letter, A4
@@ -1300,7 +1301,5 @@ def generate_pdf(df_filtered, start_periode, end_periode, poster_img, output_pat
     elements.append(table)
     
     doc.build(elements)
-
-# Modifikasi pada subtab PDF
 
 
