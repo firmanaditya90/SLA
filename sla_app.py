@@ -1214,22 +1214,14 @@ with tab_poster:
 
 if condition:  # Ini adalah indentasi yang benar
 with tab_pdf:
-    st.subheader("Generate Laporan PDF")
-
-    # Menambahkan tombol untuk generate PDF
-    if st.button("📥 Download PDF", key="download_pdf_button"):
-        # Menampilkan variabel untuk debugging
-        st.write("df_filtered:", df_filtered)
-        st.write("selected_periode:", selected_periode)
-        st.write("available_sla_cols:", available_sla_cols)
-        st.write("proses_grafik_cols:", proses_grafik_cols)
-        st.write("periode_col:", periode_col)
-
-        # Menghasilkan PDF berdasarkan data
-        pdf_buffer = generate_pdf(df_filtered, selected_periode, available_sla_cols, proses_grafik_cols, periode_col)
-
-        # Menampilkan tombol download PDF
-        st.download_button("💾 Simpan PDF", data=pdf_buffer, file_name="laporan_sla.pdf", mime="application/pdf")
+    st.subheader("📑 Laporan SLA (Landscape; Download HTML → Save as PDF)")
+    html_report = build_html_report_full(df_filtered, selected_periode, available_sla_cols, proses_grafik_cols)
+    st.download_button(
+        "💾 Download Laporan (.html)",
+        data=html_report,
+        file_name="Laporan_SLA_EBook_Landscape.html",
+        mime="text/html"
+    )
 
 
 with tab_html:
