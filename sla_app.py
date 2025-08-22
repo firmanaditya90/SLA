@@ -1308,6 +1308,9 @@ def build_html_report_full_v3(
     logo_left="Danantara.png",
     logo_right="asdp_logo.png"
 ):
+    # ================= APPLY FILTER PERIODE =================
+    df_filt = df_ord[df_ord[periode_col].astype(str).isin([str(p) for p in selected_periode])].copy()
+
     # ------ CSS Global (A4 Landscape, 1 Bab = 1 halaman) ------
     css = """
     <style>
@@ -1325,9 +1328,6 @@ def build_html_report_full_v3(
       .header-logos img { height:16mm; }
       .header-left { position:absolute; left:8mm; top:6mm; }
       .header-right { position:absolute; right:8mm; top:6mm; }
-      .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-      .row { display:flex; gap:8px; }
-      .stretch { width:100%; }
       .mini-wrap { display:flex; gap:8px; margin:6px 0 4px 0; }
       .mini-stat { background: #f6f9ff; border:1px solid #e6eeff; border-radius:10px; padding:8px 10px; min-width:120px; }
       .mini-value { font-size:18px; font-weight:700; }
@@ -1335,23 +1335,18 @@ def build_html_report_full_v3(
       .note { font-size:12px; color:#666; }
       .caption { font-size:12px; color:#444; margin:4px 0 4px 2px; }
       .chart { width:100%; max-height:72mm; object-fit:contain; border:1px solid #eee; border-radius:8px; }
-      .half-chart { width:100%; max-height:60mm; object-fit:contain; border:1px solid #eee; border-radius:8px; }
       .tbl { border-collapse:collapse; width:100%; }
       .tbl th { background:#0ea5e9; color:white; padding:6px 8px; font-size:12px; text-align:center; }
       .tbl td { border-top:1px solid #e5e7eb; padding:6px 8px; font-size:12px; }
       .tbl tr:nth-child(even) td { background:#f8fafc; }
       .tbl.pretty { border:1px solid #e5e7eb; border-radius:8px; overflow:hidden; }
-      .boxed { border:1px solid #e5e7eb; border-radius:10px; padding:8px; }
       .narr { font-size:12px; line-height:1.45; background:#fafafa; border:1px dashed #e5e7eb; border-radius:8px; padding:8px; }
-      .pagebreak { page-break-after: always; }
-      .hide-print { display:none; }
-      /* cover tanpa header */
     </style>
     """
 
     html = ["<html><head><meta charset='utf-8'>", css, "</head><body>"]
 
-    # -------------------- COVER (tanpa header logo) --------------------
+    # -------------------- COVER --------------------
     html.append('<div class="page cover"><div class="content">')
     html.append(f"<h1>{report_title}</h1>")
     html.append(f"<div class='subtitle'>{company_title}</div>")
@@ -1359,7 +1354,7 @@ def build_html_report_full_v3(
         html.append(f"<div class='subtitle'>Periode: {str(selected_periode[0])} &mdash; {str(selected_periode[-1])}</div>")
     html.append("</div></div>")
 
-    # Helper untuk menyisipkan header logo di setiap halaman selain cover
+    # Helper logo
     def _header():
         return f"""
         <div class="header-logos">
@@ -1368,7 +1363,7 @@ def build_html_report_full_v3(
         </div>
         """
 
-    # ===================== DAFTAR ISI =====================
+    # -------------------- DAFTAR ISI --------------------
     html.append('<div class="page"><div class="content">')
     html.append(_header())
     html.append("<h2>Daftar Isi</h2>")
@@ -1381,221 +1376,143 @@ def build_html_report_full_v3(
         "Bab 6. Kesimpulan & Rekomendasi",
     ]
     html.append("<ol>")
-    for i, t in enumerate(toc, 1):
-        html.append(f"<li style='margin-bottom:4px'>{t}</li>")
+    for t in toc:
+        html.append(f"<li>{t}</li>")
     html.append("</ol>")
-    html.append("</div></div>")  # end TOC page
+    html.append("</div></div>")
 
-    # ===================== BAB 1: OVERVIEW =====================
+    # -------------------- BAB 1 --------------------
     html.append('<div class="page"><div class="content">')
     html.append(_header())
     html.append("<h2>Bab 1. Overview</h2>")
-
     try:
-        # KPI utama dari tab_overview
-        # Rata-rata KEUANGAN (detik → hari)
-        avg_keu_days = None
-        if "KEUANGAN" in df_ord.columns:
-            avg_keu_days = _safe_mean_days(df_ord.loc[df_ord[periode_col].isin(selected_periode), "KEUANGAN"])
+        avg_keu_days = _safe_mean_days(df_filt["KEUANGAN"]) if "KEUANGAN" in df_filt.columns else None
+        total_trans = len(df_filt)
 
-        # Best/Worst proses (jika kolom tersedia)
-        best_proc = worst_proc = None
-        proc_cols = [c for c in proses_grafik_cols if c in df_ord.columns]
-        if proc_cols:
-            proc_days = (df_ord.loc[df_ord[periode_col].isin(selected_periode), proc_cols].mean() / 86400.0).dropna()
-            if not proc_days.empty:
-                best_proc = (proc_days.idxmin(), float(proc_days.min()))
-                worst_proc = (proc_days.idxmax(), float(proc_days.max()))
-
-        # Mini stats
-        total_trans = int(df_ord.loc[df_ord[periode_col].isin(selected_periode)].shape[0])
+        # Mini cards
         mini = []
         mini.append(_mini_stat(f"{total_trans:,}", "Jumlah Transaksi"))
-        mini.append(_mini_stat(f"{avg_keu_days:.2f} hari" if avg_keu_days is not None else "-", "Rata-rata KEUANGAN"))
-        if kpi_target_days is not None and avg_keu_days is not None:
+        mini.append(_mini_stat(f"{avg_keu_days:.2f} hari" if avg_keu_days else "-", "Rata-rata KEUANGAN"))
+        if kpi_target_days and avg_keu_days:
             status = "✅ ON TRACK" if avg_keu_days <= kpi_target_days else "⚠️ DI ATAS TARGET"
             mini.append(_mini_stat(f"{kpi_target_days:.2f} hari", "Target KPI"))
             mini.append(_mini_stat(status, "Status"))
         html.append(f"<div class='mini-wrap'>{''.join(mini)}</div>")
 
-        # Tabel ringkas: Rata-rata KEUANGAN per periode (hari)
-        if "KEUANGAN" in df_ord.columns:
-            df1 = df_ord.loc[df_ord[periode_col].isin(selected_periode)].groupby(periode_col)["KEUANGAN"].mean().reset_index()
-            df1["SLA (hari)"] = (df1["KEUANGAN"] / 86400.0).round(2)
-            df1 = df1[[periode_col, "SLA (hari)"]].rename(columns={periode_col: "Periode"})
-            html.append(_html_table(df1, "Rata-rata SLA Keuangan per Periode"))
+        # Tabel & grafik SLA Keuangan per periode
+        if "KEUANGAN" in df_filt.columns:
+            df1 = df_filt.groupby(periode_col)["KEUANGAN"].mean().reset_index()
+            df1["SLA (hari)"] = (df1["KEUANGAN"]/86400).round(2)
+            df1 = df1.rename(columns={periode_col:"Periode"})
+            html.append(_html_table(df1[["Periode","SLA (hari)"]], "Rata-rata SLA Keuangan per Periode"))
 
-            # Grafik garis
-            fig, ax = plt.subplots(figsize=(10, 3.2))
+            fig, ax = plt.subplots(figsize=(10,3.2))
             ax.plot(df1["Periode"].astype(str), df1["SLA (hari)"], marker="o")
             ax.set_title("SLA Keuangan per Periode (hari)")
             ax.tick_params(axis="x", rotation=45)
             html.append(f'<img src="data:image/png;base64,{_fig_to_base64(fig)}" class="chart">')
 
-        # Narasi otomatis
-        html.append(f"<div class='narr'>{_auto_narasi_overview(avg_keu_days, kpi_target_days, best_proc, worst_proc)}</div>")
-
+        # Narasi
+        html.append(f"<div class='narr'>{_auto_narasi_overview(avg_keu_days,kpi_target_days)}</div>")
     except Exception as e:
-        html.append(f"<div class='note'>Gagal menampilkan Overview: {e}</div>")
+        html.append(f"<div class='note'>Error Bab 1: {e}</div>")
+    html.append("</div></div>")
 
-    html.append("</div></div>")  # end Bab 1
-
-    # ===================== BAB 2: SLA per Proses =====================
+    # -------------------- BAB 2 --------------------
     html.append('<div class="page"><div class="content">')
     html.append(_header())
     html.append("<h2>Bab 2. SLA per Proses</h2>")
-
     try:
-        proc_cols = [c for c in proses_grafik_cols if c in df_ord.columns]
+        proc_cols = [c for c in proses_grafik_cols if c in df_filt.columns]
         if proc_cols:
-            df2 = (df_ord.loc[df_ord[periode_col].isin(selected_periode), proc_cols].mean() / 86400.0).round(2)
-            df2 = df2.reset_index()
-            df2.columns = ["Proses", "SLA (hari)"]
-            # Tabel elegan
-            html.append(_html_table(df2.sort_values("SLA (hari)"), "Rata-rata SLA per Proses (hari)"))
-            # Grafik bar
-            fig, ax = plt.subplots(figsize=(10, 3.2))
-            ax.bar(df2["Proses"], df2["SLA (hari)"])
+            df2 = (df_filt[proc_cols].mean()/86400).round(2).reset_index()
+            df2.columns = ["Proses","SLA (hari)"]
+            html.append(_html_table(df2,"Rata-rata SLA per Proses"))
+            fig, ax = plt.subplots(figsize=(10,3.2))
+            ax.bar(df2["Proses"],df2["SLA (hari)"])
             ax.set_title("SLA per Proses (hari)")
-            ax.tick_params(axis="x", rotation=45)
+            ax.tick_params(axis="x",rotation=45)
             html.append(f'<img src="data:image/png;base64,{_fig_to_base64(fig)}" class="chart">')
-            # Narasi singkat
-            nar = _narasi_generic_top_bottom(df2.set_index("Proses")["SLA (hari)"])
-            html.append(f"<div class='narr'>{nar}</div>")
-        else:
-            html.append("<div class='note'>Kolom proses tidak tersedia.</div>")
     except Exception as e:
-        html.append(f"<div class='note'>Gagal menampilkan Bab 2: {e}</div>")
-
+        html.append(f"<div class='note'>Error Bab 2: {e}</div>")
     html.append("</div></div>")
 
-    # ===================== BAB 3: SLA per Jenis Transaksi =====================
+    # -------------------- BAB 3 --------------------
     html.append('<div class="page"><div class="content">')
     html.append(_header())
     html.append("<h2>Bab 3. SLA per Jenis Transaksi</h2>")
-
     try:
-        jns_col = None
-        for c in ["JENIS TRANSAKSI", "JENIS_TRANSAKSI", "Jenis Transaksi", "Jenis_Transaksi"]:
-            if c in df_ord.columns: jns_col = c; break
-        if jns_col and available_sla_cols:
-            # Hitung rata-rata KEUANGAN per jenis (fallback ke total rata-rata kolom SLA jika tidak ada KEUANGAN)
-            sla_col = "KEUANGAN" if "KEUANGAN" in df_ord.columns else available_sla_cols[0]
-            df3 = df_ord.loc[df_ord[periode_col].isin(selected_periode)].groupby(jns_col)[sla_col].agg(["count","mean"]).reset_index()
-            df3["SLA (hari)"] = (df3["mean"]/86400.0).round(2)
-            df3 = df3.rename(columns={jns_col:"Jenis Transaksi", "count":"Jumlah"}).sort_values("SLA (hari)")
-            df3 = df3[["Jenis Transaksi","Jumlah","SLA (hari)"]]
-            html.append(_html_table(df3, "Rata-rata SLA Keuangan per Jenis Transaksi"))
-            # Grafik bar horizontal biar rapi
-            fig, ax = plt.subplots(figsize=(10, 3.4))
-            ax.barh(df3["Jenis Transaksi"], df3["SLA (hari)"])
-            ax.set_title("SLA Keuangan per Jenis Transaksi (hari)")
+        if "JENIS TRANSAKSI" in df_filt.columns and "KEUANGAN" in df_filt.columns:
+            df3 = df_filt.groupby("JENIS TRANSAKSI")["KEUANGAN"].agg(["count","mean"]).reset_index()
+            df3["SLA (hari)"] = (df3["mean"]/86400).round(2)
+            df3 = df3.rename(columns={"count":"Jumlah"})
+            html.append(_html_table(df3[["JENIS TRANSAKSI","Jumlah","SLA (hari)"]],"SLA per Jenis Transaksi"))
+            fig, ax = plt.subplots(figsize=(10,3.2))
+            ax.barh(df3["JENIS TRANSAKSI"],df3["SLA (hari)"])
+            ax.set_title("SLA per Jenis Transaksi")
             ax.invert_yaxis()
             html.append(f'<img src="data:image/png;base64,{_fig_to_base64(fig)}" class="chart">')
-            # Narasi
-            nar = _narasi_generic_top_bottom(df3.set_index("Jenis Transaksi")["SLA (hari)"])
-            html.append(f"<div class='narr'>{nar}</div>")
-        else:
-            html.append("<div class='note'>Kolom jenis transaksi atau SLA tidak tersedia.</div>")
     except Exception as e:
-        html.append(f"<div class='note'>Gagal menampilkan Bab 3: {e}</div>")
-
+        html.append(f"<div class='note'>Error Bab 3: {e}</div>")
     html.append("</div></div>")
 
-    # ===================== BAB 4: SLA per Vendor =====================
+    # -------------------- BAB 4 --------------------
     html.append('<div class="page"><div class="content">')
     html.append(_header())
     html.append("<h2>Bab 4. SLA per Vendor</h2>")
-
     try:
-        ven_col = None
-        for c in ["VENDOR", "Vendor", "vendor", "NAMA_VENDOR"]:
-            if c in df_ord.columns: ven_col = c; break
-        if ven_col and available_sla_cols:
-            sla_col = "KEUANGAN" if "KEUANGAN" in df_ord.columns else available_sla_cols[0]
-            df4 = df_ord.loc[df_ord[periode_col].isin(selected_periode)].groupby(ven_col)[sla_col].agg(["count","mean"]).reset_index()
-            df4["SLA (hari)"] = (df4["mean"]/86400.0).round(2)
-            df4 = df4.rename(columns={ven_col:"Vendor", "count":"Jumlah"}).sort_values("SLA (hari)")
-            df4 = df4[["Vendor","Jumlah","SLA (hari)"]]
-            html.append(_html_table(df4, "Rata-rata SLA Keuangan per Vendor"))
-            # Grafik bar top 15 agar muat rapi
-            topN = min(15, df4.shape[0])
-            df4v = df4.head(topN)
-            fig, ax = plt.subplots(figsize=(10, 3.4))
-            ax.barh(df4v["Vendor"], df4v["SLA (hari)"])
-            ax.set_title(f"SLA Keuangan per Vendor (Top {topN})")
+        if "NAMA VENDOR" in df_filt.columns and "KEUANGAN" in df_filt.columns:
+            df4 = df_filt.groupby("NAMA VENDOR")["KEUANGAN"].agg(["count","mean"]).reset_index()
+            df4["SLA (hari)"] = (df4["mean"]/86400).round(2)
+            df4 = df4.rename(columns={"count":"Jumlah"})
+            html.append(_html_table(df4[["NAMA VENDOR","Jumlah","SLA (hari)"]],"SLA per Vendor"))
+            fig, ax = plt.subplots(figsize=(10,3.2))
+            ax.barh(df4["NAMA VENDOR"].head(15),df4["SLA (hari)"].head(15))
+            ax.set_title("SLA per Vendor (Top 15)")
             ax.invert_yaxis()
             html.append(f'<img src="data:image/png;base64,{_fig_to_base64(fig)}" class="chart">')
-            # Narasi
-            nar = _narasi_generic_top_bottom(df4.set_index("Vendor")["SLA (hari)"])
-            html.append(f"<div class='narr'>{nar}</div>")
-        else:
-            html.append("<div class='note'>Kolom vendor atau SLA tidak tersedia.</div>")
     except Exception as e:
-        html.append(f"<div class='note'>Gagal menampilkan Bab 4: {e}</div>")
-
+        html.append(f"<div class='note'>Error Bab 4: {e}</div>")
     html.append("</div></div>")
 
-    # ===================== BAB 5: TREN SLA =====================
+    # -------------------- BAB 5 --------------------
     html.append('<div class="page"><div class="content">')
     html.append(_header())
     html.append("<h2>Bab 5. Tren SLA</h2>")
-
     try:
         if available_sla_cols:
-            trend_df = df_ord.loc[df_ord[periode_col].isin(selected_periode)].groupby(periode_col)[available_sla_cols].mean()
-            trend_df = trend_df.reindex(selected_periode)
-            trend_days = (trend_df / 86400.0).round(2)
-
-            html.append(_html_table(trend_days.reset_index().rename(columns={periode_col:"Periode"}), "Rata-rata SLA per Periode (hari)"))
-
-            # Multi-line chart
-            fig, ax = plt.subplots(figsize=(10.2, 3.2))
+            trend_df = df_filt.groupby(periode_col)[available_sla_cols].mean().reindex(selected_periode)
+            trend_days = (trend_df/86400).round(2)
+            html.append(_html_table(trend_days.reset_index().rename(columns={periode_col:"Periode"}),"Rata-rata SLA per Periode"))
+            fig, ax = plt.subplots(figsize=(10,3.2))
             for col in trend_days.columns:
-                ax.plot(trend_days.index.astype(str), trend_days[col], marker='o', label=col)
-            ax.legend(fontsize=8, ncol=3, loc="upper left")
-            ax.set_title("Tren SLA per Periode (hari)")
-            ax.tick_params(axis="x", rotation=45)
+                ax.plot(trend_days.index.astype(str),trend_days[col],marker="o",label=col)
+            ax.legend(fontsize=8,ncol=3,loc="upper left")
+            ax.set_title("Tren SLA per Periode")
+            ax.tick_params(axis="x",rotation=45)
             html.append(f'<img src="data:image/png;base64,{_fig_to_base64(fig)}" class="chart">')
-
-            # Narasi tren
-            html.append(f"<div class='narr'>{_narasi_tren(trend_days)}</div>")
-        else:
-            html.append("<div class='note'>Kolom SLA tidak tersedia.</div>")
     except Exception as e:
-        html.append(f"<div class='note'>Gagal menampilkan Bab 5: {e}</div>")
-
+        html.append(f"<div class='note'>Error Bab 5: {e}</div>")
     html.append("</div></div>")
 
-    # ===================== BAB 6: KESIMPULAN & REKOMENDASI =====================
+    # -------------------- BAB 6 --------------------
     html.append('<div class="page"><div class="content">')
     html.append(_header())
     html.append("<h2>Bab 6. Kesimpulan & Rekomendasi</h2>")
-
     try:
-        # Kesimpulan otomatis berbasis ringkasan KEUANGAN
-        avg_keu_days = None
-        if "KEUANGAN" in df_ord.columns:
-            avg_keu_days = _safe_mean_days(df_ord.loc[df_ord[periode_col].isin(selected_periode), "KEUANGAN"])
-        concl = _auto_narasi_overview(avg_keu_days, kpi_target_days)
-
-        bullets = []
-        if avg_keu_days is not None and kpi_target_days is not None:
-            if avg_keu_days <= kpi_target_days:
-                bullets.append("Pertahankan praktik yang sudah efektif pada proses kritikal.")
-            else:
-                bullets.append("Lakukan root-cause analysis pada periode dengan outlier tinggi.")
-        bullets.append("Optimalkan alokasi SDM di periode beban transaksi tinggi.")
-        bullets.append("Perkuat monitoring KPI (dashboard real-time & notifikasi over-target).")
-        bullets.append("Evaluasi automasi untuk proses manual yang memakan waktu.")
-        bullets_html = "".join([f"<li>{b}</li>" for b in bullets])
-
+        avg_keu_days = _safe_mean_days(df_filt["KEUANGAN"]) if "KEUANGAN" in df_filt.columns else None
+        concl = _auto_narasi_overview(avg_keu_days,kpi_target_days)
+        bullets = [
+            "Pertahankan proses yang sudah efektif.",
+            "Lakukan analisis mendalam untuk periode outlier.",
+            "Optimalkan alokasi SDM di periode sibuk.",
+            "Perkuat monitoring KPI real-time.",
+            "Evaluasi automasi untuk proses manual."
+        ]
         html.append(f"<div class='narr'><b>Kesimpulan:</b> {concl}</div>")
-        html.append("<h3>Rekomendasi</h3>")
-        html.append(f"<ul>{bullets_html}</ul>")
+        html.append("<h3>Rekomendasi</h3><ul>"+"".join([f"<li>{b}</li>" for b in bullets])+"</ul>")
     except Exception as e:
-        html.append(f"<div class='note'>Gagal menampilkan Bab 6: {e}</div>")
-
+        html.append(f"<div class='note'>Error Bab 6: {e}</div>")
     html.append("</div></div>")
 
     html.append("</body></html>")
