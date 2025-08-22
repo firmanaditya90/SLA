@@ -1221,8 +1221,9 @@ with tab_pdf:
         st.error("Target KPI belum diatur!")
         st.stop()
 
+    # Menambahkan tombol untuk generate PDF
     if st.button("📥 Download PDF", key="download_pdf_button"):
-        # Menampilkan nilai variabel untuk debugging
+        # Menampilkan variabel untuk debugging
         st.write("df_filtered:", df_filtered)
         st.write("selected_periode:", selected_periode)
         st.write("available_sla_cols:", available_sla_cols)
@@ -1230,10 +1231,10 @@ with tab_pdf:
         st.write("periode_col:", periode_col)
         st.write("saved_kpi:", saved_kpi)
 
-        # Menghasilkan PDF berdasarkan data yang ada
+        # Menghasilkan PDF berdasarkan data
         pdf_buffer = generate_pdf(df_filtered, selected_periode, available_sla_cols, proses_grafik_cols, periode_col, saved_kpi)
 
-        # Menampilkan tombol download untuk PDF yang dihasilkan
+        # Menampilkan tombol download PDF
         st.download_button("💾 Simpan PDF", data=pdf_buffer, file_name="laporan_sla.pdf", mime="application/pdf")
 
 
