@@ -1375,55 +1375,61 @@ def generate_pdf_report_v5(df_ord, selected_periode, periode_col, available_sla_
     story.append(PageBreak())
 
     # === Page 3: Overview (versi rapat tabel & grafik)
-    story.append(Paragraph("OVERVIEW", _styles["HeadingCenter"]))
-    total_trans = len(df_filt)
-    avg_keu_days = None
-    if "KEUANGAN" in df_filt.columns:
-        avg_keu_days = float((df_filt["KEUANGAN"].mean()/86400.0).round(2))
+    # === Page 3: Overview (grafik kiri, tabel kanan, narasi di tengah)
+story.append(Paragraph("OVERVIEW", _styles["HeadingCenter"]))
+total_trans = len(df_filt)
+avg_keu_days = None
+if "KEUANGAN" in df_filt.columns:
+    avg_keu_days = float((df_filt["KEUANGAN"].mean()/86400.0).round(2))
 
-    # KPI ringkas
-    kpi_lines = [f"<b>JUMLAH TRANSAKSI</b>: {total_trans:,}"]
-    if avg_keu_days:
-        kpi_lines.append(f"<b>RATA-RATA SLA KEUANGAN</b>: {avg_keu_days:.2f} HARI")
+# KPI ringkas
+kpi_lines = [f"<b>JUMLAH TRANSAKSI</b>: {total_trans:,}"]
+if avg_keu_days:
+    kpi_lines.append(f"<b>RATA-RATA SLA KEUANGAN</b>: {avg_keu_days:.2f} HARI")
+if kpi_target_days:
+    kpi_lines.append(f"<b>TARGET KPI</b>: {kpi_target_days:.2f} HARI")
+story.append(Paragraph("<br/>".join(kpi_lines), _styles["KPI"]))
+
+if "KEUANGAN" in df_filt.columns:
+    # Data KEUANGAN
+    df_keu = df_filt.groupby(periode_col)["KEUANGAN"].mean().reindex(categories).reset_index()
+    df_keu["SLA (hari)"] = (df_keu["KEUANGAN"]/86400.0).round(2)
+    df_keu.rename(columns={periode_col: "Periode"}, inplace=True)
+
+    # Tabel (kanan)
+    tbl = _nice_table(
+        [["Periode", "SLA (hari)"]] + df_keu[["Periode", "SLA (hari)"]].astype(str).values.tolist(),
+        colWidths=[4*cm, 4*cm]
+    )
+
+    # Grafik (kiri)
+    fig, ax = plt.subplots(figsize=(7,4))
+    ax.plot(df_keu["Periode"], df_keu["SLA (hari)"], marker="o", color="#0ea5e9")
+    ax.tick_params(axis="x", rotation=45)
     if kpi_target_days:
-        kpi_lines.append(f"<b>TARGET KPI</b>: {kpi_target_days:.2f} HARI")
-    story.append(Paragraph("<br/>".join(kpi_lines), _styles["KPI"]))
+        ax.axhline(y=kpi_target_days, ls="--", c="r")
+    chart = _plot_to_rlimage(fig, w_cm=13, h_cm=7)
 
-    if "KEUANGAN" in df_filt.columns:
-        # Data KEUANGAN
-        df_keu = df_filt.groupby(periode_col)["KEUANGAN"].mean().reindex(categories).reset_index()
-        df_keu["SLA (hari)"] = (df_keu["KEUANGAN"]/86400.0).round(2)
-        df_keu.rename(columns={periode_col: "Periode"}, inplace=True)
+    # Layout → Grafik kiri, tabel kanan
+    pair = Table([[chart, tbl]],
+                 colWidths=[13*cm, 8*cm], hAlign="CENTER")
+    pair.setStyle([
+        ("LEFTPADDING",(0,0),(-1,-1),0),
+        ("RIGHTPADDING",(0,0),(-1,-1),0),
+        ("TOPPADDING",(0,0),(-1,-1),0),
+        ("BOTTOMPADDING",(0,0),(-1,-1),0),
+    ])
+    story.append(pair)
 
-        # Tabel
-        tbl = _nice_table(
-            [["Periode", "SLA (hari)"]] + df_keu[["Periode", "SLA (hari)"]].astype(str).values.tolist()
-        )
+    # Narasi → ditengah
+    story.append(Spacer(1, 0.5*cm))
+    narasi_tbl = Table(
+        [[Paragraph(_narasi_overview(avg_keu_days, kpi_target_days), _styles["Narr"])]],
+        colWidths=[21*cm], hAlign="CENTER"
+    )
+    story.append(narasi_tbl)
 
-        # Grafik
-        fig, ax = plt.subplots(figsize=(10,6))
-        ax.plot(df_keu["Periode"], df_keu["SLA (hari)"], marker="o", color="#0ea5e9")
-        ax.tick_params(axis="x", rotation=45)
-        if kpi_target_days:
-            ax.axhline(y=kpi_target_days, ls="--", c="r")
-
-        # Layout rapat: tabel + grafik
-        pair = Table([[tbl, _plot_to_rlimage(fig)]],
-                     colWidths=[10*cm, 10*cm], hAlign="CENTER")
-        pair.setStyle([
-            ("LEFTPADDING",(0,0),(-1,-1),1),
-            ("RIGHTPADDING",(0,0),(-1,-1),1),
-            ("TOPPADDING",(0,0),(-1,-1),0),
-            ("BOTTOMPADDING",(0,0),(-1,-1),0),
-        ])
-        story.append(pair)
-
-        # Narasi
-        story.append(Spacer(1, 0.5*cm))
-        story.append(Paragraph(_narasi_overview(avg_keu_days, kpi_target_days), _styles["Narr"]))
-
-    story.append(PageBreak())
-    
+story.append(PageBreak())
 
     # === Page 4: SLA PER PROSES
     story.append(Paragraph("SLA PER PROSES", _styles["HeadingCenter"]))
