@@ -1308,7 +1308,7 @@ def build_html_report_full_v3(
     logo_left="https://raw.githubusercontent.com/firmanaditya90/SLA/main/Danantara.png",
     logo_right="https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
 ):
-    # ============ APPLY FILTER PERIODE ============
+    # Filter periode
     df_filt = df_ord[df_ord[periode_col].astype(str).isin([str(p) for p in selected_periode])].copy()
 
     css = """
@@ -1316,32 +1316,33 @@ def build_html_report_full_v3(
       @page { size: A4 landscape; margin: 12mm; }
       body { font-family: Inter, Arial, sans-serif; color:#222; }
       .page { width: 100%; height: 185mm; position: relative; break-after: page; }
-      .content { padding: 6mm 8mm 6mm 8mm; }
+      .content { padding: 10mm; }
       .cover .content { padding-top: 40mm; text-align:center; }
       h1 { font-size: 28px; margin-bottom:10px; }
-      h2 { font-size: 20px; margin-top: 8px; }
-      h3 { font-size: 16px; margin-top: 6px; }
-      .subtitle { color:#666; margin-top:4px; }
-      .header-logos img { height:16mm; }
-      .header-left { position:absolute; left:8mm; top:6mm; }
-      .header-right { position:absolute; right:8mm; top:6mm; }
-      .mini-wrap { display:flex; gap:8px; margin:6px 0; }
+      h2 { font-size: 20px; margin:10px 0; }
+      h3 { font-size: 16px; margin:8px 0; }
+      .subtitle { color:#555; margin:6px 0; }
+      .header-left { position:absolute; left:10mm; top:6mm; height:16mm; }
+      .header-right { position:absolute; right:10mm; top:6mm; height:16mm; }
+      .mini-wrap { display:flex; gap:8px; margin:8px 0; }
       .mini-stat { background:#f6f9ff; border:1px solid #e6eeff; border-radius:10px; padding:6px 10px; min-width:120px; }
       .mini-value { font-size:16px; font-weight:700; }
       .mini-label { font-size:11px; color:#666; }
-      .tbl { border-collapse:collapse; width:100%; }
+      .tbl { border-collapse:collapse; width:100%; margin-top:6px; }
       .tbl th { background:#0ea5e9; color:white; padding:6px 8px; font-size:12px; }
       .tbl td { border-top:1px solid #e5e7eb; padding:6px 8px; font-size:12px; }
       .tbl tr:nth-child(even) td { background:#f8fafc; }
-      .narr { font-size:12px; line-height:1.45; background:#fafafa; border:1px dashed #e5e7eb; border-radius:8px; padding:8px; margin-top:6px; }
-      .chart { width:100%; max-height:70mm; border:1px solid #ddd; border-radius:8px; }
+      .narr { font-size:12px; line-height:1.45; background:#fafafa; border:1px dashed #ccc; border-radius:8px; padding:8px; margin-top:8px; }
+      .chart { width:100%; max-height:70mm; border:1px solid #ddd; border-radius:8px; margin-top:6px; }
     </style>
     """
 
     html = ["<html><head><meta charset='utf-8'>", css, "</head><body>"]
 
-    # ---------- Cover (tanpa header logo) ----------
+    # ---------- Cover ----------
     html.append('<div class="page cover"><div class="content">')
+    html.append(f"<img src='{logo_left}' style='height:40mm;float:left'>")
+    html.append(f"<img src='{logo_right}' style='height:40mm;float:right'>")
     html.append(f"<h1>{report_title}</h1>")
     html.append(f"<div class='subtitle'>{company_title}</div>")
     if selected_periode:
@@ -1350,17 +1351,9 @@ def build_html_report_full_v3(
 
     # Helper logo header
     def _header():
-        return f"""
-        <div class="header-logos">
-            <img class="header-left" src="{logo_left}">
-            <img class="header-right" src="{logo_right}">
-        </div>
-        """
+        return f"<img class='header-left' src='{logo_left}'><img class='header-right' src='{logo_right}'>"
 
     # ---------- Daftar Isi ----------
-    html.append('<div class="page"><div class="content">')
-    html.append(_header())
-    html.append("<h2>Daftar Isi</h2><ol>")
     toc = [
         "Bab 1. Overview",
         "Bab 2. KPI SLA",
@@ -1369,6 +1362,9 @@ def build_html_report_full_v3(
         "Bab 5. Tren SLA",
         "Bab 6. Kesimpulan & Rekomendasi",
     ]
+    html.append('<div class="page"><div class="content">')
+    html.append(_header())
+    html.append("<h2>Daftar Isi</h2><ol>")
     for t in toc: html.append(f"<li>{t}</li>")
     html.append("</ol></div></div>")
 
@@ -1385,13 +1381,19 @@ def build_html_report_full_v3(
     html.append(_header())
     html.append("<h2>Bab 2. KPI SLA</h2>")
     if "KEUANGAN" in df_filt.columns:
-        avg_days = (df_filt["KEUANGAN"].mean()/86400).round(2)
-        html.append(f"<div class='narr'>Rata-rata SLA Keuangan: <b>{avg_days:.2f} hari</b>. Target KPI: {kpi_target_days or '-'} hari.</div>")
-    else:
-        html.append("<div class='note'>Kolom KEUANGAN tidak tersedia.</div>")
+        dfk = df_filt.groupby(periode_col)["KEUANGAN"].mean().reindex(selected_periode).reset_index()
+        dfk["SLA (hari)"] = (dfk["KEUANGAN"]/86400).round(2)
+        html.append(_html_table(dfk[[periode_col,"SLA (hari)"]].rename(columns={periode_col:"Periode"}),"Rata-rata SLA Keuangan"))
+        fig, ax = plt.subplots(figsize=(9,3))
+        ax.plot(dfk["Periode"].astype(str),dfk["SLA (hari)"],marker="o")
+        ax.set_title("SLA Keuangan per Periode (hari)")
+        ax.tick_params(axis="x",rotation=45)
+        html.append(f"<img src='data:image/png;base64,{_fig_to_base64(fig)}' class='chart'>")
+        avg_days = dfk["SLA (hari)"].mean()
+        html.append(f"<div class='narr'>{_auto_narasi_overview(avg_days,kpi_target_days)}</div>")
     html.append("</div></div>")
 
-    # ---------- Bab 3 Analisis Per Proses ----------
+    # ---------- Bab 3 Per Proses ----------
     html.append('<div class="page"><div class="content">')
     html.append(_header())
     html.append("<h2>Bab 3. Analisis Per Proses</h2>")
@@ -1403,22 +1405,21 @@ def build_html_report_full_v3(
         ax.bar(df2["Proses"],df2["SLA (hari)"])
         ax.set_title("SLA per Proses (hari)")
         ax.tick_params(axis="x",rotation=45)
-        html.append(f'<img src="data:image/png;base64,{_fig_to_base64(fig)}" class="chart">')
-    else:
-        html.append("<div class='note'>Tidak ada kolom proses.</div>")
+        html.append(f"<img src='data:image/png;base64,{_fig_to_base64(fig)}' class='chart'>")
+        html.append(f"<div class='narr'>{_narasi_generic_top_bottom(df2.set_index('Proses')['SLA (hari)'])}</div>")
     html.append("</div></div>")
 
-    # ---------- Bab 4 Analisis Jumlah Transaksi ----------
+    # ---------- Bab 4 Jumlah Transaksi ----------
     html.append('<div class="page"><div class="content">')
     html.append(_header())
     html.append("<h2>Bab 4. Analisis Jumlah Transaksi</h2>")
-    trans_df = df_filt.groupby(periode_col).size().reset_index(name="Jumlah")
+    trans_df = df_filt.groupby(periode_col).size().reindex(selected_periode).reset_index(name="Jumlah")
     html.append(_html_table(trans_df.rename(columns={periode_col:"Periode"}),"Jumlah Transaksi per Periode"))
     fig, ax = plt.subplots(figsize=(9,3))
-    ax.bar(trans_df[periode_col].astype(str), trans_df["Jumlah"])
+    ax.bar(trans_df["Periode"].astype(str),trans_df["Jumlah"])
     ax.set_title("Jumlah Transaksi per Periode")
-    plt.xticks(rotation=45, ha="right")
-    html.append(f'<img src="data:image/png;base64,{_fig_to_base64(fig)}" class="chart">')
+    ax.tick_params(axis="x",rotation=45)
+    html.append(f"<img src='data:image/png;base64,{_fig_to_base64(fig)}' class='chart'>")
     html.append("</div></div>")
 
     # ---------- Bab 5 Tren SLA ----------
@@ -1431,20 +1432,28 @@ def build_html_report_full_v3(
         html.append(_html_table(trend_days.reset_index().rename(columns={periode_col:"Periode"}),"Rata-rata SLA per Periode (hari)"))
         fig, ax = plt.subplots(figsize=(9,3))
         for col in trend_days.columns:
-            ax.plot(trend_days.index.astype(str),trend_days[col],marker='o',label=col)
+            ax.plot(trend_days.index.astype(str),trend_days[col],marker="o",label=col)
         ax.legend(fontsize=8)
         ax.set_title("Tren SLA per Periode (hari)")
-        plt.xticks(rotation=45,ha="right")
-        html.append(f'<img src="data:image/png;base64,{_fig_to_base64(fig)}" class="chart">')
-    else:
-        html.append("<div class='note'>Kolom SLA tidak tersedia.</div>")
+        ax.tick_params(axis="x",rotation=45)
+        html.append(f"<img src='data:image/png;base64,{_fig_to_base64(fig)}' class='chart'>")
+        html.append(f"<div class='narr'>{_narasi_tren(trend_days)}</div>")
     html.append("</div></div>")
 
     # ---------- Bab 6 Kesimpulan ----------
     html.append('<div class="page"><div class="content">')
     html.append(_header())
     html.append("<h2>Bab 6. Kesimpulan & Rekomendasi</h2>")
-    html.append("<div class='narr'>SLA Keuangan periode terpilih menunjukkan hasil yang bisa dibandingkan dengan target KPI. Rekomendasi: perkuat monitoring, optimalkan SDM, lakukan evaluasi rutin.</div>")
+    avg_days = (df_filt["KEUANGAN"].mean()/86400).round(2) if "KEUANGAN" in df_filt.columns else None
+    html.append(f"<div class='narr'><b>Kesimpulan:</b> {_auto_narasi_overview(avg_days,kpi_target_days)}</div>")
+    recs = [
+        "Pertahankan proses yang sudah efektif.",
+        "Lakukan analisis untuk periode outlier.",
+        "Optimalkan SDM di periode sibuk.",
+        "Perkuat monitoring KPI real-time.",
+        "Evaluasi automasi untuk proses manual."
+    ]
+    html.append("<h3>Rekomendasi</h3><ul>"+"".join([f"<li>{r}</li>" for r in recs])+"</ul>")
     html.append("</div></div>")
 
     html.append("</body></html>")
