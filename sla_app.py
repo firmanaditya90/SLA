@@ -1471,12 +1471,12 @@ def generate_pdf_report_v4(df_ord, selected_periode, periode_col, available_sla_
 
 # ====================== TAB PDF ======================
 with tab_pdf:
-    st.subheader("📑 Laporan SLA")
+    st.subheader("📑 Laporan SLA (PDF v4 – Final Layout)")
     try:
         pdf_bytes = generate_pdf_report_v4(
-            df_ord=df_filtered,                  # dataframe hasil filter di app
-            selected_periode=selected_periode,   # urutan periode (list)
-            periode_col=periode_col,             # nama kolom periode di df
+            df_ord=df_filtered,
+            selected_periode=selected_periode,
+            periode_col=periode_col,
             available_sla_cols=available_sla_cols,
             proses_cols=proses_grafik_cols,
             kpi_target_days=target_kpi_hari if 'target_kpi_hari' in globals() else None
@@ -1484,11 +1484,10 @@ with tab_pdf:
         st.download_button(
             "⬇️ Download Laporan PDF (v4)",
             data=pdf_bytes,
-            file_name="LAPORAN_SLA_VERIFIKASI_DOKUMEN PENAGIHAN.pdf",
+            file_name="LAPORAN_SLA_VERIFIKASI_v4.pdf",
             mime="application/pdf",
         )
         st.success("PDF siap diunduh ✅")
     except Exception as e:
         st.error(f"Gagal membuat PDF: {e}")
-
 
