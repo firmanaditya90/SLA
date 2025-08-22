@@ -1214,11 +1214,10 @@ with tab_poster:
 
 
 # =====================[ HELPERS PDF ]=====================
-
 # ====================== IMPORTS ======================
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    Image as RLImage, PageBreak, KeepTogether
+    Image as RLImage, PageBreak
 )
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -1226,7 +1225,7 @@ from reportlab.lib import colors
 from reportlab.lib.units import cm
 from reportlab.lib.utils import ImageReader
 import io, matplotlib.pyplot as plt
-import pandas as pd, numpy as np
+import pandas as pd
 import streamlit as st
 
 # ====================== LOGO ASSET ======================
@@ -1268,10 +1267,6 @@ def _nice_table(data, colWidths=None, header_bg="#0ea5e9", align="LEFT"):
         ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white,colors.HexColor("#fbfdff")]),
         ("FONTSIZE",(0,1),(-1,-1),9),
         ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
-        ("LEFTPADDING",(0,0),(-1,-1),6),
-        ("RIGHTPADDING",(0,0),(-1,-1),6),
-        ("TOPPADDING",(0,0),(-1,-1),4),
-        ("BOTTOMPADDING",(0,0),(-1,-1),4),
     ]))
     return tbl
 
@@ -1283,10 +1278,14 @@ def _center_block(flowable, width_cm=25.5):
 
 def _toc_row(title, page, dots_len=80):
     dots = "." * dots_len
-    tbl = Table([[Paragraph(title, _styles["TOCItem"]), Paragraph(dots, _styles["TOCItem"]), Paragraph(page, _styles["TOCItem"])]],
-                colWidths=[14.5*cm, 9.5*cm, 1.5*cm])
+    tbl = Table(
+        [[Paragraph(title, _styles["TOCItem"]),
+          Paragraph(dots, _styles["TOCItem"]),
+          Paragraph(page, _styles["TOCItem"])]],
+        colWidths=[14.5*cm, 9.5*cm, 1.5*cm]
+    )
     tbl.setStyle(TableStyle([
-        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
         ("LEFTPADDING",(0,0),(-1,-1),0),
         ("RIGHTPADDING",(0,0),(-1,-1),0),
         ("FONTSIZE",(0,0),(-1,-1),12),
@@ -1296,7 +1295,7 @@ def _toc_row(title, page, dots_len=80):
 
 # ====================== NARRASI HELPERS ======================
 def _narasi_overview(avg_days, kpi_target_days):
-    if avg_days is None: return "Data KEUANGAN tidak tersedia pada periode terpilih."
+    if avg_days is None: return "Data KEUANGAN tidak tersedia."
     if kpi_target_days is None: return f"Rata-rata SLA KEUANGAN {avg_days:.2f} hari."
     status = "di bawah" if avg_days <= kpi_target_days else "di atas"
     return f"Rata-rata SLA KEUANGAN {avg_days:.2f} hari, {status} target KPI {kpi_target_days:.2f} hari."
@@ -1306,8 +1305,7 @@ def _narasi_top_bottom(series_days):
     s = pd.Series(series_days).dropna().sort_values()
     if s.empty: return "Tidak ada data."
     lo, hi = s.index[0], s.index[-1]
-    return (f"Proses tercepat: <b>{lo}</b> ({s.iloc[0]:.2f} hari). "
-            f"Proses terlama: <b>{hi}</b> ({s.iloc[-1]:.2f} hari).")
+    return f"Proses tercepat: {lo} ({s.iloc[0]:.2f} hari). Terlama: {hi} ({s.iloc[-1]:.2f} hari)."
 
 def _narasi_tren(df_days):
     desc=[]
@@ -1324,9 +1322,7 @@ def _narasi_transaksi(trans_df):
     peak = trans_df.loc[trans_df["Jumlah"].idxmax()]
     low  = trans_df.loc[trans_df["Jumlah"].idxmin()]
     mean = trans_df["Jumlah"].mean()
-    return (f"Rata-rata transaksi: <b>{mean:.1f}</b>. "
-            f"Tertinggi <b>{peak['Periode']}</b> ({int(peak['Jumlah'])}), "
-            f"terendah <b>{low['Periode']}</b> ({int(low['Jumlah'])}).")
+    return f"Rata-rata transaksi {mean:.1f}. Tertinggi {peak['Periode']} ({int(peak['Jumlah'])}), terendah {low['Periode']} ({int(low['Jumlah'])})."
 
 # ====================== HEADER & FOOTER ======================
 def _first_page(canvas, doc):
@@ -1342,17 +1338,9 @@ def _later_pages(canvas, doc):
     except: pass
     try: canvas.drawImage(_img_reader(LOGO_RIGHT_URL), pw - 3.8*cm, ph - 2.8*cm, width=2.6*cm, height=2.6*cm, mask='auto')
     except: pass
-    canvas.setStrokeColor(colors.HexColor("#e6eef8")); canvas.setLineWidth(1)
-    canvas.line(1.6*cm, ph - 3.2*cm, pw - 1.6*cm, ph - 3.2*cm)
-    canvas.setStrokeColor(colors.HexColor("#e5e7eb")); canvas.setLineWidth(0.6)
-    canvas.line(1.6*cm, 1.45*cm, pw - 1.6*cm, 1.45*cm)
-    canvas.setFont("Helvetica", 9); canvas.setFillColor(colors.HexColor("#374151"))
-    canvas.drawString(1.8*cm, 1.05*cm, "LAPORAN SLA - VERIFIKASI DOKUMEN PENAGIHAN")
+    canvas.setFont("Helvetica", 9)
     canvas.drawRightString(pw - 1.6*cm, 1.05*cm, f"Halaman {doc.page}")
 
-
-with tab_pdf:
-    st.write("Cek narasi helper:", _narasi_overview(5.2, 7))
 # ====================== MAIN FUNCTION ======================
 def generate_pdf_report_v4(df_ord, selected_periode, periode_col, available_sla_cols, proses_cols, kpi_target_days=None):
     df = df_ord.copy()
@@ -1375,29 +1363,35 @@ def generate_pdf_report_v4(df_ord, selected_periode, periode_col, available_sla_
     story.append(PageBreak())
 
     # === TOC
-    story.append(Paragraph("DAFTAR ISI", _styles["HeadingCenter"])); story.append(Spacer(1,0.4*cm))
+    story.append(Paragraph("DAFTAR ISI", _styles["HeadingCenter"]))
+    story.append(Spacer(1,0.4*cm))
     toc_map=[("OVERVIEW","3"),("SLA PER PROSES","4"),("SLA PER JENIS TRANSAKSI","5"),
              ("TREN SLA","6"),("JUMLAH TRANSAKSI","7"),("KESIMPULAN","8")]
     for t,p in toc_map:
-        story.append(_toc_row(t,p,dots_len=90)); story.append(Spacer(1,0.1*cm))
+        story.append(_toc_row(t,p,dots_len=90))
+        story.append(Spacer(1,0.1*cm))
     story.append(PageBreak())
 
     # === Page 3: Overview
     story.append(Paragraph("OVERVIEW", _styles["HeadingCenter"]))
     total_trans=len(df_filt)
     avg_keu_days=None
-    if "KEUANGAN" in df_filt.columns: avg_keu_days=float((df_filt["KEUANGAN"].mean()/86400.0).round(2))
+    if "KEUANGAN" in df_filt.columns:
+        avg_keu_days=float((df_filt["KEUANGAN"].mean()/86400.0).round(2))
     kpi_lines=[f"<b>JUMLAH TRANSAKSI</b>: {total_trans:,}"]
     if avg_keu_days: kpi_lines.append(f"<b>RATA-RATA SLA KEUANGAN</b>: {avg_keu_days:.2f} HARI")
     if kpi_target_days: kpi_lines.append(f"<b>TARGET KPI</b>: {kpi_target_days:.2f} HARI")
     story.append(Paragraph("<br/>".join(kpi_lines), _styles["KPI"]))
     if "KEUANGAN" in df_filt.columns:
         df_keu=df_filt.groupby(periode_col)["KEUANGAN"].mean().reindex(categories).reset_index()
-        df_keu["SLA (hari)"]=(df_keu["KEUANGAN"]/86400.0).round(2); df_keu.rename(columns={periode_col:"Periode"}, inplace=True)
+        df_keu["SLA (hari)"]=(df_keu["KEUANGAN"]/86400.0).round(2)
+        df_keu.rename(columns={periode_col:"Periode"}, inplace=True)
         tbl=_nice_table([["Periode","SLA (hari)"]]+df_keu[["Periode","SLA (hari)"]].astype(str).values.tolist())
-        fig,ax=plt.subplots(figsize=(6.4,3.1)); ax.plot(df_keu["Periode"],df_keu["SLA (hari)"],marker="o"); ax.tick_params(axis="x",rotation=45)
+        fig,ax=plt.subplots(figsize=(6.4,3.1))
+        ax.plot(df_keu["Periode"],df_keu["SLA (hari)"],marker="o"); ax.tick_params(axis="x",rotation=45)
         if kpi_target_days: ax.axhline(y=kpi_target_days,ls="--",c="r")
-        story.append(_two_col(tbl,_plot_to_rlimage(fig))); story.append(Paragraph(_narasi_overview(avg_keu_days,kpi_target_days),_styles["Narr"]))
+        story.append(_two_col(tbl,_plot_to_rlimage(fig)))
+        story.append(Paragraph(_narasi_overview(avg_keu_days,kpi_target_days),_styles["Narr"]))
     story.append(PageBreak())
 
     # === Page 4: SLA PER PROSES
@@ -1406,8 +1400,10 @@ def generate_pdf_report_v4(df_ord, selected_periode, periode_col, available_sla_
     if valid_proc:
         dfp=(df_filt[valid_proc].mean()/86400.0).round(2)
         tbl=_nice_table([["Proses","SLA (hari)"]]+[[i,f"{v:.2f}"] for i,v in dfp.items()])
-        fig,ax=plt.subplots(figsize=(6.4,3.1)); ax.bar(dfp.index,dfp.values,color="#0ea5e9"); ax.tick_params(axis="x",rotation=45)
-        story.append(_two_col(tbl,_plot_to_rlimage(fig))); story.append(Paragraph(_narasi_top_bottom(dfp),_styles["Narr"]))
+        fig,ax=plt.subplots(figsize=(6.4,3.1))
+        ax.bar(dfp.index,dfp.values,color="#0ea5e9"); ax.tick_params(axis="x",rotation=45)
+        story.append(_two_col(tbl,_plot_to_rlimage(fig)))
+        story.append(Paragraph(_narasi_top_bottom(dfp),_styles["Narr"]))
     story.append(PageBreak())
 
     # === Page 5: SLA PER JENIS TRANSAKSI
@@ -1420,7 +1416,8 @@ def generate_pdf_report_v4(df_ord, selected_periode, periode_col, available_sla_
         dfj["SLA (hari)"]=(dfj["mean"]/86400.0).round(2)
         dfj=dfj.sort_values("SLA (hari)",ascending=False)
         tbl=_nice_table([["Jenis Transaksi","Jumlah","SLA (hari)"]]+dfj[[jns_col,"count","SLA (hari)"]].astype(str).values.tolist())
-        story.append(_center_block(tbl)); story.append(Paragraph(_narasi_top_bottom(pd.Series(dfj["SLA (hari)"].values,index=dfj[jns_col].values)),_styles["Narr"]))
+        story.append(_center_block(tbl))
+        story.append(Paragraph(_narasi_top_bottom(pd.Series(dfj["SLA (hari)"].values,index=dfj[jns_col].values)),_styles["Narr"]))
     story.append(PageBreak())
 
     # === Page 6: TREN SLA
@@ -1430,17 +1427,21 @@ def generate_pdf_report_v4(df_ord, selected_periode, periode_col, available_sla_
         trend=df_filt.groupby(periode_col)[valid_sla].mean().reindex(categories)
         trend_days=(trend/86400.0).round(2)
         tbl=_nice_table([["Periode"]+valid_sla]+trend_days.reset_index().astype(str).values.tolist())
-        fig,ax=plt.subplots(figsize=(7,3)); [ax.plot(trend_days.index.astype(str),trend_days[c],marker="o") for c in valid_sla]
+        fig,ax=plt.subplots(figsize=(7,3))
+        [ax.plot(trend_days.index.astype(str),trend_days[c],marker="o") for c in valid_sla]
         ax.legend(valid_sla,fontsize=8,ncol=2); ax.tick_params(axis="x",rotation=45)
-        story.append(_two_col(tbl,_plot_to_rlimage(fig))); story.append(Paragraph(_narasi_tren(trend_days),_styles["Narr"]))
+        story.append(_two_col(tbl,_plot_to_rlimage(fig)))
+        story.append(Paragraph(_narasi_tren(trend_days),_styles["Narr"]))
     story.append(PageBreak())
 
     # === Page 7: JUMLAH TRANSAKSI
     story.append(Paragraph("JUMLAH TRANSAKSI", _styles["HeadingCenter"]))
     trans=df_filt.groupby(periode_col).size().reindex(categories).reset_index(name="Jumlah").rename(columns={periode_col:"Periode"})
     tbl=_nice_table([["Periode","Jumlah"]]+trans.astype(str).values.tolist())
-    fig,ax=plt.subplots(figsize=(6.4,3)); ax.bar(trans["Periode"],trans["Jumlah"],color="#14b8a6"); ax.tick_params(axis="x",rotation=45)
-    story.append(_two_col(tbl,_plot_to_rlimage(fig))); story.append(Paragraph(_narasi_transaksi(trans),_styles["Narr"]))
+    fig,ax=plt.subplots(figsize=(6.4,3))
+    ax.bar(trans["Periode"],trans["Jumlah"],color="#14b8a6"); ax.tick_params(axis="x",rotation=45)
+    story.append(_two_col(tbl,_plot_to_rlimage(fig)))
+    story.append(Paragraph(_narasi_transaksi(trans),_styles["Narr"]))
     story.append(PageBreak())
 
     # === Page 8: KESIMPULAN
@@ -1451,28 +1452,20 @@ def generate_pdf_report_v4(df_ord, selected_periode, periode_col, available_sla_
     if valid_sla: summary.append(_narasi_tren((df_filt.groupby(periode_col)[valid_sla].mean()/86400.0).round(2).reindex(categories)))
     summary.append(_narasi_transaksi(trans.copy()))
     story.append(Paragraph(" ".join(summary),_styles["Narr"]))
-    recs=[
-        "Pertahankan proses efektif.",
-        "Prioritaskan perbaikan pada SLA terlama.",
-        "Analisis akar masalah periode outlier.",
-        "Optimalkan SDM di periode puncak.",
-        "Perkuat monitoring KPI & notifikasi.",
-        "Evaluasi otomasi pada proses manual."
-    ]
-    rec_tbl = _nice_table([["REKOMENDASI PRIORITAS"]] + [[f"• {r}"] for r in recs], colWidths=[25.5*cm], header_bg="#0ea5e9")
-    story.append(Spacer(1, 0.4*cm))
-    story.append(_center_block(rec_tbl))
-    story.append(Spacer(1, 0.6*cm))
-    story.append(Paragraph("Laporan ini dihasilkan otomatis oleh SLA Dashboard.", _styles["SmallRight"]))
+    recs=["Pertahankan proses efektif.","Prioritaskan perbaikan SLA terlama.",
+          "Analisis akar masalah periode outlier.","Optimalkan SDM di periode puncak.",
+          "Perkuat monitoring KPI.","Evaluasi otomasi proses manual."]
+    rec_tbl=_nice_table([["REKOMENDASI PRIORITAS"]] + [[f"• {r}"] for r in recs], colWidths=[25.5*cm], header_bg="#0ea5e9")
+    story.append(Spacer(1,0.4*cm)); story.append(_center_block(rec_tbl))
+    story.append(Spacer(1,0.6*cm)); story.append(Paragraph("Laporan ini dihasilkan otomatis oleh SLA Dashboard.",_styles["SmallRight"]))
 
     # Build PDF
     doc.build(story, onFirstPage=_first_page, onLaterPages=_later_pages)
-    pdf = buffer.getvalue()
-    buffer.close()
-    return pdf
+    pdf=buffer.getvalue(); buffer.close(); return pdf
 
+# ====================== STREAMLIT TAB ======================
 
-# ====================== TAB PDF ======================
+# ====================== STREAMLIT TAB ======================
 with tab_pdf:
     st.subheader("📑 Laporan SLA (PDF v4 – Final Layout)")
     try:
@@ -1490,7 +1483,7 @@ with tab_pdf:
             file_name="LAPORAN_SLA_VERIFIKASI_v4.pdf",
             mime="application/pdf",
         )
-        st.success("PDF siap diunduh ✅")
+        st.success("✅ PDF siap diunduh")
     except Exception as e:
         st.error(f"Gagal membuat PDF: {e}")
 
