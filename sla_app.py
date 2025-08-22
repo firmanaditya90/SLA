@@ -1380,20 +1380,33 @@ def build_html_report_full_v3(
 html.append('<div class="page"><div class="content">')
 html.append(_header())
 html.append("<h2>Bab 2. KPI SLA</h2>")
+
 if "KEUANGAN" in df_filt.columns:
+    # Hitung rata-rata KEUANGAN per periode
     dfk = df_filt.groupby(periode_col)["KEUANGAN"].mean().reindex(selected_periode).reset_index()
-    dfk["SLA (hari)"] = (dfk["KEUANGAN"]/86400).round(2)
-    dfk = dfk.rename(columns={periode_col:"Periode"})
-    html.append(_html_table(dfk[["Periode","SLA (hari)"]],"Rata-rata SLA Keuangan"))
+
+    # Pastikan kolom periode dinamai "Periode"
+    dfk = dfk.rename(columns={periode_col: "Periode"})
+
+    # Tambah kolom SLA (hari)
+    dfk["SLA (hari)"] = (dfk["KEUANGAN"] / 86400).round(2)
+
+    # Tabel
+    html.append(_html_table(dfk[["Periode", "SLA (hari)"]], "Rata-rata SLA Keuangan per Periode"))
+
+    # Grafik
     fig, ax = plt.subplots(figsize=(9,3))
     ax.plot(dfk["Periode"].astype(str), dfk["SLA (hari)"], marker="o")
     ax.set_title("SLA Keuangan per Periode (hari)")
-    ax.tick_params(axis="x",rotation=45)
+    ax.tick_params(axis="x", rotation=45)
     html.append(f"<img src='data:image/png;base64,{_fig_to_base64(fig)}' class='chart'>")
+
+    # Narasi
     avg_days = dfk["SLA (hari)"].mean()
-    html.append(f"<div class='narr'>{_auto_narasi_overview(avg_days,kpi_target_days)}</div>")
+    html.append(f"<div class='narr'>{_auto_narasi_overview(avg_days, kpi_target_days)}</div>")
 else:
     html.append("<div class='note'>Kolom KEUANGAN tidak tersedia.</div>")
+
 html.append("</div></div>")
 
     # ---------- Bab 3 Per Proses ----------
