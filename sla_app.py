@@ -1248,7 +1248,7 @@ def _img_reader(url):
     try: return ImageReader(url)
     except: return None
 
-def _plot_to_rlimage(fig, w_cm=20, h_cm=15, dpi=150):
+def _plot_to_rlimage(fig, w_cm=60, h_cm=40, dpi=150):
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=dpi)
     plt.close(fig)
@@ -1330,7 +1330,7 @@ def _narasi_transaksi(trans_df):
 def _first_page(canvas, doc):
     pw, ph = landscape(A4)
     try:
-        canvas.drawImage(_img_reader(LOGO_ASDP_URL), pw/2 - 3*cm, ph - 10*cm,
+        canvas.drawImage(_img_reader(LOGO_ASDP_URL), pw/2 - 3*cm, ph - 25*cm,
                          width=6*cm, height=6*cm, mask='auto')
     except: pass
 
