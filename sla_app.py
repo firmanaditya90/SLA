@@ -1377,3 +1377,68 @@ def generate_pdf(df_filtered, selected_periode, available_sla_cols, proses_grafi
     doc.build(story)
     buffer.seek(0)
     return buffer
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+
+# Misalkan df_filtered, selected_periode, available_sla_cols, dan proses_grafik_cols sudah didefinisikan sebelumnya
+
+# Fungsi untuk membangun laporan HTML
+def build_html_report_full(df_filtered, selected_periode, available_sla_cols, proses_grafik_cols):
+    # Pastikan data valid
+    if df_filtered is None or selected_periode is None or available_sla_cols is None or proses_grafik_cols is None:
+        raise ValueError("Salah satu parameter tidak valid!")
+
+    # Membuat bagian laporan HTML
+    html_report = f"<h1>Laporan SLA</h1>"
+    html_report += f"<p>Periode: {', '.join(map(str, selected_periode))}</p>"
+
+    # Analisis SLA untuk setiap periode
+    sla_summary = df_filtered[available_sla_cols].mean()
+    html_report += "<h2>Rangkuman SLA</h2>"
+    html_report += "<table border='1'><tr><th>Kolom SLA</th><th>Rata-rata</th></tr>"
+    for col, value in sla_summary.items():
+        html_report += f"<tr><td>{col}</td><td>{round(value, 2)} hari</td></tr>"
+    html_report += "</table>"
+
+    # Tambahkan grafik atau analisis lainnya
+    if proses_grafik_cols:
+        html_report += "<h2>Proses Grafik</h2>"
+        for col in proses_grafik_cols:
+            # Grafik atau analisis untuk proses
+            html_report += f"<p>Grafik untuk {col} tidak tersedia di sini.</p>"
+
+    # Kesimpulan & Rekomendasi
+    html_report += "<h2>Kesimpulan & Rekomendasi</h2>"
+    html_report += "<p>Rekomendasi: Lakukan perbaikan untuk proses yang lambat.</p>"
+
+    return html_report
+
+# Streamlit UI
+st.title("Laporan SLA Payment Analyzer")
+
+# Contoh Data (Sebagai contoh sementara untuk demo)
+data = {
+    'periode': ['2025-01', '2025-02', '2025-03', '2025-04'],
+    'sla_1': [86400, 90000, 87000, 86000],
+    'sla_2': [86400, 85000, 88000, 86000],
+    'sla_3': [87000, 86000, 88000, 85000]
+}
+
+df_filtered = pd.DataFrame(data)
+selected_periode = df_filtered['periode'].tolist()
+available_sla_cols = ['sla_1', 'sla_2', 'sla_3']
+proses_grafik_cols = ['sla_1', 'sla_2']
+
+# Cek jika parameter valid
+if df_filtered is None or selected_periode is None or available_sla_cols is None or proses_grafik_cols is None:
+    st.error("Parameter tidak valid!")
+    st.stop()
+
+# Bangun laporan HTML
+try:
+    html_report = build_html_report_full(df_filtered, selected_periode, available_sla_cols, proses_grafik_cols)
+    st.markdown(html_report, unsafe_allow_html=True)
+except Exception as e:
+    st.error(f"Terjadi kesalahan: {str(e)}")
