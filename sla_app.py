@@ -1212,7 +1212,6 @@ with tab_poster:
             mime="image/png"
         )
 
-if condition:  # Ini adalah indentasi yang benar
 with tab_pdf:
     st.subheader("📑 Laporan SLA (Landscape; Download HTML → Save as PDF)")
     html_report = build_html_report_full(df_filtered, selected_periode, available_sla_cols, proses_grafik_cols)
