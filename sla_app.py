@@ -1329,6 +1329,51 @@ def _later_pages(canvas, doc):
     canvas.drawString(1.8*cm, 1.05*cm, "LAPORAN SLA - VERIFIKASI DOKUMEN PENAGIHAN")
     canvas.drawRightString(pw - 1.6*cm, 1.05*cm, f"Halaman {doc.page}")
 
+
+# ====================== NARRATIVE HELPERS ======================
+def _narasi_overview(avg_days, kpi_target_days):
+    if avg_days is None:
+        return "Data KEUANGAN tidak tersedia pada periode terpilih."
+    if kpi_target_days is None:
+        return f"Rata-rata SLA KEUANGAN berada di {avg_days:.2f} hari pada periode terpilih."
+    status = "di bawah" if avg_days <= kpi_target_days else "di atas"
+    return f"Rata-rata SLA KEUANGAN {avg_days:.2f} hari, {status} target KPI {kpi_target_days:.2f} hari."
+
+def _narasi_top_bottom(series_days):
+    if series_days is None or len(series_days)==0:
+        return "Tidak ada data pada periode terpilih."
+    s = pd.Series(series_days).dropna().sort_values()
+    if s.empty: return "Tidak ada data pada periode terpilih."
+    lo_name, lo_val = s.index[0], s.iloc[0]
+    hi_name, hi_val = s.index[-1], s.iloc[-1]
+    return (f"Proses tercepat: <b>{lo_name}</b> ({lo_val:.2f} hari). "
+            f"Proses terlama: <b>{hi_name}</b> ({hi_val:.2f} hari). "
+            "Fokuskan perbaikan pada proses berdurasi terlama untuk menurunkan SLA total.")
+
+def _narasi_tren(df_days):
+    try:
+        desc=[]
+        for col in df_days.columns:
+            s = df_days[col].dropna()
+            if len(s)>=2:
+                delta = s.iloc[-1]-s.iloc[0]
+                arah = "naik" if delta>0 else ("turun" if delta<0 else "stabil")
+                desc.append(f"{col}: {arah} {abs(delta):.2f} hari")
+        if not desc: return "Tren belum dapat dianalisis karena data terbatas."
+        return "Ringkasan tren: " + "; ".join(desc) + "."
+    except:
+        return "Tren belum dapat dianalisis."
+
+def _narasi_transaksi(trans_df):
+    if trans_df.empty:
+        return "Tidak ada data transaksi pada periode terpilih."
+    peak = trans_df.loc[trans_df["Jumlah"].idxmax()]
+    low  = trans_df.loc[trans_df["Jumlah"].idxmin()]
+    mean = trans_df["Jumlah"].mean()
+    return (f"Rata-rata jumlah transaksi: <b>{mean:.1f}</b>. "
+            f"Tertinggi di <b>{peak['Periode']}</b> ({int(peak['Jumlah'])}), "
+            f"terendah di <b>{low['Periode']}</b> ({int(low['Jumlah'])}).")
+
 # ====================== MAIN FUNCTION generate_pdf_report_v4 ======================
 def generate_pdf_report_v4(
     df_ord,
