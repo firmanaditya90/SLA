@@ -1212,6 +1212,7 @@ with tab_poster:
             mime="image/png"
         )
 
+if condition:  # Ini adalah indentasi yang benar
 with tab_pdf:
     st.subheader("Generate Laporan PDF")
     
