@@ -1514,7 +1514,7 @@ def build_html_report_full_v2(df_filtered, selected_periode, available_sla_cols,
     html += '<div class="page cover" style="text-align:center;margin-top:80px;">'
     if asdp_b64:
         html += f'<img src="data:image/png;base64,{asdp_b64}" width="220" style="margin-bottom:20px;">'
-    html += f"<h1>Laporan SLA Verifikasi Dokumen Penagihan</h1>"
+    html += f"<h1>LAPORAN SLA VERIFIKASI DOKUMEN PENAGIHAN</h1>"
     html += f"<h3>Periode: {periode_str}</h3>"
     html += f"<h4>Terbit: {datetime.now().strftime('%d %B %Y')}</h4>"
     html += '</div><div class="pagebreak"></div>'
