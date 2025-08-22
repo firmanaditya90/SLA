@@ -1521,12 +1521,12 @@ def build_html_report_full_v2(df_filtered, selected_periode, available_sla_cols,
 
     # TOC
     html += '<div class="page"><div class="content"><h2>Daftar Isi</h2><ol>'
-    html += '<li>Ringkasan Eksekutif</li><li>KPI SLA</li><li>Analisis Per Proses</li>'
+    html += '<li>Overview</li><li>KPI SLA</li><li>Analisis Per Proses</li>'
     html += '<li>Analisis Jumlah Transaksi</li><li>Tren SLA</li><li>Kesimpulan & Rekomendasi</li>'
     html += '</ol></div></div><div class="pagebreak"></div>'
 
-    # Bab 1 - Ringkasan Eksekutif (sertakan grafik keuangan jika ada)
-    html += '<div class="page"><div class="content"><h2>Bab 1. Ringkasan Eksekutif</h2>'
+    # Bab 1 - Overview (sertakan grafik keuangan jika ada)
+    html += '<div class="page"><div class="content"><h2>Bab 1. Overview</h2>'
     if "KEUANGAN" in df_ord.columns:
         try:
             fig, ax = plt.subplots(figsize=(9,3))
