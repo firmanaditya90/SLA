@@ -1226,7 +1226,7 @@ with tab_pdf:
         st.write("periode_col:", periode_col)
 
         # Menghasilkan PDF berdasarkan data
-        pdf_buffer = generate_pdf(df_filtered, selected_periode, available_sla_cols, proses_grafik_cols, periode_col, saved_kpi)
+        pdf_buffer = generate_pdf(df_filtered, selected_periode, available_sla_cols, proses_grafik_cols, periode_col)
 
         # Menampilkan tombol download PDF
         st.download_button("💾 Simpan PDF", data=pdf_buffer, file_name="laporan_sla.pdf", mime="application/pdf")
