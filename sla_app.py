@@ -1248,7 +1248,7 @@ def _img_reader(url):
     try: return ImageReader(url)
     except: return None
 
-def _plot_to_rlimage(fig, w_cm=12, h_cm=8, dpi=150):
+def _plot_to_rlimage(fig, w_cm=9, h_cm=8, dpi=150):
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=dpi)
     plt.close(fig)
@@ -1272,7 +1272,7 @@ def _nice_table(data, colWidths=None, header_bg="#0ea5e9", align="CENTER"):
     ]))
     return tbl
 
-def _two_col_centered(left, right, left_w=12, right_w=5):
+def _two_col_centered(left, right, left_w=12, right_w=2):
     return Table([[left, right]], colWidths=[left_w*cm, right_w*cm], hAlign="CENTER")
 
 def _center_block(flowable, width_cm=25.5):
@@ -1330,7 +1330,7 @@ def _narasi_transaksi(trans_df):
 def _first_page(canvas, doc):
     pw, ph = landscape(A4)
     try:
-        canvas.drawImage(_img_reader(LOGO_ASDP_URL), pw/2 - 3*cm, ph - 12*cm,
+        canvas.drawImage(_img_reader(LOGO_ASDP_URL), pw/2 - 3*cm, ph - 10*cm,
                          width=6*cm, height=6*cm, mask='auto')
     except: pass
 
