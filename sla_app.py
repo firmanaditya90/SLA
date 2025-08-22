@@ -1350,6 +1350,9 @@ def _later_pages(canvas, doc):
     canvas.drawString(1.8*cm, 1.05*cm, "LAPORAN SLA - VERIFIKASI DOKUMEN PENAGIHAN")
     canvas.drawRightString(pw - 1.6*cm, 1.05*cm, f"Halaman {doc.page}")
 
+
+with tab_pdf:
+    st.write("Cek narasi helper:", _narasi_overview(5.2, 7))
 # ====================== MAIN FUNCTION ======================
 def generate_pdf_report_v4(df_ord, selected_periode, periode_col, available_sla_cols, proses_cols, kpi_target_days=None):
     df = df_ord.copy()
