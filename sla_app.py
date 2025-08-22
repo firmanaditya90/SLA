@@ -1336,7 +1336,7 @@ def _first_page(canvas, doc):
 
 def _later_pages(canvas, doc):
     pw, ph = landscape(A4)
-    try: canvas.drawImage(_img_reader(LOGO_LEFT_URL), 1.5*cm, ph - 3.6*cm, width=4*cm, height=2*cm, mask='auto')
+    try: canvas.drawImage(_img_reader(LOGO_LEFT_URL), 1.5*cm, ph - 3.6*cm, width=4*cm, height=1.6*cm, mask='auto')
     except: pass
     try: canvas.drawImage(_img_reader(LOGO_RIGHT_URL), pw - 5.1*cm, ph - 3.6*cm, width=3*cm, height=3*cm, mask='auto')
     except: pass
@@ -1359,7 +1359,7 @@ def generate_pdf_report_v5(df_ord, selected_periode, periode_col, available_sla_
 
     # === Cover
     story.append(Spacer(1, 7*cm))
-    story.append(Paragraph("LAPORAN SLA VERIFIKASI DOKUMEN PENAGIHAN PT ASDP INDONESIA FERRY (PERSERO)", _styles["CoverTitle"]))
+    story.append(Paragraph("LAPORAN SLA VERIFIKASI DOKUMEN PENAGIHAN PT.ASDP INDONESIA FERRY (PERSERO)", _styles["CoverTitle"]))
     if selected_periode:
         story.append(Paragraph(f"PERIODE: {str(selected_periode[0]).upper()} – {str(selected_periode[-1]).upper()}", _styles["CoverSub"]))
     story.append(PageBreak())
