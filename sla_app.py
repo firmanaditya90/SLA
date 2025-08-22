@@ -1296,7 +1296,7 @@ def _safe_mean_days(series_seconds):
         return None
 
 # =====================[ BUILD HTML REPORT V3 ]=====================
-def build_html_report_full_v3_fixed(
+def build_html_report_full_v3(
     df_ord,
     selected_periode,
     available_sla_cols,
