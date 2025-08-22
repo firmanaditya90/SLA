@@ -1248,7 +1248,7 @@ def _img_reader(url):
     try: return ImageReader(url)
     except: return None
 
-def _plot_to_rlimage(fig, w_cm=30, h_cm=20, dpi=150):
+def _plot_to_rlimage(fig, w_cm=15, h_cm=8, dpi=150):
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=dpi)
     plt.close(fig)
