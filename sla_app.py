@@ -1214,8 +1214,6 @@ with tab_poster:
 
 with tab_pdf:
     st.subheader("Generate Laporan PDF")
-    
-    # Memastikan target KPI sudah ada
     saved_kpi = load_kpi()
     if saved_kpi is None:
         st.error("Target KPI belum diatur!")
