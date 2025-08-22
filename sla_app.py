@@ -1381,11 +1381,21 @@ def build_html_report_full_v3(
     html.append(_header())
     html.append("<h2>Bab 2. KPI SLA</h2>")
     if "KEUANGAN" in df_filt.columns:
-        dfk = df_filt.groupby(periode_col)["KEUANGAN"].mean().reindex(selected_periode).reset_index()
-        dfk["SLA (hari)"] = (dfk["KEUANGAN"]/86400).round(2)
-        html.append(_html_table(dfk[[periode_col,"SLA (hari)"]].rename(columns={periode_col:"Periode"}),"Rata-rata SLA Keuangan"))
-        fig, ax = plt.subplots(figsize=(9,3))
-        ax.plot(dfk["Periode"].astype(str),dfk["SLA (hari)"],marker="o")
+dfk = df_filt.groupby(periode_col)["KEUANGAN"].mean().reindex(selected_periode).reset_index()
+dfk["SLA (hari)"] = (dfk["KEUANGAN"]/86400).round(2)
+
+# buat copy untuk tabel, rename kolom periode → Periode
+dfk_table = dfk[[periode_col,"SLA (hari)"]].rename(columns={periode_col:"Periode"})
+html.append(_html_table(dfk_table,"Rata-rata SLA Keuangan"))
+
+# untuk grafik tetap pakai kolom asli (periode_col)
+fig, ax = plt.subplots(figsize=(9,3))
+ax.plot(dfk[periode_col].astype(str), dfk["SLA (hari)"], marker="o")
+ax.set_title("SLA Keuangan per Periode (hari)")
+ax.tick_params(axis="x", rotation=45)
+html.append(f"<img src='data:image/png;base64,{_fig_to_base64(fig)}' class='chart'>")
+
+
         ax.set_title("SLA Keuangan per Periode (hari)")
         ax.tick_params(axis="x",rotation=45)
         html.append(f"<img src='data:image/png;base64,{_fig_to_base64(fig)}' class='chart'>")
