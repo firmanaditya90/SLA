@@ -1212,6 +1212,15 @@ with tab_poster:
             mime="image/png"
         )
 
+with tab_pdf:
+    st.subheader("Generate Laporan PDF")
+    saved_kpi = load_kpi()
+    if st.button("📥 Download PDF"):
+        pdf_buffer = generate_pdf(df_filtered, selected_periode, available_sla_cols, proses_grafik_cols, periode_col, saved_kpi)
+        st.download_button("💾 Simpan PDF", data=pdf_buffer, file_name="laporan_sla.pdf", mime="application/pdf")
+
+with tab_html:
+    st.info("Versi HTML masih menggunakan builder lama/baru yang sudah ada.")
 
 
 # =====================[ TAB PDF: HTML → PRINT ]=====================
