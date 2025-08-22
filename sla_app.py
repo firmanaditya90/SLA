@@ -1308,7 +1308,7 @@ def build_html_report_full_v3(
     logo_left="https://raw.githubusercontent.com/firmanaditya90/SLA/main/Danantara.png",
     logo_right="https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
 ):
-    # Filter periode
+    # Filter sesuai periode
     df_filt = df_ord[df_ord[periode_col].astype(str).isin([str(p) for p in selected_periode])].copy()
 
     css = """
@@ -1349,7 +1349,7 @@ def build_html_report_full_v3(
         html.append(f"<div class='subtitle'>Periode: {selected_periode[0]} – {selected_periode[-1]}</div>")
     html.append("</div></div>")
 
-    # Helper logo header
+    # Helper header
     def _header():
         return f"<img class='header-left' src='{logo_left}'><img class='header-right' src='{logo_right}'>"
 
@@ -1365,7 +1365,8 @@ def build_html_report_full_v3(
     html.append('<div class="page"><div class="content">')
     html.append(_header())
     html.append("<h2>Daftar Isi</h2><ol>")
-    for t in toc: html.append(f"<li>{t}</li>")
+    for t in toc:
+        html.append(f"<li>{t}</li>")
     html.append("</ol></div></div>")
 
     # ---------- Bab 1 Overview ----------
@@ -1376,38 +1377,28 @@ def build_html_report_full_v3(
     html.append(f"<div class='narr'>Total transaksi periode terpilih: <b>{total_trans}</b></div>")
     html.append("</div></div>")
 
-# ---------- Bab 2 KPI SLA ----------
-html.append('<div class="page"><div class="content">')
-html.append(_header())
-html.append("<h2>Bab 2. KPI SLA</h2>")
+    # ---------- Bab 2 KPI SLA ----------
+    html.append('<div class="page"><div class="content">')
+    html.append(_header())
+    html.append("<h2>Bab 2. KPI SLA</h2>")
+    if "KEUANGAN" in df_filt.columns:
+        dfk = df_filt.groupby(periode_col)["KEUANGAN"].mean().reindex(selected_periode).reset_index()
+        dfk = dfk.rename(columns={periode_col:"Periode"})
+        dfk["SLA (hari)"] = (dfk["KEUANGAN"]/86400).round(2)
 
-if "KEUANGAN" in df_filt.columns:
-    # Hitung rata-rata KEUANGAN per periode
-    dfk = df_filt.groupby(periode_col)["KEUANGAN"].mean().reindex(selected_periode).reset_index()
+        html.append(_html_table(dfk[["Periode","SLA (hari)"]],"Rata-rata SLA Keuangan per Periode"))
 
-    # Pastikan kolom periode dinamai "Periode"
-    dfk = dfk.rename(columns={periode_col: "Periode"})
+        fig, ax = plt.subplots(figsize=(9,3))
+        ax.plot(dfk["Periode"].astype(str), dfk["SLA (hari)"], marker="o")
+        ax.set_title("SLA Keuangan per Periode (hari)")
+        ax.tick_params(axis="x",rotation=45)
+        html.append(f"<img src='data:image/png;base64,{_fig_to_base64(fig)}' class='chart'>")
 
-    # Tambah kolom SLA (hari)
-    dfk["SLA (hari)"] = (dfk["KEUANGAN"] / 86400).round(2)
-
-    # Tabel
-    html.append(_html_table(dfk[["Periode", "SLA (hari)"]], "Rata-rata SLA Keuangan per Periode"))
-
-    # Grafik
-    fig, ax = plt.subplots(figsize=(9,3))
-    ax.plot(dfk["Periode"].astype(str), dfk["SLA (hari)"], marker="o")
-    ax.set_title("SLA Keuangan per Periode (hari)")
-    ax.tick_params(axis="x", rotation=45)
-    html.append(f"<img src='data:image/png;base64,{_fig_to_base64(fig)}' class='chart'>")
-
-    # Narasi
-    avg_days = dfk["SLA (hari)"].mean()
-    html.append(f"<div class='narr'>{_auto_narasi_overview(avg_days, kpi_target_days)}</div>")
-else:
-    html.append("<div class='note'>Kolom KEUANGAN tidak tersedia.</div>")
-
-html.append("</div></div>")
+        avg_days = dfk["SLA (hari)"].mean()
+        html.append(f"<div class='narr'>{_auto_narasi_overview(avg_days,kpi_target_days)}</div>")
+    else:
+        html.append("<div class='note'>Kolom KEUANGAN tidak tersedia.</div>")
+    html.append("</div></div>")
 
     # ---------- Bab 3 Per Proses ----------
     html.append('<div class="page"><div class="content">')
@@ -1423,6 +1414,8 @@ html.append("</div></div>")
         ax.tick_params(axis="x",rotation=45)
         html.append(f"<img src='data:image/png;base64,{_fig_to_base64(fig)}' class='chart'>")
         html.append(f"<div class='narr'>{_narasi_generic_top_bottom(df2.set_index('Proses')['SLA (hari)'])}</div>")
+    else:
+        html.append("<div class='note'>Kolom proses tidak tersedia.</div>")
     html.append("</div></div>")
 
     # ---------- Bab 4 Jumlah Transaksi ----------
@@ -1430,7 +1423,8 @@ html.append("</div></div>")
     html.append(_header())
     html.append("<h2>Bab 4. Analisis Jumlah Transaksi</h2>")
     trans_df = df_filt.groupby(periode_col).size().reindex(selected_periode).reset_index(name="Jumlah")
-    html.append(_html_table(trans_df.rename(columns={periode_col:"Periode"}),"Jumlah Transaksi per Periode"))
+    trans_df = trans_df.rename(columns={periode_col:"Periode"})
+    html.append(_html_table(trans_df,"Jumlah Transaksi per Periode"))
     fig, ax = plt.subplots(figsize=(9,3))
     ax.bar(trans_df["Periode"].astype(str),trans_df["Jumlah"])
     ax.set_title("Jumlah Transaksi per Periode")
@@ -1445,15 +1439,18 @@ html.append("</div></div>")
     if available_sla_cols:
         trend_df = df_filt.groupby(periode_col)[available_sla_cols].mean().reindex(selected_periode)
         trend_days = (trend_df/86400).round(2)
-        html.append(_html_table(trend_days.reset_index().rename(columns={periode_col:"Periode"}),"Rata-rata SLA per Periode (hari)"))
+        trend_days = trend_days.reset_index().rename(columns={periode_col:"Periode"})
+        html.append(_html_table(trend_days,"Rata-rata SLA per Periode (hari)"))
         fig, ax = plt.subplots(figsize=(9,3))
-        for col in trend_days.columns:
-            ax.plot(trend_days.index.astype(str),trend_days[col],marker="o",label=col)
+        for col in [c for c in trend_days.columns if c not in ["Periode"]]:
+            ax.plot(trend_days["Periode"].astype(str),trend_days[col],marker="o",label=col)
         ax.legend(fontsize=8)
         ax.set_title("Tren SLA per Periode (hari)")
         ax.tick_params(axis="x",rotation=45)
         html.append(f"<img src='data:image/png;base64,{_fig_to_base64(fig)}' class='chart'>")
-        html.append(f"<div class='narr'>{_narasi_tren(trend_days)}</div>")
+        html.append(f"<div class='narr'>{_narasi_tren(trend_days.set_index('Periode'))}</div>")
+    else:
+        html.append("<div class='note'>Kolom SLA tidak tersedia.</div>")
     html.append("</div></div>")
 
     # ---------- Bab 6 Kesimpulan ----------
@@ -1474,6 +1471,8 @@ html.append("</div></div>")
 
     html.append("</body></html>")
     return "".join(html)
+
+
 # =====================[ TAB PDF: HTML → PRINT/PDF ]=====================
 with tab_pdf:
     st.subheader("📑 Laporan SLA (A4 Landscape; 1 Bab = 1 Halaman)")
