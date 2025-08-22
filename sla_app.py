@@ -1215,12 +1215,6 @@ with tab_poster:
 if condition:  # Ini adalah indentasi yang benar
 with tab_pdf:
     st.subheader("Generate Laporan PDF")
-    
-    # Memastikan target KPI sudah ada
-    saved_kpi = load_kpi()
-    if saved_kpi is None:
-        st.error("Target KPI belum diatur!")
-        st.stop()
 
     # Menambahkan tombol untuk generate PDF
     if st.button("📥 Download PDF", key="download_pdf_button"):
@@ -1230,7 +1224,6 @@ with tab_pdf:
         st.write("available_sla_cols:", available_sla_cols)
         st.write("proses_grafik_cols:", proses_grafik_cols)
         st.write("periode_col:", periode_col)
-        st.write("saved_kpi:", saved_kpi)
 
         # Menghasilkan PDF berdasarkan data
         pdf_buffer = generate_pdf(df_filtered, selected_periode, available_sla_cols, proses_grafik_cols, periode_col, saved_kpi)
