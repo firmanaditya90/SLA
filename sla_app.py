@@ -1336,7 +1336,7 @@ def _first_page(canvas, doc):
 
 def _later_pages(canvas, doc):
     pw, ph = landscape(A4)
-    try: canvas.drawImage(_img_reader(LOGO_LEFT_URL), 1.5*cm, ph - 3.6*cm, width=3.6*cm, height=3.6*cm, mask='auto')
+    try: canvas.drawImage(_img_reader(LOGO_LEFT_URL), 1.5*cm, ph - 3.6*cm, width=3.6*cm, height=2*cm, mask='auto')
     except: pass
     try: canvas.drawImage(_img_reader(LOGO_RIGHT_URL), pw - 5.1*cm, ph - 3.6*cm, width=3.6*cm, height=3.6*cm, mask='auto')
     except: pass
