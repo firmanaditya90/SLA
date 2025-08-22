@@ -1174,7 +1174,7 @@ def generate_poster_A4(
 # Tab Report (Poster & PDF)
 # ==========================================================
 with tab_report:
-    tab_poster, tab_pdf = st.tabs(["🎨 Poster", "📄 PDF", "📄 Laporan HTML"]
+    tab_poster, tab_pdf, tab_html = st.tabs(["🎨 Poster", "📄 PDF", "📄 Laporan HTML"]
 )
 
 with tab_poster:
