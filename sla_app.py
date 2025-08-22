@@ -1215,10 +1215,10 @@ with tab_poster:
 
 # =====================[ HELPERS PDF ]=====================
 
-# =========[ IMPORT TAMBAHAN ]=========
-# ====================== IMPORTS (pastikan sudah di file utama) ======================
+# ====================== IMPORTS ======================
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, PageBreak, KeepTogether
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    Image as RLImage, PageBreak, KeepTogether
 )
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -1227,13 +1227,14 @@ from reportlab.lib.units import cm
 from reportlab.lib.utils import ImageReader
 import io, matplotlib.pyplot as plt
 import pandas as pd, numpy as np
+import streamlit as st
 
-# ====================== GLOBAL ASSETS ======================
+# ====================== LOGO ASSET ======================
 LOGO_LEFT_URL  = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/Danantara.png"
 LOGO_RIGHT_URL = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
-LOGO_ASDP_URL  = LOGO_RIGHT_URL  # center logo on cover
+LOGO_ASDP_URL  = LOGO_RIGHT_URL  # cover logo center
 
-# ====================== STYLES & HELPERS ======================
+# ====================== STYLES ======================
 _styles = getSampleStyleSheet()
 _styles.add(ParagraphStyle(name="CoverTitle", fontName="Helvetica-Bold", fontSize=28, leading=32, alignment=1, spaceAfter=6))
 _styles.add(ParagraphStyle(name="CoverSub",   fontName="Helvetica-Bold", fontSize=15, leading=18, alignment=1, spaceAfter=14))
@@ -1243,11 +1244,10 @@ _styles.add(ParagraphStyle(name="Narr", fontName="Helvetica", fontSize=10, leadi
 _styles.add(ParagraphStyle(name="KPI", fontName="Helvetica-Bold", fontSize=11, leading=14, alignment=0, spaceAfter=6))
 _styles.add(ParagraphStyle(name="SmallRight", fontName="Helvetica", fontSize=9, alignment=2))
 
+# ====================== HELPERS ======================
 def _img_reader(url):
-    try:
-        return ImageReader(url)
-    except Exception:
-        return None
+    try: return ImageReader(url)
+    except: return None
 
 def _plot_to_rlimage(fig, w_cm=12.5, h_cm=6.2, dpi=160):
     buf = io.BytesIO()
@@ -1256,10 +1256,10 @@ def _plot_to_rlimage(fig, w_cm=12.5, h_cm=6.2, dpi=160):
     buf.seek(0)
     return RLImage(buf, width=w_cm*cm, height=h_cm*cm)
 
-def _nice_table(data, colWidths=None):
-    tbl = Table(data, colWidths=colWidths, hAlign="LEFT")
+def _nice_table(data, colWidths=None, header_bg="#0ea5e9", align="LEFT"):
+    tbl = Table(data, colWidths=colWidths, hAlign=align)
     tbl.setStyle(TableStyle([
-        ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#0ea5e9")),
+        ("BACKGROUND",(0,0),(-1,0),colors.HexColor(header_bg)),
         ("TEXTCOLOR",(0,0),(-1,0),colors.white),
         ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
         ("FONTSIZE",(0,0),(-1,0),10),
@@ -1281,7 +1281,6 @@ def _two_col(left, right, left_w=11.5, right_w=13.0):
 def _center_block(flowable, width_cm=25.5):
     return Table([[flowable]], colWidths=[width_cm*cm], hAlign="CENTER")
 
-# Leader dots for TOC: we'll create a 3-col Table: title | dots(stretch) | page (right)
 def _toc_row(title, page, dots_len=80):
     dots = "." * dots_len
     tbl = Table([[Paragraph(title, _styles["TOCItem"]), Paragraph(dots, _styles["TOCItem"]), Paragraph(page, _styles["TOCItem"])]],
@@ -1295,328 +1294,201 @@ def _toc_row(title, page, dots_len=80):
     ]))
     return tbl
 
-# Footer & header drawing
-def _first_page(canvas, doc):
-    pw, ph = landscape(A4)
-    # Cover center logo (slightly above title)
-    try:
-        canvas.drawImage(_img_reader(LOGO_ASDP_URL), pw/2 - 2.5*cm, ph - 5.2*cm, width=5*cm, height=5*cm, preserveAspectRatio=True, mask='auto')
-    except:
-        pass
-    # no header/footer on cover
-
-def _later_pages(canvas, doc):
-    pw, ph = landscape(A4)
-    # header logos left & right
-    try:
-        canvas.drawImage(_img_reader(LOGO_LEFT_URL), 1*cm, ph - 2.8*cm, width=2.6*cm, height=2.6*cm, preserveAspectRatio=True, mask='auto')
-    except:
-        pass
-    try:
-        canvas.drawImage(_img_reader(LOGO_RIGHT_URL), pw - 3.8*cm, ph - 2.8*cm, width=2.6*cm, height=2.6*cm, preserveAspectRatio=True, mask='auto')
-    except:
-        pass
-    # small accent line under header
-    canvas.setStrokeColor(colors.HexColor("#e6eef8"))
-    canvas.setLineWidth(1)
-    canvas.line(1.6*cm, ph - 3.2*cm, pw - 1.6*cm, ph - 3.2*cm)
-    # footer line + page number
-    canvas.setStrokeColor(colors.HexColor("#e5e7eb"))
-    canvas.setLineWidth(0.6)
-    canvas.line(1.6*cm, 1.45*cm, pw - 1.6*cm, 1.45*cm)
-    canvas.setFont("Helvetica", 9)
-    canvas.setFillColor(colors.HexColor("#374151"))
-    canvas.drawString(1.8*cm, 1.05*cm, "LAPORAN SLA - VERIFIKASI DOKUMEN PENAGIHAN")
-    canvas.drawRightString(pw - 1.6*cm, 1.05*cm, f"Halaman {doc.page}")
-
-
-# ====================== NARRATIVE HELPERS ======================
+# ====================== NARRASI HELPERS ======================
 def _narasi_overview(avg_days, kpi_target_days):
-    if avg_days is None:
-        return "Data KEUANGAN tidak tersedia pada periode terpilih."
-    if kpi_target_days is None:
-        return f"Rata-rata SLA KEUANGAN berada di {avg_days:.2f} hari pada periode terpilih."
+    if avg_days is None: return "Data KEUANGAN tidak tersedia pada periode terpilih."
+    if kpi_target_days is None: return f"Rata-rata SLA KEUANGAN {avg_days:.2f} hari."
     status = "di bawah" if avg_days <= kpi_target_days else "di atas"
     return f"Rata-rata SLA KEUANGAN {avg_days:.2f} hari, {status} target KPI {kpi_target_days:.2f} hari."
 
 def _narasi_top_bottom(series_days):
-    if series_days is None or len(series_days)==0:
-        return "Tidak ada data pada periode terpilih."
+    if series_days is None or len(series_days)==0: return "Tidak ada data."
     s = pd.Series(series_days).dropna().sort_values()
-    if s.empty: return "Tidak ada data pada periode terpilih."
-    lo_name, lo_val = s.index[0], s.iloc[0]
-    hi_name, hi_val = s.index[-1], s.iloc[-1]
-    return (f"Proses tercepat: <b>{lo_name}</b> ({lo_val:.2f} hari). "
-            f"Proses terlama: <b>{hi_name}</b> ({hi_val:.2f} hari). "
-            "Fokuskan perbaikan pada proses berdurasi terlama untuk menurunkan SLA total.")
+    if s.empty: return "Tidak ada data."
+    lo, hi = s.index[0], s.index[-1]
+    return (f"Proses tercepat: <b>{lo}</b> ({s.iloc[0]:.2f} hari). "
+            f"Proses terlama: <b>{hi}</b> ({s.iloc[-1]:.2f} hari).")
 
 def _narasi_tren(df_days):
-    try:
-        desc=[]
-        for col in df_days.columns:
-            s = df_days[col].dropna()
-            if len(s)>=2:
-                delta = s.iloc[-1]-s.iloc[0]
-                arah = "naik" if delta>0 else ("turun" if delta<0 else "stabil")
-                desc.append(f"{col}: {arah} {abs(delta):.2f} hari")
-        if not desc: return "Tren belum dapat dianalisis karena data terbatas."
-        return "Ringkasan tren: " + "; ".join(desc) + "."
-    except:
-        return "Tren belum dapat dianalisis."
+    desc=[]
+    for col in df_days.columns:
+        s = df_days[col].dropna()
+        if len(s)>=2:
+            delta = s.iloc[-1]-s.iloc[0]
+            arah = "naik" if delta>0 else ("turun" if delta<0 else "stabil")
+            desc.append(f"{col}: {arah} {abs(delta):.2f} hari")
+    return "Ringkasan tren: " + "; ".join(desc) if desc else "Tren belum dapat dianalisis."
 
 def _narasi_transaksi(trans_df):
-    if trans_df.empty:
-        return "Tidak ada data transaksi pada periode terpilih."
+    if trans_df.empty: return "Tidak ada data transaksi."
     peak = trans_df.loc[trans_df["Jumlah"].idxmax()]
     low  = trans_df.loc[trans_df["Jumlah"].idxmin()]
     mean = trans_df["Jumlah"].mean()
-    return (f"Rata-rata jumlah transaksi: <b>{mean:.1f}</b>. "
-            f"Tertinggi di <b>{peak['Periode']}</b> ({int(peak['Jumlah'])}), "
-            f"terendah di <b>{low['Periode']}</b> ({int(low['Jumlah'])}).")
+    return (f"Rata-rata transaksi: <b>{mean:.1f}</b>. "
+            f"Tertinggi <b>{peak['Periode']}</b> ({int(peak['Jumlah'])}), "
+            f"terendah <b>{low['Periode']}</b> ({int(low['Jumlah'])}).")
 
-# ====================== MAIN FUNCTION generate_pdf_report_v4 ======================
-def generate_pdf_report_v4(
-    df_ord,
-    selected_periode,
-    periode_col,
-    available_sla_cols,
-    proses_cols,
-    kpi_target_days=None
-):
-    """
-    df_ord: original dataframe
-    selected_periode: ordered list of periode labels (strings) to include and their order
-    periode_col: column name in df_ord that holds periode labels
-    available_sla_cols: list of SLA column names available in df_ord
-    proses_cols: list of process columns (strings) to use for per-proses analysis
-    kpi_target_days: float or None
-    """
-    # ---- Prepare filtered & ordered df ----
+# ====================== HEADER & FOOTER ======================
+def _first_page(canvas, doc):
+    pw, ph = landscape(A4)
+    try:
+        canvas.drawImage(_img_reader(LOGO_ASDP_URL), pw/2 - 2.5*cm, ph - 5.2*cm,
+                         width=5*cm, height=5*cm, mask='auto')
+    except: pass
+
+def _later_pages(canvas, doc):
+    pw, ph = landscape(A4)
+    try: canvas.drawImage(_img_reader(LOGO_LEFT_URL), 1*cm, ph - 2.8*cm, width=2.6*cm, height=2.6*cm, mask='auto')
+    except: pass
+    try: canvas.drawImage(_img_reader(LOGO_RIGHT_URL), pw - 3.8*cm, ph - 2.8*cm, width=2.6*cm, height=2.6*cm, mask='auto')
+    except: pass
+    canvas.setStrokeColor(colors.HexColor("#e6eef8")); canvas.setLineWidth(1)
+    canvas.line(1.6*cm, ph - 3.2*cm, pw - 1.6*cm, ph - 3.2*cm)
+    canvas.setStrokeColor(colors.HexColor("#e5e7eb")); canvas.setLineWidth(0.6)
+    canvas.line(1.6*cm, 1.45*cm, pw - 1.6*cm, 1.45*cm)
+    canvas.setFont("Helvetica", 9); canvas.setFillColor(colors.HexColor("#374151"))
+    canvas.drawString(1.8*cm, 1.05*cm, "LAPORAN SLA - VERIFIKASI DOKUMEN PENAGIHAN")
+    canvas.drawRightString(pw - 1.6*cm, 1.05*cm, f"Halaman {doc.page}")
+
+# ====================== MAIN FUNCTION ======================
+def generate_pdf_report_v4(df_ord, selected_periode, periode_col, available_sla_cols, proses_cols, kpi_target_days=None):
     df = df_ord.copy()
-    # ensure periode col exists
-    if periode_col not in df.columns:
-        raise ValueError(f"Kolom periode '{periode_col}' tidak ditemukan di dataframe.")
-    # normalise periode as strings and categorical to keep ordering
     df[periode_col] = df[periode_col].astype(str)
     categories = [str(p) for p in selected_periode]
     df[periode_col] = pd.Categorical(df[periode_col], categories=categories, ordered=True)
     df_filt = df[df[periode_col].notna()].sort_values(periode_col)
 
-    # buffer and doc
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=landscape(A4),
-                            leftMargin=1.6*cm, rightMargin=1.6*cm, topMargin=2.8*cm, bottomMargin=1.6*cm)
+                            leftMargin=1.6*cm, rightMargin=1.6*cm,
+                            topMargin=2.8*cm, bottomMargin=1.6*cm)
     story = []
 
-    # ========== Page 1: COVER ==========
+    # === Cover
     story.append(Spacer(1, 5.0*cm))
-    cover_title = "LAPORAN SLA VERIFIKASI DOKUMEN PENAGIHAN PT ASDP INDONESIA FERRY (PERSERO)"
-    story.append(Paragraph(cover_title.upper(), _styles["CoverTitle"]))
+    story.append(Paragraph("LAPORAN SLA VERIFIKASI DOKUMEN PENAGIHAN PT ASDP INDONESIA FERRY (PERSERO)", _styles["CoverTitle"]))
     if selected_periode:
-        per_text = f"PERIODE: {str(selected_periode[0]).upper()} – {str(selected_periode[-1]).upper()}"
-        story.append(Paragraph(per_text, _styles["CoverSub"]))
-    # no extra subtitle
+        story.append(Paragraph(f"PERIODE: {str(selected_periode[0]).upper()} – {str(selected_periode[-1]).upper()}", _styles["CoverSub"]))
     story.append(PageBreak())
 
-    # ========== Page 2: DAFTAR ISI (TOC) ==========
-    story.append(Paragraph("DAFTAR ISI", _styles["HeadingCenter"]))
-    story.append(Spacer(1, 0.4*cm))
-
-    # fixed mapping of pages per your requested layout:
-    toc_map = [
-        ("OVERVIEW", "3"),
-        ("SLA PER PROSES", "4"),
-        ("SLA PER JENIS TRANSAKSI", "5"),
-        ("TREN SLA", "6"),
-        ("JUMLAH TRANSAKSI", "7"),
-        ("KESIMPULAN", "8"),
-    ]
-    # add TOC rows with proper spacing and leader dots
-    for title, pg in toc_map:
-        story.append(_toc_row(title, pg, dots_len=90))
-        story.append(Spacer(1, 0.08*cm))
+    # === TOC
+    story.append(Paragraph("DAFTAR ISI", _styles["HeadingCenter"])); story.append(Spacer(1,0.4*cm))
+    toc_map=[("OVERVIEW","3"),("SLA PER PROSES","4"),("SLA PER JENIS TRANSAKSI","5"),
+             ("TREN SLA","6"),("JUMLAH TRANSAKSI","7"),("KESIMPULAN","8")]
+    for t,p in toc_map:
+        story.append(_toc_row(t,p,dots_len=90)); story.append(Spacer(1,0.1*cm))
     story.append(PageBreak())
 
-    # ========== Page 3: OVERVIEW ==========
+    # === Page 3: Overview
     story.append(Paragraph("OVERVIEW", _styles["HeadingCenter"]))
-    # KPI mini block
-    total_trans = len(df_filt)
-    avg_keu_days = None
-    if "KEUANGAN" in df_filt.columns and df_filt["KEUANGAN"].notna().any():
-        avg_keu_days = float((df_filt["KEUANGAN"].mean()/86400.0).round(2))
-
-    kpi_lines = []
-    kpi_lines.append(f"<b>JUMLAH TRANSAKSI</b>: {total_trans:,}")
-    if avg_keu_days is not None:
-        kpi_lines.append(f"<b>RATA-RATA SLA KEUANGAN</b>: {avg_keu_days:.2f} HARI")
-    if kpi_target_days is not None:
-        kpi_lines.append(f"<b>TARGET KPI</b>: {kpi_target_days:.2f} HARI")
+    total_trans=len(df_filt)
+    avg_keu_days=None
+    if "KEUANGAN" in df_filt.columns: avg_keu_days=float((df_filt["KEUANGAN"].mean()/86400.0).round(2))
+    kpi_lines=[f"<b>JUMLAH TRANSAKSI</b>: {total_trans:,}"]
+    if avg_keu_days: kpi_lines.append(f"<b>RATA-RATA SLA KEUANGAN</b>: {avg_keu_days:.2f} HARI")
+    if kpi_target_days: kpi_lines.append(f"<b>TARGET KPI</b>: {kpi_target_days:.2f} HARI")
     story.append(Paragraph("<br/>".join(kpi_lines), _styles["KPI"]))
-    story.append(Spacer(1, 0.2*cm))
-
-    # Table (left) and Chart (right)
     if "KEUANGAN" in df_filt.columns:
-        df_keu = (df_filt.groupby(periode_col)["KEUANGAN"].mean()
-                  .reindex(categories).reset_index().rename(columns={periode_col:"Periode"}))
-        df_keu["SLA (hari)"] = (df_keu["KEUANGAN"]/86400.0).round(2)
-        table_data = [["Periode","SLA (hari)"]] + df_keu[["Periode","SLA (hari)"]].astype(str).values.tolist()
-        table_keu = _nice_table(table_data, colWidths=[7*cm,4.5*cm])
-        fig, ax = plt.subplots(figsize=(6.5,3.2))
-        ax.plot(df_keu["Periode"].astype(str), df_keu["SLA (hari)"], marker="o", linewidth=1.8)
-        if kpi_target_days is not None:
-            ax.axhline(y=kpi_target_days, linestyle="--", color="#ef4444", linewidth=1)
-        ax.set_title("", pad=6)
-        ax.tick_params(axis="x", rotation=45)
-        img_keu = _plot_to_rlimage(fig, w_cm=12.5, h_cm=6.2)
-        # compose 2-col block with some breathing space
-        story.append(_two_col(KeepTogether(table_keu), KeepTogether(img_keu), left_w=11.5, right_w=13))
-        story.append(Spacer(1, 0.3*cm))
-        # description / narrative
-        nar = _narasi_overview(avg_keu_days, kpi_target_days)
-        story.append(Paragraph(nar, _styles["Narr"]))
-    else:
-        story.append(Paragraph("Kolom KEUANGAN tidak tersedia pada dataset.", _styles["Narr"]))
+        df_keu=df_filt.groupby(periode_col)["KEUANGAN"].mean().reindex(categories).reset_index()
+        df_keu["SLA (hari)"]=(df_keu["KEUANGAN"]/86400.0).round(2); df_keu.rename(columns={periode_col:"Periode"}, inplace=True)
+        tbl=_nice_table([["Periode","SLA (hari)"]]+df_keu[["Periode","SLA (hari)"]].astype(str).values.tolist())
+        fig,ax=plt.subplots(figsize=(6.4,3.1)); ax.plot(df_keu["Periode"],df_keu["SLA (hari)"],marker="o"); ax.tick_params(axis="x",rotation=45)
+        if kpi_target_days: ax.axhline(y=kpi_target_days,ls="--",c="r")
+        story.append(_two_col(tbl,_plot_to_rlimage(fig))); story.append(Paragraph(_narasi_overview(avg_keu_days,kpi_target_days),_styles["Narr"]))
     story.append(PageBreak())
 
-    # ========== Page 4: SLA PER PROSES ==========
+    # === Page 4: SLA PER PROSES
     story.append(Paragraph("SLA PER PROSES", _styles["HeadingCenter"]))
-    valid_proc = [c for c in (proses_cols or []) if c in df_filt.columns]
+    valid_proc=[c for c in (proses_cols or []) if c in df_filt.columns]
     if valid_proc:
-        dfp = (df_filt[valid_proc].mean()/86400.0).round(2)
-        table_data = [["Proses","SLA (hari)"]] + [[str(i), f"{v:.2f}"] for i,v in dfp.items()]
-        tbl_proc = _nice_table(table_data, colWidths=[9*cm,7*cm])
-        fig, ax = plt.subplots(figsize=(6.5,3.2))
-        ax.bar(dfp.index, dfp.values, color="#0ea5e9")
-        ax.set_title("", pad=6)
-        ax.tick_params(axis="x", rotation=45)
-        img_proc = _plot_to_rlimage(fig, w_cm=12.5, h_cm=6.2)
-        story.append(_two_col(KeepTogether(tbl_proc), KeepTogether(img_proc)))
-        story.append(Spacer(1, 0.25*cm))
-        story.append(Paragraph(_narasi_top_bottom(dfp), _styles["Narr"]))
-    else:
-        story.append(Paragraph("Kolom proses tidak tersedia.", _styles["Narr"]))
+        dfp=(df_filt[valid_proc].mean()/86400.0).round(2)
+        tbl=_nice_table([["Proses","SLA (hari)"]]+[[i,f"{v:.2f}"] for i,v in dfp.items()])
+        fig,ax=plt.subplots(figsize=(6.4,3.1)); ax.bar(dfp.index,dfp.values,color="#0ea5e9"); ax.tick_params(axis="x",rotation=45)
+        story.append(_two_col(tbl,_plot_to_rlimage(fig))); story.append(Paragraph(_narasi_top_bottom(dfp),_styles["Narr"]))
     story.append(PageBreak())
 
-    # ========== Page 5: SLA PER JENIS TRANSAKSI ==========
+    # === Page 5: SLA PER JENIS TRANSAKSI
     story.append(Paragraph("SLA PER JENIS TRANSAKSI", _styles["HeadingCenter"]))
-    # detect common column names for jenis transaksi
-    jns_candidates = ["JENIS_TRANSAKSI","JENIS TRANSAKSI","Jenis Transaksi","Jenis_Transaksi","jenis_transaksi"]
-    jns_col = next((c for c in jns_candidates if c in df_filt.columns), None)
-    # choose main SLA column (prefer KEUANGAN)
-    main_sla_col = "KEUANGAN" if "KEUANGAN" in df_filt.columns else (available_sla_cols[0] if available_sla_cols else None)
-    if jns_col and main_sla_col:
-        dfj = df_filt.groupby(jns_col)[main_sla_col].agg(["count","mean"]).reset_index()
-        dfj["SLA (hari)"] = (dfj["mean"]/86400.0).round(2)
-        # sort by SLA descending to show problematic types first
-        dfj = dfj.sort_values("SLA (hari)", ascending=False)
-        table_data = [["Jenis Transaksi","Jumlah","SLA (hari)"]] + dfj[[jns_col,"count","SLA (hari)"]].astype(str).values.tolist()
-        tbl_jns = _nice_table(table_data, colWidths=[10.5*cm,4*cm,3.5*cm])
-        # center table (eye-catching)
-        story.append(_center_block(tbl_jns))
-        story.append(Spacer(1, 0.3*cm))
-        # narasi: top/bottom
-        series_for_nar = pd.Series(dfj["SLA (hari)"].values, index=dfj[jns_col].values)
-        story.append(Paragraph(_narasi_top_bottom(series_for_nar), _styles["Narr"]))
-    else:
-        story.append(Paragraph("Data jenis transaksi atau kolom SLA utama tidak tersedia.", _styles["Narr"]))
+    jns_candidates=["JENIS_TRANSAKSI","JENIS TRANSAKSI","Jenis Transaksi","Jenis_Transaksi","jenis_transaksi"]
+    jns_col=next((c for c in jns_candidates if c in df_filt.columns),None)
+    main_sla="KEUANGAN" if "KEUANGAN" in df_filt.columns else (available_sla_cols[0] if available_sla_cols else None)
+    if jns_col and main_sla:
+        dfj=df_filt.groupby(jns_col)[main_sla].agg(["count","mean"]).reset_index()
+        dfj["SLA (hari)"]=(dfj["mean"]/86400.0).round(2)
+        dfj=dfj.sort_values("SLA (hari)",ascending=False)
+        tbl=_nice_table([["Jenis Transaksi","Jumlah","SLA (hari)"]]+dfj[[jns_col,"count","SLA (hari)"]].astype(str).values.tolist())
+        story.append(_center_block(tbl)); story.append(Paragraph(_narasi_top_bottom(pd.Series(dfj["SLA (hari)"].values,index=dfj[jns_col].values)),_styles["Narr"]))
     story.append(PageBreak())
 
-    # ========== Page 6: TREN SLA ==========
+    # === Page 6: TREN SLA
     story.append(Paragraph("TREN SLA", _styles["HeadingCenter"]))
-    valid_sla = [c for c in (available_sla_cols or []) if c in df_filt.columns]
+    valid_sla=[c for c in (available_sla_cols or []) if c in df_filt.columns]
     if valid_sla:
-        trend = df_filt.groupby(periode_col)[valid_sla].mean().reindex(categories)
-        trend_days = (trend/86400.0).round(2)
-        # table
-        hdr = ["Periode"] + valid_sla
-        rows = [hdr] + trend_days.reset_index().astype(str).values.tolist()
-        tbl_trend = _nice_table(rows, colWidths=[6.5*cm] + [3.5*cm]*len(valid_sla))
-        # chart
-        fig, ax = plt.subplots(figsize=(7.2,3.2))
-        for c in valid_sla:
-            ax.plot(trend_days.index.astype(str), trend_days[c], marker="o", linewidth=1.6)
-        ax.set_title("", pad=6)
-        ax.legend(valid_sla, fontsize=8, ncol=2)
-        ax.tick_params(axis="x", rotation=45)
-        img_trend = _plot_to_rlimage(fig, w_cm=12.5, h_cm=6.2)
-        story.append(_two_col(KeepTogether(tbl_trend), KeepTogether(img_trend)))
-        story.append(Spacer(1, 0.25*cm))
-        story.append(Paragraph(_narasi_tren(trend_days), _styles["Narr"]))
-    else:
-        story.append(Paragraph("Kolom SLA tidak tersedia.", _styles["Narr"]))
+        trend=df_filt.groupby(periode_col)[valid_sla].mean().reindex(categories)
+        trend_days=(trend/86400.0).round(2)
+        tbl=_nice_table([["Periode"]+valid_sla]+trend_days.reset_index().astype(str).values.tolist())
+        fig,ax=plt.subplots(figsize=(7,3)); [ax.plot(trend_days.index.astype(str),trend_days[c],marker="o") for c in valid_sla]
+        ax.legend(valid_sla,fontsize=8,ncol=2); ax.tick_params(axis="x",rotation=45)
+        story.append(_two_col(tbl,_plot_to_rlimage(fig))); story.append(Paragraph(_narasi_tren(trend_days),_styles["Narr"]))
     story.append(PageBreak())
 
-    # ========== Page 7: JUMLAH TRANSAKSI ==========
+    # === Page 7: JUMLAH TRANSAKSI
     story.append(Paragraph("JUMLAH TRANSAKSI", _styles["HeadingCenter"]))
-    trans = df_filt.groupby(periode_col).size().reindex(categories).reset_index(name="Jumlah").rename(columns={periode_col:"Periode"})
-    tbl_trans = _nice_table([["Periode","Jumlah"]] + trans.astype(str).values.tolist(), colWidths=[8*cm,8*cm])
-    fig, ax = plt.subplots(figsize=(6.4,3.2))
-    ax.bar(trans["Periode"].astype(str), trans["Jumlah"], color="#14b8a6")
-    ax.set_title("", pad=6)
-    ax.tick_params(axis="x", rotation=45)
-    img_trans = _plot_to_rlimage(fig, w_cm=12.5, h_cm=6.2)
-    story.append(_two_col(KeepTogether(tbl_trans), KeepTogether(img_trans)))
-    story.append(Spacer(1, 0.25*cm))
-    story.append(Paragraph(_narasi_transaksi := (lambda dfx: (
-        f"Rata-rata jumlah transaksi: <b>{dfx['Jumlah'].mean():.1f}</b>. "
-        f"Tertinggi di <b>{dfx.loc[dfx['Jumlah'].idxmax(), 'Periode']}</b> ({int(dfx['Jumlah'].max())}), "
-        f"terendah di <b>{dfx.loc[dfx['Jumlah'].idxmin(), 'Periode']}</b> ({int(dfx['Jumlah'].min())})."
-    ))(trans), _styles["Narr"]))
+    trans=df_filt.groupby(periode_col).size().reindex(categories).reset_index(name="Jumlah").rename(columns={periode_col:"Periode"})
+    tbl=_nice_table([["Periode","Jumlah"]]+trans.astype(str).values.tolist())
+    fig,ax=plt.subplots(figsize=(6.4,3)); ax.bar(trans["Periode"],trans["Jumlah"],color="#14b8a6"); ax.tick_params(axis="x",rotation=45)
+    story.append(_two_col(tbl,_plot_to_rlimage(fig))); story.append(Paragraph(_narasi_transaksi(trans),_styles["Narr"]))
     story.append(PageBreak())
 
-    # ========== Page 8: KESIMPULAN ==========
+    # === Page 8: KESIMPULAN
     story.append(Paragraph("KESIMPULAN", _styles["HeadingCenter"]))
-    # compile concise summary from previous analyses
-    summary_parts = []
-    if avg_keu_days is not None:
-        summary_parts.append(f"Rata-rata SLA Keuangan: <b>{avg_keu_days:.2f} hari</b>.")
-    if valid_proc:
-        summary_parts.append(_narasi_top_bottom((df_filt[valid_proc].mean()/86400.0).round(2)))
-    if valid_sla:
-        summary_parts.append(_narasi_tren((df_filt.groupby(periode_col)[valid_sla].mean()/86400.0).round(2).reindex(categories)))
-    summary_parts.append(_narasi_transaksi(trans.copy()))
-    story.append(Paragraph(" ".join(summary_parts), _styles["Narr"]))
-    story.append(Spacer(1, 0.3*cm))
-    # eye-catching recommendation box
-    recs = [
-        "Pertahankan proses efektif dan standarisasi prosedur.",
-        "Prioritaskan perbaikan pada proses dengan SLA terlama (vendor).",
-        "Lakukan root cause analysis pada periode outlier.",
-        "Optimalkan alokasi SDM pada periode puncak.",
-        "Perkuat monitoring KPI real-time & notifikasi.",
-        "Evaluasi automasi pada proses manual."
+    summary=[]
+    if avg_keu_days: summary.append(_narasi_overview(avg_keu_days,kpi_target_days))
+    if valid_proc: summary.append(_narasi_top_bottom((df_filt[valid_proc].mean()/86400.0).round(2)))
+    if valid_sla: summary.append(_narasi_tren((df_filt.groupby(periode_col)[valid_sla].mean()/86400.0).round(2).reindex(categories)))
+    summary.append(_narasi_transaksi(trans.copy()))
+    story.append(Paragraph(" ".join(summary),_styles["Narr"]))
+    recs=[
+        "Pertahankan proses efektif.",
+        "Prioritaskan perbaikan pada SLA terlama.",
+        "Analisis akar masalah periode outlier.",
+        "Optimalkan SDM di periode puncak.",
+        "Perkuat monitoring KPI & notifikasi.",
+        "Evaluasi otomasi pada proses manual."
     ]
-    rec_tbl = _nice_table([["REKOMENDASI PRIORITAS"]] + [[f"• {r}"] for r in recs], colWidths=[25.5*cm], align="CENTER", header_bg="#0ea5e9")
+    rec_tbl = _nice_table([["REKOMENDASI PRIORITAS"]] + [[f"• {r}"] for r in recs], colWidths=[25.5*cm], header_bg="#0ea5e9")
+    story.append(Spacer(1, 0.4*cm))
     story.append(_center_block(rec_tbl))
-    story.append(Spacer(1, 0.8*cm))
-    # small footer-ish accent
-    story.append(Paragraph("Laporan ini disusun secara otomatis oleh SLA Dashboard.", _styles["SmallRight"]))
+    story.append(Spacer(1, 0.6*cm))
+    story.append(Paragraph("Laporan ini dihasilkan otomatis oleh SLA Dashboard.", _styles["SmallRight"]))
 
-    # ==== build document with header/footer callbacks ====
+    # Build PDF
     doc.build(story, onFirstPage=_first_page, onLaterPages=_later_pages)
     pdf = buffer.getvalue()
     buffer.close()
     return pdf
-        
-# =====================[ TAB PDF: HTML → PRINT/PDF ]=====================
 
+
+# ====================== TAB PDF ======================
 with tab_pdf:
     st.subheader("📑 Laporan SLA")
     try:
         pdf_bytes = generate_pdf_report_v4(
-            df_ord=df_filtered,
-            selected_periode=selected_periode,      # list/array terurut (misal: ['Januari', 'Februari', ...])
-            periode_col=periode_col,                # nama kolom periode
-            available_sla_cols=available_sla_cols,  # kolom SLA tersedia
-            proses_cols=proses_grafik_cols,         # kolom proses
-            kpi_target_days=target_kpi_hari if 'target_kpi_hari' in globals() else None,
+            df_ord=df_filtered,                  # dataframe hasil filter di app
+            selected_periode=selected_periode,   # urutan periode (list)
+            periode_col=periode_col,             # nama kolom periode di df
+            available_sla_cols=available_sla_cols,
+            proses_cols=proses_grafik_cols,
+            kpi_target_days=target_kpi_hari if 'target_kpi_hari' in globals() else None
         )
         st.download_button(
-            "⬇️ Download Laporan PDF",
+            "⬇️ Download Laporan PDF (v4)",
             data=pdf_bytes,
-            file_name="LAPORAN_SLA_DOKUMEN_PENAGIHAN.pdf",
+            file_name="LAPORAN_SLA_VERIFIKASI_DOKUMEN PENAGIHAN.pdf",
             mime="application/pdf",
         )
         st.success("PDF siap diunduh ✅")
     except Exception as e:
         st.error(f"Gagal membuat PDF: {e}")
+
+
