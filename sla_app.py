@@ -1401,7 +1401,7 @@ def generate_pdf_report_v5(df_ord, selected_periode, periode_col, available_sla_
         )
 
         # Grafik
-        fig, ax = plt.subplots(figsize=(6,3))
+        fig, ax = plt.subplots(figsize=(10,6))
         ax.plot(df_keu["Periode"], df_keu["SLA (hari)"], marker="o", color="#0ea5e9")
         ax.tick_params(axis="x", rotation=45)
         if kpi_target_days:
@@ -1411,8 +1411,8 @@ def generate_pdf_report_v5(df_ord, selected_periode, periode_col, available_sla_
         pair = Table([[tbl, _plot_to_rlimage(fig)]],
                      colWidths=[10*cm, 10*cm], hAlign="CENTER")
         pair.setStyle([
-            ("LEFTPADDING",(0,0),(-1,-1),2),
-            ("RIGHTPADDING",(0,0),(-1,-1),2),
+            ("LEFTPADDING",(0,0),(-1,-1),1),
+            ("RIGHTPADDING",(0,0),(-1,-1),1),
             ("TOPPADDING",(0,0),(-1,-1),0),
             ("BOTTOMPADDING",(0,0),(-1,-1),0),
         ])
