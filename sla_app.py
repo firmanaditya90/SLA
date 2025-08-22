@@ -1392,7 +1392,7 @@ def generate_pdf_report_v5(df_ord, selected_periode, periode_col, available_sla_
         fig,ax=plt.subplots(figsize=(6,3))
         ax.plot(df_keu["Periode"],df_keu["SLA (hari)"],marker="o"); ax.tick_params(axis="x",rotation=45)
         if kpi_target_days: ax.axhline(y=kpi_target_days,ls="--",c="r")
-        story.append(_two_col_centered(tbl,_plot_to_rlimage(fig)))
+        story.append(_two_col_centered(tbl, _plot_to_rlimage(fig), left_w=10, right_w=10))
         story.append(Spacer(1,0.5*cm))
         story.append(Paragraph(_narasi_overview(avg_keu_days,kpi_target_days),_styles["Narr"]))
     story.append(PageBreak())
