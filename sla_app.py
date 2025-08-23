@@ -707,40 +707,45 @@ with tab_transaksi:
 
 with tab_vendor:
     if "NAMA VENDOR" in df_filtered.columns:
-        vendor_list = sorted(df_filtered["NAMA VENDOR"].dropna().unique())
+        # --- Cari daftar cabang berdasarkan NAMA VENDOR yg mengandung "GM CABANG"
+        cabang_vendors = df_filtered["NAMA VENDOR"].dropna().astype(str)
+        cabang_list = sorted(set([v for v in cabang_vendors if "GM CABANG" in v.upper()]))
+        cabang_list_with_all = ["ALL CABANG"] + cabang_list
+
+        # --- Dropdown pilih cabang
+        selected_cabang = st.selectbox("Pilih Cabang", cabang_list_with_all)
+
+        # --- Filter data sesuai cabang
+        if selected_cabang == "ALL CABANG":
+            df_vendor_filtered = df_filtered[df_filtered["NAMA VENDOR"].str.upper().str.contains("GM CABANG", na=False)]
+        else:
+            df_vendor_filtered = df_filtered[df_filtered["NAMA VENDOR"] == selected_cabang]
+
+        # --- Lanjut filter vendor (multiselect seperti biasa)
+        vendor_list = sorted(df_vendor_filtered["NAMA VENDOR"].dropna().unique())
         vendor_list_with_all = ["ALL"] + vendor_list
         selected_vendors = st.multiselect("Pilih Vendor", vendor_list_with_all, default=["ALL"])
 
-        if "ALL" in selected_vendors:
-            df_vendor_filtered = df_filtered.copy()
-        else:
-            df_vendor_filtered = df_filtered[df_filtered["NAMA VENDOR"].isin(selected_vendors)]
+        if "ALL" not in selected_vendors:
+            df_vendor_filtered = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"].isin(selected_vendors)]
 
+        # --- Analisis SLA per Vendor
         if df_vendor_filtered.shape[0] > 0 and available_sla_cols:
             st.subheader("📌 Rata-rata SLA per Vendor")
-
-            # Hitung rata-rata SLA dan jumlah transaksi per vendor
             rata_vendor = df_vendor_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean().reset_index()
             jumlah_transaksi = df_vendor_filtered.groupby("NAMA VENDOR").size().reset_index(name="Jumlah Transaksi")
-
-            # Gabungkan
             rata_vendor = pd.merge(jumlah_transaksi, rata_vendor, on="NAMA VENDOR")
 
-            # Konversi SLA detik → format hari/jam/menit
+            # Konversi detik → format hari/jam/menit
             for col in available_sla_cols:
                 rata_vendor[col] = rata_vendor[col].apply(seconds_to_sla_format)
 
-            # Susun ulang kolom
             ordered_cols = ["NAMA VENDOR", "Jumlah Transaksi"] + [
                 c for c in rata_vendor.columns if c not in ["NAMA VENDOR", "Jumlah Transaksi"]
             ]
-            rata_vendor = rata_vendor[ordered_cols]
-
-            # Tampilkan tabel
-            st.dataframe(rata_vendor, use_container_width=True)
-
+            st.dataframe(rata_vendor[ordered_cols], use_container_width=True)
         else:
-            st.info("Tidak ada data untuk vendor yang dipilih.")
+            st.info("Tidak ada data untuk vendor/cabang yang dipilih.")
     else:
         st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
 
