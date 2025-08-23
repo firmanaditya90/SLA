@@ -773,23 +773,7 @@ with tab_vendor:
         )
 
         # ==============================
-        # 4. DOWNLOAD HASIL FILTER (EXCEL)
-        # ==============================
-        from io import BytesIO
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df_vendor_filtered.to_excel(writer, index=False, sheet_name="Vendor SLA")
-        excel_data = output.getvalue()
-
-        st.download_button(
-            label="📥 Download Excel Hasil Filter",
-            data=excel_data,
-            file_name="data_vendor.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-        # ==============================
-        # 5. ANALISIS SLA PER VENDOR
+        # 4. ANALISIS SLA PER VENDOR
         # ==============================
         if df_vendor_filtered.shape[0] > 0 and available_sla_cols:
             st.subheader("📌 Rata-rata SLA per Vendor")
@@ -808,7 +792,7 @@ with tab_vendor:
             st.dataframe(rata_vendor[ordered_cols], use_container_width=True)
 
             # ==============================
-            # 6. TOP 5 VENDOR TERCEPAT & TERLAMBAT
+            # 5. TOP 5 VENDOR TERCEPAT & TERLAMBAT
             # ==============================
             st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
             st.subheader("⚡ Analisis SLA Vendor (Top 5)")
@@ -844,10 +828,71 @@ with tab_vendor:
                              f"{bar.get_width():.2f} d", va="center", fontsize=9, fontweight="bold")
                 st.pyplot(fig2)
 
+            # ==============================
+            # 6. DETAIL PER JENIS TRANSAKSI (UNTUK 1 VENDOR TERPILIH)
+            # ==============================
+            if "ALL" not in selected_vendors and len(selected_vendors) == 1:
+                vendor_name = selected_vendors[0]
+                st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
+                st.subheader(f"🔍 Detail SLA per Jenis Transaksi — {vendor_name}")
+
+                if "JENIS TRANSAKSI" in df_vendor_filtered.columns:
+                    df_vendor_detail = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"] == vendor_name]
+
+                    # Hitung rata-rata SLA per jenis transaksi
+                    transaksi_group = df_vendor_detail.groupby("JENIS TRANSAKSI")[available_sla_cols].mean().reset_index()
+
+                    # Konversi ke hari (2 desimal)
+                    for col in available_sla_cols:
+                        transaksi_group[col] = transaksi_group[col].apply(lambda x: round(x/86400, 2) if pd.notna(x) else None)
+
+                    # Tabel detail
+                    st.dataframe(transaksi_group, use_container_width=True)
+
+                    # Bar chart modern
+                    import numpy as np
+                    from matplotlib import cm
+                    chart_col = "TOTAL WAKTU" if "TOTAL WAKTU" in transaksi_group.columns else available_sla_cols[0]
+                    y_labels = transaksi_group["JENIS TRANSAKSI"]
+                    values = transaksi_group[chart_col].fillna(0)
+
+                    cmap = cm.get_cmap("winter")
+                    colors = cmap(np.linspace(0.2, 0.8, len(values)))
+
+                    fig, ax = plt.subplots(figsize=(8,5))
+                    bars = ax.barh(y_labels, values, color=colors)
+
+                    ax.set_title(f"📊 Rata-rata SLA ({chart_col}) per Jenis Transaksi", fontsize=12, fontweight="bold")
+                    ax.set_xlabel("Rata-rata SLA (hari)")
+                    ax.grid(axis="x", linestyle="--", alpha=0.5)
+
+                    for bar in bars:
+                        ax.text(bar.get_width()+0.1, bar.get_y()+bar.get_height()/2,
+                                f"{bar.get_width():.2f} d", va="center", fontsize=9, fontweight="bold", color="#333")
+
+                    st.pyplot(fig)
+
+                    # Pie Chart kontribusi jumlah transaksi
+                    jumlah_per_transaksi = df_vendor_detail.groupby("JENIS TRANSAKSI").size().reset_index(name="Jumlah")
+                    fig_pie, ax_pie = plt.subplots(figsize=(5,5))
+                    wedges, texts, autotexts = ax_pie.pie(
+                        jumlah_per_transaksi["Jumlah"],
+                        labels=jumlah_per_transaksi["JENIS TRANSAKSI"],
+                        autopct="%1.1f%%",
+                        startangle=140,
+                        colors=cm.Set3(np.linspace(0,1,len(jumlah_per_transaksi)))
+                    )
+                    ax_pie.set_title("🍩 Distribusi Jumlah Transaksi per Jenis", fontsize=12, fontweight="bold")
+                    st.pyplot(fig_pie)
+
+                else:
+                    st.info("Kolom 'JENIS TRANSAKSI' tidak ditemukan pada data.")
+
         else:
             st.info("Tidak ada data untuk vendor yang dipilih.")
     else:
         st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
+
 
 with tab_tren:
     if available_sla_cols:
