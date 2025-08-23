@@ -707,13 +707,15 @@ with tab_transaksi:
 
 with tab_vendor:
     if "NAMA VENDOR" in df_filtered.columns:
-        # --- Pilihan utama untuk filter cabang/pusat/vendor
+        # ==============================
+        # 1. FILTER LEVEL KATEGORI (ALL, ALL CABANG, ALL PUSAT, ALL VENDOR)
+        # ==============================
         kategori_filter = st.selectbox(
             "Pilih Kategori Vendor",
             ["ALL", "ALL CABANG", "ALL PUSAT", "ALL VENDOR"]
         )
 
-        # --- Terapkan filter berdasarkan pilihan
+        # Terapkan filter kategori
         if kategori_filter == "ALL CABANG":
             df_vendor_filtered = df_filtered[
                 df_filtered["NAMA VENDOR"].str.upper().str.contains("GM CABANG", na=False)
@@ -737,7 +739,9 @@ with tab_vendor:
         else:  # ALL
             df_vendor_filtered = df_filtered.copy()
 
-        # --- Lanjut filter vendor spesifik (multiselect)
+        # ==============================
+        # 2. FILTER VENDOR SPESIFIK
+        # ==============================
         vendor_list = sorted(df_vendor_filtered["NAMA VENDOR"].dropna().unique())
         vendor_list_with_all = ["ALL"] + vendor_list
         selected_vendors = st.multiselect("Pilih Vendor", vendor_list_with_all, default=["ALL"])
@@ -745,16 +749,48 @@ with tab_vendor:
         if "ALL" not in selected_vendors:
             df_vendor_filtered = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"].isin(selected_vendors)]
 
-        # --- Ringkasan setelah filter
+        # ==============================
+        # 3. RINGKASAN DATASET SETELAH FILTER
+        # ==============================
         total_vendor = df_vendor_filtered["NAMA VENDOR"].nunique()
         total_transaksi = len(df_vendor_filtered)
+
+        st.markdown("""
+        <style>
+        .glow {
+          font-weight: 800;
+          font-size: 18px;
+          color: #00eaff;
+          text-shadow: 0 0 8px #00eaff, 0 0 16px #00eaff;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
         st.markdown(
-            f"<div class='small'>📊 Data terfilter: <b>{total_vendor}</b> vendor, "
+            f"<div class='glow'>📊 Data terfilter: <b>{total_vendor}</b> vendor | "
             f"<b>{total_transaksi}</b> transaksi</div>",
             unsafe_allow_html=True
         )
 
-        # --- Analisis SLA per Vendor
+        # ==============================
+        # 4. DOWNLOAD HASIL FILTER (EXCEL)
+        # ==============================
+        from io import BytesIO
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df_vendor_filtered.to_excel(writer, index=False, sheet_name="Vendor SLA")
+        excel_data = output.getvalue()
+
+        st.download_button(
+            label="📥 Download Excel Hasil Filter",
+            data=excel_data,
+            file_name="data_vendor.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+        # ==============================
+        # 5. ANALISIS SLA PER VENDOR
+        # ==============================
         if df_vendor_filtered.shape[0] > 0 and available_sla_cols:
             st.subheader("📌 Rata-rata SLA per Vendor")
 
@@ -771,12 +807,47 @@ with tab_vendor:
             ]
             st.dataframe(rata_vendor[ordered_cols], use_container_width=True)
 
+            # ==============================
+            # 6. TOP 5 VENDOR TERCEPAT & TERLAMBAT
+            # ==============================
+            st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
+            st.subheader("⚡ Analisis SLA Vendor (Top 5)")
+
+            rata_vendor_num = df_vendor_filtered.groupby("NAMA VENDOR")["TOTAL WAKTU"].mean().reset_index()
+
+            top_fastest = rata_vendor_num.sort_values("TOTAL WAKTU").head(5)
+            top_slowest = rata_vendor_num.sort_values("TOTAL WAKTU", ascending=False).head(5)
+
+            col_fast, col_slow = st.columns(2)
+
+            # --- Grafik Top 5 Tercepat
+            with col_fast:
+                fig, ax = plt.subplots(figsize=(6,4))
+                bars = ax.barh(top_fastest["NAMA VENDOR"], top_fastest["TOTAL WAKTU"]/86400, color="#00eaff")
+                ax.set_title("🚀 Top 5 Vendor Tercepat", fontsize=12, fontweight="bold")
+                ax.set_xlabel("Rata-rata SLA (hari)")
+                ax.grid(axis="x", linestyle="--", alpha=0.5)
+                for bar in bars:
+                    ax.text(bar.get_width()+0.1, bar.get_y()+bar.get_height()/2,
+                            f"{bar.get_width():.2f} d", va="center", fontsize=9, fontweight="bold")
+                st.pyplot(fig)
+
+            # --- Grafik Top 5 Terlambat
+            with col_slow:
+                fig2, ax2 = plt.subplots(figsize=(6,4))
+                bars2 = ax2.barh(top_slowest["NAMA VENDOR"], top_slowest["TOTAL WAKTU"]/86400, color="#ff4f70")
+                ax2.set_title("🐢 Top 5 Vendor Terlambat", fontsize=12, fontweight="bold")
+                ax2.set_xlabel("Rata-rata SLA (hari)")
+                ax2.grid(axis="x", linestyle="--", alpha=0.5)
+                for bar in bars2:
+                    ax2.text(bar.get_width()+0.1, bar.get_y()+bar.get_height()/2,
+                             f"{bar.get_width():.2f} d", va="center", fontsize=9, fontweight="bold")
+                st.pyplot(fig2)
+
         else:
             st.info("Tidak ada data untuk vendor yang dipilih.")
     else:
         st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
-    
-    
 
 with tab_tren:
     if available_sla_cols:
