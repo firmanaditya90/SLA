@@ -715,11 +715,14 @@ with tab_vendor:
 
         # --- Terapkan filter berdasarkan pilihan
         if kategori_filter == "ALL CABANG":
-            df_vendor_filtered = df_filtered[df_filtered["NAMA VENDOR"].str.upper().str.contains("GM CABANG", na=False)]
+            df_vendor_filtered = df_filtered[
+                df_filtered["NAMA VENDOR"].str.upper().str.contains("GM CABANG", na=False)
+            ]
 
         elif kategori_filter == "ALL PUSAT":
             df_vendor_filtered = df_filtered[
-                df_filtered["NAMA VENDOR"].astype(str).str[:3] == "110"
+                df_filtered["NAMA VENDOR"].astype(str).str[:3].eq("110") &
+                df_filtered["NAMA VENDOR"].astype(str).str[11:12].eq("-")
             ]
 
         elif kategori_filter == "ALL VENDOR":
@@ -727,7 +730,8 @@ with tab_vendor:
                 ~df_filtered["NAMA VENDOR"].str.upper().str.contains("GM CABANG", na=False)
             ]
             df_vendor_filtered = df_vendor_filtered[
-                ~df_vendor_filtered["NAMA VENDOR"].astype(str).str[:3].eq("110")
+                ~(df_vendor_filtered["NAMA VENDOR"].astype(str).str[:3].eq("110") &
+                  df_vendor_filtered["NAMA VENDOR"].astype(str).str[11:12].eq("-"))
             ]
 
         else:  # ALL
@@ -740,6 +744,15 @@ with tab_vendor:
 
         if "ALL" not in selected_vendors:
             df_vendor_filtered = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"].isin(selected_vendors)]
+
+        # --- Ringkasan setelah filter
+        total_vendor = df_vendor_filtered["NAMA VENDOR"].nunique()
+        total_transaksi = len(df_vendor_filtered)
+        st.markdown(
+            f"<div class='small'>📊 Data terfilter: <b>{total_vendor}</b> vendor, "
+            f"<b>{total_transaksi}</b> transaksi</div>",
+            unsafe_allow_html=True
+        )
 
         # --- Analisis SLA per Vendor
         if df_vendor_filtered.shape[0] > 0 and available_sla_cols:
