@@ -1395,7 +1395,7 @@ def generate_pdf_report_v6(df_ord, selected_periode, periode_col, available_sla_
         narasi_tbl=Table([[Paragraph(_narasi_overview(avg_keu_days,kpi_target_days),_styles["Narr"])]],colWidths=[21*cm],hAlign="CENTER")
         story.append(narasi_tbl)
     story.append(PageBreak())
-
+    
     # === Page 4: SLA PER PROSES
     story.append(Paragraph("SLA PER PROSES", _styles["HeadingCenter"]))
     valid_proc=[c for c in (proses_cols or []) if c in df_filt.columns]
@@ -1403,13 +1403,25 @@ def generate_pdf_report_v6(df_ord, selected_periode, periode_col, available_sla_
         dfp=(df_filt[valid_proc].mean()/86400.0).round(2)
         tbl=_nice_table([["Proses","SLA (hari)"]]+[[i,f"{v:.2f}"] for i,v in dfp.items()])
         fig,ax=plt.subplots(figsize=(7,4))
-        ax.bar(dfp.index,dfp.values,color="#0ea5e9"); ax.tick_params(axis="x",rotation=45)
+        ax.bar(dfp.index,dfp.values,color="#0ea5e9")
+        ax.tick_params(axis="x",rotation=45)
         chart=_plot_to_rlimage(fig,w_cm=13,h_cm=7)
+
+        # Layout → Grafik kiri, tabel kanan, sejajar atas
         pair=Table([[chart,tbl]],colWidths=[13*cm,8*cm],hAlign="CENTER")
-        pair.setStyle([("LEFTPADDING",(0,0),(-1,-1),0),("RIGHTPADDING",(0,0),(-1,-1),0)])
+        pair.setStyle([
+            ("LEFTPADDING",(0,0),(-1,-1),0),
+            ("RIGHTPADDING",(0,0),(-1,-1),0),
+            ("VALIGN",(0,0),(-1,-1),"TOP"),   # <<< ini penting: sejajarkan ke atas
+        ])
         story.append(pair)
+
         story.append(Spacer(1,0.5*cm))
-        narasi_tbl=Table([[Paragraph(_narasi_top_bottom(dfp),_styles["Narr"])]],colWidths=[21*cm],hAlign="CENTER")
+        narasi_tbl=Table(
+            [[Paragraph(_narasi_top_bottom(dfp),_styles["Narr"])]],
+            colWidths=[21*cm],
+            hAlign="CENTER"
+        )
         story.append(narasi_tbl)
     story.append(PageBreak())
 
