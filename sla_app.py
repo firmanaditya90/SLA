@@ -707,21 +707,33 @@ with tab_transaksi:
 
 with tab_vendor:
     if "NAMA VENDOR" in df_filtered.columns:
-        # --- Cari daftar cabang berdasarkan NAMA VENDOR yg mengandung "GM CABANG"
-        cabang_vendors = df_filtered["NAMA VENDOR"].dropna().astype(str)
-        cabang_list = sorted(set([v for v in cabang_vendors if "GM CABANG" in v.upper()]))
-        cabang_list_with_all = ["ALL CABANG"] + cabang_list
+        # --- Pilihan utama untuk filter cabang/pusat/vendor
+        kategori_filter = st.selectbox(
+            "Pilih Kategori Vendor",
+            ["ALL", "ALL CABANG", "ALL PUSAT", "ALL VENDOR"]
+        )
 
-        # --- Dropdown pilih cabang
-        selected_cabang = st.selectbox("Pilih Cabang", cabang_list_with_all)
-
-        # --- Filter data sesuai cabang
-        if selected_cabang == "ALL CABANG":
+        # --- Terapkan filter berdasarkan pilihan
+        if kategori_filter == "ALL CABANG":
             df_vendor_filtered = df_filtered[df_filtered["NAMA VENDOR"].str.upper().str.contains("GM CABANG", na=False)]
-        else:
-            df_vendor_filtered = df_filtered[df_filtered["NAMA VENDOR"] == selected_cabang]
 
-        # --- Lanjut filter vendor (multiselect seperti biasa)
+        elif kategori_filter == "ALL PUSAT":
+            df_vendor_filtered = df_filtered[
+                df_filtered["NAMA VENDOR"].astype(str).str[:3] == "110"
+            ]
+
+        elif kategori_filter == "ALL VENDOR":
+            df_vendor_filtered = df_filtered[
+                ~df_filtered["NAMA VENDOR"].str.upper().str.contains("GM CABANG", na=False)
+            ]
+            df_vendor_filtered = df_vendor_filtered[
+                ~df_vendor_filtered["NAMA VENDOR"].astype(str).str[:3].eq("110")
+            ]
+
+        else:  # ALL
+            df_vendor_filtered = df_filtered.copy()
+
+        # --- Lanjut filter vendor spesifik (multiselect)
         vendor_list = sorted(df_vendor_filtered["NAMA VENDOR"].dropna().unique())
         vendor_list_with_all = ["ALL"] + vendor_list
         selected_vendors = st.multiselect("Pilih Vendor", vendor_list_with_all, default=["ALL"])
@@ -732,6 +744,7 @@ with tab_vendor:
         # --- Analisis SLA per Vendor
         if df_vendor_filtered.shape[0] > 0 and available_sla_cols:
             st.subheader("📌 Rata-rata SLA per Vendor")
+
             rata_vendor = df_vendor_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean().reset_index()
             jumlah_transaksi = df_vendor_filtered.groupby("NAMA VENDOR").size().reset_index(name="Jumlah Transaksi")
             rata_vendor = pd.merge(jumlah_transaksi, rata_vendor, on="NAMA VENDOR")
@@ -744,10 +757,13 @@ with tab_vendor:
                 c for c in rata_vendor.columns if c not in ["NAMA VENDOR", "Jumlah Transaksi"]
             ]
             st.dataframe(rata_vendor[ordered_cols], use_container_width=True)
+
         else:
-            st.info("Tidak ada data untuk vendor/cabang yang dipilih.")
+            st.info("Tidak ada data untuk vendor yang dipilih.")
     else:
         st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
+    
+    
 
 with tab_tren:
     if available_sla_cols:
