@@ -1330,7 +1330,7 @@ def _first_page(canvas, doc):
 
 def _later_pages(canvas, doc):
     pw, ph = landscape(A4)
-    try: canvas.drawImage(_img_reader(LOGO_LEFT_URL), 1.5*cm, ph - 3.6*cm, width=4.3*cm, height=1.6*cm, mask='auto')
+    try: canvas.drawImage(_img_reader(LOGO_LEFT_URL), 1.5*cm, ph - 3.6*cm, width=4.5*cm, height=1.6*cm, mask='auto')
     except: pass
     try: canvas.drawImage(_img_reader(LOGO_RIGHT_URL), pw - 5.1*cm, ph - 3.6*cm, width=3*cm, height=3*cm, mask='auto')
     except: pass
@@ -1362,7 +1362,7 @@ def generate_pdf_report_v6(df_ord, selected_periode, periode_col, available_sla_
     story.append(Paragraph("DAFTAR ISI", _styles["HeadingCenter"]))
     story.append(Spacer(1,0.6*cm))
     toc_map=[("OVERVIEW","3"),("SLA PER PROSES","4"),("SLA PER JENIS TRANSAKSI","5"),
-             ("TREN SLA","6"),("JUMLAH TRANSAKSI","7"),("KESIMPULAN","8")]
+             ("TREN SLA","6"),("JUMLAH TRANSAKSI","8"),("KESIMPULAN","9")]
     for t,p in toc_map:
         story.append(_toc_row(t,p,dots_len=70))
         story.append(Spacer(1,0.2*cm))
@@ -1392,8 +1392,6 @@ def generate_pdf_report_v6(df_ord, selected_periode, periode_col, available_sla_
         pair.setStyle([("LEFTPADDING",(0,0),(-1,-1),0),("RIGHTPADDING",(0,0),(-1,-1),0)])
         story.append(pair)
         story.append(Spacer(1,0.5*cm))
-        narasi_tbl=Table([[Paragraph(_narasi_overview(avg_keu_days,kpi_target_days),_styles["Narr"])]],colWidths=[21*cm],hAlign="CENTER")
-        story.append(narasi_tbl)
     story.append(PageBreak())
     
     # === Page 4: SLA PER PROSES
