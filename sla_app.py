@@ -1440,24 +1440,56 @@ def generate_pdf_report_v6(df_ord, selected_periode, periode_col, available_sla_
         story.append(Paragraph(_narasi_top_bottom(pd.Series(dfj["SLA (hari)"].values,index=dfj[jns_col].values)),_styles["Narr"]))
     story.append(PageBreak())
 
-    # === Page 6: TREN SLA
+    # === Page 6: TREN SLA (adaptif)
     story.append(Paragraph("TREN SLA", _styles["HeadingCenter"]))
     valid_sla=[c for c in (available_sla_cols or []) if c in df_filt.columns]
     if valid_sla:
         trend=df_filt.groupby(periode_col)[valid_sla].mean().reindex(categories)
         trend_days=(trend/86400.0).round(2)
-        tbl=_nice_table([["Periode"]+valid_sla]+trend_days.reset_index().astype(str).values.tolist())
-        fig,ax=plt.subplots(figsize=(7,4))
-        for c in valid_sla:
-            ax.plot(trend_days.index.astype(str),trend_days[c],marker="o",label=c)
-        ax.legend(fontsize=8,ncol=2); ax.tick_params(axis="x",rotation=45)
-        chart=_plot_to_rlimage(fig,w_cm=13,h_cm=7)
-        pair=Table([[chart,tbl]],colWidths=[13*cm,8*cm],hAlign="CENTER")
-        pair.setStyle([("LEFTPADDING",(0,0),(-1,-1),0),("RIGHTPADDING",(0,0),(-1,-1),0)])
-        story.append(pair)
+
+        if len(valid_sla) <= 3:
+            # --- Layout A: grafik kiri, tabel kanan ---
+            data=[["Periode"]+valid_sla]+trend_days.reset_index().astype(str).values.tolist()
+            tbl=_nice_table(data, colWidths=[4*cm]+[4*cm]*len(valid_sla))
+            fig,ax=plt.subplots(figsize=(7,4))
+            for c in valid_sla:
+                ax.plot(trend_days.index.astype(str),trend_days[c],marker="o",label=c)
+            ax.legend(fontsize=8)
+            ax.tick_params(axis="x",rotation=45)
+            chart=_plot_to_rlimage(fig,w_cm=13,h_cm=7)
+            pair=Table([[chart,tbl]],colWidths=[13*cm,8*cm],hAlign="CENTER")
+            pair.setStyle([
+                ("LEFTPADDING",(0,0),(-1,-1),0),
+                ("RIGHTPADDING",(0,0),(-1,-1),0),
+                ("VALIGN",(0,0),(-1,-1),"TOP"),
+            ])
+            story.append(pair)
+
+        else:
+            # --- Layout B: grafik atas, tabel bawah ---
+            fig,ax=plt.subplots(figsize=(10,4))
+            for c in valid_sla:
+                ax.plot(trend_days.index.astype(str),trend_days[c],marker="o",label=c)
+            ax.legend(fontsize=8,ncol=2)
+            ax.tick_params(axis="x",rotation=45)
+            story.append(_plot_to_rlimage(fig,w_cm=21,h_cm=8))
+            story.append(Spacer(1,0.4*cm))
+
+            data=[["Periode"]+valid_sla]+trend_days.reset_index().astype(str).values.tolist()
+            col_w=[4*cm]+[ (21-4)/len(valid_sla)*cm ]*len(valid_sla)
+            tbl=_nice_table(data, colWidths=col_w)
+            tbl.setStyle([
+                ("FONTSIZE",(0,0),(-1,-1),9),
+                ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+            ])
+            story.append(tbl)
+
+        # --- Narasi ---
         story.append(Spacer(1,0.5*cm))
-        narasi_tbl=Table([[Paragraph(_narasi_tren(trend_days),_styles["Narr"])]],colWidths=[21*cm],hAlign="CENTER")
+        narasi_tbl=Table([[Paragraph(_narasi_tren(trend_days),_styles["Narr"])]],
+                         colWidths=[21*cm], hAlign="CENTER")
         story.append(narasi_tbl)
+
     story.append(PageBreak())
 
     # === Page 7: JUMLAH TRANSAKSI
