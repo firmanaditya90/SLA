@@ -896,7 +896,7 @@ with tab_vendor:
                 else:
                     st.info("Kolom 'JENIS TRANSAKSI' tidak ditemukan pada data.")
 
-            elif len(selected_vendors) > 1 and "ALL" not in selected_vendors:
+            elif len(selected_vendors) > 1 and "ALL" in selected_vendors:
                 st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
                 st.subheader(f"📊 Distribusi Transaksi — {len(selected_vendors)} Vendor Terpilih")
 
