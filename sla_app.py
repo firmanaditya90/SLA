@@ -753,7 +753,9 @@ with tab_vendor:
             st.stop()
 
         if "ALL" in selected_vendors:
+            # expand ALL jadi semua vendor hasil filter kategori
             df_vendor_filtered = df_vendor_filtered.copy()
+            selected_vendors = vendor_list
         else:
             df_vendor_filtered = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"].isin(selected_vendors)]
 
@@ -839,7 +841,7 @@ with tab_vendor:
             # ==============================
             # 6. DETAIL PER JENIS TRANSAKSI
             # ==============================
-            if "ALL" not in selected_vendors and len(selected_vendors) == 1:
+            if len(selected_vendors) == 1:
                 vendor_name = selected_vendors[0]
                 st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
                 st.subheader(f"🔍 Detail SLA per Jenis Transaksi — {vendor_name}")
@@ -896,23 +898,28 @@ with tab_vendor:
                 else:
                     st.info("Kolom 'JENIS TRANSAKSI' tidak ditemukan pada data.")
 
-            elif len(selected_vendors) > 1 and "ALL" in selected_vendors:
+            elif len(selected_vendors) > 1:
                 st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
                 st.subheader(f"📊 Distribusi Transaksi — {len(selected_vendors)} Vendor Terpilih")
 
                 if "JENIS TRANSAKSI" in df_vendor_filtered.columns:
                     jumlah_multi = df_vendor_filtered.groupby(["NAMA VENDOR","JENIS TRANSAKSI"]).size().reset_index(name="Jumlah")
 
-                    # Pivot untuk stacked bar
-                    pivot_jumlah = jumlah_multi.pivot(index="NAMA VENDOR", columns="JENIS TRANSAKSI", values="Jumlah").fillna(0)
+                    if len(selected_vendors) > 50:
+                        st.info("Terlalu banyak vendor dipilih (>50), ditampilkan dalam bentuk tabel agar lebih mudah dibaca.")
+                        pivot_jumlah = jumlah_multi.pivot(index="NAMA VENDOR", columns="JENIS TRANSAKSI", values="Jumlah").fillna(0)
+                        st.dataframe(pivot_jumlah, use_container_width=True)
+                    else:
+                        # Pivot untuk stacked bar
+                        pivot_jumlah = jumlah_multi.pivot(index="NAMA VENDOR", columns="JENIS TRANSAKSI", values="Jumlah").fillna(0)
 
-                    fig, ax = plt.subplots(figsize=(10,5))
-                    pivot_jumlah.plot(kind="bar", stacked=True, ax=ax, colormap="tab20c")
-                    ax.set_ylabel("Jumlah Transaksi")
-                    ax.set_xlabel("Vendor")
-                    ax.set_title("📊 Distribusi Jumlah Transaksi per Jenis Transaksi")
-                    ax.legend(title="Jenis Transaksi", bbox_to_anchor=(1.05,1), loc="upper left")
-                    st.pyplot(fig)
+                        fig, ax = plt.subplots(figsize=(12,6))
+                        pivot_jumlah.plot(kind="bar", stacked=True, ax=ax, colormap="tab20c")
+                        ax.set_ylabel("Jumlah Transaksi")
+                        ax.set_xlabel("Vendor")
+                        ax.set_title("📊 Distribusi Jumlah Transaksi per Jenis Transaksi")
+                        ax.legend(title="Jenis Transaksi", bbox_to_anchor=(1.05,1), loc="upper left")
+                        st.pyplot(fig)
                 else:
                     st.info("Kolom 'JENIS TRANSAKSI' tidak ditemukan pada data.")
 
@@ -920,7 +927,8 @@ with tab_vendor:
             st.info("Tidak ada data untuk vendor yang dipilih.")
     else:
         st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
-        
+     
+                  
 with tab_tren:
     if available_sla_cols:
         st.subheader("📈 Trend Rata-rata SLA per Periode")
