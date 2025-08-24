@@ -706,7 +706,6 @@ with tab_transaksi:
         st.info("Kolom 'JENIS TRANSAKSI' tidak ditemukan atau tidak ada kolom SLA yang tersedia.")
    
 with tab_vendor:
-with tab_vendor:
     if "NAMA VENDOR" in df_filtered.columns:
         # ==============================
         # 1. FILTER LEVEL KATEGORI
