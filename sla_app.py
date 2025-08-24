@@ -818,7 +818,7 @@ with tab_vendor:
         if "SLA_USED" in df_vendor_filtered.columns:
             rata_sla_global = round(df_vendor_filtered["SLA_USED"].mean() / 86400, 2)
         else:
-            rata_sla_global = 0
+            rata_sla_global = 0.0
 
         card_template = f"""
         <style>
@@ -836,19 +836,28 @@ with tab_vendor:
             <div class="card-icon">📄</div><div class="card-title">Total Transaksi</div><div id="trxCount" class="card-value">0</div>
           </div>
           <div class="card" style="background:linear-gradient(135deg,#42e695,#3bb2b8); { 'color:black;' if dark_mode else '' }">
-            <div class="card-icon">⏱️</div><div class="card-title">Rata-rata SLA (Hari)</div><div id="slaCount" class="card-value">0</div>
+            <div class="card-icon">⏱️</div><div class="card-title">Rata-rata SLA (Hari)</div><div id="slaCount" class="card-value">0.00</div>
           </div>
         </div>
         <script>
         function animateValue(id,start,end,duration){{
-            var range=end-start;var current=start;var increment=end>start?1:-1;
-            var stepTime=Math.abs(Math.floor(duration/range));var obj=document.getElementById(id);
-            var timer=setInterval(function(){{current+=increment;obj.innerHTML=current.toLocaleString();
-            if(current==end)clearInterval(timer);}},stepTime);
+            var range=end-start;
+            var current=start;
+            var increment=range/100;
+            var stepTime=Math.abs(Math.floor(duration/100));
+            var obj=document.getElementById(id);
+            var timer=setInterval(function(){{
+                current+=increment;
+                if ((increment>0 && current>=end) || (increment<0 && current<=end)){{
+                    current=end;
+                    clearInterval(timer);
+                }}
+                obj.innerHTML=current.toFixed(2);
+            }},stepTime);
         }}
         animateValue("vendorCount",0,{total_vendor},1000);
         animateValue("trxCount",0,{total_transaksi},1200);
-        animateValue("slaCount",0,{int(rata_sla_global)},1500);
+        animateValue("slaCount",0,{rata_sla_global},1500);
         </script>
         """
         components.html(card_template, height=250)
@@ -866,7 +875,7 @@ with tab_vendor:
             st.dataframe(rata_vendor, use_container_width=True)
 
             # ==============================
-            # 7. TOP 5 SLA + BADGES
+            # 7. LEADERBOARD SLA + BADGES
             # ==============================
             st.markdown("<hr/>", unsafe_allow_html=True)
             st.subheader("⚡ Leaderboard SLA Vendor")
