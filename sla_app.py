@@ -740,14 +740,17 @@ with tab_vendor:
             df_vendor_filtered = df_filtered.copy()
 
         # ==============================
-        # 2. FILTER VENDOR SPESIFIK
+        # 2. FILTER VENDOR SPESIFIK (default kosong)
         # ==============================
         vendor_list = sorted(df_vendor_filtered["NAMA VENDOR"].dropna().unique())
-        vendor_list_with_all = ["ALL"] + vendor_list
-        selected_vendors = st.multiselect("Pilih Vendor", vendor_list_with_all, default=["ALL"])
+        vendor_list_with_all = vendor_list  # tanpa ALL, default kosong
+        selected_vendors = st.multiselect("Pilih Vendor", vendor_list_with_all, default=[])
 
-        if "ALL" not in selected_vendors:
-            df_vendor_filtered = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"].isin(selected_vendors)]
+        if not selected_vendors:
+            st.info("Silakan pilih vendor untuk melihat analisis.")
+            st.stop()
+
+        df_vendor_filtered = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"].isin(selected_vendors)]
 
         # ==============================
         # 3. RINGKASAN DATASET SETELAH FILTER
@@ -829,9 +832,9 @@ with tab_vendor:
                 st.pyplot(fig2)
 
             # ==============================
-            # 6. DETAIL PER JENIS TRANSAKSI (UNTUK 1 VENDOR TERPILIH)
+            # 6. DETAIL PER JENIS TRANSAKSI
             # ==============================
-            if "ALL" not in selected_vendors and len(selected_vendors) == 1:
+            if len(selected_vendors) == 1:
                 vendor_name = selected_vendors[0]
                 st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
                 st.subheader(f"🔍 Detail SLA per Jenis Transaksi — {vendor_name}")
@@ -888,11 +891,30 @@ with tab_vendor:
                 else:
                     st.info("Kolom 'JENIS TRANSAKSI' tidak ditemukan pada data.")
 
+            elif len(selected_vendors) > 1:
+                st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
+                st.subheader(f"📊 Distribusi Transaksi — {len(selected_vendors)} Vendor Terpilih")
+
+                if "JENIS TRANSAKSI" in df_vendor_filtered.columns:
+                    jumlah_multi = df_vendor_filtered.groupby(["NAMA VENDOR","JENIS TRANSAKSI"]).size().reset_index(name="Jumlah")
+
+                    # Pivot untuk stacked bar
+                    pivot_jumlah = jumlah_multi.pivot(index="NAMA VENDOR", columns="JENIS TRANSAKSI", values="Jumlah").fillna(0)
+
+                    fig, ax = plt.subplots(figsize=(10,5))
+                    pivot_jumlah.plot(kind="bar", stacked=True, ax=ax, colormap="tab20c")
+                    ax.set_ylabel("Jumlah Transaksi")
+                    ax.set_xlabel("Vendor")
+                    ax.set_title("📊 Distribusi Jumlah Transaksi per Jenis Transaksi")
+                    ax.legend(title="Jenis Transaksi", bbox_to_anchor=(1.05,1), loc="upper left")
+                    st.pyplot(fig)
+                else:
+                    st.info("Kolom 'JENIS TRANSAKSI' tidak ditemukan pada data.")
+
         else:
             st.info("Tidak ada data untuk vendor yang dipilih.")
     else:
         st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
-
 
 with tab_tren:
     if available_sla_cols:
