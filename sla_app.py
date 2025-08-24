@@ -858,13 +858,11 @@ with tab_vendor:
                 st.pyplot(fig2)
 
             # ==============================
-            # 6. DRILL-DOWN INTERAKTIF PLOTLY
+            # 6. DRILL-DOWN INTERAKTIF (Plotly + Selectbox)
             # ==============================
-            from streamlit_plotly_events import plotly_events
             import plotly.express as px
-
             st.markdown("<hr/>", unsafe_allow_html=True)
-            st.subheader("📊 Interaktif SLA per Vendor (Klik untuk Drill-Down)")
+            st.subheader("📊 Interaktif SLA per Vendor")
 
             rata_vendor_num["SLA (hari)"] = rata_vendor_num["TOTAL WAKTU"]/86400
             fig = px.bar(
@@ -873,12 +871,12 @@ with tab_vendor:
                 title="Rata-rata SLA per Vendor"
             )
             fig.update_layout(xaxis_title="Vendor", yaxis_title="SLA (hari)", hovermode="x unified")
-            selected_points = plotly_events(fig, click_event=True, hover_event=False)
-            if selected_points:
-                clicked_vendor = rata_vendor_num.iloc[selected_points[0]["pointIndex"]]["NAMA VENDOR"]
-                st.success(f"🔍 Anda memilih vendor: **{clicked_vendor}**")
-                df_vendor_detail = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"]==clicked_vendor]
+            st.plotly_chart(fig, use_container_width=True)
 
+            # Drill-down manual pakai selectbox
+            clicked_vendor = st.selectbox("🔍 Pilih vendor untuk drill-down detail:", rata_vendor_num["NAMA VENDOR"].unique())
+            if clicked_vendor:
+                df_vendor_detail = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"]==clicked_vendor]
                 if "JENIS TRANSAKSI" in df_vendor_detail.columns:
                     st.markdown(f"### 📊 Detail SLA — {clicked_vendor}")
                     transaksi_group = df_vendor_detail.groupby("JENIS TRANSAKSI")[available_sla_cols].mean().reset_index()
@@ -895,8 +893,6 @@ with tab_vendor:
                     fig_pie = px.pie(jumlah_per_transaksi, values="Jumlah", names="JENIS TRANSAKSI",
                                      title="Distribusi Jumlah Transaksi")
                     st.plotly_chart(fig_pie, use_container_width=True)
-            else:
-                st.info("Klik bar chart vendor untuk melihat detail SLA.")
 
             # ==============================
             # 7. DISTRIBUSI MULTI VENDOR
@@ -922,7 +918,7 @@ with tab_vendor:
             st.info("Tidak ada data untuk vendor yang dipilih.")
     else:
         st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
-    
+        
      
                   
 with tab_tren:
