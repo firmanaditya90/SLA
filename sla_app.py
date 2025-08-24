@@ -706,6 +706,7 @@ with tab_transaksi:
         st.info("Kolom 'JENIS TRANSAKSI' tidak ditemukan atau tidak ada kolom SLA yang tersedia.")
    
 with tab_vendor:
+with tab_vendor:
     if "NAMA VENDOR" in df_filtered.columns:
         # ==============================
         # 1. FILTER LEVEL KATEGORI
@@ -736,7 +737,7 @@ with tab_vendor:
             df_vendor_filtered = df_filtered.copy()
 
         # ==============================
-        # 2. FILTER VENDOR SPESIFIK (dengan ALL)
+        # 2. FILTER VENDOR (ALL expansion)
         # ==============================
         vendor_list = sorted(df_vendor_filtered["NAMA VENDOR"].dropna().unique())
         vendor_list_with_all = ["ALL"] + vendor_list
@@ -747,10 +748,8 @@ with tab_vendor:
             st.stop()
 
         if "ALL" in selected_vendors:
-            df_vendor_filtered = df_vendor_filtered.copy()
             selected_vendors = vendor_list
-        else:
-            df_vendor_filtered = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"].isin(selected_vendors)]
+        df_vendor_filtered = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"].isin(selected_vendors)]
 
         # ==============================
         # 3. RINGKASAN DATASET
@@ -769,20 +768,12 @@ with tab_vendor:
             </style>
             """, unsafe_allow_html=True)
 
-        # Ringkasan teks glow
+        # Glow text ringkasan
         st.markdown("""
-        <style>
-        .glow {
-          font-weight: 800;
-          font-size: 18px;
-          color: #00eaff;
-          text-shadow: 0 0 8px #00eaff, 0 0 16px #00eaff;
-        }
-        </style>
+        <style>.glow{font-weight:800;font-size:18px;color:#00eaff;text-shadow:0 0 8px #00eaff,0 0 16px #00eaff;}</style>
         """, unsafe_allow_html=True)
         st.markdown(
-            f"<div class='glow'>📊 Data terfilter: <b>{total_vendor}</b> vendor | "
-            f"<b>{total_transaksi}</b> transaksi</div>",
+            f"<div class='glow'>📊 Data terfilter: <b>{total_vendor}</b> vendor | <b>{total_transaksi}</b> transaksi</div>",
             unsafe_allow_html=True
         )
 
@@ -797,58 +788,39 @@ with tab_vendor:
 
         card_template = f"""
         <style>
-        .card-container {{
-          display: flex; gap: 20px; justify-content: center; margin-top:20px;
-        }}
-        .card {{
-          flex:1; padding:20px; border-radius:16px; text-align:center; 
-          color:white; box-shadow:0 4px 12px rgba(0,0,0,0.2);
-          transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }}
-        .card:hover {{ transform: scale(1.05); box-shadow:0 8px 20px rgba(0,0,0,0.3); }}
-        .card-icon {{ font-size:40px; }}
-        .card-title {{ font-size:18px; font-weight:600; }}
-        .card-value {{ font-size:28px; font-weight:800; }}
+        .card-container{{display:flex;gap:20px;justify-content:center;margin-top:20px;}}
+        .card{{flex:1;padding:20px;border-radius:16px;text-align:center;color:white;
+        box-shadow:0 4px 12px rgba(0,0,0,0.2);transition:transform 0.3s ease,box-shadow 0.3s ease;}}
+        .card:hover{{transform:scale(1.05);box-shadow:0 8px 20px rgba(0,0,0,0.3);}}
+        .card-icon{{font-size:40px;}}.card-title{{font-size:18px;font-weight:600;}}.card-value{{font-size:28px;font-weight:800;}}
         </style>
-
         <div class="card-container">
           <div class="card" style="background:linear-gradient(135deg,#00eaff,#007bff); { 'color:black;' if dark_mode else '' }">
-            <div class="card-icon">🏢</div><div class="card-title">Total Vendor</div>
-            <div id="vendorCount" class="card-value">0</div>
+            <div class="card-icon">🏢</div><div class="card-title">Total Vendor</div><div id="vendorCount" class="card-value">0</div>
           </div>
           <div class="card" style="background:linear-gradient(135deg,#ff9a9e,#ff4f70); { 'color:black;' if dark_mode else '' }">
-            <div class="card-icon">📄</div><div class="card-title">Total Transaksi</div>
-            <div id="trxCount" class="card-value">0</div>
+            <div class="card-icon">📄</div><div class="card-title">Total Transaksi</div><div id="trxCount" class="card-value">0</div>
           </div>
           <div class="card" style="background:linear-gradient(135deg,#42e695,#3bb2b8); { 'color:black;' if dark_mode else '' }">
-            <div class="card-icon">⏱️</div><div class="card-title">Rata-rata SLA (Hari)</div>
-            <div id="slaCount" class="card-value">0</div>
+            <div class="card-icon">⏱️</div><div class="card-title">Rata-rata SLA (Hari)</div><div id="slaCount" class="card-value">0</div>
           </div>
         </div>
-
         <script>
-        function animateValue(id, start, end, duration) {{
-            if (start === end) return;
-            var range = end - start;
-            var current = start;
-            var increment = end > start? 1 : -1;
-            var stepTime = Math.abs(Math.floor(duration / range));
-            var obj = document.getElementById(id);
-            var timer = setInterval(function() {{
-                current += increment;
-                obj.innerHTML = current.toLocaleString();
-                if (current == end) {{ clearInterval(timer); }}
-            }}, stepTime);
+        function animateValue(id,start,end,duration){{
+            var range=end-start;var current=start;var increment=end>start?1:-1;
+            var stepTime=Math.abs(Math.floor(duration/range));var obj=document.getElementById(id);
+            var timer=setInterval(function(){{current+=increment;obj.innerHTML=current.toLocaleString();
+            if(current==end)clearInterval(timer);}},stepTime);
         }}
-        animateValue("vendorCount", 0, {total_vendor}, 1000);
-        animateValue("trxCount", 0, {total_transaksi}, 1200);
-        animateValue("slaCount", 0, {int(rata_sla_global)}, 1500);
+        animateValue("vendorCount",0,{total_vendor},1000);
+        animateValue("trxCount",0,{total_transaksi},1200);
+        animateValue("slaCount",0,{int(rata_sla_global)},1500);
         </script>
         """
         components.html(card_template, height=250)
 
         # ==============================
-        # 4. ANALISIS SLA PER VENDOR
+        # 4. SLA PER VENDOR
         # ==============================
         if df_vendor_filtered.shape[0] > 0 and available_sla_cols:
             st.subheader("📌 Rata-rata SLA per Vendor")
@@ -858,9 +830,7 @@ with tab_vendor:
             rata_vendor = pd.merge(jumlah_transaksi, rata_vendor, on="NAMA VENDOR")
             for col in available_sla_cols:
                 rata_vendor[col] = rata_vendor[col].apply(seconds_to_sla_format)
-            ordered_cols = ["NAMA VENDOR", "Jumlah Transaksi"] + [
-                c for c in rata_vendor.columns if c not in ["NAMA VENDOR", "Jumlah Transaksi"]
-            ]
+            ordered_cols = ["NAMA VENDOR","Jumlah Transaksi"]+[c for c in rata_vendor.columns if c not in ["NAMA VENDOR","Jumlah Transaksi"]]
             st.dataframe(rata_vendor[ordered_cols], use_container_width=True)
 
             # ==============================
@@ -880,38 +850,60 @@ with tab_vendor:
             with col_fast:
                 fig, ax = plt.subplots(figsize=(6,4))
                 ax.barh(top_fastest["NAMA VENDOR"], top_fastest["TOTAL WAKTU"]/86400, color="#00eaff")
-                ax.set_title("🚀 Top 5 Tercepat"); ax.set_xlabel("SLA (hari)"); ax.grid(axis="x", alpha=0.5)
+                ax.set_title("🚀 Top 5 Tercepat"); ax.set_xlabel("SLA (hari)")
                 st.pyplot(fig)
             with col_slow:
                 fig2, ax2 = plt.subplots(figsize=(6,4))
                 ax2.barh(top_slowest["NAMA VENDOR"], top_slowest["TOTAL WAKTU"]/86400, color="#ff4f70")
-                ax2.set_title("🐢 Top 5 Terlambat"); ax2.set_xlabel("SLA (hari)"); ax2.grid(axis="x", alpha=0.5)
+                ax2.set_title("🐢 Top 5 Terlambat"); ax2.set_xlabel("SLA (hari)")
                 st.pyplot(fig2)
 
             # ==============================
-            # 6. DETAIL PER JENIS TRANSAKSI
+            # 6. DRILL-DOWN INTERAKTIF PLOTLY
             # ==============================
-            if len(selected_vendors) == 1:
-                vendor_name = selected_vendors[0]
-                st.subheader(f"🔍 Detail SLA — {vendor_name}")
-                if "JENIS TRANSAKSI" in df_vendor_filtered.columns:
-                    df_vendor_detail = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"] == vendor_name]
+            from streamlit_plotly_events import plotly_events
+            import plotly.express as px
+
+            st.markdown("<hr/>", unsafe_allow_html=True)
+            st.subheader("📊 Interaktif SLA per Vendor (Klik untuk Drill-Down)")
+
+            rata_vendor_num["SLA (hari)"] = rata_vendor_num["TOTAL WAKTU"]/86400
+            fig = px.bar(
+                rata_vendor_num, x="NAMA VENDOR", y="SLA (hari)",
+                color="SLA (hari)", color_continuous_scale="Blues",
+                title="Rata-rata SLA per Vendor"
+            )
+            fig.update_layout(xaxis_title="Vendor", yaxis_title="SLA (hari)", hovermode="x unified")
+            selected_points = plotly_events(fig, click_event=True, hover_event=False)
+            if selected_points:
+                clicked_vendor = rata_vendor_num.iloc[selected_points[0]["pointIndex"]]["NAMA VENDOR"]
+                st.success(f"🔍 Anda memilih vendor: **{clicked_vendor}**")
+                df_vendor_detail = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"]==clicked_vendor]
+
+                if "JENIS TRANSAKSI" in df_vendor_detail.columns:
+                    st.markdown(f"### 📊 Detail SLA — {clicked_vendor}")
                     transaksi_group = df_vendor_detail.groupby("JENIS TRANSAKSI")[available_sla_cols].mean().reset_index()
                     for col in available_sla_cols:
-                        transaksi_group[col] = transaksi_group[col].apply(lambda x: round(x/86400, 2) if pd.notna(x) else None)
+                        transaksi_group[col] = transaksi_group[col].apply(lambda x: round(x/86400,2) if pd.notna(x) else None)
                     st.dataframe(transaksi_group, use_container_width=True)
-                    # Bar chart
-                    fig, ax = plt.subplots(figsize=(8,5))
-                    transaksi_group.plot(kind="barh", x="JENIS TRANSAKSI", y="TOTAL WAKTU", ax=ax, legend=False)
-                    ax.set_xlabel("SLA (hari)")
-                    st.pyplot(fig)
-                    # Pie chart
+
+                    fig2 = px.bar(transaksi_group, x="TOTAL WAKTU", y="JENIS TRANSAKSI",
+                                  orientation="h", color="TOTAL WAKTU", color_continuous_scale="Viridis",
+                                  title="Rata-rata SLA per Jenis Transaksi")
+                    st.plotly_chart(fig2, use_container_width=True)
+
                     jumlah_per_transaksi = df_vendor_detail.groupby("JENIS TRANSAKSI").size().reset_index(name="Jumlah")
-                    fig_pie, ax_pie = plt.subplots(figsize=(5,5))
-                    ax_pie.pie(jumlah_per_transaksi["Jumlah"], labels=jumlah_per_transaksi["JENIS TRANSAKSI"], autopct="%1.1f%%")
-                    ax_pie.set_title("Distribusi Transaksi")
-                    st.pyplot(fig_pie)
-            elif len(selected_vendors) > 1:
+                    fig_pie = px.pie(jumlah_per_transaksi, values="Jumlah", names="JENIS TRANSAKSI",
+                                     title="Distribusi Jumlah Transaksi")
+                    st.plotly_chart(fig_pie, use_container_width=True)
+            else:
+                st.info("Klik bar chart vendor untuk melihat detail SLA.")
+
+            # ==============================
+            # 7. DISTRIBUSI MULTI VENDOR
+            # ==============================
+            if len(selected_vendors) > 1:
+                st.markdown("<hr/>", unsafe_allow_html=True)
                 st.subheader(f"📊 Distribusi Transaksi — {len(selected_vendors)} Vendor")
                 if "JENIS TRANSAKSI" in df_vendor_filtered.columns:
                     jumlah_multi = df_vendor_filtered.groupby(["NAMA VENDOR","JENIS TRANSAKSI"]).size().reset_index(name="Jumlah")
@@ -931,6 +923,7 @@ with tab_vendor:
             st.info("Tidak ada data untuk vendor yang dipilih.")
     else:
         st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
+    
      
                   
 with tab_tren:
