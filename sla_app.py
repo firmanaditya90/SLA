@@ -704,7 +704,7 @@ with tab_transaksi:
         st.dataframe(transaksi_display, use_container_width=True)
     else:
         st.info("Kolom 'JENIS TRANSAKSI' tidak ditemukan atau tidak ada kolom SLA yang tersedia.")
-
+   
 with tab_vendor:
     if "NAMA VENDOR" in df_filtered.columns:
         # ==============================
@@ -740,17 +740,22 @@ with tab_vendor:
             df_vendor_filtered = df_filtered.copy()
 
         # ==============================
-        # 2. FILTER VENDOR SPESIFIK (default kosong)
+        # 2. FILTER VENDOR SPESIFIK (dengan opsi ALL)
         # ==============================
         vendor_list = sorted(df_vendor_filtered["NAMA VENDOR"].dropna().unique())
-        vendor_list_with_all = vendor_list  # tanpa ALL, default kosong
+        vendor_list_with_all = ["ALL"] + vendor_list
+
+        # default kosong (tidak ada vendor dipilih di awal)
         selected_vendors = st.multiselect("Pilih Vendor", vendor_list_with_all, default=[])
 
         if not selected_vendors:
             st.info("Silakan pilih vendor untuk melihat analisis.")
             st.stop()
 
-        df_vendor_filtered = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"].isin(selected_vendors)]
+        if "ALL" in selected_vendors:
+            df_vendor_filtered = df_vendor_filtered.copy()
+        else:
+            df_vendor_filtered = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"].isin(selected_vendors)]
 
         # ==============================
         # 3. RINGKASAN DATASET SETELAH FILTER
@@ -834,7 +839,7 @@ with tab_vendor:
             # ==============================
             # 6. DETAIL PER JENIS TRANSAKSI
             # ==============================
-            if len(selected_vendors) == 1:
+            if "ALL" not in selected_vendors and len(selected_vendors) == 1:
                 vendor_name = selected_vendors[0]
                 st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
                 st.subheader(f"🔍 Detail SLA per Jenis Transaksi — {vendor_name}")
@@ -891,7 +896,7 @@ with tab_vendor:
                 else:
                     st.info("Kolom 'JENIS TRANSAKSI' tidak ditemukan pada data.")
 
-            elif len(selected_vendors) > 1:
+            elif len(selected_vendors) > 1 and "ALL" not in selected_vendors:
                 st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
                 st.subheader(f"📊 Distribusi Transaksi — {len(selected_vendors)} Vendor Terpilih")
 
@@ -915,7 +920,7 @@ with tab_vendor:
             st.info("Tidak ada data untuk vendor yang dipilih.")
     else:
         st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
-
+        
 with tab_tren:
     if available_sla_cols:
         st.subheader("📈 Trend Rata-rata SLA per Periode")
