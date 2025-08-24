@@ -708,25 +708,22 @@ with tab_transaksi:
 with tab_vendor:
     if "NAMA VENDOR" in df_filtered.columns:
         # ==============================
-        # 1. FILTER LEVEL KATEGORI (ALL, ALL CABANG, ALL PUSAT, ALL VENDOR)
+        # 1. FILTER LEVEL KATEGORI
         # ==============================
         kategori_filter = st.selectbox(
             "Pilih Kategori Vendor",
             ["ALL", "ALL CABANG", "ALL PUSAT", "ALL VENDOR"]
         )
 
-        # Terapkan filter kategori
         if kategori_filter == "ALL CABANG":
             df_vendor_filtered = df_filtered[
                 df_filtered["NAMA VENDOR"].str.upper().str.contains("GM CABANG", na=False)
             ]
-
         elif kategori_filter == "ALL PUSAT":
             df_vendor_filtered = df_filtered[
                 df_filtered["NAMA VENDOR"].astype(str).str[:3].eq("110") &
                 df_filtered["NAMA VENDOR"].astype(str).str[11:12].eq("-")
             ]
-
         elif kategori_filter == "ALL VENDOR":
             df_vendor_filtered = df_filtered[
                 ~df_filtered["NAMA VENDOR"].str.upper().str.contains("GM CABANG", na=False)
@@ -735,17 +732,14 @@ with tab_vendor:
                 ~(df_vendor_filtered["NAMA VENDOR"].astype(str).str[:3].eq("110") &
                   df_vendor_filtered["NAMA VENDOR"].astype(str).str[11:12].eq("-"))
             ]
-
         else:  # ALL
             df_vendor_filtered = df_filtered.copy()
 
         # ==============================
-        # 2. FILTER VENDOR SPESIFIK (dengan opsi ALL)
+        # 2. FILTER VENDOR SPESIFIK (dengan ALL)
         # ==============================
         vendor_list = sorted(df_vendor_filtered["NAMA VENDOR"].dropna().unique())
         vendor_list_with_all = ["ALL"] + vendor_list
-
-        # default kosong (tidak ada vendor dipilih di awal)
         selected_vendors = st.multiselect("Pilih Vendor", vendor_list_with_all, default=[])
 
         if not selected_vendors:
@@ -753,18 +747,29 @@ with tab_vendor:
             st.stop()
 
         if "ALL" in selected_vendors:
-            # expand ALL jadi semua vendor hasil filter kategori
             df_vendor_filtered = df_vendor_filtered.copy()
             selected_vendors = vendor_list
         else:
             df_vendor_filtered = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"].isin(selected_vendors)]
 
         # ==============================
-        # 3. RINGKASAN DATASET SETELAH FILTER
+        # 3. RINGKASAN DATASET
         # ==============================
         total_vendor = df_vendor_filtered["NAMA VENDOR"].nunique()
         total_transaksi = len(df_vendor_filtered)
 
+        # 🌙 Dark Mode toggle
+        dark_mode = st.toggle("🌙 Dark Mode", value=False)
+        if dark_mode:
+            st.markdown("""
+            <style>
+            body { background-color: #121212 !important; color: #e0e0e0 !important; }
+            .stDataFrame, .dataframe { background: #1e1e1e !important; color: #e0e0e0 !important; }
+            table { color: #e0e0e0 !important; }
+            </style>
+            """, unsafe_allow_html=True)
+
+        # Ringkasan teks glow
         st.markdown("""
         <style>
         .glow {
@@ -775,12 +780,72 @@ with tab_vendor:
         }
         </style>
         """, unsafe_allow_html=True)
-
         st.markdown(
             f"<div class='glow'>📊 Data terfilter: <b>{total_vendor}</b> vendor | "
             f"<b>{total_transaksi}</b> transaksi</div>",
             unsafe_allow_html=True
         )
+
+        # ==============================
+        # 3B. KARTU DIGITAL
+        # ==============================
+        import streamlit.components.v1 as components
+        if "TOTAL WAKTU" in df_vendor_filtered.columns:
+            rata_sla_global = round(df_vendor_filtered["TOTAL WAKTU"].mean() / 86400, 2)
+        else:
+            rata_sla_global = 0
+
+        card_template = f"""
+        <style>
+        .card-container {{
+          display: flex; gap: 20px; justify-content: center; margin-top:20px;
+        }}
+        .card {{
+          flex:1; padding:20px; border-radius:16px; text-align:center; 
+          color:white; box-shadow:0 4px 12px rgba(0,0,0,0.2);
+          transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }}
+        .card:hover {{ transform: scale(1.05); box-shadow:0 8px 20px rgba(0,0,0,0.3); }}
+        .card-icon {{ font-size:40px; }}
+        .card-title {{ font-size:18px; font-weight:600; }}
+        .card-value {{ font-size:28px; font-weight:800; }}
+        </style>
+
+        <div class="card-container">
+          <div class="card" style="background:linear-gradient(135deg,#00eaff,#007bff); { 'color:black;' if dark_mode else '' }">
+            <div class="card-icon">🏢</div><div class="card-title">Total Vendor</div>
+            <div id="vendorCount" class="card-value">0</div>
+          </div>
+          <div class="card" style="background:linear-gradient(135deg,#ff9a9e,#ff4f70); { 'color:black;' if dark_mode else '' }">
+            <div class="card-icon">📄</div><div class="card-title">Total Transaksi</div>
+            <div id="trxCount" class="card-value">0</div>
+          </div>
+          <div class="card" style="background:linear-gradient(135deg,#42e695,#3bb2b8); { 'color:black;' if dark_mode else '' }">
+            <div class="card-icon">⏱️</div><div class="card-title">Rata-rata SLA (Hari)</div>
+            <div id="slaCount" class="card-value">0</div>
+          </div>
+        </div>
+
+        <script>
+        function animateValue(id, start, end, duration) {{
+            if (start === end) return;
+            var range = end - start;
+            var current = start;
+            var increment = end > start? 1 : -1;
+            var stepTime = Math.abs(Math.floor(duration / range));
+            var obj = document.getElementById(id);
+            var timer = setInterval(function() {{
+                current += increment;
+                obj.innerHTML = current.toLocaleString();
+                if (current == end) {{ clearInterval(timer); }}
+            }}, stepTime);
+        }}
+        animateValue("vendorCount", 0, {total_vendor}, 1000);
+        animateValue("trxCount", 0, {total_transaksi}, 1200);
+        animateValue("slaCount", 0, {int(rata_sla_global)}, 1500);
+        </script>
+        """
+        components.html(card_template, height=250)
 
         # ==============================
         # 4. ANALISIS SLA PER VENDOR
@@ -791,51 +856,36 @@ with tab_vendor:
             rata_vendor = df_vendor_filtered.groupby("NAMA VENDOR")[available_sla_cols].mean().reset_index()
             jumlah_transaksi = df_vendor_filtered.groupby("NAMA VENDOR").size().reset_index(name="Jumlah Transaksi")
             rata_vendor = pd.merge(jumlah_transaksi, rata_vendor, on="NAMA VENDOR")
-
-            # Konversi detik → format hari/jam/menit
             for col in available_sla_cols:
                 rata_vendor[col] = rata_vendor[col].apply(seconds_to_sla_format)
-
             ordered_cols = ["NAMA VENDOR", "Jumlah Transaksi"] + [
                 c for c in rata_vendor.columns if c not in ["NAMA VENDOR", "Jumlah Transaksi"]
             ]
             st.dataframe(rata_vendor[ordered_cols], use_container_width=True)
 
             # ==============================
-            # 5. TOP 5 VENDOR TERCEPAT & TERLAMBAT
+            # 5. TOP 5 SLA
             # ==============================
-            st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
+            st.markdown("<hr/>", unsafe_allow_html=True)
             st.subheader("⚡ Analisis SLA Vendor (Top 5)")
-
             rata_vendor_num = df_vendor_filtered.groupby("NAMA VENDOR")["TOTAL WAKTU"].mean().reset_index()
-
             top_fastest = rata_vendor_num.sort_values("TOTAL WAKTU").head(5)
             top_slowest = rata_vendor_num.sort_values("TOTAL WAKTU", ascending=False).head(5)
 
-            col_fast, col_slow = st.columns(2)
+            import matplotlib.pyplot as plt
+            if dark_mode: plt.style.use("dark_background")
+            else: plt.style.use("default")
 
-            # --- Grafik Top 5 Tercepat
+            col_fast, col_slow = st.columns(2)
             with col_fast:
                 fig, ax = plt.subplots(figsize=(6,4))
-                bars = ax.barh(top_fastest["NAMA VENDOR"], top_fastest["TOTAL WAKTU"]/86400, color="#00eaff")
-                ax.set_title("🚀 Top 5 Vendor Tercepat", fontsize=12, fontweight="bold")
-                ax.set_xlabel("Rata-rata SLA (hari)")
-                ax.grid(axis="x", linestyle="--", alpha=0.5)
-                for bar in bars:
-                    ax.text(bar.get_width()+0.1, bar.get_y()+bar.get_height()/2,
-                            f"{bar.get_width():.2f} d", va="center", fontsize=9, fontweight="bold")
+                ax.barh(top_fastest["NAMA VENDOR"], top_fastest["TOTAL WAKTU"]/86400, color="#00eaff")
+                ax.set_title("🚀 Top 5 Tercepat"); ax.set_xlabel("SLA (hari)"); ax.grid(axis="x", alpha=0.5)
                 st.pyplot(fig)
-
-            # --- Grafik Top 5 Terlambat
             with col_slow:
                 fig2, ax2 = plt.subplots(figsize=(6,4))
-                bars2 = ax2.barh(top_slowest["NAMA VENDOR"], top_slowest["TOTAL WAKTU"]/86400, color="#ff4f70")
-                ax2.set_title("🐢 Top 5 Vendor Terlambat", fontsize=12, fontweight="bold")
-                ax2.set_xlabel("Rata-rata SLA (hari)")
-                ax2.grid(axis="x", linestyle="--", alpha=0.5)
-                for bar in bars2:
-                    ax2.text(bar.get_width()+0.1, bar.get_y()+bar.get_height()/2,
-                             f"{bar.get_width():.2f} d", va="center", fontsize=9, fontweight="bold")
+                ax2.barh(top_slowest["NAMA VENDOR"], top_slowest["TOTAL WAKTU"]/86400, color="#ff4f70")
+                ax2.set_title("🐢 Top 5 Terlambat"); ax2.set_xlabel("SLA (hari)"); ax2.grid(axis="x", alpha=0.5)
                 st.pyplot(fig2)
 
             # ==============================
@@ -843,86 +893,40 @@ with tab_vendor:
             # ==============================
             if len(selected_vendors) == 1:
                 vendor_name = selected_vendors[0]
-                st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
-                st.subheader(f"🔍 Detail SLA per Jenis Transaksi — {vendor_name}")
-
+                st.subheader(f"🔍 Detail SLA — {vendor_name}")
                 if "JENIS TRANSAKSI" in df_vendor_filtered.columns:
                     df_vendor_detail = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"] == vendor_name]
-
-                    # Hitung rata-rata SLA per jenis transaksi
                     transaksi_group = df_vendor_detail.groupby("JENIS TRANSAKSI")[available_sla_cols].mean().reset_index()
-
-                    # Konversi ke hari (2 desimal)
                     for col in available_sla_cols:
                         transaksi_group[col] = transaksi_group[col].apply(lambda x: round(x/86400, 2) if pd.notna(x) else None)
-
-                    # Tabel detail
                     st.dataframe(transaksi_group, use_container_width=True)
-
-                    # Bar chart modern
-                    import numpy as np
-                    from matplotlib import cm
-                    chart_col = "TOTAL WAKTU" if "TOTAL WAKTU" in transaksi_group.columns else available_sla_cols[0]
-                    y_labels = transaksi_group["JENIS TRANSAKSI"]
-                    values = transaksi_group[chart_col].fillna(0)
-
-                    cmap = cm.get_cmap("winter")
-                    colors = cmap(np.linspace(0.2, 0.8, len(values)))
-
+                    # Bar chart
                     fig, ax = plt.subplots(figsize=(8,5))
-                    bars = ax.barh(y_labels, values, color=colors)
-
-                    ax.set_title(f"📊 Rata-rata SLA ({chart_col}) per Jenis Transaksi", fontsize=12, fontweight="bold")
-                    ax.set_xlabel("Rata-rata SLA (hari)")
-                    ax.grid(axis="x", linestyle="--", alpha=0.5)
-
-                    for bar in bars:
-                        ax.text(bar.get_width()+0.1, bar.get_y()+bar.get_height()/2,
-                                f"{bar.get_width():.2f} d", va="center", fontsize=9, fontweight="bold", color="#333")
-
+                    transaksi_group.plot(kind="barh", x="JENIS TRANSAKSI", y="TOTAL WAKTU", ax=ax, legend=False)
+                    ax.set_xlabel("SLA (hari)")
                     st.pyplot(fig)
-
-                    # Pie Chart kontribusi jumlah transaksi
+                    # Pie chart
                     jumlah_per_transaksi = df_vendor_detail.groupby("JENIS TRANSAKSI").size().reset_index(name="Jumlah")
                     fig_pie, ax_pie = plt.subplots(figsize=(5,5))
-                    wedges, texts, autotexts = ax_pie.pie(
-                        jumlah_per_transaksi["Jumlah"],
-                        labels=jumlah_per_transaksi["JENIS TRANSAKSI"],
-                        autopct="%1.1f%%",
-                        startangle=140,
-                        colors=cm.Set3(np.linspace(0,1,len(jumlah_per_transaksi)))
-                    )
-                    ax_pie.set_title("🍩 Distribusi Jumlah Transaksi per Jenis", fontsize=12, fontweight="bold")
+                    ax_pie.pie(jumlah_per_transaksi["Jumlah"], labels=jumlah_per_transaksi["JENIS TRANSAKSI"], autopct="%1.1f%%")
+                    ax_pie.set_title("Distribusi Transaksi")
                     st.pyplot(fig_pie)
-
-                else:
-                    st.info("Kolom 'JENIS TRANSAKSI' tidak ditemukan pada data.")
-
             elif len(selected_vendors) > 1:
-                st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
-                st.subheader(f"📊 Distribusi Transaksi — {len(selected_vendors)} Vendor Terpilih")
-
+                st.subheader(f"📊 Distribusi Transaksi — {len(selected_vendors)} Vendor")
                 if "JENIS TRANSAKSI" in df_vendor_filtered.columns:
                     jumlah_multi = df_vendor_filtered.groupby(["NAMA VENDOR","JENIS TRANSAKSI"]).size().reset_index(name="Jumlah")
-
                     if len(selected_vendors) > 50:
-                        st.info("Terlalu banyak vendor dipilih (>50), ditampilkan dalam bentuk tabel agar lebih mudah dibaca.")
+                        st.info("Terlalu banyak vendor (>50), ditampilkan tabel pivot.")
                         pivot_jumlah = jumlah_multi.pivot(index="NAMA VENDOR", columns="JENIS TRANSAKSI", values="Jumlah").fillna(0)
                         st.dataframe(pivot_jumlah, use_container_width=True)
                     else:
-                        # Pivot untuk stacked bar
                         pivot_jumlah = jumlah_multi.pivot(index="NAMA VENDOR", columns="JENIS TRANSAKSI", values="Jumlah").fillna(0)
-
                         fig, ax = plt.subplots(figsize=(12,6))
                         pivot_jumlah.plot(kind="bar", stacked=True, ax=ax, colormap="tab20c")
-                        ax.set_ylabel("Jumlah Transaksi")
-                        ax.set_xlabel("Vendor")
-                        ax.set_title("📊 Distribusi Jumlah Transaksi per Jenis Transaksi")
-                        ax.legend(title="Jenis Transaksi", bbox_to_anchor=(1.05,1), loc="upper left")
+                        ax.set_ylabel("Jumlah Transaksi"); ax.set_xlabel("Vendor")
+                        ax.set_title("Distribusi Jumlah Transaksi per Jenis")
+                        ax.legend(title="Jenis Transaksi", bbox_to_anchor=(1.05,1))
                         st.pyplot(fig)
-                else:
-                    st.info("Kolom 'JENIS TRANSAKSI' tidak ditemukan pada data.")
-
         else:
             st.info("Tidak ada data untuk vendor yang dipilih.")
     else:
