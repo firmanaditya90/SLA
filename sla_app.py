@@ -852,11 +852,11 @@ with tab_vendor:
             rata_vendor["SLA (format)"] = rata_vendor["SLA_USED"].apply(fmt_duration)
 
             # ==============================
-            # 6) LEADERBOARD Scrollable
+            # 6) LEADERBOARD Aman (scrollable via components.html)
             # ==============================
             st.subheader("⚡ Leaderboard SLA Vendor")
-
             lb = rata_vendor.dropna(subset=["SLA_USED"]).copy()
+
             if not lb.empty:
                 lb_sorted = lb.sort_values("SLA_USED", ascending=True).reset_index(drop=True)
                 min_sla = float(lb_sorted["SLA_USED"].min())
@@ -893,7 +893,7 @@ with tab_vendor:
                     {rows}
                 </div>
                 """
-                st.markdown(leaderboard_html, unsafe_allow_html=True)
+                components.html(leaderboard_html, height=600)
 
             # ==============================
             # 7) GRAFIK & DRILLDOWN
