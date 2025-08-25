@@ -769,7 +769,7 @@ with tab_vendor:
             df_vendor_filtered["SLA_USED"] = df_vendor_filtered.apply(pick_sla, axis=1)
             df_vendor_filtered["SLA_USED"] = pd.to_numeric(df_vendor_filtered["SLA_USED"], errors="coerce")
 
-        # Tambahkan kolom tampilan format durasi (tanpa mengubah SLA_USED numerik)
+        # Tambahkan kolom tampilan format durasi
         df_vendor_filtered["SLA_USED_FMT"] = df_vendor_filtered["SLA_USED"].apply(fmt_duration)
 
         # ==============================
@@ -874,12 +874,10 @@ with tab_vendor:
                 .mean()
                 .reset_index()
             )
-            # Pastikan numerik untuk jaga-jaga
             rata_vendor["SLA_USED"] = pd.to_numeric(rata_vendor["SLA_USED"], errors="coerce")
             rata_vendor["SLA (hari)"] = rata_vendor["SLA_USED"] / 86400.0
             rata_vendor["SLA (format)"] = rata_vendor["SLA_USED"].apply(fmt_duration)
 
-            # Tambah jumlah transaksi
             jumlah_transaksi = (
                 df_vendor_filtered
                 .groupby("NAMA VENDOR", dropna=True)
@@ -892,38 +890,54 @@ with tab_vendor:
                          use_container_width=True)
 
             # ==============================
-            # 6) LEADERBOARD (fix error & robust)
+            # 6) LEADERBOARD MODERN
             # ==============================
             st.markdown("<hr/>", unsafe_allow_html=True)
             st.subheader("⚡ Leaderboard SLA Vendor (lebih cepat lebih baik)")
 
-            # Drop NaN untuk ranking
             lb = rata_vendor.dropna(subset=["SLA_USED"]).copy()
             if lb.empty:
                 st.info("Leaderboard tidak dapat ditampilkan karena tidak ada nilai SLA numerik.")
             else:
                 lb_sorted = lb.sort_values("SLA_USED", ascending=True).reset_index(drop=True)
+                min_sla = lb_sorted["SLA_USED"].min()
+                max_sla = lb_sorted["SLA_USED"].max()
 
-                leaderboard_html = "<div style='display:flex;flex-direction:column;gap:10px;'>"
-                n = len(lb_sorted)
+                leaderboard_html = "<div style='display:flex;flex-direction:column;gap:12px;'>"
+
                 for i, row in lb_sorted.iterrows():
                     nama = row["NAMA VENDOR"]
-                    sla_hari = float(row["SLA (hari)"])
+                    sla_hari = float(row["SLA_USED"]) / 86400.0
+
                     badge = ""
                     if i == 0: badge = "🥇"
                     elif i == 1: badge = "🥈"
                     elif i == 2: badge = "🥉"
-                    elif i == n - 1: badge = "🚨"
+                    elif i == len(lb_sorted)-1: badge = "🚨"
+
+                    ratio = (row["SLA_USED"] - min_sla) / (max_sla - min_sla + 1e-9)
+                    red = int(255 * ratio)
+                    green = int(255 * (1 - ratio))
+                    color = f"rgba({red},{green},120,0.8)"
+
+                    progress_pct = int((row["SLA_USED"] / (max_sla+1e-9)) * 100)
 
                     leaderboard_html += f"""
-                    <div style='display:flex;justify-content:space-between;
-                                padding:8px 12px;border-radius:10px;
-                                background:linear-gradient(90deg,#1e1e1e,#2a2a2a);
-                                color:white;box-shadow:0 2px 6px rgba(0,0,0,0.3);'>
-                        <span>{badge} {nama}</span>
-                        <span>{sla_hari:.2f} hari</span>
+                    <div style='padding:10px 14px;border-radius:12px;
+                                background:{color};
+                                box-shadow:0 2px 8px rgba(0,0,0,0.25);
+                                transition:all 0.2s ease;'>
+                        <div style='display:flex;justify-content:space-between;font-weight:600;color:white;'>
+                            <span>{badge} {nama}</span>
+                            <span>{sla_hari:.2f} hari</span>
+                        </div>
+                        <div style="width:100%;background:#333;border-radius:6px;margin-top:6px;">
+                            <div style="width:{progress_pct}%;background:#00eaff;
+                                        height:8px;border-radius:6px;"></div>
+                        </div>
                     </div>
                     """
+
                 leaderboard_html += "</div>"
                 st.markdown(leaderboard_html, unsafe_allow_html=True)
 
@@ -941,8 +955,6 @@ with tab_vendor:
                     title="Rata-rata SLA per Vendor"
                 )
                 st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("Grafik tidak tersedia karena tidak ada data SLA.")
 
             clicked_vendor = st.selectbox("🔍 Pilih vendor untuk drill-down detail:",
                                           rata_vendor["NAMA VENDOR"].tolist() if not rata_vendor.empty else [])
@@ -978,7 +990,7 @@ with tab_vendor:
                     st.plotly_chart(fig_pie, use_container_width=True)
 
             # ==============================
-            # 8) DISTRIBUSI MULTI VENDOR (tabel pivot)
+            # 8) DISTRIBUSI MULTI VENDOR
             # ==============================
             if len(selected_vendors) > 1 and "JENIS TRANSAKSI" in df_vendor_filtered.columns:
                 st.markdown("<hr/>", unsafe_allow_html=True)
