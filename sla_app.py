@@ -707,6 +707,7 @@ with tab_transaksi:
    
 with tab_vendor:
     import pandas as pd
+    import streamlit.components.v1 as components
 
     # ==============================
     # Helper: format detik -> "x hari x jam x menit x detik"
@@ -811,48 +812,44 @@ with tab_vendor:
             unsafe_allow_html=True
         )
 
-        import streamlit.components.v1 as components
         rata_sla_global_hari = float(df_vendor_filtered["SLA_USED"].mean() / 86400) if df_vendor_filtered["SLA_USED"].notna().any() else 0.0
-        card_template = f"""
-        <style>
-        .card-container{{display:flex;gap:20px;justify-content:center;margin-top:20px;}}
-        .card{{flex:1;padding:20px;border-radius:16px;text-align:center;color:white;
-        box-shadow:0 4px 12px rgba(0,0,0,0.2);transition:transform 0.3s ease,box-shadow 0.3s ease;}}
-        .card:hover{{transform:scale(1.05);box-shadow:0 8px 20px rgba(0,0,0,0.3);}}
-        .card-icon{{font-size:40px;}}.card-title{{font-size:18px;font-weight:600;}}.card-value{{font-size:28px;font-weight:800;}}
-        </style>
-        <div class="card-container">
-          <div class="card" style="background:linear-gradient(135deg,#00eaff,#007bff); { 'color:black;' if dark_mode else '' }">
-            <div class="card-icon">🏢</div><div class="card-title">Total Vendor</div><div id="vendorCount" class="card-value">0</div>
-          </div>
-          <div class="card" style="background:linear-gradient(135deg,#ff9a9e,#ff4f70); { 'color:black;' if dark_mode else '' }">
-            <div class="card-icon">📄</div><div class="card-title">Total Transaksi</div><div id="trxCount" class="card-value">0</div>
-          </div>
-          <div class="card" style="background:linear-gradient(135deg,#42e695,#3bb2b8); { 'color:black;' if dark_mode else '' }">
-            <div class="card-icon">⏱️</div><div class="card-title">Rata-rata SLA (Hari)</div><div id="slaCount" class="card-value">0.00</div>
-          </div>
-        </div>
-        <script>
-        function animateValue(id,start,end,duration){{
-            var range=end-start;
-            var current=start;
-            var increment=range/100;
-            var stepTime=Math.abs(Math.floor(duration/100));
-            var obj=document.getElementById(id);
-            var timer=setInterval(function(){{
-                current+=increment;
-                if ((increment>0 && current>=end) || (increment<0 && current<=end)){{
-                    current=end;
-                    clearInterval(timer);
-                }}
-                obj.innerHTML=current.toFixed(2);
-            }},stepTime);
-        }}
-        animateValue("vendorCount",0,{total_vendor},1000);
-        animateValue("trxCount",0,{total_transaksi},1200);
-        animateValue("slaCount",0,{round(rata_sla_global_hari,2)},1500);
-        </script>
-        """
+        card_template = (
+            "<style>"
+            ".card-container{display:flex;gap:20px;justify-content:center;margin-top:20px;}"
+            ".card{flex:1;padding:20px;border-radius:16px;text-align:center;color:white;"
+            "box-shadow:0 4px 12px rgba(0,0,0,0.2);transition:transform 0.3s ease,box-shadow 0.3s ease;}"
+            ".card:hover{transform:scale(1.05);box-shadow:0 8px 20px rgba(0,0,0,0.3);}"
+            ".card-icon{font-size:40px;}.card-title{font-size:18px;font-weight:600;}.card-value{font-size:28px;font-weight:800;}"
+            "</style>"
+            "<div class='card-container'>"
+              f"<div class='card' style='background:linear-gradient(135deg,#00eaff,#007bff); {'color:black;' if dark_mode else ''}'>"
+                "<div class='card-icon'>🏢</div><div class='card-title'>Total Vendor</div><div id='vendorCount' class='card-value'>0</div>"
+              "</div>"
+              f"<div class='card' style='background:linear-gradient(135deg,#ff9a9e,#ff4f70); {'color:black;' if dark_mode else ''}'>"
+                "<div class='card-icon'>📄</div><div class='card-title'>Total Transaksi</div><div id='trxCount' class='card-value'>0</div>"
+              "</div>"
+              f"<div class='card' style='background:linear-gradient(135deg,#42e695,#3bb2b8); {'color:black;' if dark_mode else ''}'>"
+                "<div class='card-icon'>⏱️</div><div class='card-title'>Rata-rata SLA (Hari)</div><div id='slaCount' class='card-value'>0.00</div>"
+              "</div>"
+            "</div>"
+            "<script>"
+            "function animateValue(id,start,end,duration){"
+                "var range=end-start;"
+                "var current=start;"
+                "var increment=range/100;"
+                "var stepTime=Math.abs(Math.floor(duration/100));"
+                "var obj=document.getElementById(id);"
+                "var timer=setInterval(function(){"
+                    "current+=increment;"
+                    "if ((increment>0 && current>=end) || (increment<0 && current<=end)){"
+                        "current=end; clearInterval(timer);}"
+                    "obj.innerHTML=current.toFixed(2);"
+                "},stepTime);}"
+            f"animateValue('vendorCount',0,{total_vendor},1000);"
+            f"animateValue('trxCount',0,{total_transaksi},1200);"
+            f"animateValue('slaCount',0,{round(rata_sla_global_hari,2)},1500);"
+            "</script>"
+        )
         components.html(card_template, height=250)
 
         # ==============================
@@ -890,7 +887,7 @@ with tab_vendor:
                          use_container_width=True)
 
             # ==============================
-            # 6) LEADERBOARD MODERN
+            # 6) LEADERBOARD MODERN (via components.html agar selalu render)
             # ==============================
             st.markdown("<hr/>", unsafe_allow_html=True)
             st.subheader("⚡ Leaderboard SLA Vendor (lebih cepat lebih baik)")
@@ -900,46 +897,54 @@ with tab_vendor:
                 st.info("Leaderboard tidak dapat ditampilkan karena tidak ada nilai SLA numerik.")
             else:
                 lb_sorted = lb.sort_values("SLA_USED", ascending=True).reset_index(drop=True)
-                min_sla = lb_sorted["SLA_USED"].min()
-                max_sla = lb_sorted["SLA_USED"].max()
+                min_sla = float(lb_sorted["SLA_USED"].min())
+                max_sla = float(lb_sorted["SLA_USED"].max())
 
-                leaderboard_html = "<div style='display:flex;flex-direction:column;gap:12px;'>"
+                parts = []
+                parts.append("<div style='display:flex;flex-direction:column;gap:12px;'>")
 
                 for i, row in lb_sorted.iterrows():
-                    nama = row["NAMA VENDOR"]
-                    sla_hari = float(row["SLA_USED"]) / 86400.0
+                    nama = str(row["NAMA VENDOR"])
+                    sla_used = float(row["SLA_USED"])
+                    sla_hari = sla_used / 86400.0
 
+                    # Badge
                     badge = ""
                     if i == 0: badge = "🥇"
                     elif i == 1: badge = "🥈"
                     elif i == 2: badge = "🥉"
                     elif i == len(lb_sorted)-1: badge = "🚨"
 
-                    ratio = (row["SLA_USED"] - min_sla) / (max_sla - min_sla + 1e-9)
+                    # Warna gradien (hijau -> merah)
+                    ratio = (sla_used - min_sla) / (max_sla - min_sla + 1e-9)
                     red = int(255 * ratio)
                     green = int(255 * (1 - ratio))
-                    color = f"rgba({red},{green},120,0.8)"
+                    color = f"rgba({red},{green},120,0.85)"
 
-                    progress_pct = int((row["SLA_USED"] / (max_sla+1e-9)) * 100)
+                    # Progress bar
+                    progress_pct = int((sla_used / (max_sla + 1e-9)) * 100)
 
-                    leaderboard_html += f"""
-                    <div style='padding:10px 14px;border-radius:12px;
-                                background:{color};
-                                box-shadow:0 2px 8px rgba(0,0,0,0.25);
-                                transition:all 0.2s ease;'>
-                        <div style='display:flex;justify-content:space-between;font-weight:600;color:white;'>
-                            <span>{badge} {nama}</span>
-                            <span>{sla_hari:.2f} hari</span>
-                        </div>
-                        <div style="width:100%;background:#333;border-radius:6px;margin-top:6px;">
-                            <div style="width:{progress_pct}%;background:#00eaff;
-                                        height:8px;border-radius:6px;"></div>
-                        </div>
-                    </div>
-                    """
+                    item = (
+                        "<div style='padding:10px 14px;border-radius:12px;"
+                        f"background:{color};"
+                        "box-shadow:0 2px 8px rgba(0,0,0,0.25);transition:all 0.2s ease;'>"
+                          "<div style='display:flex;justify-content:space-between;font-weight:600;color:white;'>"
+                            f"<span>{badge} {nama}</span>"
+                            f"<span>{sla_hari:.2f} hari</span>"
+                          "</div>"
+                          "<div style='width:100%;background:#333;border-radius:6px;margin-top:6px;'>"
+                            f"<div style='width:{progress_pct}%;background:#00eaff;height:8px;border-radius:6px;'></div>"
+                          "</div>"
+                        "</div>"
+                    )
+                    parts.append(item)
 
-                leaderboard_html += "</div>"
-                st.markdown(leaderboard_html, unsafe_allow_html=True)
+                parts.append("</div>")
+                leaderboard_html = "".join(parts)
+
+                # Tinggi dinamis agar tidak kepotong
+                height = max(140, min(1200, 80 * len(lb_sorted) + 100))
+                components.html(leaderboard_html, height=height)
 
             # ==============================
             # 7) GRAFIK & DRILLDOWN
@@ -1008,6 +1013,7 @@ with tab_vendor:
             st.info("Tidak ada data untuk vendor yang dipilih.")
     else:
         st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
+
 
            
 with tab_tren:
