@@ -708,6 +708,7 @@ with tab_transaksi:
 with tab_vendor:
     import pandas as pd
     import streamlit.components.v1 as components
+    import plotly.express as px
 
     # ==============================
     # Helper: format detik -> "x hari x jam x menit x detik"
@@ -792,8 +793,8 @@ with tab_vendor:
         # ==============================
         total_vendor = df_vendor_filtered["NAMA VENDOR"].nunique()
         total_transaksi = len(df_vendor_filtered)
-
         rata_sla_global_hari = float(df_vendor_filtered["SLA_USED"].mean() / 86400) if df_vendor_filtered["SLA_USED"].notna().any() else 0.0
+
         card_template = f"""
         <style>
         .card-container{{display:flex;gap:20px;justify-content:center;margin-top:20px;}}
@@ -876,8 +877,7 @@ with tab_vendor:
                     progress_pct = int((sla_used / (max_sla+1e-9)) * 100)
 
                     rows += f"""
-                    <div style='padding:10px 14px;border-radius:12px;background:{color};
-                                margin-bottom:8px;'>
+                    <div style='padding:10px 14px;border-radius:12px;background:{color};margin-bottom:8px;'>
                         <div style='display:flex;justify-content:space-between;font-weight:600;color:white;'>
                             <span>{badge} {nama}</span>
                             <span>{sla_hari:.2f} hari</span>
@@ -893,12 +893,70 @@ with tab_vendor:
                     {rows}
                 </div>
                 """
-                components.html(leaderboard_html, height=550, scrolling=True)
+                st.markdown(leaderboard_html, unsafe_allow_html=True)
+
+            # ==============================
+            # 7) GRAFIK & DRILLDOWN
+            # ==============================
+            st.subheader("📊 Interaktif SLA per Vendor")
+            if not rata_vendor.empty and rata_vendor["SLA (hari)"].notna().any():
+                fig = px.bar(
+                    rata_vendor, x="NAMA VENDOR", y="SLA (hari)",
+                    color="SLA (hari)", color_continuous_scale="Blues",
+                    title="Rata-rata SLA per Vendor"
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            clicked_vendor = st.selectbox("🔍 Pilih vendor untuk drill-down detail:",
+                                          rata_vendor["NAMA VENDOR"].tolist() if not rata_vendor.empty else [])
+            if clicked_vendor:
+                df_vendor_detail = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"] == clicked_vendor]
+                if "JENIS TRANSAKSI" in df_vendor_detail.columns and not df_vendor_detail.empty:
+                    st.markdown(f"### 📊 Detail SLA — {clicked_vendor}")
+
+                    transaksi_group = (
+                        df_vendor_detail
+                        .groupby("JENIS TRANSAKSI")["SLA_USED"]
+                        .mean()
+                        .reset_index()
+                    )
+                    transaksi_group["SLA (hari)"] = transaksi_group["SLA_USED"] / 86400.0
+                    transaksi_group["SLA (format)"] = transaksi_group["SLA_USED"].apply(fmt_duration)
+                    st.dataframe(transaksi_group, use_container_width=True)
+
+                    fig2 = px.bar(transaksi_group, x="SLA (hari)", y="JENIS TRANSAKSI",
+                                  orientation="h", color="SLA (hari)", color_continuous_scale="Viridis")
+                    st.plotly_chart(fig2, use_container_width=True)
+
+                    jumlah_per_transaksi = (
+                        df_vendor_detail
+                        .groupby("JENIS TRANSAKSI")
+                        .size()
+                        .reset_index(name="Jumlah")
+                    )
+                    fig_pie = px.pie(jumlah_per_transaksi, values="Jumlah", names="JENIS TRANSAKSI")
+                    st.plotly_chart(fig_pie, use_container_width=True)
+
+            # ==============================
+            # 8) DISTRIBUSI MULTI VENDOR
+            # ==============================
+            if len(selected_vendors) > 1 and "JENIS TRANSAKSI" in df_vendor_filtered.columns:
+                st.subheader(f"📊 Distribusi Transaksi — {len(selected_vendors)} Vendor")
+                jumlah_multi = (
+                    df_vendor_filtered
+                    .groupby(["NAMA VENDOR","JENIS TRANSAKSI"])
+                    .size()
+                    .reset_index(name="Jumlah")
+                )
+                pivot_jumlah = jumlah_multi.pivot(index="NAMA VENDOR", columns="JENIS TRANSAKSI", values="Jumlah").fillna(0)
+                st.dataframe(pivot_jumlah, use_container_width=True)
 
         else:
             st.info("Tidak ada data untuk vendor yang dipilih.")
+    else:
+        st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
 
-           
+               
 with tab_tren:
     if available_sla_cols:
         st.subheader("📈 Trend Rata-rata SLA per Periode")
