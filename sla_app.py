@@ -704,11 +704,10 @@ with tab_transaksi:
         st.dataframe(transaksi_display, use_container_width=True)
     else:
         st.info("Kolom 'JENIS TRANSAKSI' tidak ditemukan atau tidak ada kolom SLA yang tersedia.")
-   
+
 with tab_vendor:
     import pandas as pd
     import streamlit.components.v1 as components
-    import plotly.express as px
 
     # ==============================
     # Helper: format detik -> "x hari x jam x menit x detik"
@@ -756,7 +755,7 @@ with tab_vendor:
             df_vendor_filtered = df_filtered[~(mask_cabang | mask_pusat)].copy()
             df_vendor_filtered["SLA_USED"] = pd.to_numeric(df_vendor_filtered["VENDOR"], errors="coerce")
 
-        else:  # "ALL"
+        else:  # "ALL" campuran per-baris
             df_vendor_filtered = df_filtered.copy()
 
             def pick_sla(row):
@@ -771,10 +770,11 @@ with tab_vendor:
             df_vendor_filtered["SLA_USED"] = df_vendor_filtered.apply(pick_sla, axis=1)
             df_vendor_filtered["SLA_USED"] = pd.to_numeric(df_vendor_filtered["SLA_USED"], errors="coerce")
 
+        # Tambahkan kolom tampilan format durasi
         df_vendor_filtered["SLA_USED_FMT"] = df_vendor_filtered["SLA_USED"].apply(fmt_duration)
 
         # ==============================
-        # 2) FILTER VENDOR
+        # 2) FILTER VENDOR PILIHAN
         # ==============================
         vendor_list = sorted(df_vendor_filtered["NAMA VENDOR"].dropna().astype(str).unique())
         vendor_list_with_all = ["ALL"] + vendor_list
@@ -789,58 +789,82 @@ with tab_vendor:
         df_vendor_filtered = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"].isin(selected_vendors)]
 
         # ==============================
-        # 3) Kartu Digital Ringkasan
+        # 3) RINGKASAN + KARTU DIGITAL
         # ==============================
         total_vendor = df_vendor_filtered["NAMA VENDOR"].nunique()
         total_transaksi = len(df_vendor_filtered)
-        rata_sla_global_hari = float(df_vendor_filtered["SLA_USED"].mean() / 86400) if df_vendor_filtered["SLA_USED"].notna().any() else 0.0
 
-        card_template = f"""
-        <style>
-        .card-container{{display:flex;gap:20px;justify-content:center;margin-top:20px;}}
-        .card{{flex:1;padding:20px;border-radius:16px;text-align:center;color:white;
-        box-shadow:0 4px 12px rgba(0,0,0,0.2);transition:transform 0.3s ease;}}
-        .card:hover{{transform:scale(1.05);box-shadow:0 8px 20px rgba(0,0,0,0.3);}}
-        .card-icon{{font-size:40px;}}.card-title{{font-size:18px;font-weight:600;}}.card-value{{font-size:28px;font-weight:800;}}
-        </style>
-        <div class="card-container">
-          <div class="card" style="background:linear-gradient(135deg,#00eaff,#007bff);">
-            <div class="card-icon">🏢</div><div class="card-title">Total Vendor</div><div id="vendorCount" class="card-value">0</div>
-          </div>
-          <div class="card" style="background:linear-gradient(135deg,#ff9a9e,#ff4f70);">
-            <div class="card-icon">📄</div><div class="card-title">Total Transaksi</div><div id="trxCount" class="card-value">0</div>
-          </div>
-          <div class="card" style="background:linear-gradient(135deg,#42e695,#3bb2b8);">
-            <div class="card-icon">⏱️</div><div class="card-title">Rata-rata SLA (Hari)</div><div id="slaCount" class="card-value">0.00</div>
-          </div>
-        </div>
-        <script>
-        function animateValue(id,start,end,duration){{
-            var range=end-start; var current=start;
-            var increment=range/100; var stepTime=Math.abs(Math.floor(duration/100));
-            var obj=document.getElementById(id);
-            var timer=setInterval(function(){{
-                current+=increment;
-                if ((increment>0 && current>=end)||(increment<0&&current<=end)){{current=end;clearInterval(timer);}}
-                obj.innerHTML=current.toFixed(2);
-            }},stepTime);}}
-        animateValue("vendorCount",0,{total_vendor},1000);
-        animateValue("trxCount",0,{total_transaksi},1200);
-        animateValue("slaCount",0,{round(rata_sla_global_hari,2)},1500);
-        </script>
-        """
+        dark_mode = st.toggle("🌙 Dark Mode", value=False)
+        if dark_mode:
+            st.markdown("""
+            <style>
+            body { background-color: #121212 !important; color: #e0e0e0 !important; }
+            .stDataFrame, .dataframe { background: #1e1e1e !important; color: #e0e0e0 !important; }
+            table { color: #e0e0e0 !important; }
+            </style>
+            """, unsafe_allow_html=True)
+
+        st.markdown("""
+        <style>.glow{font-weight:800;font-size:18px;color:#00eaff;text-shadow:0 0 8px #00eaff,0 0 16px #00eaff;}</style>
+        """, unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='glow'>📊 Data terfilter: <b>{total_vendor}</b> vendor | <b>{total_transaksi}</b> transaksi</div>",
+            unsafe_allow_html=True
+        )
+
+        rata_sla_global_hari = float(df_vendor_filtered["SLA_USED"].mean() / 86400) if df_vendor_filtered["SLA_USED"].notna().any() else 0.0
+        card_template = (
+            "<style>"
+            ".card-container{display:flex;gap:20px;justify-content:center;margin-top:20px;}"
+            ".card{flex:1;padding:20px;border-radius:16px;text-align:center;color:white;"
+            "box-shadow:0 4px 12px rgba(0,0,0,0.2);transition:transform 0.3s ease,box-shadow 0.3s ease;}"
+            ".card:hover{transform:scale(1.05);box-shadow:0 8px 20px rgba(0,0,0,0.3);}"
+            ".card-icon{font-size:40px;}.card-title{font-size:18px;font-weight:600;}.card-value{font-size:28px;font-weight:800;}"
+            "</style>"
+            "<div class='card-container'>"
+              f"<div class='card' style='background:linear-gradient(135deg,#00eaff,#007bff); {'color:black;' if dark_mode else ''}'>"
+                "<div class='card-icon'>🏢</div><div class='card-title'>Total Vendor</div><div id='vendorCount' class='card-value'>0</div>"
+              "</div>"
+              f"<div class='card' style='background:linear-gradient(135deg,#ff9a9e,#ff4f70); {'color:black;' if dark_mode else ''}'>"
+                "<div class='card-icon'>📄</div><div class='card-title'>Total Transaksi</div><div id='trxCount' class='card-value'>0</div>"
+              "</div>"
+              f"<div class='card' style='background:linear-gradient(135deg,#42e695,#3bb2b8); {'color:black;' if dark_mode else ''}'>"
+                "<div class='card-icon'>⏱️</div><div class='card-title'>Rata-rata SLA (Hari)</div><div id='slaCount' class='card-value'>0.00</div>"
+              "</div>"
+            "</div>"
+            "<script>"
+            "function animateValue(id,start,end,duration){"
+                "var range=end-start;"
+                "var current=start;"
+                "var increment=range/100;"
+                "var stepTime=Math.abs(Math.floor(duration/100));"
+                "var obj=document.getElementById(id);"
+                "var timer=setInterval(function(){"
+                    "current+=increment;"
+                    "if ((increment>0 && current>=end) || (increment<0 && current<=end)){"
+                        "current=end; clearInterval(timer);}"
+                    "obj.innerHTML=current.toFixed(2);"
+                "},stepTime);}"
+            f"animateValue('vendorCount',0,{total_vendor},1000);"
+            f"animateValue('trxCount',0,{total_transaksi},1200);"
+            f"animateValue('slaCount',0,{round(rata_sla_global_hari,2)},1500);"
+            "</script>"
+        )
         components.html(card_template, height=250)
 
         # ==============================
-        # 4) Tabel Data Detail
+        # 4) TABEL DETAIL BARIS (dengan SLA_USED_FMT)
         # ==============================
         if df_vendor_filtered.shape[0] > 0:
-            st.subheader("📋 Data Terfilter")
-            st.dataframe(df_vendor_filtered, use_container_width=True)
+            st.subheader("📋 Data Terfilter (SLA format manusia)")
+            cols_show = [c for c in ["PERIODE","NO PERMOHONAN","JENIS TRANSAKSI","NAMA VENDOR",
+                                     "FUNGSIONAL","VENDOR","SLA_USED","SLA_USED_FMT"] if c in df_vendor_filtered.columns]
+            st.dataframe(df_vendor_filtered[cols_show], use_container_width=True)
 
             # ==============================
-            # 5) Agregasi per Vendor
+            # 5) AGREGASI PER VENDOR
             # ==============================
+            st.subheader("📌 Rata-rata SLA per Vendor")
             rata_vendor = (
                 df_vendor_filtered
                 .groupby("NAMA VENDOR", dropna=True)["SLA_USED"]
@@ -851,54 +875,84 @@ with tab_vendor:
             rata_vendor["SLA (hari)"] = rata_vendor["SLA_USED"] / 86400.0
             rata_vendor["SLA (format)"] = rata_vendor["SLA_USED"].apply(fmt_duration)
 
-            # ==============================
-            # 6) LEADERBOARD Aman (scrollable via components.html)
-            # ==============================
-            st.subheader("⚡ Leaderboard SLA Vendor")
-            lb = rata_vendor.dropna(subset=["SLA_USED"]).copy()
+            jumlah_transaksi = (
+                df_vendor_filtered
+                .groupby("NAMA VENDOR", dropna=True)
+                .size()
+                .reset_index(name="Jumlah Transaksi")
+            )
+            rata_vendor = pd.merge(jumlah_transaksi, rata_vendor, on="NAMA VENDOR", how="left")
 
-            if not lb.empty:
+            st.dataframe(rata_vendor[["NAMA VENDOR","Jumlah Transaksi","SLA (hari)","SLA (format)"]],
+                         use_container_width=True)
+
+            # ==============================
+            # 6) LEADERBOARD MODERN (via components.html agar selalu render)
+            # ==============================
+            st.markdown("<hr/>", unsafe_allow_html=True)
+            st.subheader("⚡ Leaderboard SLA Vendor (lebih cepat lebih baik)")
+
+            lb = rata_vendor.dropna(subset=["SLA_USED"]).copy()
+            if lb.empty:
+                st.info("Leaderboard tidak dapat ditampilkan karena tidak ada nilai SLA numerik.")
+            else:
                 lb_sorted = lb.sort_values("SLA_USED", ascending=True).reset_index(drop=True)
                 min_sla = float(lb_sorted["SLA_USED"].min())
                 max_sla = float(lb_sorted["SLA_USED"].max())
 
-                rows = ""
+                parts = []
+                parts.append("<div style='display:flex;flex-direction:column;gap:12px;'>")
+
                 for i, row in lb_sorted.iterrows():
-                    nama = row["NAMA VENDOR"]
+                    nama = str(row["NAMA VENDOR"])
                     sla_used = float(row["SLA_USED"])
                     sla_hari = sla_used / 86400.0
 
-                    badge = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "🚨" if i == len(lb_sorted)-1 else ""
+                    # Badge
+                    badge = ""
+                    if i == 0: badge = "🥇"
+                    elif i == 1: badge = "🥈"
+                    elif i == 2: badge = "🥉"
+                    elif i == len(lb_sorted)-1: badge = "🚨"
 
+                    # Warna gradien (hijau -> merah)
                     ratio = (sla_used - min_sla) / (max_sla - min_sla + 1e-9)
                     red = int(255 * ratio)
                     green = int(255 * (1 - ratio))
                     color = f"rgba({red},{green},120,0.85)"
-                    progress_pct = int((sla_used / (max_sla+1e-9)) * 100)
 
-                    rows += f"""
-                    <div style='padding:10px 14px;border-radius:12px;background:{color};margin-bottom:8px;'>
-                        <div style='display:flex;justify-content:space-between;font-weight:600;color:white;'>
-                            <span>{badge} {nama}</span>
-                            <span>{sla_hari:.2f} hari</span>
-                        </div>
-                        <div style="width:100%;background:#333;border-radius:6px;margin-top:6px;">
-                            <div style="width:{progress_pct}%;background:#00eaff;height:8px;border-radius:6px;"></div>
-                        </div>
-                    </div>
-                    """
+                    # Progress bar
+                    progress_pct = int((sla_used / (max_sla + 1e-9)) * 100)
 
-                leaderboard_html = f"""
-                <div style="max-height:500px;overflow-y:auto;display:flex;flex-direction:column;">
-                    {rows}
-                </div>
-                """
-                components.html(leaderboard_html, height=600)
+                    item = (
+                        "<div style='padding:10px 14px;border-radius:12px;"
+                        f"background:{color};"
+                        "box-shadow:0 2px 8px rgba(0,0,0,0.25);transition:all 0.2s ease;'>"
+                          "<div style='display:flex;justify-content:space-between;font-weight:600;color:white;'>"
+                            f"<span>{badge} {nama}</span>"
+                            f"<span>{sla_hari:.2f} hari</span>"
+                          "</div>"
+                          "<div style='width:100%;background:#333;border-radius:6px;margin-top:6px;'>"
+                            f"<div style='width:{progress_pct}%;background:#00eaff;height:8px;border-radius:6px;'></div>"
+                          "</div>"
+                        "</div>"
+                    )
+                    parts.append(item)
+
+                parts.append("</div>")
+                leaderboard_html = "".join(parts)
+
+                # Tinggi dinamis agar tidak kepotong
+                height = max(140, min(1200, 80 * len(lb_sorted) + 100))
+                components.html(leaderboard_html, height=height)
 
             # ==============================
             # 7) GRAFIK & DRILLDOWN
             # ==============================
+            import plotly.express as px
+            st.markdown("<hr/>", unsafe_allow_html=True)
             st.subheader("📊 Interaktif SLA per Vendor")
+
             if not rata_vendor.empty and rata_vendor["SLA (hari)"].notna().any():
                 fig = px.bar(
                     rata_vendor, x="NAMA VENDOR", y="SLA (hari)",
@@ -922,10 +976,12 @@ with tab_vendor:
                     )
                     transaksi_group["SLA (hari)"] = transaksi_group["SLA_USED"] / 86400.0
                     transaksi_group["SLA (format)"] = transaksi_group["SLA_USED"].apply(fmt_duration)
-                    st.dataframe(transaksi_group, use_container_width=True)
+                    st.dataframe(transaksi_group[["JENIS TRANSAKSI","SLA (hari)","SLA (format)"]],
+                                 use_container_width=True)
 
                     fig2 = px.bar(transaksi_group, x="SLA (hari)", y="JENIS TRANSAKSI",
-                                  orientation="h", color="SLA (hari)", color_continuous_scale="Viridis")
+                                  orientation="h", color="SLA (hari)", color_continuous_scale="Viridis",
+                                  title="Rata-rata SLA per Jenis Transaksi")
                     st.plotly_chart(fig2, use_container_width=True)
 
                     jumlah_per_transaksi = (
@@ -934,13 +990,15 @@ with tab_vendor:
                         .size()
                         .reset_index(name="Jumlah")
                     )
-                    fig_pie = px.pie(jumlah_per_transaksi, values="Jumlah", names="JENIS TRANSAKSI")
+                    fig_pie = px.pie(jumlah_per_transaksi, values="Jumlah", names="JENIS TRANSAKSI",
+                                     title="Distribusi Jumlah Transaksi")
                     st.plotly_chart(fig_pie, use_container_width=True)
 
             # ==============================
             # 8) DISTRIBUSI MULTI VENDOR
             # ==============================
             if len(selected_vendors) > 1 and "JENIS TRANSAKSI" in df_vendor_filtered.columns:
+                st.markdown("<hr/>", unsafe_allow_html=True)
                 st.subheader(f"📊 Distribusi Transaksi — {len(selected_vendors)} Vendor")
                 jumlah_multi = (
                     df_vendor_filtered
@@ -956,7 +1014,7 @@ with tab_vendor:
     else:
         st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
 
-               
+   
 with tab_tren:
     if available_sla_cols:
         st.subheader("📈 Trend Rata-rata SLA per Periode")
