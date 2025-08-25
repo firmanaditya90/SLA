@@ -1762,7 +1762,7 @@ def generate_pdf_report_v6(df_ord, selected_periode, periode_col, available_sla_
 
 # ====================== STREAMLIT TAB: PDF v6 ======================
 with tab_pdf:
-    st.subheader("📑 Laporan SLA (PDF v6 — grafik kiri, tabel kanan, narasi tengah)")
+    st.subheader("📑 Laporan SLA")
 
     try:
         pdf_bytes = generate_pdf_report_v6(
@@ -1775,12 +1775,12 @@ with tab_pdf:
         )
 
         st.download_button(
-            "⬇️ Download Laporan PDF (v6)",
+            "⬇️ Download Laporan PDF",
             data=pdf_bytes,
-            file_name="LAPORAN_SLA_VERIFIKASI_v6.pdf",
+            file_name="LAPORAN_SLA_VERIFIKASI_DOKUMEN_PENAGIHAN.pdf",
             mime="application/pdf"
         )
-        st.success("PDF v6 siap diunduh ✅")
+        st.success("PDF siap diunduh ✅")
     except Exception as e:
         import traceback
         st.error(f"Gagal membuat PDF: {type(e).__name__}: {e}")
