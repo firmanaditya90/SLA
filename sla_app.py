@@ -793,7 +793,7 @@ with tab_vendor:
         # 4. KARTU DIGITAL
         # ==============================
         import streamlit.components.v1 as components
-        if "SLA_USED" in df_vendor_filtered.columns and df_vendor_filtered["SLA_USED"].notna().any():
+        if df_vendor_filtered["SLA_USED"].notna().any():
             rata_sla_global = round(df_vendor_filtered["SLA_USED"].mean() / 86400, 2)
         else:
             rata_sla_global = 0.0
@@ -916,7 +916,7 @@ with tab_vendor:
                     st.plotly_chart(fig_pie, use_container_width=True)
 
             # ==============================
-            # 8. DISTRIBUSI MULTI VENDOR (selalu tampil tabel pivot)
+            # 8. DISTRIBUSI MULTI VENDOR
             # ==============================
             if len(selected_vendors) > 1:
                 st.markdown("<hr/>", unsafe_allow_html=True)
@@ -930,7 +930,7 @@ with tab_vendor:
     else:
         st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
 
-    
+       
 with tab_tren:
     if available_sla_cols:
         st.subheader("📈 Trend Rata-rata SLA per Periode")
