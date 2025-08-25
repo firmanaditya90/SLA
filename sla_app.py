@@ -719,14 +719,14 @@ with tab_vendor:
             df_vendor_filtered = df_filtered[
                 df_filtered["NAMA VENDOR"].str.upper().str.contains("GM CABANG", na=False)
             ]
-            sla_column = "Fungsional"
+            df_vendor_filtered["SLA_USED"] = df_vendor_filtered["FUNGSIONAL"]
 
         elif kategori_filter == "ALL PUSAT":
             df_vendor_filtered = df_filtered[
                 df_filtered["NAMA VENDOR"].astype(str).str[:3].eq("110") &
                 df_filtered["NAMA VENDOR"].astype(str).str[11:12].eq("-")
             ]
-            sla_column = "Fungsional"
+            df_vendor_filtered["SLA_USED"] = df_vendor_filtered["FUNGSIONAL"]
 
         elif kategori_filter == "ALL VENDOR":
             df_vendor_filtered = df_filtered[
@@ -736,44 +736,22 @@ with tab_vendor:
                 ~(df_vendor_filtered["NAMA VENDOR"].astype(str).str[:3].eq("110") &
                   df_vendor_filtered["NAMA VENDOR"].astype(str).str[11:12].eq("-"))
             ]
-            sla_column = "Vendor"
+            df_vendor_filtered["SLA_USED"] = df_vendor_filtered["VENDOR"]
 
         else:  # ALL
             df_vendor_filtered = df_filtered.copy()
-            sla_column = None  # ditentukan per baris
-
-        # ==============================
-        # 2. SLA_USED Column
-        # ==============================
-        if kategori_filter == "ALL":
             def pick_sla(row):
                 nama = str(row["NAMA VENDOR"]).upper()
                 if "GM CABANG" in nama:
-                    return row.get("Fungsional", None)
-                elif str(row["NAMA VENDOR"]).startswith("110") and len(str(row["NAMA VENDOR"])) >= 12 and str(row["NAMA VENDOR"])[11] == "-":
-                    return row.get("Fungsional", None)
+                    return row["FUNGSIONAL"]
+                elif nama.startswith("110") and len(nama) >= 12 and nama[11] == "-":
+                    return row["FUNGSIONAL"]
                 else:
-                    return row.get("Vendor", None)
-            def pick_source(row):
-                nama = str(row["NAMA VENDOR"]).upper()
-                if "GM CABANG" in nama:
-                    return "Fungsional"
-                elif str(row["NAMA VENDOR"]).startswith("110") and len(str(row["NAMA VENDOR"])) >= 12 and str(row["NAMA VENDOR"])[11] == "-":
-                    return "Fungsional"
-                else:
-                    return "Vendor"
+                    return row["VENDOR"]
             df_vendor_filtered["SLA_USED"] = df_vendor_filtered.apply(pick_sla, axis=1)
-            df_vendor_filtered["Sumber SLA"] = df_vendor_filtered.apply(pick_source, axis=1)
-        else:
-            if sla_column in df_vendor_filtered.columns:
-                df_vendor_filtered["SLA_USED"] = df_vendor_filtered[sla_column]
-                df_vendor_filtered["Sumber SLA"] = sla_column
-            else:
-                df_vendor_filtered["SLA_USED"] = None
-                df_vendor_filtered["Sumber SLA"] = None
 
         # ==============================
-        # 3. FILTER VENDOR
+        # 2. FILTER VENDOR
         # ==============================
         vendor_list = sorted(df_vendor_filtered["NAMA VENDOR"].dropna().unique())
         vendor_list_with_all = ["ALL"] + vendor_list
@@ -788,7 +766,7 @@ with tab_vendor:
         df_vendor_filtered = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"].isin(selected_vendors)]
 
         # ==============================
-        # 4. RINGKASAN DATASET
+        # 3. RINGKASAN DATASET
         # ==============================
         total_vendor = df_vendor_filtered["NAMA VENDOR"].nunique()
         total_transaksi = len(df_vendor_filtered)
@@ -812,10 +790,10 @@ with tab_vendor:
         )
 
         # ==============================
-        # 5. KARTU DIGITAL
+        # 4. KARTU DIGITAL
         # ==============================
         import streamlit.components.v1 as components
-        if "SLA_USED" in df_vendor_filtered.columns:
+        if "SLA_USED" in df_vendor_filtered.columns and df_vendor_filtered["SLA_USED"].notna().any():
             rata_sla_global = round(df_vendor_filtered["SLA_USED"].mean() / 86400, 2)
         else:
             rata_sla_global = 0.0
@@ -863,7 +841,7 @@ with tab_vendor:
         components.html(card_template, height=250)
 
         # ==============================
-        # 6. SLA PER VENDOR
+        # 5. SLA PER VENDOR
         # ==============================
         if df_vendor_filtered.shape[0] > 0:
             st.subheader("📌 Rata-rata SLA per Vendor")
@@ -875,7 +853,7 @@ with tab_vendor:
             st.dataframe(rata_vendor, use_container_width=True)
 
             # ==============================
-            # 7. LEADERBOARD SLA + BADGES
+            # 6. LEADERBOARD SLA + BADGES
             # ==============================
             st.markdown("<hr/>", unsafe_allow_html=True)
             st.subheader("⚡ Leaderboard SLA Vendor")
@@ -905,7 +883,7 @@ with tab_vendor:
             st.markdown(leaderboard_html, unsafe_allow_html=True)
 
             # ==============================
-            # 8. DRILL-DOWN INTERAKTIF
+            # 7. DRILL-DOWN INTERAKTIF
             # ==============================
             import plotly.express as px
             st.markdown("<hr/>", unsafe_allow_html=True)
@@ -938,7 +916,7 @@ with tab_vendor:
                     st.plotly_chart(fig_pie, use_container_width=True)
 
             # ==============================
-            # 9. DISTRIBUSI MULTI VENDOR (selalu tampil tabel pivot)
+            # 8. DISTRIBUSI MULTI VENDOR (selalu tampil tabel pivot)
             # ==============================
             if len(selected_vendors) > 1:
                 st.markdown("<hr/>", unsafe_allow_html=True)
@@ -951,7 +929,8 @@ with tab_vendor:
             st.info("Tidak ada data untuk vendor yang dipilih.")
     else:
         st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
-                  
+
+    
 with tab_tren:
     if available_sla_cols:
         st.subheader("📈 Trend Rata-rata SLA per Periode")
