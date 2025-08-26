@@ -953,50 +953,79 @@ with tab_vendor:
     else:
         st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
 
-        
 with tab_tren:
     if available_sla_cols:
         st.subheader("📈 Trend Rata-rata SLA per Periode")
+        
+        # Hitung rata-rata per periode
         trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[available_sla_cols].mean().reset_index()
         trend["PERIODE_SORTED"] = pd.Categorical(trend[periode_col], categories=selected_periode, ordered=True)
-        trend = trend.sort_values("PERIODE_SORTED")
+        trend = trend.sort_values("PERIODE_SORTED").reset_index(drop=True)
+
+        # Tambahkan kolom nomor urut
+        trend.insert(0, "No", range(1, len(trend) + 1))
+
+        # Buat tampilan dengan format detik -> string
         trend_display = trend.copy()
         for col in available_sla_cols:
             trend_display[col] = trend_display[col].apply(seconds_to_sla_format)
-        st.dataframe(trend_display[[periode_col] + available_sla_cols], use_container_width=True)
 
+        # Tampilkan tabel (tanpa kolom PERIODE_SORTED)
+        st.dataframe(trend_display.drop(columns=["PERIODE_SORTED"]), use_container_width=True)
+
+        # ==============================
         # Grafik TOTAL WAKTU
+        # ==============================
         if "TOTAL WAKTU" in available_sla_cols:
             fig, ax = plt.subplots(figsize=(10, 5))
-            y_values_days = trend["TOTAL WAKTU"].apply(lambda x: x / 86400)
+            y_values_days = trend["TOTAL WAKTU"] / 86400
             ax.plot(trend[periode_col], y_values_days, marker='o', label="TOTAL WAKTU", color='#9467bd')
+
+            # Tambahkan angka di setiap dot (1 angka desimal)
+            for i, val in enumerate(y_values_days):
+                ax.text(i, val, f"{val:.1f}", ha='center', va='bottom', fontsize=9, color="black", weight="bold")
+
             ax.set_title("Trend Rata-rata SLA TOTAL WAKTU per Periode")
             ax.set_xlabel("Periode")
             ax.set_ylabel("Rata-rata SLA (hari)")
             ax.grid(True, linestyle='--', alpha=0.7)
             ax.legend()
+
             for label in ax.get_xticklabels():
                 label.set_rotation(45)
                 label.set_ha('right')
+
             st.pyplot(fig)
 
+        # ==============================
         # Grafik per proses
+        # ==============================
         if proses_grafik_cols:
             fig3, axs = plt.subplots(2, 2, figsize=(14, 8), constrained_layout=True)
             fig3.suptitle("Trend Rata-rata SLA per Proses")
             axs = axs.flatten()
+
             for i, col in enumerate(proses_grafik_cols):
                 y_days = trend[col] / 86400
                 axs[i].plot(trend[periode_col], y_days, marker='o', color='#75c8ff')
+
+                # Tambahkan angka di setiap dot (1 angka desimal)
+                for j, val in enumerate(y_days):
+                    axs[i].text(j, val, f"{val:.1f}", ha='center', va='bottom', fontsize=8, color="black")
+
                 axs[i].set_title(col)
                 axs[i].set_ylabel("Hari")
                 axs[i].grid(True, linestyle='--', alpha=0.7)
+
                 for label in axs[i].get_xticklabels():
                     label.set_rotation(45)
                     label.set_ha('right')
+
             st.pyplot(fig3)
+
     else:
         st.info("Tidak ada kolom SLA yang dapat ditampilkan di tren.")
+
 
 with tab_jumlah:
     st.subheader("📊 Jumlah Transaksi per Periode")
