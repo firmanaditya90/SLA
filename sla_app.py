@@ -450,7 +450,7 @@ def render_sparkline(data, width=180, height=60, color="#00eaff"):
     return f"data:image/png;base64,{base64.b64encode(buf.read()).decode()}"
 
 # ==============================
-# KPI Ringkasan (Minimalis Responsif)
+# KPI Ringkasan (2x2 Digital Cards + Count-Up)
 # ==============================
 st.markdown("## 📈 Ringkasan")
 
@@ -458,47 +458,51 @@ st.markdown("""
 <style>
 .summary-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 14px;
-    margin: 10px 0 20px 0;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+    justify-items: center;
+    margin: 15px auto 25px auto;
+    max-width: 700px;
 }
 .summary-card {
-    border-radius: 12px;
-    padding: 10px;
+    width: 100%;
+    min-height: 110px;
+    border-radius: 14px;
+    padding: 12px;
     text-align: center;
-    color: #f8f9fa;
+    color: #fff;
     font-family: 'Segoe UI', sans-serif;
-    transition: all 0.25s ease;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+    transition: all 0.3s ease;
 }
 .summary-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 3px 12px rgba(0,0,0,0.2);
+    transform: translateY(-4px);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.25);
 }
 .summary-icon {
-    font-size: 16px;
-    margin-bottom: 2px;
-    display: block;
+    font-size: 22px;
+    margin-bottom: 4px;
 }
 .summary-label {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 500;
-    opacity: 0.85;
-    margin-bottom: 1px;
+    opacity: 0.9;
 }
 .summary-value {
-    font-size: 18px;
+    font-size: 22px;
     font-weight: 700;
+    margin-top: 3px;
 }
-.card-1 { background: linear-gradient(135deg, #667eea, #764ba2); }
-.card-2 { background: linear-gradient(135deg, #f7971e, #ffd200); }
-.card-3 { background: linear-gradient(135deg, #11998e, #38ef7d); }
-.card-4 { background: linear-gradient(135deg, #ee0979, #ff6a00); }
+.card-1 { background: linear-gradient(135deg, #4facfe, #00f2fe); }
+.card-2 { background: linear-gradient(135deg, #43e97b, #38f9d7); }
+.card-3 { background: linear-gradient(135deg, #fa709a, #fee140); }
+.card-4 { background: linear-gradient(135deg, #7f00ff, #e100ff); }
 </style>
 """, unsafe_allow_html=True)
 
 import streamlit.components.v1 as components
 
-def animated_card(icon, label, value, card_class, id_val, is_number=True):
+def animated_card(icon, label, value, card_class, id_val, is_number=True, suffix=""):
     components.html(f"""
     <div class="summary-card {card_class}">
         <div class="summary-icon">{icon}</div>
@@ -506,7 +510,7 @@ def animated_card(icon, label, value, card_class, id_val, is_number=True):
         <div id="{id_val}" class="summary-value">0</div>
     </div>
     <script>
-    function animateValue(id, start, end, duration) {{
+    function animateValue(id, start, end, duration, isNumber, suffix) {{
         var obj = document.getElementById(id);
         var range = end - start;
         var current = start;
@@ -518,18 +522,18 @@ def animated_card(icon, label, value, card_class, id_val, is_number=True):
                 current = end;
                 clearInterval(timer);
             }}
-            obj.innerHTML = { "current.toFixed(2)" if is_number else "end" };
+            obj.innerHTML = isNumber ? current.toFixed(2) + suffix : end;
         }}, stepTime);
     }}
-    animateValue("{id_val}", 0, {value if is_number else f'"{value}"'}, 800);
+    animateValue("{id_val}", 0, {value if is_number else f'"{value}"'}, 1000, {str(is_number).lower()}, "{suffix}");
     </script>
-    """, height=110)
+    """, height=130)
 
-# Container grid
+# container grid
 st.markdown('<div class="summary-grid">', unsafe_allow_html=True)
 
 # 1. Jumlah Transaksi
-animated_card("🧾", "Jumlah Transaksi", len(df_filtered), "card-1", "val1")
+animated_card("🧾", "Jumlah Transaksi", len(df_filtered), "card-1", "val1", is_number=True, suffix="")
 
 # 2. Rata-rata TOTAL Waktu
 if "TOTAL WAKTU" in available_sla_cols and len(df_filtered) > 0:
@@ -538,14 +542,14 @@ if "TOTAL WAKTU" in available_sla_cols and len(df_filtered) > 0:
     avg_total_val = round(avg_total_days, 2)
 else:
     avg_total_val = 0
-animated_card("⏱️", "Rata-rata TOTAL Waktu", avg_total_val, "card-2", "val2")
+animated_card("⏱️", "Rata-rata TOTAL Waktu", avg_total_val, "card-2", "val2", is_number=True, suffix=" hari")
 
-# 3. Proses Tercepat
+# 3. Proses Tercepat (text → tidak animasi angka)
 animated_card("⚡", "Proses Tercepat", "Perbendaharaan", "card-3", "val3", is_number=False)
 
-# 4. Kualitas Data
+# 4. Kualitas Data (persen)
 valid_ratio = (df_filtered[periode_col].notna().mean() * 100.0) if len(df_filtered) > 0 else 0.0
-animated_card("✅", "Kualitas Data", round(valid_ratio,1), "card-4", "val4")
+animated_card("✅", "Kualitas Data", round(valid_ratio,1), "card-4", "val4", is_number=True, suffix="%")
 
 st.markdown('</div>', unsafe_allow_html=True)
 
