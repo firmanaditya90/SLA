@@ -450,48 +450,51 @@ def render_sparkline(data, width=180, height=60, color="#00eaff"):
     return f"data:image/png;base64,{base64.b64encode(buf.read()).decode()}"
 
 # ==============================
-# KPI Ringkasan (Minimalis Modern)
+# KPI Ringkasan (Minimalis Futuristik)
 # ==============================
 st.markdown("""
 <style>
 .summary-container {
     display: flex;
-    gap: 15px;
+    gap: 12px;
     justify-content: space-between;
-    margin: 15px 0;
+    margin: 12px 0 18px 0;
 }
 .summary-card {
     flex: 1;
-    background: rgba(30, 30, 45, 0.65);
-    backdrop-filter: blur(12px);
-    border-radius: 16px;
-    padding: 12px;
-    text-align: center;
+    background: rgba(40, 40, 55, 0.65);
+    border-radius: 10px;
+    padding: 8px 12px;
     border: 1px solid rgba(255,255,255,0.08);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-    transition: transform 0.25s ease;
+    transition: all 0.25s ease;
+    cursor: default;
 }
 .summary-card:hover {
-    transform: translateY(-4px);
+    border: 1px solid rgba(0, 234, 255, 0.5);
+    box-shadow: 0 2px 8px rgba(0,234,255,0.15);
+    transform: translateY(-2px);
+}
+.summary-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
 }
 .summary-icon {
-    font-size: 22px;
-    margin-bottom: 4px;
-    background: linear-gradient(135deg, #00eaff, #00ff9d);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    font-size: 16px;
+    margin-right: 6px;
 }
 .summary-label {
     font-size: 11px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.65);
     text-transform: uppercase;
-    letter-spacing: 0.8px;
-    opacity: 0.7;
+    letter-spacing: 0.6px;
 }
 .summary-value {
-    font-size: 20px;
+    font-size: 18px;
     font-weight: 700;
     margin-top: 2px;
-    background: linear-gradient(90deg, #ff9f7f, #ff3f81);
+    background: linear-gradient(90deg, #00eaff, #00ff9d);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
@@ -503,9 +506,10 @@ st.markdown('<div class="summary-container">', unsafe_allow_html=True)
 # 1. Jumlah Transaksi
 st.markdown(f"""
 <div class="summary-card">
-    <div class="summary-icon">🧾</div>
-    <div class="summary-label">Jumlah Transaksi</div>
-    <div class="summary-value">{len(df_filtered):,}</div>
+  <div class="summary-top">
+    <div class="summary-label"><span class="summary-icon">🧾</span>Jumlah</div>
+  </div>
+  <div class="summary-value">{len(df_filtered):,}</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -518,32 +522,34 @@ else:
     avg_total_text = "-"
 st.markdown(f"""
 <div class="summary-card">
-    <div class="summary-icon">⏱️</div>
-    <div class="summary-label">Rata-rata Waktu</div>
-    <div class="summary-value">{avg_total_text}</div>
+  <div class="summary-top">
+    <div class="summary-label"><span class="summary-icon">⏱️</span>Rata-rata</div>
+  </div>
+  <div class="summary-value">{avg_total_text}</div>
 </div>
 """, unsafe_allow_html=True)
 
 # 3. Proses Tercepat
 st.markdown(f"""
 <div class="summary-card">
-    <div class="summary-icon">⚡</div>
-    <div class="summary-label">Proses Tercepat</div>
-    <div class="summary-value">Perbendaharaan</div>
+  <div class="summary-top">
+    <div class="summary-label"><span class="summary-icon">⚡</span>Tercepat</div>
+  </div>
+  <div class="summary-value">Perbendaharaan</div>
 </div>
 """, unsafe_allow_html=True)
 
 # 4. Kualitas Data
 st.markdown(f"""
 <div class="summary-card">
-    <div class="summary-icon">✅</div>
-    <div class="summary-label">Kualitas Data</div>
-    <div class="summary-value">100%</div>
+  <div class="summary-top">
+    <div class="summary-label"><span class="summary-icon">✅</span>Kualitas</div>
+  </div>
+  <div class="summary-value">100%</div>
 </div>
 """, unsafe_allow_html=True)
 
 st.markdown('</div>', unsafe_allow_html=True)
-
 
 # ==============================
 # Tabs untuk konten (TIDAK DIUBAH)
