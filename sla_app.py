@@ -970,8 +970,11 @@ with tab_tren:
         for col in available_sla_cols:
             trend_display[col] = trend_display[col].apply(seconds_to_sla_format)
 
-        # Tampilkan tabel (tanpa kolom PERIODE_SORTED)
-        st.dataframe(trend_display.drop(columns=["PERIODE_SORTED"]), use_container_width=True)
+        # Tampilkan tabel tanpa kolom bantu "PERIODE_SORTED"
+        st.dataframe(
+            trend_display.drop(columns=["PERIODE_SORTED"]),
+            use_container_width=True
+        )
 
         # ==============================
         # Grafik TOTAL WAKTU
@@ -979,11 +982,13 @@ with tab_tren:
         if "TOTAL WAKTU" in available_sla_cols:
             fig, ax = plt.subplots(figsize=(10, 5))
             y_values_days = trend["TOTAL WAKTU"] / 86400
-            ax.plot(trend[periode_col], y_values_days, marker='o', label="TOTAL WAKTU", color='#9467bd')
+            x_values = trend[periode_col]
+
+            ax.plot(x_values, y_values_days, marker='o', label="TOTAL WAKTU", color='#9467bd')
 
             # Tambahkan angka di setiap dot (1 angka desimal)
-            for i, val in enumerate(y_values_days):
-                ax.text(i, val, f"{val:.1f}", ha='center', va='bottom', fontsize=9, color="black", weight="bold")
+            for x, y in zip(x_values, y_values_days):
+                ax.text(x, y, f"{y:.1f}", ha='center', va='bottom', fontsize=9, color="black", weight="bold")
 
             ax.set_title("Trend Rata-rata SLA TOTAL WAKTU per Periode")
             ax.set_xlabel("Periode")
@@ -1007,11 +1012,13 @@ with tab_tren:
 
             for i, col in enumerate(proses_grafik_cols):
                 y_days = trend[col] / 86400
-                axs[i].plot(trend[periode_col], y_days, marker='o', color='#75c8ff')
+                x_values = trend[periode_col]
+
+                axs[i].plot(x_values, y_days, marker='o', color='#75c8ff')
 
                 # Tambahkan angka di setiap dot (1 angka desimal)
-                for j, val in enumerate(y_days):
-                    axs[i].text(j, val, f"{val:.1f}", ha='center', va='bottom', fontsize=8, color="black")
+                for x, y in zip(x_values, y_days):
+                    axs[i].text(x, y, f"{y:.1f}", ha='center', va='bottom', fontsize=8, color="black")
 
                 axs[i].set_title(col)
                 axs[i].set_ylabel("Hari")
