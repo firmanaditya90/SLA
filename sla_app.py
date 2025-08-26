@@ -452,19 +452,12 @@ def render_sparkline(data, width=180, height=60, color="#00eaff"):
 # ==============================
 # KPI Ringkasan (TIDAK DIUBAH)
 # ==============================
-# Layout utama: konten (4) dan ringkasan (1)
-col_main, col_summary = st.columns([4, 1])
+st.markdown("## 📈 Ringkasan")
 
-with col_main:
-    # Tab navigasi utama
-    tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_report = st.tabs(
-        ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi", "📥 Download Report"]
-    )
+c1, c2, c3, c4 = st.columns(4)
 
-with col_summary:
-    st.markdown("## 📊 Ringkasan")
-
-    # 1. Jumlah Transaksi
+# 1. Jumlah Transaksi
+with c1:
     transaksi_trend = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().tolist()
     spark = render_sparkline(transaksi_trend, color="#ff9f7f")
     st.markdown(f"""
@@ -476,7 +469,8 @@ with col_summary:
         </div>
     """, unsafe_allow_html=True)
 
-    # 2. Rata-rata TOTAL WAKTU
+# 2. Rata-rata TOTAL WAKTU
+with c2:
     if "TOTAL WAKTU" in available_sla_cols and len(df_filtered) > 0:
         avg_total = float(df_filtered["TOTAL WAKTU"].mean())
         avg_total_text = seconds_to_sla_format(avg_total)
@@ -494,7 +488,8 @@ with col_summary:
         </div>
     """, unsafe_allow_html=True)
 
-    # 3. Proses Tercepat
+# 3. Proses Tercepat
+with c3:
     fastest_label = "-"
     fastest_value = None
     for c in [x for x in available_sla_cols if x != "TOTAL WAKTU"]:
@@ -503,6 +498,7 @@ with col_summary:
             if fastest_value is None or val < fastest_value:
                 fastest_value = val
                 fastest_label = c
+
     if fastest_label != "-" and fastest_label in available_sla_cols:
         fastest_trend = (df_filtered.groupby(df_filtered[periode_col].astype(str))[fastest_label].mean() / 86400).round(2).tolist()
     else:
@@ -517,9 +513,12 @@ with col_summary:
         </div>
     """, unsafe_allow_html=True)
 
-    # 4. Kualitas Periode
+# 4. Kualitas Periode
+with c4:
     valid_ratio = (df_filtered[periode_col].notna().mean() * 100.0) if len(df_filtered) > 0 else 0.0
-    valid_trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[periode_col].apply(lambda x: x.notna().mean() * 100).tolist() if len(df_filtered) > 0 else []
+    valid_trend = []
+    if len(df_filtered) > 0:
+        valid_trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[periode_col].apply(lambda x: x.notna().mean() * 100).tolist()
     spark = render_sparkline(valid_trend, color="#00ff9d")
     st.markdown(f"""
         <div class="summary-card">
@@ -529,7 +528,6 @@ with col_summary:
             {'<img src="'+spark+'" width="100%"/>' if spark else ''}
         </div>
     """, unsafe_allow_html=True)
-
 # ==============================
 # Tabs untuk konten (TIDAK DIUBAH)
 # ==============================
