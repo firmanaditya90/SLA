@@ -452,6 +452,10 @@ def render_sparkline(data, width=180, height=60, color="#00eaff"):
 # ==============================
 # KPI Ringkasan (TIDAK DIUBAH)
 # ==============================
+tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_report = st.tabs(
+    ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi", "📥 Download Report"]
+)
+
 st.markdown("## 📈 Ringkasan")
 
 c1, c2, c3, c4 = st.columns(4)
@@ -531,9 +535,6 @@ with c4:
 # ==============================
 # Tabs untuk konten (TIDAK DIUBAH)
 # ==============================
-tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_report = st.tabs(
-    ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi", "📥 Download Report"]
-)
 
 with tab_overview:
     st.subheader("📊 KPI Verifikasi Dokumen Penagihan")
