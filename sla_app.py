@@ -970,9 +970,9 @@ with tab_tren:
         for col in available_sla_cols:
             trend_display[col] = trend_display[col].apply(seconds_to_sla_format)
 
-        # Tampilkan tabel tanpa index Pandas & tanpa kolom bantu
+        # Hapus kolom bantu & sembunyikan index Pandas
         st.dataframe(
-            trend_display.drop(columns=["PERIODE_SORTED"]).reset_index(drop=True),
+            trend_display.drop(columns=["PERIODE_SORTED"]).set_index("No").style.hide(axis="index"),
             use_container_width=True
         )
 
@@ -986,9 +986,9 @@ with tab_tren:
 
             ax.plot(x_values, y_values_days, marker='o', label="TOTAL WAKTU", color='#9467bd')
 
-            # Tambahkan angka di setiap dot (1 angka desimal)
+            # Tambahkan angka di setiap dot (2 angka desimal)
             for x, y in zip(x_values, y_values_days):
-                ax.text(x, y, f"{y:.1f}", ha='center', va='bottom', fontsize=9, color="black", weight="bold")
+                ax.text(x, y, f"{y:.2f}", ha='center', va='bottom', fontsize=9, color="black", weight="bold")
 
             ax.set_title("Trend Rata-rata SLA TOTAL WAKTU per Periode")
             ax.set_xlabel("Periode")
@@ -1016,9 +1016,9 @@ with tab_tren:
 
                 axs[i].plot(x_values, y_days, marker='o', color='#75c8ff')
 
-                # Tambahkan angka di setiap dot (1 angka desimal)
+                # Tambahkan angka di setiap dot (2 angka desimal)
                 for x, y in zip(x_values, y_days):
-                    axs[i].text(x, y, f"{y:.1f}", ha='center', va='bottom', fontsize=8, color="black")
+                    axs[i].text(x, y, f"{y:.2f}", ha='center', va='bottom', fontsize=8, color="black")
 
                 axs[i].set_title(col)
                 axs[i].set_ylabel("Hari")
