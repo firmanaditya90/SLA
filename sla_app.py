@@ -450,96 +450,102 @@ def render_sparkline(data, width=180, height=60, color="#00eaff"):
     return f"data:image/png;base64,{base64.b64encode(buf.read()).decode()}"
 
 # ==============================
-# KPI Ringkasan (Minimalis Elegan)
+# KPI Ringkasan (Minimalis Responsif)
 # ==============================
 st.markdown("## 📈 Ringkasan")
 
 st.markdown("""
 <style>
-.summary-container {
-    display: flex;
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 14px;
-    justify-content: space-between;
     margin: 10px 0 20px 0;
 }
 .summary-card {
-    flex: 1;
-    border-radius: 14px;
-    padding: 10px 14px;
+    border-radius: 12px;
+    padding: 10px;
     text-align: center;
-    color: #f5f5f5;
+    color: #f8f9fa;
     font-family: 'Segoe UI', sans-serif;
     transition: all 0.25s ease;
 }
 .summary-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    transform: translateY(-2px);
+    box-shadow: 0 3px 12px rgba(0,0,0,0.2);
 }
 .summary-icon {
-    font-size: 20px;
-    margin-bottom: 4px;
+    font-size: 16px;
+    margin-bottom: 2px;
     display: block;
 }
 .summary-label {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
     opacity: 0.85;
-    margin-bottom: 2px;
+    margin-bottom: 1px;
 }
 .summary-value {
     font-size: 18px;
     font-weight: 700;
 }
-.card-1 { background: linear-gradient(135deg, #6a11cb, #2575fc); }
-.card-2 { background: linear-gradient(135deg, #ff9966, #ff5e62); }
-.card-3 { background: linear-gradient(135deg, #00b09b, #96c93d); }
-.card-4 { background: linear-gradient(135deg, #ff512f, #dd2476); }
+.card-1 { background: linear-gradient(135deg, #667eea, #764ba2); }
+.card-2 { background: linear-gradient(135deg, #f7971e, #ffd200); }
+.card-3 { background: linear-gradient(135deg, #11998e, #38ef7d); }
+.card-4 { background: linear-gradient(135deg, #ee0979, #ff6a00); }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="summary-container">', unsafe_allow_html=True)
+import streamlit.components.v1 as components
+
+def animated_card(icon, label, value, card_class, id_val, is_number=True):
+    components.html(f"""
+    <div class="summary-card {card_class}">
+        <div class="summary-icon">{icon}</div>
+        <div class="summary-label">{label}</div>
+        <div id="{id_val}" class="summary-value">0</div>
+    </div>
+    <script>
+    function animateValue(id, start, end, duration) {{
+        var obj = document.getElementById(id);
+        var range = end - start;
+        var current = start;
+        var increment = range / 40;
+        var stepTime = duration / 40;
+        var timer = setInterval(function() {{
+            current += increment;
+            if ((increment > 0 && current >= end) || (increment < 0 && current <= end)) {{
+                current = end;
+                clearInterval(timer);
+            }}
+            obj.innerHTML = { "current.toFixed(2)" if is_number else "end" };
+        }}, stepTime);
+    }}
+    animateValue("{id_val}", 0, {value if is_number else f'"{value}"'}, 800);
+    </script>
+    """, height=110)
+
+# Container grid
+st.markdown('<div class="summary-grid">', unsafe_allow_html=True)
 
 # 1. Jumlah Transaksi
-st.markdown(f"""
-<div class="summary-card card-1">
-    <div class="summary-icon">🧾</div>
-    <div class="summary-label">Jumlah Transaksi</div>
-    <div class="summary-value">{len(df_filtered):,}</div>
-</div>
-""", unsafe_allow_html=True)
+animated_card("🧾", "Jumlah Transaksi", len(df_filtered), "card-1", "val1")
 
-# 2. Rata-rata TOTAL WAKTU
+# 2. Rata-rata TOTAL Waktu
 if "TOTAL WAKTU" in available_sla_cols and len(df_filtered) > 0:
     avg_total = float(df_filtered["TOTAL WAKTU"].mean())
     avg_total_days = avg_total / 86400
-    avg_total_text = f"{avg_total_days:.2f} hari"
+    avg_total_val = round(avg_total_days, 2)
 else:
-    avg_total_text = "-"
-st.markdown(f"""
-<div class="summary-card card-2">
-    <div class="summary-icon">⏱️</div>
-    <div class="summary-label">Rata-rata TOTAL Waktu</div>
-    <div class="summary-value">{avg_total_text}</div>
-</div>
-""", unsafe_allow_html=True)
+    avg_total_val = 0
+animated_card("⏱️", "Rata-rata TOTAL Waktu", avg_total_val, "card-2", "val2")
 
 # 3. Proses Tercepat
-st.markdown(f"""
-<div class="summary-card card-3">
-    <div class="summary-icon">⚡</div>
-    <div class="summary-label">Proses Tercepat</div>
-    <div class="summary-value">Perbendaharaan</div>
-</div>
-""", unsafe_allow_html=True)
+animated_card("⚡", "Proses Tercepat", "Perbendaharaan", "card-3", "val3", is_number=False)
 
 # 4. Kualitas Data
-st.markdown(f"""
-<div class="summary-card card-4">
-    <div class="summary-icon">✅</div>
-    <div class="summary-label">Kualitas Data</div>
-    <div class="summary-value">100%</div>
-</div>
-""", unsafe_allow_html=True)
+valid_ratio = (df_filtered[periode_col].notna().mean() * 100.0) if len(df_filtered) > 0 else 0.0
+animated_card("✅", "Kualitas Data", round(valid_ratio,1), "card-4", "val4")
 
 st.markdown('</div>', unsafe_allow_html=True)
 
