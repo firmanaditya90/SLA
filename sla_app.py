@@ -970,9 +970,9 @@ with tab_tren:
         for col in available_sla_cols:
             trend_display[col] = trend_display[col].apply(seconds_to_sla_format)
 
-        # Tampilkan tabel tanpa kolom bantu "PERIODE_SORTED"
+        # Tampilkan tabel tanpa index Pandas & tanpa kolom bantu
         st.dataframe(
-            trend_display.drop(columns=["PERIODE_SORTED"]),
+            trend_display.drop(columns=["PERIODE_SORTED"]).reset_index(drop=True),
             use_container_width=True
         )
 
