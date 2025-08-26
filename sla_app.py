@@ -450,54 +450,50 @@ def render_sparkline(data, width=180, height=60, color="#00eaff"):
     return f"data:image/png;base64,{base64.b64encode(buf.read()).decode()}"
 
 # ==============================
-# KPI Ringkasan (Minimalis Futuristik)
+# KPI Ringkasan (Minimalis Elegan)
 # ==============================
+st.markdown("## 📈 Ringkasan")
+
 st.markdown("""
 <style>
 .summary-container {
     display: flex;
-    gap: 12px;
+    gap: 14px;
     justify-content: space-between;
-    margin: 12px 0 18px 0;
+    margin: 10px 0 20px 0;
 }
 .summary-card {
     flex: 1;
-    background: rgba(40, 40, 55, 0.65);
-    border-radius: 10px;
-    padding: 8px 12px;
-    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 10px 14px;
+    text-align: center;
+    color: #f5f5f5;
+    font-family: 'Segoe UI', sans-serif;
     transition: all 0.25s ease;
-    cursor: default;
 }
 .summary-card:hover {
-    border: 1px solid rgba(0, 234, 255, 0.5);
-    box-shadow: 0 2px 8px rgba(0,234,255,0.15);
-    transform: translateY(-2px);
-}
-.summary-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+    transform: translateY(-3px);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
 }
 .summary-icon {
-    font-size: 16px;
-    margin-right: 6px;
+    font-size: 20px;
+    margin-bottom: 4px;
+    display: block;
 }
 .summary-label {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
-    color: rgba(255,255,255,0.65);
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
+    opacity: 0.85;
+    margin-bottom: 2px;
 }
 .summary-value {
     font-size: 18px;
     font-weight: 700;
-    margin-top: 2px;
-    background: linear-gradient(90deg, #00eaff, #00ff9d);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
 }
+.card-1 { background: linear-gradient(135deg, #6a11cb, #2575fc); }
+.card-2 { background: linear-gradient(135deg, #ff9966, #ff5e62); }
+.card-3 { background: linear-gradient(135deg, #00b09b, #96c93d); }
+.card-4 { background: linear-gradient(135deg, #ff512f, #dd2476); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -505,11 +501,10 @@ st.markdown('<div class="summary-container">', unsafe_allow_html=True)
 
 # 1. Jumlah Transaksi
 st.markdown(f"""
-<div class="summary-card">
-  <div class="summary-top">
-    <div class="summary-label"><span class="summary-icon">🧾</span>Jumlah</div>
-  </div>
-  <div class="summary-value">{len(df_filtered):,}</div>
+<div class="summary-card card-1">
+    <div class="summary-icon">🧾</div>
+    <div class="summary-label">Jumlah Transaksi</div>
+    <div class="summary-value">{len(df_filtered):,}</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -521,31 +516,28 @@ if "TOTAL WAKTU" in available_sla_cols and len(df_filtered) > 0:
 else:
     avg_total_text = "-"
 st.markdown(f"""
-<div class="summary-card">
-  <div class="summary-top">
-    <div class="summary-label"><span class="summary-icon">⏱️</span>Rata-rata</div>
-  </div>
-  <div class="summary-value">{avg_total_text}</div>
+<div class="summary-card card-2">
+    <div class="summary-icon">⏱️</div>
+    <div class="summary-label">Rata-rata TOTAL Waktu</div>
+    <div class="summary-value">{avg_total_text}</div>
 </div>
 """, unsafe_allow_html=True)
 
 # 3. Proses Tercepat
 st.markdown(f"""
-<div class="summary-card">
-  <div class="summary-top">
-    <div class="summary-label"><span class="summary-icon">⚡</span>Tercepat</div>
-  </div>
-  <div class="summary-value">Perbendaharaan</div>
+<div class="summary-card card-3">
+    <div class="summary-icon">⚡</div>
+    <div class="summary-label">Proses Tercepat</div>
+    <div class="summary-value">Perbendaharaan</div>
 </div>
 """, unsafe_allow_html=True)
 
 # 4. Kualitas Data
 st.markdown(f"""
-<div class="summary-card">
-  <div class="summary-top">
-    <div class="summary-label"><span class="summary-icon">✅</span>Kualitas</div>
-  </div>
-  <div class="summary-value">100%</div>
+<div class="summary-card card-4">
+    <div class="summary-icon">✅</div>
+    <div class="summary-label">Kualitas Data</div>
+    <div class="summary-value">100%</div>
 </div>
 """, unsafe_allow_html=True)
 
