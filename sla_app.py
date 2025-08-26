@@ -450,7 +450,7 @@ def render_sparkline(data, width=180, height=60, color="#00eaff"):
     return f"data:image/png;base64,{base64.b64encode(buf.read()).decode()}"
 
 # ==============================
-# KPI Ringkasan (2x2 Digital Cards + Count-Up)
+# KPI Ringkasan (2x2 Digital Cards + Count-Up FIXED)
 # ==============================
 st.markdown("## 📈 Ringkasan")
 
@@ -500,58 +500,63 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-import streamlit.components.v1 as components
-
-def animated_card(icon, label, value, card_class, id_val, is_number=True, suffix=""):
-    components.html(f"""
-    <div class="summary-card {card_class}">
-        <div class="summary-icon">{icon}</div>
-        <div class="summary-label">{label}</div>
-        <div id="{id_val}" class="summary-value">0</div>
-    </div>
-    <script>
-    function animateValue(id, start, end, duration, isNumber, suffix) {{
-        var obj = document.getElementById(id);
-        var range = end - start;
-        var current = start;
-        var increment = range / 40;
-        var stepTime = duration / 40;
-        var timer = setInterval(function() {{
-            current += increment;
-            if ((increment > 0 && current >= end) || (increment < 0 && current <= end)) {{
-                current = end;
-                clearInterval(timer);
-            }}
-            obj.innerHTML = isNumber ? current.toFixed(2) + suffix : end;
-        }}, stepTime);
-    }}
-    animateValue("{id_val}", 0, {value if is_number else f'"{value}"'}, 1000, {str(is_number).lower()}, "{suffix}");
-    </script>
-    """, height=130)
-
-# container grid
-st.markdown('<div class="summary-grid">', unsafe_allow_html=True)
-
-# 1. Jumlah Transaksi
-animated_card("🧾", "Jumlah Transaksi", len(df_filtered), "card-1", "val1", is_number=True, suffix="")
-
-# 2. Rata-rata TOTAL Waktu
+# ambil data
+jumlah_transaksi = len(df_filtered)
 if "TOTAL WAKTU" in available_sla_cols and len(df_filtered) > 0:
-    avg_total = float(df_filtered["TOTAL WAKTU"].mean())
-    avg_total_days = avg_total / 86400
-    avg_total_val = round(avg_total_days, 2)
+    avg_total_days = float(df_filtered["TOTAL WAKTU"].mean()) / 86400
 else:
-    avg_total_val = 0
-animated_card("⏱️", "Rata-rata TOTAL Waktu", avg_total_val, "card-2", "val2", is_number=True, suffix=" hari")
-
-# 3. Proses Tercepat (text → tidak animasi angka)
-animated_card("⚡", "Proses Tercepat", "Perbendaharaan", "card-3", "val3", is_number=False)
-
-# 4. Kualitas Data (persen)
+    avg_total_days = 0.0
+fastest_process = "Perbendaharaan"
 valid_ratio = (df_filtered[periode_col].notna().mean() * 100.0) if len(df_filtered) > 0 else 0.0
-animated_card("✅", "Kualitas Data", round(valid_ratio,1), "card-4", "val4", is_number=True, suffix="%")
 
-st.markdown('</div>', unsafe_allow_html=True)
+# tampilkan grid dengan placeholder nilai
+st.markdown(f"""
+<div class="summary-grid">
+  <div class="summary-card card-1">
+    <div class="summary-icon">🧾</div>
+    <div class="summary-label">Jumlah Transaksi</div>
+    <div id="val1" class="summary-value">0</div>
+  </div>
+  <div class="summary-card card-2">
+    <div class="summary-icon">⏱️</div>
+    <div class="summary-label">Rata-rata TOTAL Waktu</div>
+    <div id="val2" class="summary-value">0</div>
+  </div>
+  <div class="summary-card card-3">
+    <div class="summary-icon">⚡</div>
+    <div class="summary-label">Proses Tercepat</div>
+    <div id="val3" class="summary-value">{fastest_process}</div>
+  </div>
+  <div class="summary-card card-4">
+    <div class="summary-icon">✅</div>
+    <div class="summary-label">Kualitas Data</div>
+    <div id="val4" class="summary-value">0</div>
+  </div>
+</div>
+
+<script>
+function animateValue(id, start, end, duration, decimals=0, suffix="") {{
+    var obj = document.getElementById(id);
+    var range = end - start;
+    var current = start;
+    var increment = range / 40;
+    var stepTime = duration / 40;
+    var timer = setInterval(function() {{
+        current += increment;
+        if ((increment > 0 && current >= end) || (increment < 0 && current <= end)) {{
+            current = end;
+            clearInterval(timer);
+        }}
+        obj.innerHTML = Number(current).toFixed(decimals) + suffix;
+    }}, stepTime);
+}}
+
+// animasi jalan
+animateValue("val1", 0, {jumlah_transaksi}, 1000, 0, "");
+animateValue("val2", 0, {avg_total_days:.2f}, 1000, 2, " hari");
+animateValue("val4", 0, {valid_ratio:.1f}, 1000, 1, "%");
+</script>
+""", unsafe_allow_html=True)
 
 # ==============================
 # Tabs untuk konten (TIDAK DIUBAH)
