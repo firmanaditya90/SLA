@@ -449,22 +449,32 @@ def render_sparkline(data, width=180, height=60, color="#00eaff"):
     plt.close(fig)
     return f"data:image/png;base64,{base64.b64encode(buf.read()).decode()}"
 
+import streamlit.components.v1 as components
+
 # ==============================
-# KPI Ringkasan (2x2 Digital Cards + Count-Up FIXED)
+# KPI Ringkasan (2x2 Digital Cards + Count-Up FIX)
 # ==============================
 st.markdown("## 📈 Ringkasan")
 
-st.markdown("""
+jumlah_transaksi = len(df_filtered)
+if "TOTAL WAKTU" in available_sla_cols and len(df_filtered) > 0:
+    avg_total_days = float(df_filtered["TOTAL WAKTU"].mean()) / 86400
+else:
+    avg_total_days = 0.0
+fastest_process = "Perbendaharaan"
+valid_ratio = (df_filtered[periode_col].notna().mean() * 100.0) if len(df_filtered) > 0 else 0.0
+
+html_code = f"""
 <style>
-.summary-grid {
+.summary-grid {{
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 18px;
     justify-items: center;
     margin: 15px auto 25px auto;
     max-width: 700px;
-}
-.summary-card {
+}}
+.summary-card {{
     width: 100%;
     min-height: 110px;
     border-radius: 14px;
@@ -474,43 +484,20 @@ st.markdown("""
     font-family: 'Segoe UI', sans-serif;
     box-shadow: 0 4px 14px rgba(0,0,0,0.15);
     transition: all 0.3s ease;
-}
-.summary-card:hover {
+}}
+.summary-card:hover {{
     transform: translateY(-4px);
     box-shadow: 0 6px 18px rgba(0,0,0,0.25);
-}
-.summary-icon {
-    font-size: 22px;
-    margin-bottom: 4px;
-}
-.summary-label {
-    font-size: 13px;
-    font-weight: 500;
-    opacity: 0.9;
-}
-.summary-value {
-    font-size: 22px;
-    font-weight: 700;
-    margin-top: 3px;
-}
-.card-1 { background: linear-gradient(135deg, #4facfe, #00f2fe); }
-.card-2 { background: linear-gradient(135deg, #43e97b, #38f9d7); }
-.card-3 { background: linear-gradient(135deg, #fa709a, #fee140); }
-.card-4 { background: linear-gradient(135deg, #7f00ff, #e100ff); }
+}}
+.summary-icon {{ font-size: 22px; margin-bottom: 4px; }}
+.summary-label {{ font-size: 13px; font-weight: 500; opacity: 0.9; }}
+.summary-value {{ font-size: 22px; font-weight: 700; margin-top: 3px; }}
+.card-1 {{ background: linear-gradient(135deg, #4facfe, #00f2fe); }}
+.card-2 {{ background: linear-gradient(135deg, #43e97b, #38f9d7); }}
+.card-3 {{ background: linear-gradient(135deg, #fa709a, #fee140); }}
+.card-4 {{ background: linear-gradient(135deg, #7f00ff, #e100ff); }}
 </style>
-""", unsafe_allow_html=True)
 
-# ambil data
-jumlah_transaksi = len(df_filtered)
-if "TOTAL WAKTU" in available_sla_cols and len(df_filtered) > 0:
-    avg_total_days = float(df_filtered["TOTAL WAKTU"].mean()) / 86400
-else:
-    avg_total_days = 0.0
-fastest_process = "Perbendaharaan"
-valid_ratio = (df_filtered[periode_col].notna().mean() * 100.0) if len(df_filtered) > 0 else 0.0
-
-# tampilkan grid dengan placeholder nilai
-st.markdown(f"""
 <div class="summary-grid">
   <div class="summary-card card-1">
     <div class="summary-icon">🧾</div>
@@ -525,7 +512,7 @@ st.markdown(f"""
   <div class="summary-card card-3">
     <div class="summary-icon">⚡</div>
     <div class="summary-label">Proses Tercepat</div>
-    <div id="val3" class="summary-value">{fastest_process}</div>
+    <div class="summary-value">{fastest_process}</div>
   </div>
   <div class="summary-card card-4">
     <div class="summary-icon">✅</div>
@@ -537,10 +524,11 @@ st.markdown(f"""
 <script>
 function animateValue(id, start, end, duration, decimals=0, suffix="") {{
     var obj = document.getElementById(id);
+    if (!obj) return;
     var range = end - start;
     var current = start;
-    var increment = range / 40;
-    var stepTime = duration / 40;
+    var increment = range / 60;
+    var stepTime = duration / 60;
     var timer = setInterval(function() {{
         current += increment;
         if ((increment > 0 && current >= end) || (increment < 0 && current <= end)) {{
@@ -551,12 +539,13 @@ function animateValue(id, start, end, duration, decimals=0, suffix="") {{
     }}, stepTime);
 }}
 
-// animasi jalan
 animateValue("val1", 0, {jumlah_transaksi}, 1000, 0, "");
 animateValue("val2", 0, {avg_total_days:.2f}, 1000, 2, " hari");
 animateValue("val4", 0, {valid_ratio:.1f}, 1000, 1, "%");
 </script>
-""", unsafe_allow_html=True)
+"""
+
+components.html(html_code, height=350)
 
 # ==============================
 # Tabs untuk konten (TIDAK DIUBAH)
