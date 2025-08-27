@@ -468,10 +468,12 @@ if proses_grafik_cols and len(df_filtered) > 0:
     avg_per_proses = df_filtered[proses_grafik_cols].mean()
     fastest_col = avg_per_proses.idxmin()
     fastest_seconds = avg_per_proses.min()
-    fastest_fmt = seconds_to_sla_format(fastest_seconds)  # gunakan fungsi existing
-    fastest_process = f"{fastest_col} ({fastest_fmt})"
+    fastest_fmt = seconds_to_sla_format(fastest_seconds)  # format hari, jam, menit, detik
+    fastest_name = fastest_col
+    fastest_time = fastest_fmt
 else:
-    fastest_process = "-"
+    fastest_name = "-"
+    fastest_time = "-"
 
 # Persentase data valid
 valid_ratio = (df_filtered[periode_col].notna().mean() * 100.0) if len(df_filtered) > 0 else 0.0
@@ -488,7 +490,7 @@ html_code = f"""
 }}
 .summary-card {{
     width: 100%;
-    min-height: 110px;
+    min-height: 120px;
     border-radius: 14px;
     padding: 12px;
     text-align: center;
@@ -504,6 +506,12 @@ html_code = f"""
 .summary-icon {{ font-size: 22px; margin-bottom: 4px; }}
 .summary-label {{ font-size: 13px; font-weight: 500; opacity: 0.9; }}
 .summary-value {{ font-size: 22px; font-weight: 700; margin-top: 3px; }}
+.summary-sub {{
+  font-size: 14px;
+  font-weight: 500;
+  opacity: 0.85;
+  margin-top: 2px;
+}}
 .card-1 {{ background: linear-gradient(135deg, #4facfe, #00f2fe); }}
 .card-2 {{ background: linear-gradient(135deg, #43e97b, #38f9d7); }}
 .card-3 {{ background: linear-gradient(135deg, #fa709a, #fee140); }}
@@ -524,7 +532,8 @@ html_code = f"""
   <div class="summary-card card-3">
     <div class="summary-icon">⚡</div>
     <div class="summary-label">Proses Tercepat</div>
-    <div class="summary-value">{fastest_process}</div>
+    <div class="summary-value">{fastest_name}</div>
+    <div class="summary-sub">{fastest_time}</div>
   </div>
   <div class="summary-card card-4">
     <div class="summary-icon">✅</div>
@@ -557,8 +566,7 @@ animateValue("val4", 0, {valid_ratio:.1f}, 1000, 1, "%");
 </script>
 """
 
-components.html(html_code, height=350)
-
+components.html(html_code, height=370)
 # ==============================
 # Tabs untuk konten (TIDAK DIUBAH)
 # ==============================
