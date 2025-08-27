@@ -20,23 +20,28 @@ from datetime import datetime
 from io import BytesIO   # << tambahkan ini
 import base64
 import streamlit.components.v1 as components
-# 1. Import
+
 import os, io, base64, requests
 import pandas as pd
 import streamlit as st
 
-# 2. Konfigurasi
+# ============================
+# KONFIGURASI
+# ============================
 DATA_PATH = os.path.join("data", "last_data.xlsx")
-ROCKET_GIF_PATH = "rocket.gif"
+ROCKET_GIF_PATH = "rocket.gif"   # file harus ada di repo sama dengan app.py
 
+# GitHub secrets (AMAN)
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN")
-GITHUB_REPO = st.secrets.get("GITHUB_REPO")
+GITHUB_REPO = st.secrets.get("GITHUB_REPO")     # contoh: "firmanaditya90/SLA"
 GITHUB_BRANCH = st.secrets.get("GITHUB_BRANCH", "main")
 GITHUB_PATH = st.secrets.get("GITHUB_PATH", "data/last_data.xlsx")
 
 _headers = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
 
-# 3. Helper Functions
+# ============================
+# HELPER FUNCTIONS
+# ============================
 def github_get_file_info(path: str):
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}?ref={GITHUB_BRANCH}"
     r = requests.get(url, headers=_headers)
@@ -76,7 +81,9 @@ def gif_b64(filepath):
         data = f.read()
     return base64.b64encode(data).decode("utf-8")
 
-# 4. Load Data Awal
+# ============================
+# LOAD DATA AWAL
+# ============================
 df_raw = None
 if GITHUB_TOKEN and GITHUB_REPO:
     try:
@@ -92,7 +99,117 @@ elif os.path.exists(DATA_PATH):
     st.info("✅ Data dimuat dari storage lokal.")
 else:
     st.warning("⚠️ Belum ada data. Silakan upload file (admin).")
-    df_raw = None   # biarkan kosong, jangan st.stop() dulu
+    df_raw = None
+
+# ============================
+# SIDEBAR
+# ============================
+
+# 1. Filter Data (trigger tampilan SLA)
+with st.sidebar.expander("📊 Filter Data", expanded=True):
+    if df_raw is not None and "Tanggal" in df_raw:
+        tanggal_awal = st.date_input("Tanggal awal", value=pd.to_datetime(df_raw["Tanggal"].min()))
+        tanggal_akhir = st.date_input("Tanggal akhir", value=pd.to_datetime(df_raw["Tanggal"].max()))
+    else:
+        tanggal_awal = None
+        tanggal_akhir = None
+
+    proses_dipilih = []
+    unit_dipilih = None
+    if df_raw is not None:
+        proses_dipilih = st.multiselect(
+            "Pilih Proses",
+            options=df_raw.columns[2:],  # kolom proses dimulai dari kolom ke-3
+            default=list(df_raw.columns[2:])
+        )
+        if "Unit" in df_raw:
+            unit_dipilih = st.selectbox("Pilih Unit", options=["-"] + list(df_raw["Unit"].unique()))
+    
+    # Filter data
+    df_filtered = df_raw.copy() if df_raw is not None else None
+    if df_filtered is not None:
+        if tanggal_awal and tanggal_akhir:
+            df_filtered = df_filtered[
+                (df_filtered["Tanggal"] >= pd.to_datetime(tanggal_awal)) &
+                (df_filtered["Tanggal"] <= pd.to_datetime(tanggal_akhir))
+            ]
+        if unit_dipilih and unit_dipilih != "-":
+            df_filtered = df_filtered[df_filtered["Unit"] == unit_dipilih]
+
+# 2. Pengaturan Tampilan
+with st.sidebar.expander("⚙️ Pengaturan Tampilan"):
+    tampil_ringkasan = st.checkbox("Tampilkan Ringkasan", value=True)
+    tampil_grafik = st.checkbox("Tampilkan Grafik", value=True)
+
+# 3. Admin Login
+with st.sidebar.expander("🔑 Admin Login"):
+    if "is_admin" not in st.session_state:
+        st.session_state["is_admin"] = False
+
+    password = st.text_input("Masukkan password admin:", type="password")
+    if password == "passwordRahasia123":
+        st.session_state["is_admin"] = True
+        st.success("✅ Login sebagai admin")
+    elif password:
+        st.error("❌ Password salah")
+
+# 4. Upload Data (Admin Only)
+with st.sidebar.expander("📤 Upload Data (Admin Only)", expanded=False):
+    if st.session_state.get("is_admin", False):
+        uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx")
+        if uploaded_file is not None:
+            if st.button("💾 Simpan & Replace Data", use_container_width=True):
+                # Simpan lokal
+                os.makedirs("data", exist_ok=True)
+                with open(DATA_PATH, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                st.success("✅ File berhasil disimpan ke storage lokal.")
+
+                # Simpan GitHub
+                if GITHUB_TOKEN and GITHUB_REPO:
+                    res = upload_file_to_github(uploaded_file.getbuffer(), GITHUB_PATH)
+                    if res:
+                        st.success("✅ File juga berhasil diupload & direplace di GitHub!")
+                else:
+                    st.warning("⚠️ GitHub secrets belum dikonfigurasi, hanya simpan lokal.")
+
+                st.experimental_rerun()
+    else:
+        st.info("🔒 Hanya admin yang bisa upload data.")
+
+# ============================
+# DASHBOARD
+# ============================
+
+st.title("📈 Dashboard SLA")
+
+# Rocket gif
+if os.path.exists(ROCKET_GIF_PATH):
+    try:
+        rocket_b64 = gif_b64(ROCKET_GIF_PATH)
+        st.markdown(
+            f'<img src="data:image/gif;base64,{rocket_b64}" width="120"/>',
+            unsafe_allow_html=True
+        )
+    except Exception as e:
+        st.warning(f"🚀 Gagal load rocket.gif: {e}")
+else:
+    st.warning("🚀 File rocket.gif tidak ditemukan di folder app.py.")
+
+# Jika ada data → tampilkan ringkasan & grafik
+if df_filtered is not None and not df_filtered.empty:
+    if tampil_ringkasan:
+        st.subheader("📌 Ringkasan SLA")
+        st.write(df_filtered.describe())
+
+    if tampil_grafik:
+        st.subheader("📊 Grafik SLA (contoh)")
+        try:
+            st.line_chart(df_filtered[df_filtered.columns[2:]])
+        except Exception as e:
+            st.warning(f"⚠️ Grafik gagal ditampilkan: {e}")
+else:
+    st.info("📥 Silakan upload file Excel melalui sidebar untuk mulai menggunakan dashboard.")
 
 
 # ==================================================================
