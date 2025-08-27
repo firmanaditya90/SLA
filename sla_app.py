@@ -415,18 +415,17 @@ def seconds_to_sla_format(total_seconds):
 # Sidebar Upload (Admin Only)
 # ============================
 with st.sidebar.expander("📤 Upload Data (Admin Only)", expanded=False):
-    if is_admin:
+    if st.session_state.get("is_admin", False):
         uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx")
-
         if uploaded_file is not None:
             if st.button("💾 Simpan & Replace Data", use_container_width=True):
-                # --- Simpan lokal sebagai fallback ---
+                # Simpan lokal
                 os.makedirs("data", exist_ok=True)
                 with open(DATA_PATH, "wb") as f:
                     f.write(uploaded_file.getbuffer())
                 st.success("✅ File berhasil disimpan ke storage lokal.")
 
-                # --- Simpan juga ke GitHub (replace) ---
+                # Simpan GitHub
                 if GITHUB_TOKEN and GITHUB_REPO:
                     res = upload_file_to_github(uploaded_file.getbuffer(), GITHUB_PATH)
                     if res:
@@ -434,11 +433,9 @@ with st.sidebar.expander("📤 Upload Data (Admin Only)", expanded=False):
                 else:
                     st.warning("⚠️ GitHub secrets belum dikonfigurasi, hanya simpan lokal.")
 
-                # reload app supaya langsung pakai data terbaru
                 st.experimental_rerun()
     else:
         st.info("🔒 Hanya admin yang bisa upload data.")
-
 
 # ==============================
 # Load data terakhir / simpan baru  (TIDAK DIUBAH)
