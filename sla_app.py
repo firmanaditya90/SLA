@@ -22,6 +22,19 @@ from io import BytesIO   # << tambahkan ini
 import base64
 import streamlit.components.v1 as components
 
+import json
+
+KPI_PATH = "data/target_kpi.json"
+
+def save_kpi_to_github(kpi_dict):
+    content = json.dumps(kpi_dict).encode()
+    return upload_file_to_github(content, path=KPI_PATH, message="Update KPI targets")
+
+def load_kpi_from_github():
+    content = download_file_from_github(path=KPI_PATH)
+    return json.loads(content.decode()) if content else {}
+
+
 import os
 import io
 import base64
@@ -435,7 +448,7 @@ if uploaded_file is not None:
             res = upload_file_to_github(
                 uploaded_file.getbuffer(),
                 path=GITHUB_PATH,  # <<< selalu "data/last_data.xlsx"
-                message="Replace SLA data"
+                message=f"Replace SLA data (upload: {uploaded_file.name})"
             )
             if res:
                 st.success("✅ File berhasil di-replace di GitHub!")
@@ -663,33 +676,22 @@ tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_r
 )
 
 with tab_overview:
-    st.subheader("📊 KPI Verifikasi Dokumen Penagihan")
+    st.header("📊 SLA Overview")
 
-    # Hitung rata-rata SLA Keuangan
-    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
-        avg_keu_seconds = df_filtered["KEUANGAN"].mean()
-        avg_keu_days = round(avg_keu_seconds / 86400, 2)  # format desimal hari
-        avg_keu_text = seconds_to_sla_format(avg_keu_seconds)  # format hari jam menit detik
-    else:
-        avg_keu_seconds = None
-        avg_keu_days = None
-        avg_keu_text = "-"
+    # load KPI dari GitHub saat startup
+    if "saved_kpi" not in st.session_state:
+        st.session_state["saved_kpi"] = load_kpi_from_github()
 
-    # Load target KPI dari file
-    saved_kpi = load_kpi()
+    saved_kpi = st.session_state["saved_kpi"]
 
-    # Input Target KPI (hanya admin)
-    if is_admin:
-        st.markdown("### 🎯 Atur Target KPI (Admin Only)")
-        new_kpi = st.number_input(
-            "Target KPI (hari, desimal)", 
-            min_value=0.0, step=0.1,
-            value=saved_kpi if saved_kpi else 1.5,
-            key="target_kpi_input"
-        )
+    # hanya admin yang bisa set KPI baru
+    if st.session_state.get("is_admin", False):
+        new_kpi = st.number_input("🎯 Tentukan Target KPI Verifikasi Dokumen (hari)", min_value=1, max_value=60,
+                                  value=saved_kpi if saved_kpi else 5)
         if st.button("💾 Simpan Target KPI"):
-            save_kpi(new_kpi)
-            st.success(f"Target KPI berhasil disimpan: {new_kpi} hari")
+            st.session_state["saved_kpi"] = new_kpi
+            save_kpi_to_github(new_kpi)
+            st.success(f"✅ Target KPI berhasil disimpan: {new_kpi} hari")
             saved_kpi = new_kpi
     else:
         if saved_kpi is None:
