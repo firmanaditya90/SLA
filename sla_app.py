@@ -422,14 +422,27 @@ with st.sidebar.expander("📤 Upload Data (Admin Only)", expanded=is_admin):
 # Load data terakhir / simpan baru  (TIDAK DIUBAH)
 # ==============================
 load_status = st.empty()
-if uploaded_file is not None and is_admin:
-    with st.spinner("🚀 Mengunggah & menyiapkan data..."):
-        if rocket_b64:
-            st.markdown(f'<div style="text-align:center;"><img src="{rocket_b64}" width="160"/></div>', unsafe_allow_html=True)
-        time.sleep(0.2)
+if uploaded_file is not None:
+    if st.button("💾 Simpan & Replace Data"):
+        # simpan lokal
+        os.makedirs("data", exist_ok=True)
         with open(DATA_PATH, "wb") as f:
             f.write(uploaded_file.getbuffer())
-        st.success("✅ Data baru berhasil diunggah dan disimpan!")
+        st.success("✅ Disimpan ke storage lokal.")
+
+        # simpan ke GitHub (paksa replace last_data.xlsx)
+        if GITHUB_TOKEN and GITHUB_REPO:
+            res = upload_file_to_github(
+                uploaded_file.getbuffer(),
+                path=GITHUB_PATH,  # <<< selalu "data/last_data.xlsx"
+                message="Replace SLA data"
+            )
+            if res:
+                st.success("✅ File berhasil di-replace di GitHub!")
+            else:
+                st.warning("⚠️ Upload ke GitHub gagal.")
+        st.rerun()
+
 
 if os.path.exists(DATA_PATH):
     # Progress & spinner saat baca file
