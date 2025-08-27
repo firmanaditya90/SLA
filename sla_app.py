@@ -22,46 +22,51 @@ import base64
 import streamlit.components.v1 as components
 
 # === GitHub Integration Helpers ===
-import base64, requests, io
+import os, io, base64, requests
+import pandas as pd
+import streamlit as st
 
+# ============================
+# KONFIGURASI
+# ============================
 DATA_PATH = os.path.join("data", "last_data.xlsx")
 
+# GitHub secrets
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN")
-GITHUB_REPO = st.secrets.get("firmanaditya90/sla")     # ex: "firmanaditya90/sla-dashboard"
+GITHUB_REPO = st.secrets.get("GITHUB_REPO")
 GITHUB_BRANCH = st.secrets.get("GITHUB_BRANCH", "main")
 GITHUB_PATH = st.secrets.get("GITHUB_PATH", "data/last_data.xlsx")
 
 _headers = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
 
-def github_get_file_info(path: str):
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}?ref={GITHUB_BRANCH}"
-    r = requests.get(url, headers=_headers)
-    return r.json() if r.status_code == 200 else None
+# ============================
+# Cache untuk baca Excel
+# ============================
+@st.cache_data
+def read_excel_cached(path, size, mtime):
+    return pd.read_excel(path)
 
-def download_file_from_github(path: str = GITHUB_PATH) -> bytes | None:
-    info = github_get_file_info(path)
-    if not info: return None
-    return base64.b64decode(info["content"].encode())
+# ============================
+# Load Data Awal
+# ============================
+df_raw = None
 
-def upload_file_to_github(file_bytes: bytes, path: str = GITHUB_PATH, message="Update SLA data"):
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
-    info = github_get_file_info(path)
-    sha = info.get("sha") if info else None
+if GITHUB_TOKEN and GITHUB_REPO:
+    try:
+        df_raw = load_df_from_github()
+    except Exception as e:
+        st.warning(f"Gagal load data dari GitHub: {e}")
 
-    data = {
-        "message": message,
-        "content": base64.b64encode(file_bytes).decode(),
-        "branch": GITHUB_BRANCH
-    }
-    if sha: data["sha"] = sha  # replace kalau sudah ada
-
-    r = requests.put(url, headers=_headers, json=data)
-    return r.json() if r.status_code in [200,201] else None
-
-def load_df_from_github(path: str = GITHUB_PATH):
-    content = download_file_from_github(path)
-    return pd.read_excel(io.BytesIO(content)) if content else None
-    
+if df_raw is not None:
+    st.info("✅ Data dimuat dari GitHub (file terbaru).")
+else:
+    if os.path.exists(DATA_PATH):
+        stat = os.stat(DATA_PATH)
+        df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
+        st.info("✅ Data dimuat dari storage lokal.")
+    else:
+        st.warning("⚠️ Belum ada data. Silakan upload file (admin).")
+        st.stop()
 # ==================================================================
 
 from datetime import datetime
