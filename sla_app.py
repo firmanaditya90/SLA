@@ -248,7 +248,7 @@ with st.sidebar.expander("📤 Upload Data (Admin Only)", expanded=False):
                     read_excel_cached.clear()
                 except Exception:
                     pass
-                st.experimental_rerun()
+                st.rerun()
     else:
         st.info("🔒 Hanya admin yang dapat mengunggah data.")
 
