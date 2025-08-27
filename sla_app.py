@@ -343,8 +343,15 @@ else:
         st.warning("⚠️ Belum ada data. Silakan upload file (admin).")
         st.stop()
 
+rocket_b64 = None
+if os.path.exists(ROCKET_GIF_PATH):
+    try:
+        rocket_b64 = "data:image/gif;base64," + gif_b64(ROCKET_GIF_PATH)
+    except Exception as e:
+        st.warning(f"🚀 Gagal memuat rocket.gif: {e}")
+else:
+    st.warning("🚀 File rocket.gif tidak ditemukan di folder app.py.")
 
-rocket_b64 = gif_b64(ROCKET_GIF_PATH)
 
 # ==============================
 # Admin password (TIDAK DIUBAH)
