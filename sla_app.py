@@ -30,8 +30,9 @@ import streamlit as st
 # ============================
 DATA_PATH = os.path.join("data", "last_data.xlsx")
 ROCKET_GIF_PATH = "rocket.gif"   # file harus ada di repo sama dengan app.py
+LOGO_PATH = "asdp_logo.png"      # logo perusahaan
 
-# GitHub secrets (AMAN)
+# GitHub secrets
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN")
 GITHUB_REPO = st.secrets.get("GITHUB_REPO")     # contoh: "firmanaditya90/SLA"
 GITHUB_BRANCH = st.secrets.get("GITHUB_BRANCH", "main")
@@ -104,8 +105,22 @@ else:
 # ============================
 # SIDEBAR
 # ============================
+with st.sidebar:
+    # Header Sidebar: Logo + Judul, rata tengah
+    if os.path.exists(LOGO_PATH):
+        st.markdown(
+            f"""
+            <div style="text-align: center;">
+                <img src="data:image/png;base64,{base64.b64encode(open(LOGO_PATH,"rb").read()).decode()}" width="160">
+                <h2>🚀 SLA Payment Analyzer</h2>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown("## 🚀 SLA Payment Analyzer")
 
-# 1. Filter Data (trigger tampilan SLA)
+# 1. Filter Data
 with st.sidebar.expander("📊 Filter Data", expanded=True):
     if df_raw is not None and "Tanggal" in df_raw:
         tanggal_awal = st.date_input("Tanggal awal", value=pd.to_datetime(df_raw["Tanggal"].min()))
@@ -114,8 +129,7 @@ with st.sidebar.expander("📊 Filter Data", expanded=True):
         tanggal_awal = None
         tanggal_akhir = None
 
-    proses_dipilih = []
-    unit_dipilih = None
+    proses_dipilih, unit_dipilih = [], None
     if df_raw is not None:
         proses_dipilih = st.multiselect(
             "Pilih Proses",
@@ -124,7 +138,7 @@ with st.sidebar.expander("📊 Filter Data", expanded=True):
         )
         if "Unit" in df_raw:
             unit_dipilih = st.selectbox("Pilih Unit", options=["-"] + list(df_raw["Unit"].unique()))
-    
+
     # Filter data
     df_filtered = df_raw.copy() if df_raw is not None else None
     if df_filtered is not None:
@@ -141,17 +155,22 @@ with st.sidebar.expander("⚙️ Pengaturan Tampilan"):
     tampil_ringkasan = st.checkbox("Tampilkan Ringkasan", value=True)
     tampil_grafik = st.checkbox("Tampilkan Grafik", value=True)
 
-# 3. Admin Login
+# 3. Admin Login (persist)
 with st.sidebar.expander("🔑 Admin Login"):
     if "is_admin" not in st.session_state:
         st.session_state["is_admin"] = False
 
-    password = st.text_input("Masukkan password admin:", type="password")
-    if password == "passwordRahasia123":
-        st.session_state["is_admin"] = True
-        st.success("✅ Login sebagai admin")
-    elif password:
-        st.error("❌ Password salah")
+    if not st.session_state["is_admin"]:  # belum login
+        password = st.text_input("Masukkan password admin:", type="password")
+        if password == "passwordRahasia123":
+            st.session_state["is_admin"] = True
+            st.success("✅ Login sebagai admin")
+        elif password:
+            st.error("❌ Password salah")
+    else:
+        st.success("✅ Anda sudah login sebagai admin")
+        if st.button("🚪 Logout", use_container_width=True):
+            st.session_state["is_admin"] = False
 
 # 4. Upload Data (Admin Only)
 with st.sidebar.expander("📤 Upload Data (Admin Only)", expanded=False):
@@ -181,20 +200,20 @@ with st.sidebar.expander("📤 Upload Data (Admin Only)", expanded=False):
 # DASHBOARD
 # ============================
 
-st.title("📈 Dashboard SLA")
-
-# Rocket gif
+# Rocket gif di atas judul
 if os.path.exists(ROCKET_GIF_PATH):
     try:
         rocket_b64 = gif_b64(ROCKET_GIF_PATH)
         st.markdown(
-            f'<img src="data:image/gif;base64,{rocket_b64}" width="120"/>',
+            f'<div style="text-align:center;"><img src="data:image/gif;base64,{rocket_b64}" width="120"/></div>',
             unsafe_allow_html=True
         )
     except Exception as e:
         st.warning(f"🚀 Gagal load rocket.gif: {e}")
 else:
     st.warning("🚀 File rocket.gif tidak ditemukan di folder app.py.")
+
+st.title("📈 Dashboard SLA")
 
 # Jika ada data → tampilkan ringkasan & grafik
 if df_filtered is not None and not df_filtered.empty:
