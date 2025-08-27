@@ -21,6 +21,47 @@ from io import BytesIO   # << tambahkan ini
 import base64
 import streamlit.components.v1 as components
 
+# === GitHub Integration Helpers ===
+import base64, requests, io
+
+GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN")
+GITHUB_REPO = st.secrets.get("firmanaditya90/sla")     # ex: "firmanaditya90/sla-dashboard"
+GITHUB_BRANCH = st.secrets.get("GITHUB_BRANCH", "main")
+GITHUB_PATH = st.secrets.get("GITHUB_PATH", "data/last_data.xlsx")
+
+_headers = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
+
+def github_get_file_info(path: str):
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}?ref={GITHUB_BRANCH}"
+    r = requests.get(url, headers=_headers)
+    return r.json() if r.status_code == 200 else None
+
+def download_file_from_github(path: str = GITHUB_PATH) -> bytes | None:
+    info = github_get_file_info(path)
+    if not info: return None
+    return base64.b64decode(info["content"].encode())
+
+def upload_file_to_github(file_bytes: bytes, path: str = GITHUB_PATH, message="Update SLA data"):
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+    info = github_get_file_info(path)
+    sha = info.get("sha") if info else None
+
+    data = {
+        "message": message,
+        "content": base64.b64encode(file_bytes).decode(),
+        "branch": GITHUB_BRANCH
+    }
+    if sha: data["sha"] = sha  # replace kalau sudah ada
+
+    r = requests.put(url, headers=_headers, json=data)
+    return r.json() if r.status_code in [200,201] else None
+
+def load_df_from_github(path: str = GITHUB_PATH):
+    content = download_file_from_github(path)
+    return pd.read_excel(io.BytesIO(content)) if content else None
+    
+# ==================================================================
+
 from datetime import datetime
 
 KPI_FILE = os.path.join("data", "kpi_target.json")
@@ -244,20 +285,29 @@ with st.sidebar:
     )
     st.markdown("<h3 style='text-align: center;'>🚀 SLA Payment Analyzer</h3>", unsafe_allow_html=True)
 
-# ==============================
-# Path & Assets (TIDAK DIUBAH)
-# ==============================
-os.makedirs("data", exist_ok=True)
-os.makedirs("assets", exist_ok=True)  # taruh assets/rocket.gif
-DATA_PATH = os.path.join("data", "last_data.xlsx")
-ROCKET_GIF_PATH = os.path.join("assets", "rocket.gif")
+# ============================
+# Load Data (from GitHub if available, else fallback)
+# ============================
+df_raw = None
 
-def gif_b64(path: str) -> str | None:
+if GITHUB_TOKEN and GITHUB_REPO:
     try:
-        with open(path, "rb") as f:
-            return f"data:image/gif;base64,{base64.b64encode(f.read()).decode('utf-8')}"
-    except Exception:
-        return None
+        df_raw = load_df_from_github()
+    except Exception as e:
+        st.warning(f"Gagal load data dari GitHub: {e}")
+
+if df_raw is not None:
+    st.info("✅ Data dimuat dari GitHub (file terbaru).")
+else:
+    # fallback ke lokal (seperti kode lama)
+    if os.path.exists(DATA_PATH):
+        stat = os.stat(DATA_PATH)
+        df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
+        st.info("✅ Data dimuat dari storage lokal.")
+    else:
+        st.warning("⚠️ Belum ada data. Silakan upload file (admin).")
+        st.stop()
+
 
 rocket_b64 = gif_b64(ROCKET_GIF_PATH)
 
@@ -319,8 +369,34 @@ def seconds_to_sla_format(total_seconds):
 # ==============================
 # Upload (hanya admin) (TIDAK DIUBAH)
 # ==============================
-with st.sidebar.expander("📤 Upload Data (Admin Only)", expanded=is_admin):
-    uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx") if is_admin else None
+# ============================
+# Sidebar Upload (Admin Only)
+# ============================
+with st.sidebar.expander("📤 Upload Data (Admin Only)", expanded=False):
+    if is_admin:
+        uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx")
+
+        if uploaded_file is not None:
+            if st.button("💾 Simpan & Replace Data", use_container_width=True):
+                # --- Simpan lokal sebagai fallback ---
+                os.makedirs("data", exist_ok=True)
+                with open(DATA_PATH, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                st.success("✅ File berhasil disimpan ke storage lokal.")
+
+                # --- Simpan juga ke GitHub (replace) ---
+                if GITHUB_TOKEN and GITHUB_REPO:
+                    res = upload_file_to_github(uploaded_file.getbuffer(), GITHUB_PATH)
+                    if res:
+                        st.success("✅ File juga berhasil diupload & direplace di GitHub!")
+                else:
+                    st.warning("⚠️ GitHub secrets belum dikonfigurasi, hanya simpan lokal.")
+
+                # reload app supaya langsung pakai data terbaru
+                st.experimental_rerun()
+    else:
+        st.info("🔒 Hanya admin yang bisa upload data.")
+
 
 # ==============================
 # Load data terakhir / simpan baru  (TIDAK DIUBAH)
