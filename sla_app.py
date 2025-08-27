@@ -675,10 +675,7 @@ tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_r
     ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi", "📥 Download Report"]
 )
 
-with tab_overview:
-    st.header("📊 SLA Overview")
-
-    import numpy as np
+import numpy as np
 
 avg_keu_days, avg_keu_text = None, "-"
 
@@ -700,69 +697,6 @@ if df_filtered is not None and not df_filtered.empty:
             if minutes > 0: parts.append(f"{minutes} menit")
 
             avg_keu_text = " ".join(parts) if parts else "0 menit"
-    # load KPI dari GitHub saat startup
-    if "saved_kpi" not in st.session_state:
-        st.session_state["saved_kpi"] = load_kpi_from_github()
-
-    saved_kpi = st.session_state["saved_kpi"]
-
-    # hanya admin yang bisa set KPI baru
-    if st.session_state.get("is_admin", False):
-        new_kpi = st.number_input("🎯 Tentukan Target KPI Verifikasi Dokumen (hari)", min_value=1, max_value=60,
-                                  value=saved_kpi if saved_kpi else 5)
-        if st.button("💾 Simpan Target KPI"):
-            st.session_state["saved_kpi"] = new_kpi
-            save_kpi_to_github(new_kpi)
-            st.success(f"✅ Target KPI berhasil disimpan: {new_kpi} hari")
-            saved_kpi = new_kpi
-    else:
-        if saved_kpi is None:
-            st.info("Belum ada Target KPI yang ditentukan admin.")
-
-    # Layout 3 kolom KPI
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.markdown(f"""
-            <div class="kpi-card">
-                <div class="kpi-label">Target KPI Verifikasi Dokumen</div>
-                <div class="kpi-value">{saved_kpi if saved_kpi else "-" } hari</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with col2:
-        st.markdown(f"""
-            <div class="kpi-card">
-                <div class="kpi-label">Pencapaian</div>
-                <div class="kpi-value">{avg_keu_text}</div>
-                <div class="kpi-sub">({avg_keu_days if avg_keu_days is not None else "-"} hari)</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    with col3:
-        if saved_kpi and avg_keu_days is not None:
-            if avg_keu_days <= saved_kpi:
-                st.markdown("""
-                    <div class="kpi-card">
-                        <div class="kpi-label">Status</div>
-                        <div class="kpi-status-on">✅ ON TARGET</div>
-                    </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown("""
-                    <div class="kpi-card">
-                        <div class="kpi-label">Status</div>
-                        <div class="kpi-status-off">❌ NOT ON TARGET</div>
-                    </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.markdown("""
-                <div class="kpi-card">
-                    <div class="kpi-label">Status</div>
-                    <div class="kpi-value">-</div>
-                </div>
-            """, unsafe_allow_html=True)
-
     # ==============================
     # Tabel Rata-rata SLA Keuangan per Periode (wide format)
     # ==============================
