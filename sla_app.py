@@ -103,16 +103,15 @@ else:
     df_raw = None
 
 # ============================
-# SIDEBAR
+# SIDEBAR (Header + Menu)
 # ============================
 with st.sidebar:
-    # Header Sidebar: Logo + Judul, rata tengah
     if os.path.exists(LOGO_PATH):
         st.markdown(
             f"""
             <div style="text-align: center;">
-                <img src="data:image/png;base64,{base64.b64encode(open(LOGO_PATH,"rb").read()).decode()}" width="160">
-                <h2>🚀 SLA Payment Analyzer</h2>
+                <img src="data:image/png;base64,{base64.b64encode(open(LOGO_PATH,'rb').read()).decode()}" width="160">
+                <h2 style="margin-top:10px;">🚀 SLA Payment Analyzer</h2>
             </div>
             """,
             unsafe_allow_html=True
@@ -155,14 +154,14 @@ with st.sidebar.expander("⚙️ Pengaturan Tampilan"):
     tampil_ringkasan = st.checkbox("Tampilkan Ringkasan", value=True)
     tampil_grafik = st.checkbox("Tampilkan Grafik", value=True)
 
-# 3. Admin Login (persist)
+# 3. Admin Login (password = AP123)
 with st.sidebar.expander("🔑 Admin Login"):
     if "is_admin" not in st.session_state:
         st.session_state["is_admin"] = False
 
     if not st.session_state["is_admin"]:  # belum login
         password = st.text_input("Masukkan password admin:", type="password")
-        if password == "passwordRahasia123":
+        if password == "AP123":  # <<<<<<<<<<<<<< PASSWORD RESMI
             st.session_state["is_admin"] = True
             st.success("✅ Login sebagai admin")
         elif password:
@@ -199,7 +198,6 @@ with st.sidebar.expander("📤 Upload Data (Admin Only)", expanded=False):
 # ============================
 # DASHBOARD
 # ============================
-
 # Rocket gif di atas judul
 if os.path.exists(ROCKET_GIF_PATH):
     try:
@@ -213,20 +211,25 @@ if os.path.exists(ROCKET_GIF_PATH):
 else:
     st.warning("🚀 File rocket.gif tidak ditemukan di folder app.py.")
 
-st.title("📈 Dashboard SLA")
+st.markdown("<h1 style='text-align:center;'>📈 Dashboard SLA</h1>", unsafe_allow_html=True)
 
 # Jika ada data → tampilkan ringkasan & grafik
 if df_filtered is not None and not df_filtered.empty:
     if tampil_ringkasan:
+        st.markdown("<div style='padding:15px; border:1px solid #ddd; border-radius:10px; background:#f9f9f9;'>", unsafe_allow_html=True)
         st.subheader("📌 Ringkasan SLA")
         st.write(df_filtered.describe())
+        st.markdown("</div>", unsafe_allow_html=True)
 
     if tampil_grafik:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<div style='padding:15px; border:1px solid #ddd; border-radius:10px; background:#f9f9f9;'>", unsafe_allow_html=True)
         st.subheader("📊 Grafik SLA (contoh)")
         try:
             st.line_chart(df_filtered[df_filtered.columns[2:]])
         except Exception as e:
             st.warning(f"⚠️ Grafik gagal ditampilkan: {e}")
+        st.markdown("</div>", unsafe_allow_html=True)
 else:
     st.info("📥 Silakan upload file Excel melalui sidebar untuk mulai menggunakan dashboard.")
 
@@ -446,15 +449,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ==============================
-# Logo di Sidebar (TIDAK DIUBAH)
-# ==============================
-with st.sidebar:
-    st.image(
-        "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png",
-        width=180
-    )
-    st.markdown("<h3 style='text-align: center;'>🚀 SLA Payment Analyzer</h3>", unsafe_allow_html=True)
 
 # ============================
 # Load Data (from GitHub if available, else fallback)
