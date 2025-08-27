@@ -46,7 +46,102 @@ def format_duration(seconds):
     minutes = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
     return f"{days} hari {hours} jam {minutes} menit {secs} detik"
-    
+
+import os
+import io
+import base64
+import requests
+import pandas as pd
+import streamlit as st
+from io import BytesIO
+
+# ============================
+# KONFIGURASI
+# ============================
+DATA_PATH = os.path.join("data", "last_data.xlsx")
+ROCKET_GIF_PATH = "rocket.gif"
+LOGO_PATH = "asdp_logo.png"
+
+# GitHub config (gunakan secrets di Streamlit)
+try:
+    GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
+    GITHUB_REPO = st.secrets["GITHUB_REPO"]     # contoh: "firmanaditya90/SLA"
+    GITHUB_BRANCH = st.secrets.get("GITHUB_BRANCH", "main")
+    GITHUB_PATH = st.secrets.get("GITHUB_PATH", "data/last_data.xlsx")
+except Exception:
+    GITHUB_TOKEN = GITHUB_REPO = None
+
+_headers = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
+
+# ============================
+# HELPER FUNCTIONS
+# ============================
+def github_get_file_info(path: str):
+    if not (GITHUB_TOKEN and GITHUB_REPO):
+        return None
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}?ref={GITHUB_BRANCH}"
+    r = requests.get(url, headers=_headers)
+    return r.json() if r.status_code == 200 else None
+
+def download_file_from_github(path: str = None) -> bytes | None:
+    if not (GITHUB_TOKEN and GITHUB_REPO):
+        return None
+    path = path or GITHUB_PATH
+    info = github_get_file_info(path)
+    if not info:
+        return None
+    return base64.b64decode(info["content"].encode())
+
+def upload_file_to_github(file_bytes: bytes, path: str = None, message="Update SLA data"):
+    if not (GITHUB_TOKEN and GITHUB_REPO):
+        return None
+    path = path or GITHUB_PATH
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+    info = github_get_file_info(path)
+    sha = info.get("sha") if info else None
+    data = {
+        "message": message,
+        "content": base64.b64encode(file_bytes).decode(),
+        "branch": GITHUB_BRANCH
+    }
+    if sha:
+        data["sha"] = sha
+    r = requests.put(url, headers=_headers, json=data)
+    return r.json() if r.status_code in (200, 201) else None
+
+@st.cache_data
+def read_excel_cached(path, size, mtime):
+    return pd.read_excel(path, header=[0, 1])
+
+def gif_b64(filepath):
+    with open(filepath, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode("utf-8")
+
+# ============================
+# LOAD DATA
+# ============================
+df_raw = None
+
+# coba ambil dari GitHub
+if GITHUB_TOKEN and GITHUB_REPO:
+    with st.spinner("🔄 Mengambil data dari GitHub..."):
+        content = download_file_from_github()
+        if content:
+            df_raw = pd.read_excel(BytesIO(content), header=[0, 1])
+            st.info("✅ Data dimuat dari GitHub.")
+
+# fallback lokal
+if df_raw is None and os.path.exists(DATA_PATH):
+    with st.spinner("🔄 Membaca data terakhir (lokal)..."):
+        stat = os.stat(DATA_PATH)
+        df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
+        st.info("ℹ️ Menampilkan data dari upload terakhir (lokal).")
+
+if df_raw is None:
+    st.warning("⚠️ Belum ada file yang diunggah.")
+    df_raw = None
+
 # ==============================
 # Konfigurasi Halaman (TIDAK DIUBAH)
 # ==============================
@@ -357,7 +452,7 @@ with st.sidebar.expander("🛠️ Admin Tools", expanded=False):
     if is_admin and os.path.exists(DATA_PATH):
         if st.button("🗑️ Reset Data (hapus data terakhir)"):
             os.remove(DATA_PATH)
-            st.experimental_rerun()
+            st.rerun()
 
 # ==============================
 # Preprocessing kolom (TIDAK DIUBAH)
