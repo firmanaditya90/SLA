@@ -22,101 +22,6 @@ from io import BytesIO   # << tambahkan ini
 import base64
 import streamlit.components.v1 as components
 
-import os
-import io
-import base64
-import requests
-import pandas as pd
-import streamlit as st
-from io import BytesIO
-
-# ============================
-# KONFIGURASI
-# ============================
-DATA_PATH = os.path.join("data", "last_data.xlsx")
-ROCKET_GIF_PATH = "rocket.gif"
-LOGO_PATH = "asdp_logo.png"
-
-# GitHub config (gunakan secrets di Streamlit)
-try:
-    GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
-    GITHUB_REPO = st.secrets["GITHUB_REPO"]     # contoh: "firmanaditya90/SLA"
-    GITHUB_BRANCH = st.secrets.get("GITHUB_BRANCH", "main")
-    GITHUB_PATH = st.secrets.get("GITHUB_PATH", "data/last_data.xlsx")
-except Exception:
-    GITHUB_TOKEN = GITHUB_REPO = None
-
-_headers = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
-
-# ============================
-# HELPER FUNCTIONS
-# ============================
-def github_get_file_info(path: str):
-    if not (GITHUB_TOKEN and GITHUB_REPO):
-        return None
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}?ref={GITHUB_BRANCH}"
-    r = requests.get(url, headers=_headers)
-    return r.json() if r.status_code == 200 else None
-
-def download_file_from_github(path: str = None) -> bytes | None:
-    if not (GITHUB_TOKEN and GITHUB_REPO):
-        return None
-    path = path or GITHUB_PATH
-    info = github_get_file_info(path)
-    if not info:
-        return None
-    return base64.b64decode(info["content"].encode())
-
-def upload_file_to_github(file_bytes: bytes, path: str = None, message="Update SLA data"):
-    if not (GITHUB_TOKEN and GITHUB_REPO):
-        return None
-    path = path or GITHUB_PATH
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
-    info = github_get_file_info(path)
-    sha = info.get("sha") if info else None
-    data = {
-        "message": message,
-        "content": base64.b64encode(file_bytes).decode(),
-        "branch": GITHUB_BRANCH
-    }
-    if sha:
-        data["sha"] = sha
-    r = requests.put(url, headers=_headers, json=data)
-    return r.json() if r.status_code in (200, 201) else None
-
-@st.cache_data
-def read_excel_cached(path, size, mtime):
-    return pd.read_excel(path, header=[0, 1])
-
-def gif_b64(filepath):
-    with open(filepath, "rb") as f:
-        data = f.read()
-    return base64.b64encode(data).decode("utf-8")
-
-# ============================
-# LOAD DATA
-# ============================
-df_raw = None
-
-# coba ambil dari GitHub
-if GITHUB_TOKEN and GITHUB_REPO:
-    with st.spinner("🔄 Mengambil data dari GitHub..."):
-        content = download_file_from_github()
-        if content:
-            df_raw = pd.read_excel(BytesIO(content), header=[0, 1])
-            st.info("✅ Data dimuat dari GitHub.")
-
-# fallback lokal
-if df_raw is None and os.path.exists(DATA_PATH):
-    with st.spinner("🔄 Membaca data terakhir (lokal)..."):
-        stat = os.stat(DATA_PATH)
-        df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
-        st.info("ℹ️ Menampilkan data dari upload terakhir (lokal).")
-
-if df_raw is None:
-    st.warning("⚠️ Belum ada file yang diunggah.")
-    df_raw = None
-
 from datetime import datetime
 
 KPI_FILE = os.path.join("data", "kpi_target.json")
@@ -422,27 +327,14 @@ with st.sidebar.expander("📤 Upload Data (Admin Only)", expanded=is_admin):
 # Load data terakhir / simpan baru  (TIDAK DIUBAH)
 # ==============================
 load_status = st.empty()
-if uploaded_file is not None:
-    if st.button("💾 Simpan & Replace Data"):
-        # simpan lokal
-        os.makedirs("data", exist_ok=True)
+if uploaded_file is not None and is_admin:
+    with st.spinner("🚀 Mengunggah & menyiapkan data..."):
+        if rocket_b64:
+            st.markdown(f'<div style="text-align:center;"><img src="{rocket_b64}" width="160"/></div>', unsafe_allow_html=True)
+        time.sleep(0.2)
         with open(DATA_PATH, "wb") as f:
             f.write(uploaded_file.getbuffer())
-        st.success("✅ Disimpan ke storage lokal.")
-
-        # simpan ke GitHub (paksa replace last_data.xlsx)
-        if GITHUB_TOKEN and GITHUB_REPO:
-            res = upload_file_to_github(
-                uploaded_file.getbuffer(),
-                path=GITHUB_PATH,  # <<< selalu "data/last_data.xlsx"
-                message=f"Replace SLA data (upload: {uploaded_file.name})"
-            )
-            if res:
-                st.success("✅ File berhasil di-replace di GitHub!")
-            else:
-                st.warning("⚠️ Upload ke GitHub gagal.")
-        st.rerun()
-
+        st.success("✅ Data baru berhasil diunggah dan disimpan!")
 
 if os.path.exists(DATA_PATH):
     # Progress & spinner saat baca file
@@ -465,7 +357,7 @@ with st.sidebar.expander("🛠️ Admin Tools", expanded=False):
     if is_admin and os.path.exists(DATA_PATH):
         if st.button("🗑️ Reset Data (hapus data terakhir)"):
             os.remove(DATA_PATH)
-            st.rerun()
+            st.experimental_rerun()
 
 # ==============================
 # Preprocessing kolom (TIDAK DIUBAH)
@@ -662,28 +554,83 @@ tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_r
     ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi", "📥 Download Report"]
 )
 
-import numpy as np
+with tab_overview:
+    st.subheader("📊 KPI Verifikasi Dokumen Penagihan")
 
-avg_keu_days, avg_keu_text = None, "-"
+    # Hitung rata-rata SLA Keuangan
+    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
+        avg_keu_seconds = df_filtered["KEUANGAN"].mean()
+        avg_keu_days = round(avg_keu_seconds / 86400, 2)  # format desimal hari
+        avg_keu_text = seconds_to_sla_format(avg_keu_seconds)  # format hari jam menit detik
+    else:
+        avg_keu_seconds = None
+        avg_keu_days = None
+        avg_keu_text = "-"
 
-if df_filtered is not None and not df_filtered.empty:
-    if "Keuangan" in df_filtered.columns:   # ganti sesuai nama kolom di datamu
-        # hitung rata-rata hari
-        avg_keu_days = df_filtered["Keuangan"].mean()
+    # Load target KPI dari file
+    saved_kpi = load_kpi()
 
-        # ubah jadi teks (hari, jam, menit)
-        if not pd.isna(avg_keu_days):
-            total_seconds = int(avg_keu_days * 24 * 3600)
-            days, remainder = divmod(total_seconds, 86400)
-            hours, remainder = divmod(remainder, 3600)
-            minutes, _ = divmod(remainder, 60)
+    # Input Target KPI (hanya admin)
+    if is_admin:
+        st.markdown("### 🎯 Atur Target KPI (Admin Only)")
+        new_kpi = st.number_input(
+            "Target KPI (hari, desimal)", 
+            min_value=0.0, step=0.1,
+            value=saved_kpi if saved_kpi else 1.5,
+            key="target_kpi_input"
+        )
+        if st.button("💾 Simpan Target KPI"):
+            save_kpi(new_kpi)
+            st.success(f"Target KPI berhasil disimpan: {new_kpi} hari")
+            saved_kpi = new_kpi
+    else:
+        if saved_kpi is None:
+            st.info("Belum ada Target KPI yang ditentukan admin.")
 
-            parts = []
-            if days > 0: parts.append(f"{days} hari")
-            if hours > 0: parts.append(f"{hours} jam")
-            if minutes > 0: parts.append(f"{minutes} menit")
+    # Layout 3 kolom KPI
+    col1, col2, col3 = st.columns(3)
 
-            avg_keu_text = " ".join(parts) if parts else "0 menit"
+    with col1:
+        st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-label">Target KPI Verifikasi Dokumen</div>
+                <div class="kpi-value">{saved_kpi if saved_kpi else "-" } hari</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-label">Pencapaian</div>
+                <div class="kpi-value">{avg_keu_text}</div>
+                <div class="kpi-sub">({avg_keu_days if avg_keu_days is not None else "-"} hari)</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    with col3:
+        if saved_kpi and avg_keu_days is not None:
+            if avg_keu_days <= saved_kpi:
+                st.markdown("""
+                    <div class="kpi-card">
+                        <div class="kpi-label">Status</div>
+                        <div class="kpi-status-on">✅ ON TARGET</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                    <div class="kpi-card">
+                        <div class="kpi-label">Status</div>
+                        <div class="kpi-status-off">❌ NOT ON TARGET</div>
+                    </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+                <div class="kpi-card">
+                    <div class="kpi-label">Status</div>
+                    <div class="kpi-value">-</div>
+                </div>
+            """, unsafe_allow_html=True)
+
     # ==============================
     # Tabel Rata-rata SLA Keuangan per Periode (wide format)
     # ==============================
