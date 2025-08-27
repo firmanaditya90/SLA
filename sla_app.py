@@ -21,97 +21,145 @@ from io import BytesIO   # << tambahkan ini
 import base64
 import streamlit.components.v1 as components
 
-import os, io, base64, requests
+# app.py (full, optimized)
+import os
+import io
+import base64
+import requests
 import pandas as pd
 import streamlit as st
 
 # ============================
-# KONFIGURASI
+# CONFIG
 # ============================
 DATA_PATH = os.path.join("data", "last_data.xlsx")
-ROCKET_GIF_PATH = "rocket.gif"   # file harus ada di repo sama dengan app.py
-LOGO_PATH = "asdp_logo.png"      # logo perusahaan
+ROCKET_GIF_PATH = "rocket.gif"   # harus ada di repo (satu folder dgn app.py) atau hilangkan
+LOGO_PATH = "asdp_logo.png"      # file logo di repo
 
-# GitHub secrets
+# GitHub secrets (safe: keep in st.secrets)
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN")
-GITHUB_REPO = st.secrets.get("GITHUB_REPO")     # contoh: "firmanaditya90/SLA"
+GITHUB_REPO = st.secrets.get("GITHUB_REPO")     # "username/repo"
 GITHUB_BRANCH = st.secrets.get("GITHUB_BRANCH", "main")
 GITHUB_PATH = st.secrets.get("GITHUB_PATH", "data/last_data.xlsx")
 
 _headers = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
 
+# Admin password (ubah sesuai kebutuhan). Jangan commit password ke repo.
+ADMIN_PASSWORD = "AP123"
+
 # ============================
-# HELPER FUNCTIONS
+# HELPERS (all defined before usage)
 # ============================
 def github_get_file_info(path: str):
+    """Return GitHub contents API response (json) or None."""
+    if not (GITHUB_TOKEN and GITHUB_REPO):
+        return None
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}?ref={GITHUB_BRANCH}"
-    r = requests.get(url, headers=_headers)
-    return r.json() if r.status_code == 200 else None
+    r = requests.get(url, headers=_headers, timeout=20)
+    if r.status_code == 200:
+        return r.json()
+    return None
 
+@st.cache_data
 def download_file_from_github(path: str = GITHUB_PATH) -> bytes | None:
+    """
+    Cached download of file content (raw bytes) from GitHub.
+    Cache key depends on 'path' and repo secrets implicitly.
+    """
     info = github_get_file_info(path)
     if not info:
         return None
-    return base64.b64decode(info["content"].encode())
+    content_b64 = info.get("content", "")
+    if not content_b64:
+        return None
+    return base64.b64decode(content_b64.encode())
+
+@st.cache_data
+def load_df_from_github(path: str = GITHUB_PATH):
+    """Return DataFrame loaded from GitHub file (cached)."""
+    content = download_file_from_github(path)
+    if content is None:
+        return None
+    return pd.read_excel(io.BytesIO(content))
 
 def upload_file_to_github(file_bytes: bytes, path: str = GITHUB_PATH, message="Update SLA data"):
+    """Create or update file in repo via GitHub Contents API."""
+    if not (GITHUB_TOKEN and GITHUB_REPO):
+        return None
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
     info = github_get_file_info(path)
     sha = info.get("sha") if info else None
 
-    data = {
+    payload = {
         "message": message,
         "content": base64.b64encode(file_bytes).decode(),
         "branch": GITHUB_BRANCH
     }
     if sha:
-        data["sha"] = sha
-    r = requests.put(url, headers=_headers, json=data)
-    return r.json() if r.status_code in [200, 201] else None
+        payload["sha"] = sha
 
-def load_df_from_github(path: str = GITHUB_PATH):
-    content = download_file_from_github(path)
-    return pd.read_excel(io.BytesIO(content)) if content else None
+    r = requests.put(url, headers=_headers, json=payload, timeout=30)
+    if r.status_code in (200, 201):
+        # invalidate cached download/load after update
+        try:
+            download_file_from_github.clear()
+            load_df_from_github.clear()
+        except Exception:
+            pass
+        return r.json()
+    else:
+        # return None and let caller handle message
+        return None
 
 @st.cache_data
 def read_excel_cached(path, size, mtime):
+    """Cached local read to avoid repeated heavy IO."""
     return pd.read_excel(path)
 
 def gif_b64(filepath):
+    """Return base64 string for a gif/png file (not cached to allow updates)."""
     with open(filepath, "rb") as f:
         data = f.read()
     return base64.b64encode(data).decode("utf-8")
 
 # ============================
-# LOAD DATA AWAL
+# LOAD DATA (use cached functions)
 # ============================
+# Try load from GitHub (cached). Provide spinner to indicate network op.
 df_raw = None
 if GITHUB_TOKEN and GITHUB_REPO:
-    try:
-        df_raw = load_df_from_github()
-    except Exception as e:
-        st.warning(f"Gagal load data dari GitHub: {e}")
+    with st.spinner("⏳ Mengambil data terbaru dari GitHub (cached)..."):
+        try:
+            df_raw = load_df_from_github()
+        except Exception as e:
+            # do not crash; show a friendly warning
+            st.warning("Gagal mengambil data dari GitHub (cek secrets / koneksi).")
+            df_raw = None
 
-if df_raw is not None:
-    st.info("✅ Data dimuat dari GitHub (file terbaru).")
-elif os.path.exists(DATA_PATH):
-    stat = os.stat(DATA_PATH)
-    df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
-    st.info("✅ Data dimuat dari storage lokal.")
-else:
+# Fallback local if no GitHub data
+if df_raw is None and os.path.exists(DATA_PATH):
+    try:
+        stat = os.stat(DATA_PATH)
+        df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
+    except Exception:
+        df_raw = None
+
+# If still None -> no data yet (but don't st.stop(), we want sidebar always available)
+if df_raw is None:
     st.warning("⚠️ Belum ada data. Silakan upload file (admin).")
-    df_raw = None
 
 # ============================
-# SIDEBAR (Header + Menu)
+# SIDEBAR (header centered + menu)
 # ============================
 with st.sidebar:
+    # header: logo centered + title
     if os.path.exists(LOGO_PATH):
+        logo_b64 = base64.b64encode(open(LOGO_PATH, "rb").read()).decode()
         st.markdown(
             f"""
-            <div style="text-align: center;">
-                <img src="data:image/png;base64,{base64.b64encode(open(LOGO_PATH,'rb').read()).decode()}" width="160">
-                <h2 style="margin-top:10px;">🚀 SLA Payment Analyzer</h2>
+            <div style="text-align:center; padding-bottom:8px;">
+                <img src="data:image/png;base64,{logo_b64}" width="160" style="margin-bottom:6px;">
+                <div style="font-weight:600; font-size:18px;">🚀 SLA Payment Analyzer</div>
             </div>
             """,
             unsafe_allow_html=True
@@ -119,119 +167,152 @@ with st.sidebar:
     else:
         st.markdown("## 🚀 SLA Payment Analyzer")
 
-# 1. Filter Data
+# 1) Filter Data (uses df_raw when available)
 with st.sidebar.expander("📊 Filter Data", expanded=True):
     if df_raw is not None and "Tanggal" in df_raw:
+        # parse date column to datetime if not already
+        try:
+            df_raw["Tanggal"] = pd.to_datetime(df_raw["Tanggal"])
+        except Exception:
+            pass
         tanggal_awal = st.date_input("Tanggal awal", value=pd.to_datetime(df_raw["Tanggal"].min()))
         tanggal_akhir = st.date_input("Tanggal akhir", value=pd.to_datetime(df_raw["Tanggal"].max()))
+        # ensure sanity
+        if tanggal_awal > tanggal_akhir:
+            st.error("Tanggal awal tidak boleh setelah tanggal akhir.")
     else:
         tanggal_awal = None
         tanggal_akhir = None
 
-    proses_dipilih, unit_dipilih = [], None
+    proses_dipilih = []
+    unit_dipilih = None
     if df_raw is not None:
-        proses_dipilih = st.multiselect(
-            "Pilih Proses",
-            options=df_raw.columns[2:],  # kolom proses dimulai dari kolom ke-3
-            default=list(df_raw.columns[2:])
-        )
+        # assume proses columns start at index 2 as your app expects
+        proses_cols = list(df_raw.columns[2:]) if len(df_raw.columns) > 2 else []
+        proses_dipilih = st.multiselect("Pilih Proses", options=proses_cols, default=proses_cols)
         if "Unit" in df_raw:
             unit_dipilih = st.selectbox("Pilih Unit", options=["-"] + list(df_raw["Unit"].unique()))
+    else:
+        st.write("Data belum tersedia — silakan upload.")
 
-    # Filter data
-    df_filtered = df_raw.copy() if df_raw is not None else None
-    if df_filtered is not None:
-        if tanggal_awal and tanggal_akhir:
-            df_filtered = df_filtered[
-                (df_filtered["Tanggal"] >= pd.to_datetime(tanggal_awal)) &
-                (df_filtered["Tanggal"] <= pd.to_datetime(tanggal_akhir))
-            ]
-        if unit_dipilih and unit_dipilih != "-":
-            df_filtered = df_filtered[df_filtered["Unit"] == unit_dipilih]
-
-# 2. Pengaturan Tampilan
+# 2) Display settings
 with st.sidebar.expander("⚙️ Pengaturan Tampilan"):
     tampil_ringkasan = st.checkbox("Tampilkan Ringkasan", value=True)
     tampil_grafik = st.checkbox("Tampilkan Grafik", value=True)
 
-# 3. Admin Login (password = AP123)
+# 3) Admin login (persistent)
 with st.sidebar.expander("🔑 Admin Login"):
     if "is_admin" not in st.session_state:
         st.session_state["is_admin"] = False
 
-    if not st.session_state["is_admin"]:  # belum login
-        password = st.text_input("Masukkan password admin:", type="password")
-        if password == "AP123":  # <<<<<<<<<<<<<< PASSWORD RESMI
-            st.session_state["is_admin"] = True
-            st.success("✅ Login sebagai admin")
-        elif password:
-            st.error("❌ Password salah")
+    if not st.session_state["is_admin"]:
+        pwd = st.text_input("Masukkan password admin:", type="password")
+        if pwd:
+            if pwd == ADMIN_PASSWORD:
+                st.session_state["is_admin"] = True
+                st.success("✅ Login berhasil (admin).")
+            else:
+                st.error("❌ Password salah")
     else:
-        st.success("✅ Anda sudah login sebagai admin")
-        if st.button("🚪 Logout", use_container_width=True):
+        st.success("✅ Anda terautentikasi sebagai admin")
+        if st.button("🚪 Logout"):
             st.session_state["is_admin"] = False
 
-# 4. Upload Data (Admin Only)
+# 4) Upload Data (admin only) - always visible, but uploader active only for admin
 with st.sidebar.expander("📤 Upload Data (Admin Only)", expanded=False):
     if st.session_state.get("is_admin", False):
-        uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx")
+        uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type=["xlsx"])
         if uploaded_file is not None:
-            if st.button("💾 Simpan & Replace Data", use_container_width=True):
-                # Simpan lokal
+            if st.button("💾 Simpan & Replace Data"):
+                # save local fallback
                 os.makedirs("data", exist_ok=True)
                 with open(DATA_PATH, "wb") as f:
                     f.write(uploaded_file.getbuffer())
-                st.success("✅ File berhasil disimpan ke storage lokal.")
+                st.success("✅ Disimpan ke storage lokal (data/last_data.xlsx).")
 
-                # Simpan GitHub
+                # upload to GitHub if configured
                 if GITHUB_TOKEN and GITHUB_REPO:
-                    res = upload_file_to_github(uploaded_file.getbuffer(), GITHUB_PATH)
+                    with st.spinner("⏳ Mengupload ke GitHub..."):
+                        res = upload_file_to_github(uploaded_file.getbuffer(), GITHUB_PATH, message=f"Upload by admin: {uploaded_file.name}")
                     if res:
-                        st.success("✅ File juga berhasil diupload & direplace di GitHub!")
+                        st.success("✅ File berhasil diupload dan diganti di GitHub.")
+                    else:
+                        st.warning("⚠️ Upload ke GitHub gagal (cek secrets / permission).")
                 else:
-                    st.warning("⚠️ GitHub secrets belum dikonfigurasi, hanya simpan lokal.")
+                    st.info("ℹ️ GitHub tidak dikonfigurasi; file hanya disimpan lokal.")
 
+                # clear cached loads and reload page to use fresh data
+                try:
+                    download_file_from_github.clear()
+                    load_df_from_github.clear()
+                    read_excel_cached.clear()
+                except Exception:
+                    pass
                 st.experimental_rerun()
     else:
-        st.info("🔒 Hanya admin yang bisa upload data.")
+        st.info("🔒 Hanya admin yang dapat mengunggah data.")
 
 # ============================
-# DASHBOARD
+# DASHBOARD MAIN VIEW
 # ============================
-# Rocket gif di atas judul
+# Rocket GIF centered (above title)
 if os.path.exists(ROCKET_GIF_PATH):
     try:
         rocket_b64 = gif_b64(ROCKET_GIF_PATH)
-        st.markdown(
-            f'<div style="text-align:center;"><img src="data:image/gif;base64,{rocket_b64}" width="120"/></div>',
-            unsafe_allow_html=True
-        )
-    except Exception as e:
-        st.warning(f"🚀 Gagal load rocket.gif: {e}")
+        st.markdown(f"<div style='text-align:center;'><img src='data:image/gif;base64,{rocket_b64}' width='120'></div>", unsafe_allow_html=True)
+    except Exception:
+        st.warning("🚀 Gagal memuat rocket.gif.")
 else:
-    st.warning("🚀 File rocket.gif tidak ditemukan di folder app.py.")
+    # silent: don't spam warning if not present; show small note once
+    pass
 
 st.markdown("<h1 style='text-align:center;'>📈 Dashboard SLA</h1>", unsafe_allow_html=True)
 
-# Jika ada data → tampilkan ringkasan & grafik
-if df_filtered is not None and not df_filtered.empty:
+# Apply filters (if df_raw available)
+df_filtered = None
+if df_raw is not None:
+    df_filtered = df_raw.copy()
+    if tanggal_awal and tanggal_akhir and "Tanggal" in df_filtered:
+        df_filtered = df_filtered[(df_filtered["Tanggal"] >= pd.to_datetime(tanggal_awal)) & (df_filtered["Tanggal"] <= pd.to_datetime(tanggal_akhir))]
+    if unit_dipilih and unit_dipilih != "-" and "Unit" in df_filtered:
+        df_filtered = df_filtered[df_filtered["Unit"] == unit_dipilih]
+    if proses_dipilih:
+        # keep ID columns + proses cols selected
+        cols_keep = list(df_filtered.columns[:2]) + [c for c in proses_dipilih if c in df_filtered.columns]
+        df_filtered = df_filtered[cols_keep]
+
+# If no data, instruct admin
+if df_filtered is None or df_filtered.empty:
+    st.info("📥 Silakan upload file Excel melalui sidebar (Admin) untuk mulai menggunakan dashboard.")
+else:
+    # Ringkasan card
     if tampil_ringkasan:
-        st.markdown("<div style='padding:15px; border:1px solid #ddd; border-radius:10px; background:#f9f9f9;'>", unsafe_allow_html=True)
+        st.markdown("<div style='padding:12px; border-radius:8px; background:#f6f9ff; border:1px solid #e6eef8;'>", unsafe_allow_html=True)
         st.subheader("📌 Ringkasan SLA")
-        st.write(df_filtered.describe())
+        # show count, averages, example KPIs
+        try:
+            jumlah = len(df_filtered)
+            st.metric("Jumlah Transaksi", f"{jumlah:,}")
+            st.write(df_filtered.describe(include='all'))
+        except Exception as e:
+            st.warning(f"Ringkasan gagal: {e}")
         st.markdown("</div>", unsafe_allow_html=True)
 
+    # Grafik
     if tampil_grafik:
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("<div style='padding:15px; border:1px solid #ddd; border-radius:10px; background:#f9f9f9;'>", unsafe_allow_html=True)
+        st.markdown("<div style='padding:12px; border-radius:8px; background:#fffaf0; border:1px solid #f5e9d6; margin-top:10px;'>", unsafe_allow_html=True)
         st.subheader("📊 Grafik SLA (contoh)")
         try:
-            st.line_chart(df_filtered[df_filtered.columns[2:]])
+            # If numeric SLA columns exist, plot sample
+            numeric_cols = df_filtered.select_dtypes(include="number").columns.tolist()
+            if numeric_cols:
+                st.line_chart(df_filtered[numeric_cols])
+            else:
+                # fallback: show first numeric-like columns by trying to convert some columns
+                st.write("Tidak ada kolom numeric untuk grafik. Periksa struktur data.")
         except Exception as e:
-            st.warning(f"⚠️ Grafik gagal ditampilkan: {e}")
+            st.warning(f"Grafik gagal: {e}")
         st.markdown("</div>", unsafe_allow_html=True)
-else:
-    st.info("📥 Silakan upload file Excel melalui sidebar untuk mulai menggunakan dashboard.")
 
 
 # ==================================================================
