@@ -24,6 +24,8 @@ import streamlit.components.v1 as components
 # === GitHub Integration Helpers ===
 import base64, requests, io
 
+DATA_PATH = os.path.join("data", "last_data.xlsx")
+
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN")
 GITHUB_REPO = st.secrets.get("firmanaditya90/sla")     # ex: "firmanaditya90/sla-dashboard"
 GITHUB_BRANCH = st.secrets.get("GITHUB_BRANCH", "main")
