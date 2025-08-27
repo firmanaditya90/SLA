@@ -25,6 +25,17 @@ import os, io, base64, requests
 import pandas as pd
 import streamlit as st
 
+# Encode GIF ke base64
+def gif_b64(filepath):
+    with open(filepath, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode("utf-8")
+
+# Load DataFrame dari GitHub
+def load_df_from_github(path: str = GITHUB_PATH):
+    content = download_file_from_github(path)
+    return pd.read_excel(io.BytesIO(content)) if content else None
+
 # ============================
 # KONFIGURASI
 # ============================
