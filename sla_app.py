@@ -678,6 +678,28 @@ tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_r
 with tab_overview:
     st.header("📊 SLA Overview")
 
+    import numpy as np
+
+avg_keu_days, avg_keu_text = None, "-"
+
+if df_filtered is not None and not df_filtered.empty:
+    if "Keuangan" in df_filtered.columns:   # ganti sesuai nama kolom di datamu
+        # hitung rata-rata hari
+        avg_keu_days = df_filtered["Keuangan"].mean()
+
+        # ubah jadi teks (hari, jam, menit)
+        if not pd.isna(avg_keu_days):
+            total_seconds = int(avg_keu_days * 24 * 3600)
+            days, remainder = divmod(total_seconds, 86400)
+            hours, remainder = divmod(remainder, 3600)
+            minutes, _ = divmod(remainder, 60)
+
+            parts = []
+            if days > 0: parts.append(f"{days} hari")
+            if hours > 0: parts.append(f"{hours} jam")
+            if minutes > 0: parts.append(f"{minutes} menit")
+
+            avg_keu_text = " ".join(parts) if parts else "0 menit"
     # load KPI dari GitHub saat startup
     if "saved_kpi" not in st.session_state:
         st.session_state["saved_kpi"] = load_kpi_from_github()
