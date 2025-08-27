@@ -1,7 +1,6 @@
 # =========================================
 # app.py — SLA Payment Analyzer + Poster A4
 # =========================================
-
 import streamlit as st
 import pandas as pd
 import re
@@ -457,11 +456,24 @@ import streamlit.components.v1 as components
 st.markdown("## 📈 Ringkasan")
 
 jumlah_transaksi = len(df_filtered)
+
+# Rata-rata total SLA (dalam hari)
 if "TOTAL WAKTU" in available_sla_cols and len(df_filtered) > 0:
     avg_total_days = float(df_filtered["TOTAL WAKTU"].mean()) / 86400
 else:
     avg_total_days = 0.0
-fastest_process = "Perbendaharaan"
+
+# 🔹 Hitung proses tercepat otomatis (berdasarkan rata-rata SLA terkecil)
+if proses_grafik_cols and len(df_filtered) > 0:
+    avg_per_proses = df_filtered[proses_grafik_cols].mean()
+    fastest_col = avg_per_proses.idxmin()
+    fastest_seconds = avg_per_proses.min()
+    fastest_fmt = seconds_to_sla_format(fastest_seconds)  # gunakan fungsi existing
+    fastest_process = f"{fastest_col} ({fastest_fmt})"
+else:
+    fastest_process = "-"
+
+# Persentase data valid
 valid_ratio = (df_filtered[periode_col].notna().mean() * 100.0) if len(df_filtered) > 0 else 0.0
 
 html_code = f"""
