@@ -21,20 +21,6 @@ from datetime import datetime
 from io import BytesIO   # << tambahkan ini
 import base64
 import streamlit.components.v1 as components
-
-import json
-
-KPI_PATH = "data/target_kpi.json"
-
-def save_kpi_to_github(kpi_dict):
-    content = json.dumps(kpi_dict).encode()
-    return upload_file_to_github(content, path=KPI_PATH, message="Update KPI targets")
-
-def load_kpi_from_github():
-    content = download_file_from_github(path=KPI_PATH)
-    return json.loads(content.decode()) if content else {}
-
-
 import os
 import io
 import base64
