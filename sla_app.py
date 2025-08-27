@@ -20,39 +20,23 @@ from datetime import datetime
 from io import BytesIO   # << tambahkan ini
 import base64
 import streamlit.components.v1 as components
-
+# 1. Import
 import os, io, base64, requests
 import pandas as pd
 import streamlit as st
 
-# Encode GIF ke base64
-def gif_b64(filepath):
-    with open(filepath, "rb") as f:
-        data = f.read()
-    return base64.b64encode(data).decode("utf-8")
-
-# Load DataFrame dari GitHub
-def load_df_from_github(path: str = GITHUB_PATH):
-    content = download_file_from_github(path)
-    return pd.read_excel(io.BytesIO(content)) if content else None
-
-# ============================
-# KONFIGURASI
-# ============================
+# 2. Konfigurasi
 DATA_PATH = os.path.join("data", "last_data.xlsx")
-ROCKET_GIF_PATH = "rocket.gif"   # rocket.gif ada di folder yang sama dengan app.py
+ROCKET_GIF_PATH = "rocket.gif"
 
-# GitHub secrets (AMAN: token tidak ditulis di sini)
 GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN")
-GITHUB_REPO = st.secrets.get("GITHUB_REPO")     # contoh: "firmanaditya90/SLA"
+GITHUB_REPO = st.secrets.get("GITHUB_REPO")
 GITHUB_BRANCH = st.secrets.get("GITHUB_BRANCH", "main")
 GITHUB_PATH = st.secrets.get("GITHUB_PATH", "data/last_data.xlsx")
 
 _headers = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
 
-# ============================
-# HELPER FUNCTIONS
-# ============================
+# 3. Helper Functions
 def github_get_file_info(path: str):
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}?ref={GITHUB_BRANCH}"
     r = requests.get(url, headers=_headers)
@@ -75,8 +59,7 @@ def upload_file_to_github(file_bytes: bytes, path: str = GITHUB_PATH, message="U
         "branch": GITHUB_BRANCH
     }
     if sha:
-        data["sha"] = sha  # replace file lama
-
+        data["sha"] = sha
     r = requests.put(url, headers=_headers, json=data)
     return r.json() if r.status_code in [200, 201] else None
 
@@ -84,22 +67,17 @@ def load_df_from_github(path: str = GITHUB_PATH):
     content = download_file_from_github(path)
     return pd.read_excel(io.BytesIO(content)) if content else None
 
-# Cache baca excel lokal
 @st.cache_data
 def read_excel_cached(path, size, mtime):
     return pd.read_excel(path)
 
-# Encode GIF ke base64
 def gif_b64(filepath):
     with open(filepath, "rb") as f:
         data = f.read()
     return base64.b64encode(data).decode("utf-8")
 
-# ============================
-# LOAD DATA AWAL
-# ============================
+# 4. Load Data Awal
 df_raw = None
-
 if GITHUB_TOKEN and GITHUB_REPO:
     try:
         df_raw = load_df_from_github()
@@ -115,7 +93,9 @@ else:
         st.info("✅ Data dimuat dari storage lokal.")
     else:
         st.warning("⚠️ Belum ada data. Silakan upload file (admin).")
-        st.stop()# ==================================================================
+        st.stop()
+
+==================================================================
 
 from datetime import datetime
 
