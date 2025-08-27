@@ -86,14 +86,14 @@ if GITHUB_TOKEN and GITHUB_REPO:
 
 if df_raw is not None:
     st.info("✅ Data dimuat dari GitHub (file terbaru).")
+elif os.path.exists(DATA_PATH):
+    stat = os.stat(DATA_PATH)
+    df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
+    st.info("✅ Data dimuat dari storage lokal.")
 else:
-    if os.path.exists(DATA_PATH):
-        stat = os.stat(DATA_PATH)
-        df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
-        st.info("✅ Data dimuat dari storage lokal.")
-    else:
-        st.warning("⚠️ Belum ada data. Silakan upload file (admin).")
-        st.stop()
+    st.warning("⚠️ Belum ada data. Silakan upload file (admin).")
+    df_raw = None   # biarkan kosong, jangan st.stop() dulu
+
 
 # ==================================================================
 
