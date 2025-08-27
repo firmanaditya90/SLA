@@ -465,7 +465,7 @@ with st.sidebar.expander("🛠️ Admin Tools", expanded=False):
     if is_admin and os.path.exists(DATA_PATH):
         if st.button("🗑️ Reset Data (hapus data terakhir)"):
             os.remove(DATA_PATH)
-            st.experimental_rerun()
+            st.rerun()
 
 # ==============================
 # Preprocessing kolom (TIDAK DIUBAH)
