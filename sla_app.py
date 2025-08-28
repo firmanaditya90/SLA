@@ -28,33 +28,38 @@ KPI_FILE = os.path.join("data", "kpi_target.json")
 KPI_GITHUB_PATH = "data/kpi_target.json"
 
 def load_kpi():
-    # Coba ambil dari GitHub dulu
+    """Load target KPI dari GitHub (utama) atau lokal (fallback)."""
+    # 1) Coba ambil dari GitHub
     if GITHUB_TOKEN and GITHUB_REPO:
         info = github_get_file_info(KPI_GITHUB_PATH)
         if info and "content" in info:
             try:
-                content = base64.b64decode(info["content"]).decode()
-                return json.loads(content).get("target_kpi", None)
-            except:
-                pass
+                decoded = base64.b64decode(info["content"]).decode()
+                return json.loads(decoded).get("target_kpi", None)
+            except Exception as e:
+                st.error(f"Gagal parse KPI dari GitHub: {e}")
+                return None
 
-    # Fallback ke lokal
+    # 2) Fallback ke lokal
     if os.path.exists(KPI_FILE):
         try:
             with open(KPI_FILE, "r") as f:
                 return json.load(f).get("target_kpi", None)
-        except:
+        except Exception as e:
+            st.error(f"Gagal baca KPI lokal: {e}")
             return None
     return None
 
+
 def save_kpi(value):
+    """Simpan target KPI ke lokal & GitHub."""
     data = {"target_kpi": value}
-    
-    # Simpan ke lokal
+
+    # 1) Simpan ke lokal
     with open(KPI_FILE, "w") as f:
         json.dump(data, f)
 
-    # Simpan juga ke GitHub
+    # 2) Simpan ke GitHub
     if GITHUB_TOKEN and GITHUB_REPO:
         upload_file_to_github(
             json.dumps(data).encode(),
