@@ -419,27 +419,45 @@ with st.sidebar.expander("📤 Upload Data (Admin Only)", expanded=is_admin):
     uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx") if is_admin else None
 
 # ==============================
-# Load data terakhir / simpan baru  (TIDAK DIUBAH)
+# Load data terakhir / simpan baru  (TIDAK DIUBAH + FIX: sinkronisasi GitHub)
 # ==============================
 load_status = st.empty()
 if uploaded_file is not None and is_admin:
     with st.spinner("🚀 Mengunggah & menyiapkan data..."):
         if rocket_b64:
-            st.markdown(f'<div style="text-align:center;"><img src="{rocket_b64}" width="160"/></div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div style="text-align:center;"><img src="{rocket_b64}" width="160"/></div>',
+                unsafe_allow_html=True
+            )
         time.sleep(0.2)
-        with open(DATA_PATH, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        st.success("✅ Data baru berhasil diunggah dan disimpan!")
 
+        # Simpan ke lokal
+        file_bytes = uploaded_file.getbuffer()
+        with open(DATA_PATH, "wb") as f:
+            f.write(file_bytes)
+
+        # Upload juga ke GitHub agar semua user sinkron
+        result = upload_file_to_github(file_bytes, path=GITHUB_PATH, message="Update SLA data (via app)")
+        if result:
+            st.success("✅ Data baru berhasil diunggah & disinkronkan ke GitHub!")
+        else:
+            st.warning("⚠️ Data tersimpan lokal, tapi gagal update ke GitHub.")
+
+# Jika ada file data, baca & tampilkan
 if os.path.exists(DATA_PATH):
     # Progress & spinner saat baca file
     with st.spinner("🔄 Membaca data terakhir..."):
         if rocket_b64:
-            st.markdown(f'<div style="text-align:center;"><img src="{rocket_b64}" width="120"/></div>', unsafe_allow_html=True)
-        # Cache baca excel agar lebih cepat setelah refresh (invalidate saat file berubah size/mtime)
+            st.markdown(
+                f'<div style="text-align:center;"><img src="{rocket_b64}" width="120"/></div>',
+                unsafe_allow_html=True
+            )
+
+        # Cache baca excel agar lebih cepat setelah refresh
         @st.cache_data(show_spinner=False)
         def read_excel_cached(path: str, size: int, mtime: float):
             return pd.read_excel(path, header=[0, 1])
+
         stat = os.stat(DATA_PATH)
         df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
         st.info("ℹ️ Menampilkan data dari upload terakhir.")
