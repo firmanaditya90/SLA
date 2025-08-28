@@ -188,6 +188,116 @@ if df_raw is None:
     df_raw = None
 
 # ==============================
+# VALIDASI FORMAT DATA (robust + friendly fail)
+# Letakkan setelah df_raw selesai dibaca
+# ==============================
+import re
+import pandas as pd
+
+# 1) Flatten + normalisasi nama kolom (tangani MultiIndex)
+def _norm(s: str) -> str:
+    # Hilangkan non-alfanumerik, jadikan UPPER, rapikan spasi
+    s = re.sub(r'\s+', ' ', str(s)).strip().upper()
+    return re.sub(r'[^A-Z0-9]+', '', s)
+
+def _flatten_and_normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    if isinstance(df.columns, pd.MultiIndex):
+        flat = []
+        for tpl in df.columns:
+            parts = [p for p in tpl if pd.notna(p) and str(p).strip() != '']
+            label = ' '.join(map(str, parts)).strip()
+            flat.append(label if label else 'UNNAMED')
+        df.columns = flat
+    else:
+        df.columns = [str(c) for c in df.columns]
+
+    # normalisasi dasar: trim spasi & upper (tanpa buang karakter)
+    df.columns = [re.sub(r'\s+', ' ', c).strip().upper() for c in df.columns]
+    return df
+
+df_raw = _flatten_and_normalize_columns(df_raw)
+
+# 2) Definisikan kebutuhan kolom (pakai beberapa VARIAN agar toleran)
+EXPECTED = {
+    # kolom umum
+    "PERIODE": ["PERIODE", "PERIOD"],
+    "JENIS TRANSAKSI": ["JENIS TRANSAKSI", "JENIS_TRANSAKSI", "TRANSAKSI", "TIPE TRANSAKSI"],
+    "NAMA VENDOR": ["NAMA VENDOR", "VENDOR", "NAMA SUPPLIER", "SUPPLIER"],
+
+    # kolom SLA (izin 2 varian: tanpa dan dengan prefix 'SLA ')
+    "FUNGSIONAL": ["FUNGSIONAL", "SLA FUNGSIONAL", "WAKTU FUNGSIONAL"],
+    "VENDOR_SLA": ["VENDOR", "SLA VENDOR", "WAKTU VENDOR"],
+    "KEUANGAN": ["KEUANGAN", "SLA KEUANGAN", "WAKTU KEUANGAN"],
+    "PERBENDAHARAAN": ["PERBENDAHARAAN", "SLA PERBENDAHARAAN", "WAKTU PERBENDAHARAAN"],
+    "TOTAL WAKTU": ["TOTAL WAKTU", "TOTAL", "TOTAL SLA", "TOTAL_WAKTU"]
+}
+
+# 3) Bangun set nama kolom normalize untuk pencocokan cepat
+normalized_cols = {_norm(c): c for c in df_raw.columns}
+
+def _resolve(expected_variants):
+    # kembalikan nama kolom asli di df_raw bila ada kecocokan
+    variants_norm = {_norm(v) for v in expected_variants}
+    for nkey, original in normalized_cols.items():
+        if nkey in variants_norm:
+            return original
+    return None
+
+resolved = {}
+missing = []
+for canonical, variants in EXPECTED.items():
+    hit = _resolve(variants)
+    if hit:
+        resolved[canonical] = hit
+    else:
+        missing.append(canonical)
+
+if missing:
+    st.error(
+        "⚠️ Data yang diupload belum sesuai, mohon untuk cek kembali datanya.\n\n"
+        "Kolom yang belum ditemukan/berbeda nama:\n"
+        f"- {', '.join(missing)}"
+    )
+    st.stop()
+
+# 4) (Opsional tapi disarankan) Rename ke nama kanonik supaya downstream konsisten
+#    Setelah ini, Anda bisa pakai nama seperti 'PERIODE', 'JENIS TRANSAKSI', dst.
+rename_map = {v: k for k, v in resolved.items()}
+df_raw = df_raw.rename(columns=rename_map)
+
+# 5) Validasi isi cepat untuk kolom SLA (cek 10 sampel bisa diparse)
+def _safe_parse_preview(series: pd.Series, parser, n=10):
+    sample = series.dropna().astype(str).head(n)
+    ok = 0
+    for x in sample:
+        try:
+            _ = parser(x)  # gunakan parse_sla Anda
+            ok += 1
+        except Exception:
+            pass
+    return ok, len(sample)
+
+sla_cols = ["FUNGSIONAL", "VENDOR_SLA", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
+bad_sla = []
+for col in sla_cols:
+    if col in df_raw.columns:
+        ok, total = _safe_parse_preview(df_raw[col], parse_sla, n=10)
+        # toleransi: minimal 70% sampel bisa diparse
+        if total > 0 and ok/total < 0.7:
+            bad_sla.append(col)
+
+if bad_sla:
+    st.error(
+        "⚠️ Data yang diupload belum sesuai, mohon untuk cek kembali datanya.\n\n"
+        "Format kolom SLA berikut tidak sesuai contoh yang diharapkan:\n"
+        f"- {', '.join(bad_sla)}"
+    )
+    st.stop()
+
+# >>> Lanjutkan proses normal (filter periode, parsing full, tabs, grafik, dst.)
+
+
+# ==============================
 # Konfigurasi Halaman (TIDAK DIUBAH)
 # ==============================
 st.set_page_config(page_title="SLA Payment Analyzer", layout="wide", page_icon="🚢")
@@ -529,24 +639,6 @@ with st.sidebar.expander("🛠️ Admin Tools", expanded=False):
                 st.warning("⚠️ Data lokal terhapus, tapi gagal menghapus dari GitHub.")
 
             st.rerun()
-
-# ==============================
-# VALIDASI FORMAT DATA
-# ==============================
-required_cols = ["PERIODE", "JENIS TRANSAKSI", "NAMA VENDOR"]
-required_sla_cols = ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
-
-missing_cols = [c for c in required_cols if c not in df_raw.columns]
-missing_sla = [c for c in required_sla_cols if c not in df_raw.columns]
-
-if missing_cols or missing_sla:
-    st.error(
-        "⚠️ Data yang diupload belum sesuai, mohon untuk cek kembali datanya.\n\n"
-        f"- Kolom umum yang hilang: {', '.join(missing_cols) if missing_cols else '-'}\n"
-        f"- Kolom SLA yang hilang: {', '.join(missing_sla) if missing_sla else '-'}"
-    )
-    st.stop()
-
 
 # ==============================
 # Preprocessing kolom (TIDAK DIUBAH)
