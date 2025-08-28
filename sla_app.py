@@ -188,61 +188,60 @@ if df_raw is None:
     df_raw = None
 
 # ==============================
-# VALIDASI FORMAT DATA (robust + friendly fail)
-# Letakkan setelah df_raw selesai dibaca
+# VALIDASI FORMAT DATA
 # ==============================
 import re
-import pandas as pd
 
-# 1) Flatten + normalisasi nama kolom (tangani MultiIndex)
+# Proteksi awal: pastikan df_raw ada & DataFrame
+if df_raw is None or not isinstance(df_raw, pd.DataFrame):
+    st.error("⚠️ Belum ada data valid untuk divalidasi. Mohon upload file Excel sesuai format.")
+    st.stop()
+
+# --- Fungsi bantu ---
 def _norm(s: str) -> str:
-    # Hilangkan non-alfanumerik, jadikan UPPER, rapikan spasi
-    s = re.sub(r'\s+', ' ', str(s)).strip().upper()
-    return re.sub(r'[^A-Z0-9]+', '', s)
+    """Normalisasi string untuk matching kolom (UPPER, hilangkan non-alfanumerik)."""
+    s = re.sub(r"\s+", " ", str(s)).strip().upper()
+    return re.sub(r"[^A-Z0-9]+", "", s)
 
 def _flatten_and_normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Flatten MultiIndex header & normalisasi ke uppercase clean."""
     if isinstance(df.columns, pd.MultiIndex):
         flat = []
         for tpl in df.columns:
-            parts = [p for p in tpl if pd.notna(p) and str(p).strip() != '']
-            label = ' '.join(map(str, parts)).strip()
-            flat.append(label if label else 'UNNAMED')
+            parts = [p for p in tpl if pd.notna(p) and str(p).strip() != ""]
+            label = " ".join(map(str, parts)).strip()
+            flat.append(label if label else "UNNAMED")
         df.columns = flat
     else:
         df.columns = [str(c) for c in df.columns]
-
-    # normalisasi dasar: trim spasi & upper (tanpa buang karakter)
-    df.columns = [re.sub(r'\s+', ' ', c).strip().upper() for c in df.columns]
+    df.columns = [re.sub(r"\s+", " ", c).strip().upper() for c in df.columns]
     return df
 
 df_raw = _flatten_and_normalize_columns(df_raw)
 
-# 2) Definisikan kebutuhan kolom (pakai beberapa VARIAN agar toleran)
+# --- Daftar kolom wajib (dengan varian nama alternatif) ---
 EXPECTED = {
-    # kolom umum
     "PERIODE": ["PERIODE", "PERIOD"],
-    "JENIS TRANSAKSI": ["JENIS TRANSAKSI", "JENIS_TRANSAKSI", "TRANSAKSI", "TIPE TRANSAKSI"],
-    "NAMA VENDOR": ["NAMA VENDOR", "VENDOR", "NAMA SUPPLIER", "SUPPLIER"],
-
-    # kolom SLA (izin 2 varian: tanpa dan dengan prefix 'SLA ')
+    "JENIS TRANSAKSI": ["JENIS TRANSAKSI", "TRANSAKSI", "TIPE TRANSAKSI"],
+    "NAMA VENDOR": ["NAMA VENDOR", "VENDOR", "SUPPLIER"],
     "FUNGSIONAL": ["FUNGSIONAL", "SLA FUNGSIONAL", "WAKTU FUNGSIONAL"],
-    "VENDOR_SLA": ["VENDOR", "SLA VENDOR", "WAKTU VENDOR"],
+    "VENDOR": ["VENDOR", "SLA VENDOR", "WAKTU VENDOR"],
     "KEUANGAN": ["KEUANGAN", "SLA KEUANGAN", "WAKTU KEUANGAN"],
     "PERBENDAHARAAN": ["PERBENDAHARAAN", "SLA PERBENDAHARAAN", "WAKTU PERBENDAHARAAN"],
-    "TOTAL WAKTU": ["TOTAL WAKTU", "TOTAL", "TOTAL SLA", "TOTAL_WAKTU"]
+    "TOTAL WAKTU": ["TOTAL WAKTU", "TOTAL SLA", "TOTAL"]
 }
 
-# 3) Bangun set nama kolom normalize untuk pencocokan cepat
+# Normalisasi nama kolom yang ada
 normalized_cols = {_norm(c): c for c in df_raw.columns}
 
 def _resolve(expected_variants):
-    # kembalikan nama kolom asli di df_raw bila ada kecocokan
     variants_norm = {_norm(v) for v in expected_variants}
     for nkey, original in normalized_cols.items():
         if nkey in variants_norm:
             return original
     return None
 
+# Cek semua kebutuhan kolom
 resolved = {}
 missing = []
 for canonical, variants in EXPECTED.items():
@@ -255,47 +254,42 @@ for canonical, variants in EXPECTED.items():
 if missing:
     st.error(
         "⚠️ Data yang diupload belum sesuai, mohon untuk cek kembali datanya.\n\n"
-        "Kolom yang belum ditemukan/berbeda nama:\n"
+        "Kolom yang belum ditemukan:\n"
         f"- {', '.join(missing)}"
     )
     st.stop()
 
-# 4) (Opsional tapi disarankan) Rename ke nama kanonik supaya downstream konsisten
-#    Setelah ini, Anda bisa pakai nama seperti 'PERIODE', 'JENIS TRANSAKSI', dst.
+# Rename ke nama kanonik agar konsisten downstream
 rename_map = {v: k for k, v in resolved.items()}
 df_raw = df_raw.rename(columns=rename_map)
 
-# 5) Validasi isi cepat untuk kolom SLA (cek 10 sampel bisa diparse)
+# --- Validasi isi SLA (cek sampel kecil bisa diparse) ---
 def _safe_parse_preview(series: pd.Series, parser, n=10):
     sample = series.dropna().astype(str).head(n)
     ok = 0
     for x in sample:
         try:
-            _ = parser(x)  # gunakan parse_sla Anda
+            _ = parser(x)
             ok += 1
         except Exception:
             pass
     return ok, len(sample)
 
-sla_cols = ["FUNGSIONAL", "VENDOR_SLA", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
+sla_cols = ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
 bad_sla = []
 for col in sla_cols:
     if col in df_raw.columns:
         ok, total = _safe_parse_preview(df_raw[col], parse_sla, n=10)
-        # toleransi: minimal 70% sampel bisa diparse
-        if total > 0 and ok/total < 0.7:
+        if total > 0 and ok / total < 0.7:  # toleransi 70%
             bad_sla.append(col)
 
 if bad_sla:
     st.error(
         "⚠️ Data yang diupload belum sesuai, mohon untuk cek kembali datanya.\n\n"
-        "Format kolom SLA berikut tidak sesuai contoh yang diharapkan:\n"
+        "Format SLA pada kolom berikut tidak sesuai:\n"
         f"- {', '.join(bad_sla)}"
     )
     st.stop()
-
-# >>> Lanjutkan proses normal (filter periode, parsing full, tabs, grafik, dst.)
-
 
 # ==============================
 # Konfigurasi Halaman (TIDAK DIUBAH)
