@@ -187,109 +187,6 @@ if df_raw is None:
     st.warning("⚠️ Belum ada file yang diunggah.")
     df_raw = None
 
-# ==============================
-# VALIDASI FORMAT DATA
-# ==============================
-import re
-
-# Proteksi awal: pastikan df_raw ada & DataFrame
-if df_raw is None or not isinstance(df_raw, pd.DataFrame):
-    st.error("⚠️ Belum ada data valid untuk divalidasi. Mohon upload file Excel sesuai format.")
-    st.stop()
-
-# --- Fungsi bantu ---
-def _norm(s: str) -> str:
-    """Normalisasi string untuk matching kolom (UPPER, hilangkan non-alfanumerik)."""
-    s = re.sub(r"\s+", " ", str(s)).strip().upper()
-    return re.sub(r"[^A-Z0-9]+", "", s)
-
-def _flatten_and_normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Flatten MultiIndex header & normalisasi ke uppercase clean."""
-    if isinstance(df.columns, pd.MultiIndex):
-        flat = []
-        for tpl in df.columns:
-            parts = [p for p in tpl if pd.notna(p) and str(p).strip() != ""]
-            label = " ".join(map(str, parts)).strip()
-            flat.append(label if label else "UNNAMED")
-        df.columns = flat
-    else:
-        df.columns = [str(c) for c in df.columns]
-    df.columns = [re.sub(r"\s+", " ", c).strip().upper() for c in df.columns]
-    return df
-
-df_raw = _flatten_and_normalize_columns(df_raw)
-
-# --- Daftar kolom wajib (dengan varian nama alternatif) ---
-EXPECTED = {
-    "PERIODE": ["PERIODE", "PERIOD"],
-    "JENIS TRANSAKSI": ["JENIS TRANSAKSI", "TRANSAKSI", "TIPE TRANSAKSI"],
-    "NAMA VENDOR": ["NAMA VENDOR", "VENDOR", "SUPPLIER"],
-    "FUNGSIONAL": ["FUNGSIONAL", "SLA FUNGSIONAL", "WAKTU FUNGSIONAL"],
-    "VENDOR": ["VENDOR", "SLA VENDOR", "WAKTU VENDOR"],
-    "KEUANGAN": ["KEUANGAN", "SLA KEUANGAN", "WAKTU KEUANGAN"],
-    "PERBENDAHARAAN": ["PERBENDAHARAAN", "SLA PERBENDAHARAAN", "WAKTU PERBENDAHARAAN"],
-    "TOTAL WAKTU": ["TOTAL WAKTU", "TOTAL SLA", "TOTAL"]
-}
-
-# Normalisasi nama kolom yang ada
-normalized_cols = {_norm(c): c for c in df_raw.columns}
-
-def _resolve(expected_variants):
-    variants_norm = {_norm(v) for v in expected_variants}
-    for nkey, original in normalized_cols.items():
-        if nkey in variants_norm:
-            return original
-    return None
-
-# Cek semua kebutuhan kolom
-resolved = {}
-missing = []
-for canonical, variants in EXPECTED.items():
-    hit = _resolve(variants)
-    if hit:
-        resolved[canonical] = hit
-    else:
-        missing.append(canonical)
-
-if missing:
-    st.error(
-        "⚠️ Data yang diupload belum sesuai, mohon untuk cek kembali datanya.\n\n"
-        "Kolom yang belum ditemukan:\n"
-        f"- {', '.join(missing)}"
-    )
-    st.stop()
-
-# Rename ke nama kanonik agar konsisten downstream
-rename_map = {v: k for k, v in resolved.items()}
-df_raw = df_raw.rename(columns=rename_map)
-
-# --- Validasi isi SLA (cek sampel kecil bisa diparse) ---
-def _safe_parse_preview(series: pd.Series, parser, n=10):
-    sample = series.dropna().astype(str).head(n)
-    ok = 0
-    for x in sample:
-        try:
-            _ = parser(x)
-            ok += 1
-        except Exception:
-            pass
-    return ok, len(sample)
-
-sla_cols = ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
-bad_sla = []
-for col in sla_cols:
-    if col in df_raw.columns:
-        ok, total = _safe_parse_preview(df_raw[col], parse_sla, n=10)
-        if total > 0 and ok / total < 0.7:  # toleransi 70%
-            bad_sla.append(col)
-
-if bad_sla:
-    st.error(
-        "⚠️ Data yang diupload belum sesuai, mohon untuk cek kembali datanya.\n\n"
-        "Format SLA pada kolom berikut tidak sesuai:\n"
-        f"- {', '.join(bad_sla)}"
-    )
-    st.stop()
 
 # ==============================
 # Konfigurasi Halaman (TIDAK DIUBAH)
@@ -633,6 +530,110 @@ with st.sidebar.expander("🛠️ Admin Tools", expanded=False):
                 st.warning("⚠️ Data lokal terhapus, tapi gagal menghapus dari GitHub.")
 
             st.rerun()
+
+# ==============================
+# VALIDASI FORMAT DATA
+# ==============================
+import re
+
+# Proteksi awal: pastikan df_raw ada & DataFrame
+if df_raw is None or not isinstance(df_raw, pd.DataFrame):
+    st.error("⚠️ Belum ada data valid untuk divalidasi. Mohon upload file Excel sesuai format.")
+    st.stop()
+
+# --- Fungsi bantu ---
+def _norm(s: str) -> str:
+    """Normalisasi string untuk matching kolom (UPPER, hilangkan non-alfanumerik)."""
+    s = re.sub(r"\s+", " ", str(s)).strip().upper()
+    return re.sub(r"[^A-Z0-9]+", "", s)
+
+def _flatten_and_normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Flatten MultiIndex header & normalisasi ke uppercase clean."""
+    if isinstance(df.columns, pd.MultiIndex):
+        flat = []
+        for tpl in df.columns:
+            parts = [p for p in tpl if pd.notna(p) and str(p).strip() != ""]
+            label = " ".join(map(str, parts)).strip()
+            flat.append(label if label else "UNNAMED")
+        df.columns = flat
+    else:
+        df.columns = [str(c) for c in df.columns]
+    df.columns = [re.sub(r"\s+", " ", c).strip().upper() for c in df.columns]
+    return df
+
+df_raw = _flatten_and_normalize_columns(df_raw)
+
+# --- Daftar kolom wajib (dengan varian nama alternatif) ---
+EXPECTED = {
+    "PERIODE": ["PERIODE", "PERIOD"],
+    "JENIS TRANSAKSI": ["JENIS TRANSAKSI", "TRANSAKSI", "TIPE TRANSAKSI"],
+    "NAMA VENDOR": ["NAMA VENDOR", "VENDOR", "SUPPLIER"],
+    "FUNGSIONAL": ["FUNGSIONAL", "SLA FUNGSIONAL", "WAKTU FUNGSIONAL"],
+    "VENDOR": ["VENDOR", "SLA VENDOR", "WAKTU VENDOR"],
+    "KEUANGAN": ["KEUANGAN", "SLA KEUANGAN", "WAKTU KEUANGAN"],
+    "PERBENDAHARAAN": ["PERBENDAHARAAN", "SLA PERBENDAHARAAN", "WAKTU PERBENDAHARAAN"],
+    "TOTAL WAKTU": ["TOTAL WAKTU", "TOTAL SLA", "TOTAL"]
+}
+
+# Normalisasi nama kolom yang ada
+normalized_cols = {_norm(c): c for c in df_raw.columns}
+
+def _resolve(expected_variants):
+    variants_norm = {_norm(v) for v in expected_variants}
+    for nkey, original in normalized_cols.items():
+        if nkey in variants_norm:
+            return original
+    return None
+
+# Cek semua kebutuhan kolom
+resolved = {}
+missing = []
+for canonical, variants in EXPECTED.items():
+    hit = _resolve(variants)
+    if hit:
+        resolved[canonical] = hit
+    else:
+        missing.append(canonical)
+
+if missing:
+    st.error(
+        "⚠️ Data yang diupload belum sesuai, mohon untuk cek kembali datanya.\n\n"
+        "Kolom yang belum ditemukan:\n"
+        f"- {', '.join(missing)}"
+    )
+    st.stop()
+
+# Rename ke nama kanonik agar konsisten downstream
+rename_map = {v: k for k, v in resolved.items()}
+df_raw = df_raw.rename(columns=rename_map)
+
+# --- Validasi isi SLA (cek sampel kecil bisa diparse) ---
+def _safe_parse_preview(series: pd.Series, parser, n=10):
+    sample = series.dropna().astype(str).head(n)
+    ok = 0
+    for x in sample:
+        try:
+            _ = parser(x)
+            ok += 1
+        except Exception:
+            pass
+    return ok, len(sample)
+
+sla_cols = ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
+bad_sla = []
+for col in sla_cols:
+    if col in df_raw.columns:
+        ok, total = _safe_parse_preview(df_raw[col], parse_sla, n=10)
+        if total > 0 and ok / total < 0.7:  # toleransi 70%
+            bad_sla.append(col)
+
+if bad_sla:
+    st.error(
+        "⚠️ Data yang diupload belum sesuai, mohon untuk cek kembali datanya.\n\n"
+        "Format SLA pada kolom berikut tidak sesuai:\n"
+        f"- {', '.join(bad_sla)}"
+    )
+    st.stop()
 
 # ==============================
 # Preprocessing kolom (TIDAK DIUBAH)
