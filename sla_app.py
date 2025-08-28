@@ -543,19 +543,25 @@ with st.sidebar.expander("🛠️ Admin Tools", expanded=False):
 # ==============================
 
 def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Flatten header 2 baris (merge + SLA) jadi 1 baris kolom normal."""
-    new_cols = []
-    for col0, col1 in df.columns:
-        col0 = str(col0).strip().upper() if pd.notna(col0) else ""
-        col1 = str(col1).strip().upper() if pd.notna(col1) else ""
-        if col0 == "SLA" and col1 != "":
-            new_cols.append(col1)  # ambil nama detail SLA
-        elif col1 == "" or col1 == "NAN":
-            new_cols.append(col0)  # ambil nama utama merge
-        else:
-            new_cols.append(col0)
-    df.columns = new_cols
+    """Flatten kolom MultiIndex (2 baris header) jadi single row. 
+       Kalau single header, return apa adanya."""
+    if isinstance(df.columns, pd.MultiIndex):
+        new_cols = []
+        for col0, col1 in df.columns:
+            col0 = str(col0).strip().upper() if pd.notna(col0) else ""
+            col1 = str(col1).strip().upper() if pd.notna(col1) else ""
+            if col0 == "SLA" and col1 != "":
+                new_cols.append(col1)  # ambil nama detail SLA
+            elif col1 == "" or col1 == "NAN":
+                new_cols.append(col0)  # kolom merge
+            else:
+                new_cols.append(col0)
+        df.columns = new_cols
+    else:
+        # single header → cukup normalisasi
+        df.columns = [str(c).strip().upper() for c in df.columns]
     return df
+
 
 @st.cache_data
 def read_excel_cached(path, size, mtime):
