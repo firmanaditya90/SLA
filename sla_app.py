@@ -530,6 +530,23 @@ with st.sidebar.expander("🛠️ Admin Tools", expanded=False):
 
             st.rerun()
 
+# ==============================
+# VALIDASI FORMAT DATA
+# ==============================
+required_cols = ["PERIODE", "JENIS TRANSAKSI", "NAMA VENDOR"]
+required_sla_cols = ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
+
+missing_cols = [c for c in required_cols if c not in df_raw.columns]
+missing_sla = [c for c in required_sla_cols if c not in df_raw.columns]
+
+if missing_cols or missing_sla:
+    st.error(
+        "⚠️ Data yang diupload belum sesuai, mohon untuk cek kembali datanya.\n\n"
+        f"- Kolom umum yang hilang: {', '.join(missing_cols) if missing_cols else '-'}\n"
+        f"- Kolom SLA yang hilang: {', '.join(missing_sla) if missing_sla else '-'}"
+    )
+    st.stop()
+
 
 # ==============================
 # Preprocessing kolom (TIDAK DIUBAH)
