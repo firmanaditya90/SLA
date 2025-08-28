@@ -422,20 +422,24 @@ else:
 # Util SLA (TIDAK DIUBAH)
 # ==============================
 def parse_sla(s):
-    if pd.isna(s):
+    try:
+        if pd.isna(s):
+            return None
+        s = str(s).upper().replace("SLA", "").strip()
+        days = hours = minutes = seconds = 0
+        day_match = re.search(r'(\d+)\s*DAY', s)
+        if day_match:
+            days = int(day_match.group(1))
+        time_match = re.search(r'(\d{1,2}):(\d{2})(?::(\d{2}))?', s)
+        if time_match:
+            hours = int(time_match.group(1))
+            minutes = int(time_match.group(2))
+            if time_match.group(3):
+                seconds = int(time_match.group(3))
+        return days * 86400 + hours * 3600 + minutes * 60 + seconds
+    except Exception:
+        # Jika format aneh → return None
         return None
-    s = str(s).upper().replace("SLA", "").strip()
-    days = hours = minutes = seconds = 0
-    day_match = re.search(r'(\d+)\s*DAY', s)
-    if day_match:
-        days = int(day_match.group(1))
-    time_match = re.search(r'(\d{1,2}):(\d{2})(?::(\d{2}))?', s)
-    if time_match:
-        hours = int(time_match.group(1))
-        minutes = int(time_match.group(2))
-        if time_match.group(3):
-            seconds = int(time_match.group(3))
-    return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
 def seconds_to_sla_format(total_seconds):
     if total_seconds is None or (isinstance(total_seconds, float) and math.isnan(total_seconds)):
@@ -596,10 +600,15 @@ st.sidebar.markdown("<p style='text-align:center; font-size:12px; color:gray;'>C
 # ==============================
 # Parsing SLA setelah filter (TIDAK DIUBAH)
 # ==============================
-with st.status("⏱️ Memproses kolom SLA setelah filter...", expanded=False) as status:
-    for col in available_sla_cols:
-        df_filtered[col] = df_filtered[col].apply(parse_sla)
-    status.update(label="✅ Parsing SLA selesai", state="complete")
+try:
+    with st.status("⏱️ Memproses kolom SLA setelah filter...", expanded=False) as status:
+        for col in available_sla_cols:
+            df_filtered[col] = df_filtered[col].apply(parse_sla)
+        status.update(label="✅ Parsing SLA selesai", state="complete")
+except Exception:
+    st.error("⚠️ Data yang diupload belum sesuai, mohon untuk cek kembali datanya.")
+    st.stop()
+
 
 import io, base64
 
