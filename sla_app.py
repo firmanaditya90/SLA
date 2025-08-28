@@ -418,65 +418,6 @@ else:
     st.sidebar.warning("Admin password belum dikonfigurasi (Secrets/ENV). App berjalan dalam mode read-only.")
     is_admin = False
     
-import requests, io
-
-# ==============================
-# Sidebar khusus Admin
-# ==============================
-st.sidebar.markdown("## 🔐 Admin Tools")
-
-# cek password admin
-admin_pass = st.sidebar.text_input("Masukkan Password Admin", type="password")
-
-if admin_pass == "AP123":  # <-- ganti dengan password admin beneran
-    st.sidebar.success("Login Admin ✅")
-
-    st.sidebar.markdown("### 📥 Download & Gabungkan SLA per Tahun")
-
-    tahun = st.sidebar.number_input("Pilih Tahun", min_value=2020, max_value=2100, value=2025, step=1)
-    if st.sidebar.button("Download Data Tahunan"):
-        base_url = "https://fidias.asdp.id/anggaran/anggaran_mutasi_json/excel_sla?reqPeriode="
-        dfs = []
-
-        progress = st.sidebar.progress(0)
-        for m in range(1, 13):
-            period = f"{m:02d}{tahun}"
-            url = f"{base_url}?reqPeriode={period}"
-
-            try:
-                res = requests.get(url)
-                if res.ok:
-                    df = pd.read_excel(io.BytesIO(res.content))
-                    df["Periode"] = period
-                    dfs.append(df)
-                else:
-                    st.sidebar.warning(f"Gagal {period}: {res.status_code}")
-            except Exception as e:
-                st.sidebar.error(f"Error {period}: {e}")
-
-            progress.progress(m/12.0)
-
-        if dfs:
-            df_all = pd.concat(dfs, ignore_index=True)
-            st.sidebar.success(f"✅ Data {tahun} berhasil digabung ({len(df_all)} baris)")
-
-            # Simpan ke Excel untuk download
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                df_all.to_excel(writer, index=False, sheet_name=f"SLA_{tahun}")
-            st.sidebar.download_button(
-                "💾 Download Excel Tahunan",
-                data=output.getvalue(),
-                file_name=f"SLA_{tahun}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        else:
-            st.sidebar.error("Tidak ada data yang berhasil diunduh.")
-
-elif admin_pass != "":
-    st.sidebar.error("❌ Password salah!")
-
-
 # ==============================
 # Util SLA (TIDAK DIUBAH)
 # ==============================
