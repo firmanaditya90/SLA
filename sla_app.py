@@ -536,78 +536,40 @@ with st.sidebar.expander("🛠️ Admin Tools", expanded=False):
 # ==============================
 import re
 
-# Proteksi awal: pastikan df_raw ada & DataFrame
+# Proteksi awal
 if df_raw is None or not isinstance(df_raw, pd.DataFrame):
     st.error("⚠️ Belum ada data valid untuk divalidasi. Mohon upload file Excel sesuai format.")
     st.stop()
 
-# --- Fungsi bantu ---
-def _norm(s: str) -> str:
-    """Normalisasi string untuk matching kolom (UPPER, hilangkan non-alfanumerik)."""
-    s = re.sub(r"\s+", " ", str(s)).strip().upper()
-    return re.sub(r"[^A-Z0-9]+", "", s)
+# Normalisasi nama kolom (hilangkan spasi berlebih + uppercase)
+def _normalize_col(colname: str) -> str:
+    return re.sub(r"\s+", " ", str(colname)).strip().upper()
 
-def _flatten_and_normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Flatten MultiIndex header & normalisasi ke uppercase clean."""
-    if isinstance(df.columns, pd.MultiIndex):
-        flat = []
-        for tpl in df.columns:
-            parts = [p for p in tpl if pd.notna(p) and str(p).strip() != ""]
-            label = " ".join(map(str, parts)).strip()
-            flat.append(label if label else "UNNAMED")
-        df.columns = flat
-    else:
-        df.columns = [str(c) for c in df.columns]
-    df.columns = [re.sub(r"\s+", " ", c).strip().upper() for c in df.columns]
-    return df
+df_raw.columns = [_normalize_col(c) for c in df_raw.columns]
 
-df_raw = _flatten_and_normalize_columns(df_raw)
+# Daftar kolom wajib sesuai format Anda
+required_cols = [
+    "PERIODE",
+    "NO PERMOHONAN",
+    "JENIS TRANSAKSI",
+    "NAMA VENDOR",
+    "FUNGSIONAL",
+    "VENDOR",
+    "KEUANGAN",
+    "PERBENDAHARAAN",
+    "TOTAL WAKTU",
+]
 
-# --- Daftar kolom wajib (dengan varian nama alternatif) ---
-EXPECTED = {
-    "PERIODE": ["PERIODE", "PERIOD"],
-    "JENIS TRANSAKSI": ["JENIS TRANSAKSI", "TRANSAKSI", "TIPE TRANSAKSI"],
-    "NAMA VENDOR": ["NAMA VENDOR", "VENDOR", "SUPPLIER"],
-    "FUNGSIONAL": ["FUNGSIONAL", "SLA FUNGSIONAL", "WAKTU FUNGSIONAL"],
-    "VENDOR": ["VENDOR", "SLA VENDOR", "WAKTU VENDOR"],
-    "KEUANGAN": ["KEUANGAN", "SLA KEUANGAN", "WAKTU KEUANGAN"],
-    "PERBENDAHARAAN": ["PERBENDAHARAAN", "SLA PERBENDAHARAAN", "WAKTU PERBENDAHARAAN"],
-    "TOTAL WAKTU": ["TOTAL WAKTU", "TOTAL SLA", "TOTAL"]
-}
-
-# Normalisasi nama kolom yang ada
-normalized_cols = {_norm(c): c for c in df_raw.columns}
-
-def _resolve(expected_variants):
-    variants_norm = {_norm(v) for v in expected_variants}
-    for nkey, original in normalized_cols.items():
-        if nkey in variants_norm:
-            return original
-    return None
-
-# Cek semua kebutuhan kolom
-resolved = {}
-missing = []
-for canonical, variants in EXPECTED.items():
-    hit = _resolve(variants)
-    if hit:
-        resolved[canonical] = hit
-    else:
-        missing.append(canonical)
-
+# Cek kolom yang hilang
+missing = [c for c in required_cols if c not in df_raw.columns]
 if missing:
     st.error(
         "⚠️ Data yang diupload belum sesuai, mohon untuk cek kembali datanya.\n\n"
-        "Kolom yang belum ditemukan:\n"
-        f"- {', '.join(missing)}"
+        f"Kolom yang belum ditemukan: {', '.join(missing)}"
     )
     st.stop()
 
-# Rename ke nama kanonik agar konsisten downstream
-rename_map = {v: k for k, v in resolved.items()}
-df_raw = df_raw.rename(columns=rename_map)
-
-# --- Validasi isi SLA (cek sampel kecil bisa diparse) ---
+# Validasi isi SLA (cek 10 sampel, minimal 70% bisa diparse)
 def _safe_parse_preview(series: pd.Series, parser, n=10):
     sample = series.dropna().astype(str).head(n)
     ok = 0
@@ -624,14 +586,13 @@ bad_sla = []
 for col in sla_cols:
     if col in df_raw.columns:
         ok, total = _safe_parse_preview(df_raw[col], parse_sla, n=10)
-        if total > 0 and ok / total < 0.7:  # toleransi 70%
+        if total > 0 and ok / total < 0.7:
             bad_sla.append(col)
 
 if bad_sla:
     st.error(
         "⚠️ Data yang diupload belum sesuai, mohon untuk cek kembali datanya.\n\n"
-        "Format SLA pada kolom berikut tidak sesuai:\n"
-        f"- {', '.join(bad_sla)}"
+        f"Format SLA tidak sesuai pada kolom: {', '.join(bad_sla)}"
     )
     st.stop()
 
