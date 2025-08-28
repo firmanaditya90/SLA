@@ -75,28 +75,6 @@ def format_duration(seconds):
     secs = int(seconds % 60)
     return f"{days} hari {hours} jam {minutes} menit {secs} detik"
 
-def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Flatten multiindex kolom jadi 1 level, sesuai format file Excel SLA."""
-    new_cols = []
-    for col0, col1 in df.columns:
-        # kalau kolom merge (misal 'PERIODE', nan) → ambil col0
-        if pd.isna(col1) or str(col1).strip() == "" or col0 == col1:
-            new_cols.append(str(col0).strip().upper())
-        else:
-            # kalau kolom SLA → gabungkan col0 + col1
-            combined = f"{col0} {col1}".strip().upper()
-            new_cols.append(combined)
-    df.columns = new_cols
-    return df
-
-# mapping biar konsisten
-RENAME_MAP = {
-    "SLA FUNGSIONAL": "FUNGSIONAL",
-    "SLA VENDOR": "VENDOR",
-    "SLA KEUANGAN": "KEUANGAN",
-    "SLA PERBENDAHARAAN": "PERBENDAHARAAN",
-    "SLA TOTAL WAKTU": "TOTAL WAKTU",
-}
 
 
 import os
@@ -561,22 +539,63 @@ with st.sidebar.expander("🛠️ Admin Tools", expanded=False):
             st.rerun()
 
 # ==============================
-# VALIDASI FORMAT DATA
+# LOAD DATA & VALIDASI FORMAT
 # ==============================
-import re
 
-# Proteksi awal
-if df_raw is None or not isinstance(df_raw, pd.DataFrame):
-    st.error("⚠️ Belum ada data valid untuk divalidasi. Mohon upload file Excel sesuai format.")
+def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Flatten MultiIndex kolom jadi single row sesuai format file SLA."""
+    new_cols = []
+    for col0, col1 in df.columns:
+        col0 = str(col0).strip().upper() if pd.notna(col0) else ""
+        col1 = str(col1).strip().upper() if pd.notna(col1) else ""
+        if col1 == "" or col0 == col1:
+            new_cols.append(col0)
+        else:
+            new_cols.append(f"{col0} {col1}".strip())
+    df.columns = new_cols
+    return df
+
+# mapping SLA agar lebih ringkas
+RENAME_MAP = {
+    "SLA FUNGSIONAL": "FUNGSIONAL",
+    "SLA VENDOR": "VENDOR",
+    "SLA KEUANGAN": "KEUANGAN",
+    "SLA PERBENDAHARAAN": "PERBENDAHARAAN",
+    "SLA TOTAL WAKTU": "TOTAL WAKTU",
+}
+
+@st.cache_data
+def read_excel_cached(path, size, mtime):
+    df = pd.read_excel(path, header=[0, 1])
+    df = flatten_columns(df)
+    df.rename(columns=RENAME_MAP, inplace=True)
+    return df
+
+# --- Load Data ---
+df_raw = None
+
+# coba ambil dari GitHub
+if GITHUB_TOKEN and GITHUB_REPO:
+    with st.spinner("🔄 Mengambil data dari GitHub..."):
+        content = download_file_from_github()
+        if content:
+            df_raw = pd.read_excel(BytesIO(content), header=[0, 1])
+            df_raw = flatten_columns(df_raw)
+            df_raw.rename(columns=RENAME_MAP, inplace=True)
+            st.info("✅ Data dimuat dari GitHub.")
+
+# fallback lokal
+if df_raw is None and os.path.exists(DATA_PATH):
+    with st.spinner("🔄 Membaca data terakhir (lokal)..."):
+        stat = os.stat(DATA_PATH)
+        df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
+        st.info("ℹ️ Menampilkan data dari upload terakhir (lokal).")
+
+if df_raw is None:
+    st.warning("⚠️ Belum ada file yang diunggah.")
     st.stop()
 
-# Normalisasi nama kolom (hilangkan spasi berlebih + uppercase)
-def _normalize_col(colname: str) -> str:
-    return re.sub(r"\s+", " ", str(colname)).strip().upper()
-
-df_raw.columns = [_normalize_col(c) for c in df_raw.columns]
-
-# Daftar kolom wajib sesuai format Anda
+# --- VALIDASI FORMAT DATA ---
 required_cols = [
     "PERIODE",
     "NO PERMOHONAN",
@@ -589,39 +608,11 @@ required_cols = [
     "TOTAL WAKTU",
 ]
 
-# Cek kolom yang hilang
 missing = [c for c in required_cols if c not in df_raw.columns]
 if missing:
     st.error(
         "⚠️ Data yang diupload belum sesuai, mohon untuk cek kembali datanya.\n\n"
         f"Kolom yang belum ditemukan: {', '.join(missing)}"
-    )
-    st.stop()
-
-# Validasi isi SLA (cek 10 sampel, minimal 70% bisa diparse)
-def _safe_parse_preview(series: pd.Series, parser, n=10):
-    sample = series.dropna().astype(str).head(n)
-    ok = 0
-    for x in sample:
-        try:
-            _ = parser(x)
-            ok += 1
-        except Exception:
-            pass
-    return ok, len(sample)
-
-sla_cols = ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
-bad_sla = []
-for col in sla_cols:
-    if col in df_raw.columns:
-        ok, total = _safe_parse_preview(df_raw[col], parse_sla, n=10)
-        if total > 0 and ok / total < 0.7:
-            bad_sla.append(col)
-
-if bad_sla:
-    st.error(
-        "⚠️ Data yang diupload belum sesuai, mohon untuk cek kembali datanya.\n\n"
-        f"Format SLA tidak sesuai pada kolom: {', '.join(bad_sla)}"
     )
     st.stop()
 
