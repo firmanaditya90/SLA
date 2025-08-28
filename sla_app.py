@@ -173,7 +173,7 @@ if GITHUB_TOKEN and GITHUB_REPO:
     with st.spinner("🔄 Mengambil data dari GitHub..."):
         content = download_file_from_github()
         if content:
-            df_raw = pd.read_excel(BytesIO(content), header=[0, 1])
+            df_raw = pd.read_excel(BytesIO(content), header=1)
             st.info("✅ Data dimuat dari GitHub.")
 
 # fallback lokal
@@ -506,7 +506,7 @@ if os.path.exists(DATA_PATH):
         # Cache baca excel agar lebih cepat setelah refresh
         @st.cache_data(show_spinner=False)
         def read_excel_cached(path: str, size: int, mtime: float):
-            return pd.read_excel(path, header=[0, 1])
+            return pd.read_excel(path, header=1)
 
         stat = os.stat(DATA_PATH)
         df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
