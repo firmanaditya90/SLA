@@ -542,7 +542,7 @@ with st.sidebar.expander("🛠️ Admin Tools", expanded=False):
 # LOAD DATA & VALIDASI FORMAT
 # ==============================
 
-# --- Flatten function harus di atas ---
+# --- 1. Definisi fungsi flatten di atas ---
 def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Flatten kolom MultiIndex (2 baris header) jadi single row.
        Kalau single header, return apa adanya."""
@@ -552,26 +552,27 @@ def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
             col0 = str(col0).strip().upper() if pd.notna(col0) else ""
             col1 = str(col1).strip().upper() if pd.notna(col1) else ""
             if col0 == "SLA" and col1 != "":
-                new_cols.append(col1)  # detail SLA
+                new_cols.append(col1)  # ambil nama detail SLA
             elif col1 == "" or col1 == "NAN":
-                new_cols.append(col0)  # merge
+                new_cols.append(col0)  # ambil nama utama merge
             else:
                 new_cols.append(col0)
         df.columns = new_cols
     else:
+        # single header → cukup normalisasi
         df.columns = [str(c).strip().upper() for c in df.columns]
     return df
 
 
-# --- Baru kemudian fungsi cache ---
+# --- 2. Fungsi cache baca Excel ---
 @st.cache_data
 def read_excel_cached(path, size, mtime):
-    df = pd.read_excel(path, header=[0, 1])
-    df = flatten_columns(df)
+    df = pd.read_excel(path, header=[0, 1])  # baca 2 baris header
+    df = flatten_columns(df)                 # flatten hasil
     return df
 
 
-# --- Load Data ---
+# --- 3. Load Data ---
 df_raw = None
 
 # coba ambil dari GitHub
@@ -594,10 +595,12 @@ if df_raw is None:
     st.warning("⚠️ Belum ada file yang diunggah.")
     st.stop()
 
-# --- DEBUG: tampilkan hasil kolom setelah flatten ---
+
+# --- 4. Debug: tampilkan hasil kolom setelah flatten ---
 st.write("Kolom hasil flatten:", df_raw.columns.tolist())
 
-# --- VALIDASI FORMAT DATA ---
+
+# --- 5. Validasi Kolom ---
 required_cols = [
     "PERIODE",
     "NO PERMOHONAN",
