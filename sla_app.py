@@ -542,6 +542,7 @@ with st.sidebar.expander("🛠️ Admin Tools", expanded=False):
 # LOAD DATA & VALIDASI FORMAT
 # ==============================
 
+# --- Flatten function harus di atas ---
 def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Flatten kolom MultiIndex (2 baris header) jadi single row.
        Kalau single header, return apa adanya."""
@@ -551,22 +552,24 @@ def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
             col0 = str(col0).strip().upper() if pd.notna(col0) else ""
             col1 = str(col1).strip().upper() if pd.notna(col1) else ""
             if col0 == "SLA" and col1 != "":
-                new_cols.append(col1)  # ambil nama detail SLA
+                new_cols.append(col1)  # detail SLA
             elif col1 == "" or col1 == "NAN":
-                new_cols.append(col0)  # kolom merge
+                new_cols.append(col0)  # merge
             else:
                 new_cols.append(col0)
         df.columns = new_cols
     else:
-        # single header → cukup normalisasi
         df.columns = [str(c).strip().upper() for c in df.columns]
     return df
 
+
+# --- Baru kemudian fungsi cache ---
 @st.cache_data
 def read_excel_cached(path, size, mtime):
     df = pd.read_excel(path, header=[0, 1])
     df = flatten_columns(df)
     return df
+
 
 # --- Load Data ---
 df_raw = None
