@@ -896,6 +896,8 @@ with tab_vendor:
     import plotly.express as px
     import streamlit.components.v1 as components
 
+    st.subheader("📌 Analisis SLA per Vendor")
+
     # ==============================
     # Helper: format detik -> "x hari x jam x menit x detik"
     # ==============================
@@ -914,109 +916,162 @@ with tab_vendor:
         secs = s % 60
         return f"{days} hari {hours} jam {minutes} menit {secs} detik"
 
+    # ==============================
+    # Pastikan kolom vendor ada
+    # ==============================
     if "NAMA VENDOR" in df_filtered.columns:
 
-    KODE_CABANG_FILE = os.path.join("data", "Kode Cabang.xlsx")
-    KODE_CABANG_GITHUB_PATH = "Kode Cabang.xlsx"
+        # ==============================
+        # LOAD KODE CABANG
+        # ==============================
+        KODE_CABANG_FILE = os.path.join("data", "Kode Cabang.xlsx")
+        KODE_CABANG_GITHUB_PATH = "Kode Cabang.xlsx"
 
-@st.cache_data
-def load_kode_cabang():
-    content = download_file_from_github(KODE_CABANG_GITHUB_PATH)
-    if content:
-        df = pd.read_excel(BytesIO(content))
-    elif os.path.exists(KODE_CABANG_FILE):
-        df = pd.read_excel(KODE_CABANG_FILE)
-    else:
-        return None
+        @st.cache_data
+        def load_kode_cabang():
+            content = download_file_from_github(KODE_CABANG_GITHUB_PATH)
+            if content:
+                df = pd.read_excel(BytesIO(content))
+            elif os.path.exists(KODE_CABANG_FILE):
+                df = pd.read_excel(KODE_CABANG_FILE)
+            else:
+                return None
 
-    df_clean = df.iloc[2:].rename(
-        columns={"Unnamed: 1": "KODE", "Unnamed: 2": "CABANG"}
-    )[["KODE", "CABANG"]].dropna()
-    df_clean["KODE"] = df_clean["KODE"].astype(str).str.strip()
-    return df_clean
+            df_clean = df.iloc[2:].rename(
+                columns={"Unnamed: 1": "KODE", "Unnamed: 2": "CABANG"}
+            )[["KODE", "CABANG"]].dropna()
+            df_clean["KODE"] = df_clean["KODE"].astype(str).str.strip()
+            return df_clean
 
-kode_cabang_clean = load_kode_cabang()
-kode_to_cabang = dict(zip(kode_cabang_clean["KODE"], kode_cabang_clean["CABANG"]))
+        kode_cabang_clean = load_kode_cabang()
+        kode_to_cabang = dict(zip(kode_cabang_clean["KODE"], kode_cabang_clean["CABANG"]))
+
+        # Ekstrak kode cabang dari NO_PERMOHONAN
+        import re
+        def extract_kode(no_permohonan):
+            if pd.isna(no_permohonan):
+                return None
+            m = re.search(r"/(\d{3})/", str(no_permohonan))
+            return m.group(1) if m else None
+
+        if "NO_PERMOHONAN" in df_filtered.columns:
+            df_filtered["KODE_CABANG"] = df_filtered["NO_PERMOHONAN"].apply(extract_kode)
+            df_filtered["CABANG_FROM_KODE"] = df_filtered["KODE_CABANG"].map(kode_to_cabang)
+        else:
+            df_filtered["KODE_CABANG"] = None
+            df_filtered["CABANG_FROM_KODE"] = None
 
         # ==============================
-        # 1) FILTER KATEGORI
+        # DROPDOWN FILTER
         # ==============================
-        kategori_filter = st.selectbox(
+        kategori = st.selectbox(
             "Pilih Kategori Vendor",
-            ["ALL", "ALL CABANG", "ALL PUSAT", "ALL VENDOR"]
+            ["All", "All Cabang", "All Pusat", "All Vendor"]
         )
 
-elif kategori == "All Cabang":
-    if vendor == "All":
-        df_vendor_detail = df_filtered[
-            (df_filtered["VENDOR"].str.contains("GM CABANG", case=False, na=False)) |
-            (df_filtered["CABANG_FROM_KODE"].notna())
-        ]
-    else:
-        df_vendor_detail = df_filtered[
-            (df_filtered["VENDOR"] == vendor) |
-            (df_filtered["CABANG_FROM_KODE"] == vendor)
-        ]
-
-
-        elif kategori_filter == "ALL PUSAT":
-            nama = df_filtered["NAMA VENDOR"].astype(str)
-            mask_pusat = nama.str[:3].eq("110") & (nama.str.len() >= 12) & nama.str[11].eq("-")
-            df_vendor_filtered = df_filtered[mask_pusat].copy()
-            df_vendor_filtered["SLA_USED"] = pd.to_numeric(df_vendor_filtered["FUNGSIONAL"], errors="coerce")
-
-        elif kategori_filter == "ALL VENDOR":
-            nama = df_filtered["NAMA VENDOR"].astype(str)
-            mask_cabang = nama.str.upper().str.contains("GM CABANG", na=False)
-            mask_pusat = nama.str[:3].eq("110") & (nama.str.len() >= 12) & nama.str[11].eq("-")
-            df_vendor_filtered = df_filtered[~(mask_cabang | mask_pusat)].copy()
-            df_vendor_filtered["SLA_USED"] = pd.to_numeric(df_vendor_filtered["VENDOR"], errors="coerce")
-
-        else:  # "ALL"
-            df_vendor_filtered = df_filtered.copy()
-
-            def pick_sla(row):
-                nama = str(row["NAMA VENDOR"]).upper()
-                if "GM CABANG" in nama:
-                    return row.get("FUNGSIONAL")
-                elif nama.startswith("110") and len(nama) >= 12 and nama[11] == "-":
-                    return row.get("FUNGSIONAL")
-                else:
-                    return row.get("VENDOR")
-
-            df_vendor_filtered["SLA_USED"] = df_vendor_filtered.apply(pick_sla, axis=1)
-            df_vendor_filtered["SLA_USED"] = pd.to_numeric(df_vendor_filtered["SLA_USED"], errors="coerce")
-
-        df_vendor_filtered["SLA_USED_FMT"] = df_vendor_filtered["SLA_USED"].apply(fmt_duration)
-import re
-
-def extract_kode(no_permohonan):
-    if pd.isna(no_permohonan):
-        return None
-    m = re.search(r"/(\d{3})/", str(no_permohonan))
-    return m.group(1) if m else None
-
-if "NO_PERMOHONAN" in df_filtered.columns:
-    df_filtered["KODE_CABANG"] = df_filtered["NO_PERMOHONAN"].apply(extract_kode)
-    df_filtered["CABANG_FROM_KODE"] = df_filtered["KODE_CABANG"].map(kode_to_cabang)
-else:
-    df_filtered["KODE_CABANG"] = None
-    df_filtered["CABANG_FROM_KODE"] = None
-
-
-        # ==============================
-        # 2) FILTER VENDOR
-        # ==============================
-        vendor_list = sorted(df_vendor_filtered["NAMA VENDOR"].dropna().astype(str).unique())
-        vendor_list_with_all = ["ALL"] + vendor_list
-        selected_vendors = st.multiselect("Pilih Vendor", vendor_list_with_all, default=[])
-
-        if not selected_vendors:
-            st.info("Silakan pilih vendor untuk melihat analisis.")
+        if kategori == "All Cabang":
+            vendor_list = ["All"] + kode_cabang_clean["CABANG"].tolist()
+        elif kategori == "All Vendor":
+            vendor_list = ["All"] + sorted(df_filtered["VENDOR"].dropna().unique().tolist())
+        elif kategori == "All Pusat":
+            vendor_list = ["All"] + [v for v in df_filtered["VENDOR"].dropna().unique() if "PUSAT" in str(v).upper()]
         else:
-            if "ALL" in selected_vendors:
-                selected_vendors = vendor_list
-            df_vendor_filtered = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"].isin(selected_vendors)]
+            vendor_list = ["All"] + sorted(df_filtered["VENDOR"].dropna().unique().tolist())
+
+        vendor = st.selectbox("Pilih Vendor", vendor_list)
+
+        # ==============================
+        # FILTER LOGIC
+        # ==============================
+        if kategori == "All":
+            df_vendor_detail = df_filtered.copy()
+
+        elif kategori == "All Vendor":
+            if vendor == "All":
+                df_vendor_detail = df_filtered.copy()
+            else:
+                df_vendor_detail = df_filtered[df_filtered["VENDOR"] == vendor]
+
+        elif kategori == "All Pusat":
+            if vendor == "All":
+                df_vendor_detail = df_filtered[df_filtered["VENDOR"].str.contains("PUSAT", case=False, na=False)]
+            else:
+                df_vendor_detail = df_filtered[df_filtered["VENDOR"] == vendor]
+
+        elif kategori == "All Cabang":
+            if vendor == "All":
+                df_vendor_detail = df_filtered[
+                    (df_filtered["VENDOR"].str.contains("GM CABANG", case=False, na=False)) |
+                    (df_filtered["CABANG_FROM_KODE"].notna())
+                ]
+            else:
+                df_vendor_detail = df_filtered[
+                    (df_filtered["VENDOR"] == vendor) |
+                    (df_filtered["CABANG_FROM_KODE"] == vendor)
+                ]
+        else:
+            df_vendor_detail = pd.DataFrame()
+
+        # ==============================
+        # OUTPUT
+        # ==============================
+        if df_vendor_detail.empty:
+            st.info("Tidak ada data untuk vendor yang dipilih.")
+        else:
+            st.markdown(f"### 📊 Hasil Filter: {len(df_vendor_detail)} transaksi")
+
+            # Pastikan kolom SLA_USED ada
+            if "SLA_USED" not in df_vendor_detail.columns and "FUNGSIONAL" in df_vendor_detail.columns:
+                df_vendor_detail["SLA_USED"] = df_vendor_detail["FUNGSIONAL"]
+
+            # --- Analisis SLA per jenis transaksi ---
+            if "JENIS TRANSAKSI" in df_vendor_detail.columns and "SLA_USED" in df_vendor_detail.columns:
+                transaksi_group = (
+                    df_vendor_detail
+                    .groupby("JENIS TRANSAKSI")["SLA_USED"]
+                    .mean()
+                    .reset_index()
+                )
+                transaksi_group["SLA (hari)"] = transaksi_group["SLA_USED"] / 86400.0
+                transaksi_group["SLA (format)"] = transaksi_group["SLA_USED"].apply(fmt_duration)
+
+                st.subheader("📊 Rata-rata SLA per Jenis Transaksi")
+                st.dataframe(transaksi_group, use_container_width=True)
+
+                fig2 = px.bar(
+                    transaksi_group,
+                    x="SLA (hari)", y="JENIS TRANSAKSI",
+                    orientation="h", color="SLA (hari)",
+                    color_continuous_scale="Viridis"
+                )
+                st.plotly_chart(fig2, use_container_width=True)
+
+                jumlah_per_transaksi = (
+                    df_vendor_detail
+                    .groupby("JENIS TRANSAKSI")
+                    .size()
+                    .reset_index(name="Jumlah")
+                )
+                fig_pie = px.pie(jumlah_per_transaksi, values="Jumlah", names="JENIS TRANSAKSI")
+                st.plotly_chart(fig_pie, use_container_width=True)
+
+            # --- Distribusi Multi Vendor ---
+            if vendor == "All" and kategori in ["All Vendor", "All Cabang"] and "NAMA VENDOR" in df_vendor_detail.columns:
+                selected_vendors = df_vendor_detail["NAMA VENDOR"].unique().tolist()
+                if len(selected_vendors) > 1:
+                    st.subheader(f"📊 Distribusi Transaksi — {len(selected_vendors)} Vendor")
+                    jumlah_multi = (
+                        df_vendor_detail.groupby(["NAMA VENDOR","JENIS TRANSAKSI"])
+                        .size()
+                        .reset_index(name="Jumlah")
+                    )
+                    pivot_jumlah = jumlah_multi.pivot(
+                        index="NAMA VENDOR", columns="JENIS TRANSAKSI", values="Jumlah"
+                    ).fillna(0)
+                    st.dataframe(pivot_jumlah, use_container_width=True)
+
+    else:
+        st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
 
             # ==============================
             # 3) Kartu Digital Ringkasan
