@@ -435,7 +435,7 @@ if admin_pass == "AP123":  # <-- ganti dengan password admin beneran
 
     tahun = st.sidebar.number_input("Pilih Tahun", min_value=2020, max_value=2100, value=2025, step=1)
     if st.sidebar.button("Download Data Tahunan"):
-        base_url = "https://fidias.asdp.id/anggaran/anggaran_mutasi_json/excel_sla"
+        base_url = "https://fidias.asdp.id/anggaran/anggaran_mutasi_json/excel_sla?reqPeriode="
         dfs = []
 
         progress = st.sidebar.progress(0)
