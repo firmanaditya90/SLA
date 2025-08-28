@@ -25,8 +25,20 @@ import streamlit.components.v1 as components
 from datetime import datetime
 
 KPI_FILE = os.path.join("data", "kpi_target.json")
+KPI_GITHUB_PATH = "data/kpi_target.json"
 
 def load_kpi():
+    # Coba ambil dari GitHub dulu
+    if GITHUB_TOKEN and GITHUB_REPO:
+        info = github_get_file_info(KPI_GITHUB_PATH)
+        if info and "content" in info:
+            try:
+                content = base64.b64decode(info["content"]).decode()
+                return json.loads(content).get("target_kpi", None)
+            except:
+                pass
+
+    # Fallback ke lokal
     if os.path.exists(KPI_FILE):
         try:
             with open(KPI_FILE, "r") as f:
@@ -36,8 +48,19 @@ def load_kpi():
     return None
 
 def save_kpi(value):
+    data = {"target_kpi": value}
+    
+    # Simpan ke lokal
     with open(KPI_FILE, "w") as f:
-        json.dump({"target_kpi": value}, f)
+        json.dump(data, f)
+
+    # Simpan juga ke GitHub
+    if GITHUB_TOKEN and GITHUB_REPO:
+        upload_file_to_github(
+            json.dumps(data).encode(),
+            path=KPI_GITHUB_PATH,
+            message="Update Target KPI (via app)"
+        )
 
 def format_duration(seconds):
     """Convert detik jadi 'xx hari xx jam xx menit xx detik'"""
