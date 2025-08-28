@@ -118,6 +118,23 @@ def gif_b64(filepath):
         data = f.read()
     return base64.b64encode(data).decode("utf-8")
 
+def delete_file_from_github(path: str = None, message="Delete SLA data"):
+    if not (GITHUB_TOKEN and GITHUB_REPO):
+        return None
+    path = path or GITHUB_PATH
+    info = github_get_file_info(path)
+    if not info or "sha" not in info:
+        return None
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+    data = {
+        "message": message,
+        "sha": info["sha"],
+        "branch": GITHUB_BRANCH
+    }
+    r = requests.delete(url, headers=_headers, json=data)
+    return r.json() if r.status_code == 200 else None
+
+
 # ============================
 # LOAD DATA
 # ============================
@@ -465,12 +482,22 @@ else:
     st.warning("⚠️ Belum ada file yang diunggah.")
     st.stop()
 
-# Tombol reset (hanya admin) (TIDAK DIUBAH)
+# Tombol reset (hanya admin) (TIDAK DIUBAH + FIX sinkron GitHub)
 with st.sidebar.expander("🛠️ Admin Tools", expanded=False):
     if is_admin and os.path.exists(DATA_PATH):
         if st.button("🗑️ Reset Data (hapus data terakhir)"):
+            # Hapus lokal
             os.remove(DATA_PATH)
+            
+            # Hapus juga di GitHub
+            result = delete_file_from_github(path=GITHUB_PATH, message="Reset SLA data (via app)")
+            if result:
+                st.success("✅ Data berhasil dihapus dari lokal & GitHub.")
+            else:
+                st.warning("⚠️ Data lokal terhapus, tapi gagal menghapus dari GitHub.")
+
             st.rerun()
+
 
 # ==============================
 # Preprocessing kolom (TIDAK DIUBAH)
