@@ -543,7 +543,7 @@ with st.sidebar.expander("🛠️ Admin Tools", expanded=False):
 # ==============================
 
 def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Flatten kolom MultiIndex (2 baris header) jadi single row. 
+    """Flatten kolom MultiIndex (2 baris header) jadi single row.
        Kalau single header, return apa adanya."""
     if isinstance(df.columns, pd.MultiIndex):
         new_cols = []
@@ -561,7 +561,6 @@ def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
         # single header → cukup normalisasi
         df.columns = [str(c).strip().upper() for c in df.columns]
     return df
-
 
 @st.cache_data
 def read_excel_cached(path, size, mtime):
