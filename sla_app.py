@@ -543,32 +543,24 @@ with st.sidebar.expander("🛠️ Admin Tools", expanded=False):
 # ==============================
 
 def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Flatten MultiIndex kolom jadi single row sesuai format file SLA."""
+    """Flatten header 2 baris (merge + SLA) jadi 1 baris kolom normal."""
     new_cols = []
     for col0, col1 in df.columns:
         col0 = str(col0).strip().upper() if pd.notna(col0) else ""
         col1 = str(col1).strip().upper() if pd.notna(col1) else ""
-        if col1 == "" or col0 == col1:
-            new_cols.append(col0)
+        if col0 == "SLA" and col1 != "":
+            new_cols.append(col1)  # ambil nama detail SLA
+        elif col1 == "" or col1 == "NAN":
+            new_cols.append(col0)  # ambil nama utama merge
         else:
-            new_cols.append(f"{col0} {col1}".strip())
+            new_cols.append(col0)
     df.columns = new_cols
     return df
-
-# mapping SLA agar lebih ringkas
-RENAME_MAP = {
-    "SLA FUNGSIONAL": "FUNGSIONAL",
-    "SLA VENDOR": "VENDOR",
-    "SLA KEUANGAN": "KEUANGAN",
-    "SLA PERBENDAHARAAN": "PERBENDAHARAAN",
-    "SLA TOTAL WAKTU": "TOTAL WAKTU",
-}
 
 @st.cache_data
 def read_excel_cached(path, size, mtime):
     df = pd.read_excel(path, header=[0, 1])
     df = flatten_columns(df)
-    df.rename(columns=RENAME_MAP, inplace=True)
     return df
 
 # --- Load Data ---
@@ -581,7 +573,6 @@ if GITHUB_TOKEN and GITHUB_REPO:
         if content:
             df_raw = pd.read_excel(BytesIO(content), header=[0, 1])
             df_raw = flatten_columns(df_raw)
-            df_raw.rename(columns=RENAME_MAP, inplace=True)
             st.info("✅ Data dimuat dari GitHub.")
 
 # fallback lokal
@@ -594,6 +585,9 @@ if df_raw is None and os.path.exists(DATA_PATH):
 if df_raw is None:
     st.warning("⚠️ Belum ada file yang diunggah.")
     st.stop()
+
+# --- DEBUG: tampilkan hasil kolom setelah flatten ---
+st.write("Kolom hasil flatten:", df_raw.columns.tolist())
 
 # --- VALIDASI FORMAT DATA ---
 required_cols = [
