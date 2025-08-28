@@ -915,6 +915,29 @@ with tab_vendor:
         return f"{days} hari {hours} jam {minutes} menit {secs} detik"
 
     if "NAMA VENDOR" in df_filtered.columns:
+
+    KODE_CABANG_FILE = os.path.join("data", "Kode Cabang.xlsx")
+    KODE_CABANG_GITHUB_PATH = "Kode Cabang.xlsx"
+
+@st.cache_data
+def load_kode_cabang():
+    content = download_file_from_github(KODE_CABANG_GITHUB_PATH)
+    if content:
+        df = pd.read_excel(BytesIO(content))
+    elif os.path.exists(KODE_CABANG_FILE):
+        df = pd.read_excel(KODE_CABANG_FILE)
+    else:
+        return None
+
+    df_clean = df.iloc[2:].rename(
+        columns={"Unnamed: 1": "KODE", "Unnamed: 2": "CABANG"}
+    )[["KODE", "CABANG"]].dropna()
+    df_clean["KODE"] = df_clean["KODE"].astype(str).str.strip()
+    return df_clean
+
+kode_cabang_clean = load_kode_cabang()
+kode_to_cabang = dict(zip(kode_cabang_clean["KODE"], kode_cabang_clean["CABANG"]))
+
         # ==============================
         # 1) FILTER KATEGORI
         # ==============================
@@ -923,11 +946,18 @@ with tab_vendor:
             ["ALL", "ALL CABANG", "ALL PUSAT", "ALL VENDOR"]
         )
 
-        if kategori_filter == "ALL CABANG":
-            df_vendor_filtered = df_filtered[
-                df_filtered["NAMA VENDOR"].astype(str).str.upper().str.contains("GM CABANG", na=False)
-            ].copy()
-            df_vendor_filtered["SLA_USED"] = pd.to_numeric(df_vendor_filtered["FUNGSIONAL"], errors="coerce")
+elif kategori == "All Cabang":
+    if vendor == "All":
+        df_vendor_detail = df_filtered[
+            (df_filtered["VENDOR"].str.contains("GM CABANG", case=False, na=False)) |
+            (df_filtered["CABANG_FROM_KODE"].notna())
+        ]
+    else:
+        df_vendor_detail = df_filtered[
+            (df_filtered["VENDOR"] == vendor) |
+            (df_filtered["CABANG_FROM_KODE"] == vendor)
+        ]
+
 
         elif kategori_filter == "ALL PUSAT":
             nama = df_filtered["NAMA VENDOR"].astype(str)
@@ -958,6 +988,21 @@ with tab_vendor:
             df_vendor_filtered["SLA_USED"] = pd.to_numeric(df_vendor_filtered["SLA_USED"], errors="coerce")
 
         df_vendor_filtered["SLA_USED_FMT"] = df_vendor_filtered["SLA_USED"].apply(fmt_duration)
+import re
+
+def extract_kode(no_permohonan):
+    if pd.isna(no_permohonan):
+        return None
+    m = re.search(r"/(\d{3})/", str(no_permohonan))
+    return m.group(1) if m else None
+
+if "NO_PERMOHONAN" in df_filtered.columns:
+    df_filtered["KODE_CABANG"] = df_filtered["NO_PERMOHONAN"].apply(extract_kode)
+    df_filtered["CABANG_FROM_KODE"] = df_filtered["KODE_CABANG"].map(kode_to_cabang)
+else:
+    df_filtered["KODE_CABANG"] = None
+    df_filtered["CABANG_FROM_KODE"] = None
+
 
         # ==============================
         # 2) FILTER VENDOR
