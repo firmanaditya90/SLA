@@ -75,8 +75,6 @@ def format_duration(seconds):
     secs = int(seconds % 60)
     return f"{days} hari {hours} jam {minutes} menit {secs} detik"
 
-
-
 import os
 import io
 import base64
@@ -141,10 +139,7 @@ def upload_file_to_github(file_bytes: bytes, path: str = None, message="Update S
 
 @st.cache_data
 def read_excel_cached(path, size, mtime):
-    df = pd.read_excel(path, header=[0, 1])
-    df = flatten_columns(df)
-    df.rename(columns=RENAME_MAP, inplace=True)
-    return df
+    return pd.read_excel(path, header=[0, 1])
 
 def gif_b64(filepath):
     with open(filepath, "rb") as f:
@@ -179,8 +174,6 @@ if GITHUB_TOKEN and GITHUB_REPO:
         content = download_file_from_github()
         if content:
             df_raw = pd.read_excel(BytesIO(content), header=[0, 1])
-            df_raw = flatten_columns(df_raw)
-            df_raw.rename(columns=RENAME_MAP, inplace=True)
             st.info("✅ Data dimuat dari GitHub.")
 
 # fallback lokal
@@ -193,7 +186,6 @@ if df_raw is None and os.path.exists(DATA_PATH):
 if df_raw is None:
     st.warning("⚠️ Belum ada file yang diunggah.")
     df_raw = None
-
 
 # ==============================
 # Konfigurasi Halaman (TIDAK DIUBAH)
@@ -430,24 +422,20 @@ else:
 # Util SLA (TIDAK DIUBAH)
 # ==============================
 def parse_sla(s):
-    try:
-        if pd.isna(s):
-            return None
-        s = str(s).upper().replace("SLA", "").strip()
-        days = hours = minutes = seconds = 0
-        day_match = re.search(r'(\d+)\s*DAY', s)
-        if day_match:
-            days = int(day_match.group(1))
-        time_match = re.search(r'(\d{1,2}):(\d{2})(?::(\d{2}))?', s)
-        if time_match:
-            hours = int(time_match.group(1))
-            minutes = int(time_match.group(2))
-            if time_match.group(3):
-                seconds = int(time_match.group(3))
-        return days * 86400 + hours * 3600 + minutes * 60 + seconds
-    except Exception:
-        # Jika format aneh → return None
+    if pd.isna(s):
         return None
+    s = str(s).upper().replace("SLA", "").strip()
+    days = hours = minutes = seconds = 0
+    day_match = re.search(r'(\d+)\s*DAY', s)
+    if day_match:
+        days = int(day_match.group(1))
+    time_match = re.search(r'(\d{1,2}):(\d{2})(?::(\d{2}))?', s)
+    if time_match:
+        hours = int(time_match.group(1))
+        minutes = int(time_match.group(2))
+        if time_match.group(3):
+            seconds = int(time_match.group(3))
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
 def seconds_to_sla_format(total_seconds):
     if total_seconds is None or (isinstance(total_seconds, float) and math.isnan(total_seconds)):
@@ -513,7 +501,7 @@ if os.path.exists(DATA_PATH):
         # Cache baca excel agar lebih cepat setelah refresh
         @st.cache_data(show_spinner=False)
         def read_excel_cached(path: str, size: int, mtime: float):
-            return pd.read_excel(path, header=1)
+            return pd.read_excel(path, header=[0, 1])
 
         stat = os.stat(DATA_PATH)
         df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
@@ -538,88 +526,6 @@ with st.sidebar.expander("🛠️ Admin Tools", expanded=False):
 
             st.rerun()
 
-# ==============================
-# LOAD DATA & VALIDASI FORMAT
-# ==============================
-
-# --- 1. Definisi fungsi flatten di atas ---
-def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Flatten kolom MultiIndex (2 baris header) jadi single row.
-       Kalau single header, return apa adanya."""
-    if isinstance(df.columns, pd.MultiIndex):
-        new_cols = []
-        for col0, col1 in df.columns:
-            col0 = str(col0).strip().upper() if pd.notna(col0) else ""
-            col1 = str(col1).strip().upper() if pd.notna(col1) else ""
-            if col0 == "SLA" and col1 != "":
-                new_cols.append(col1)  # ambil nama detail SLA
-            elif col1 == "" or col1 == "NAN":
-                new_cols.append(col0)  # ambil nama utama merge
-            else:
-                new_cols.append(col0)
-        df.columns = new_cols
-    else:
-        # single header → cukup normalisasi
-        df.columns = [str(c).strip().upper() for c in df.columns]
-    return df
-
-
-# --- 2. Fungsi cache baca Excel ---
-@st.cache_data
-def read_excel_cached(path, size, mtime):
-    df = pd.read_excel(path, header=[0, 1])  # baca 2 baris header
-    df = flatten_columns(df)                 # flatten hasil
-    return df
-
-
-# --- 3. Load Data ---
-df_raw = None
-
-# coba ambil dari GitHub
-if GITHUB_TOKEN and GITHUB_REPO:
-    with st.spinner("🔄 Mengambil data dari GitHub..."):
-        content = download_file_from_github()
-        if content:
-            df_raw = pd.read_excel(BytesIO(content), header=[0, 1])
-            df_raw = flatten_columns(df_raw)
-            st.info("✅ Data dimuat dari GitHub.")
-
-# fallback lokal
-if df_raw is None and os.path.exists(DATA_PATH):
-    with st.spinner("🔄 Membaca data terakhir (lokal)..."):
-        stat = os.stat(DATA_PATH)
-        df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
-        st.info("ℹ️ Menampilkan data dari upload terakhir (lokal).")
-
-if df_raw is None:
-    st.warning("⚠️ Belum ada file yang diunggah.")
-    st.stop()
-
-
-# --- 4. Debug: tampilkan hasil kolom setelah flatten ---
-st.write("Kolom hasil flatten:", df_raw.columns.tolist())
-
-
-# --- 5. Validasi Kolom ---
-required_cols = [
-    "PERIODE",
-    "NO PERMOHONAN",
-    "JENIS TRANSAKSI",
-    "NAMA VENDOR",
-    "FUNGSIONAL",
-    "VENDOR",
-    "KEUANGAN",
-    "PERBENDAHARAAN",
-    "TOTAL WAKTU",
-]
-
-missing = [c for c in required_cols if c not in df_raw.columns]
-if missing:
-    st.error(
-        "⚠️ Data yang diupload belum sesuai, mohon untuk cek kembali datanya.\n\n"
-        f"Kolom yang belum ditemukan: {', '.join(missing)}"
-    )
-    st.stop()
 
 # ==============================
 # Preprocessing kolom (TIDAK DIUBAH)
@@ -690,15 +596,10 @@ st.sidebar.markdown("<p style='text-align:center; font-size:12px; color:gray;'>C
 # ==============================
 # Parsing SLA setelah filter (TIDAK DIUBAH)
 # ==============================
-try:
-    with st.status("⏱️ Memproses kolom SLA setelah filter...", expanded=False) as status:
-        for col in available_sla_cols:
-            df_filtered[col] = df_filtered[col].apply(parse_sla)
-        status.update(label="✅ Parsing SLA selesai", state="complete")
-except Exception:
-    st.error("⚠️ Data yang diupload belum sesuai, mohon untuk cek kembali datanya.")
-    st.stop()
-
+with st.status("⏱️ Memproses kolom SLA setelah filter...", expanded=False) as status:
+    for col in available_sla_cols:
+        df_filtered[col] = df_filtered[col].apply(parse_sla)
+    status.update(label="✅ Parsing SLA selesai", state="complete")
 
 import io, base64
 
