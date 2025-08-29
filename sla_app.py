@@ -75,48 +75,6 @@ def format_duration(seconds):
     secs = int(seconds % 60)
     return f"{days} hari {hours} jam {minutes} menit {secs} detik"
 
-import requests
-import pandas as pd
-from io import BytesIO
-import streamlit as st
-
-FIDIAS_URL = "https://fidias.asdp.id/anggaran/anggaran_mutasi_json/excel_sla?reqPeriode="
-
-def download_fidias_year(year: int):
-    """Download 12 file excel dari FIDIAS untuk 1 tahun, gabungkan jadi 1 DataFrame"""
-    all_data = []
-    progress = st.progress(0)
-    
-    for bulan in range(1, 13):
-        periode = f"{bulan:02d}{year}"   # contoh: 012024
-        url = FIDIAS_URL + periode
-        st.write(f"⬇️ Mengunduh data periode {periode} ...")
-
-        try:
-            resp = requests.get(url, timeout=60)
-            resp.raise_for_status()
-
-            # cek apakah response benar2 Excel
-            content_type = resp.headers.get("Content-Type", "")
-            if "application/vnd.ms-excel" not in content_type and "application/vnd.openxmlformats" not in content_type:
-                st.warning(f"⚠️ Periode {periode} tidak mengembalikan file Excel (Content-Type={content_type})")
-                continue
-
-            # baca excel dengan engine openpyxl
-            df = pd.read_excel(BytesIO(resp.content), engine="openpyxl")
-            df["PERIODE"] = periode
-            all_data.append(df)
-
-        except Exception as e:
-            st.warning(f"Gagal ambil data periode {periode}: {e}")
-
-        progress.progress(bulan/12.0)
-
-    if not all_data:
-        return None
-    
-    return pd.concat(all_data, ignore_index=True)
-
 import os
 import io
 import base64
@@ -504,25 +462,6 @@ def seconds_to_sla_format(total_seconds):
 # ==============================
 with st.sidebar.expander("📤 Upload Data (Admin Only)", expanded=is_admin):
     uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx") if is_admin else None
-    if is_admin:
-        tahun = st.number_input("Pilih Tahun", min_value=2020, max_value=2100, value=2024, step=1)
-        if st.button("Download & Gabungkan Data Tahunan"):
-            df_year = download_fidias_year(tahun)
-            if df_year is not None:
-                # Buffer untuk file download
-                buffer = BytesIO()
-                df_year.to_excel(buffer, index=False)
-                buffer.seek(0)
-
-                st.success(f"✅ Data tahun {tahun} berhasil digabung!")
-                st.download_button(
-                    label="📥 Download File Excel Tahunan",
-                    data=buffer,
-                    file_name=f"SLA_{tahun}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-            else:
-                st.error("⚠️ Tidak ada data yang berhasil diunduh dari FIDIAS.")
 
 # ==============================
 # Load data terakhir / simpan baru  (TIDAK DIUBAH + FIX: sinkronisasi GitHub)
