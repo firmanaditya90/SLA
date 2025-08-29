@@ -88,16 +88,25 @@ def download_fidias_year(year: int):
     progress = st.progress(0)
     
     for bulan in range(1, 13):
-        periode = f"{bulan:02d}{year}"   # format: MMYYYY
+        periode = f"{bulan:02d}{year}"   # contoh: 012024
         url = FIDIAS_URL + periode
         st.write(f"⬇️ Mengunduh data periode {periode} ...")
 
         try:
             resp = requests.get(url, timeout=60)
             resp.raise_for_status()
-            df = pd.read_excel(BytesIO(resp.content))
+
+            # cek apakah response benar2 Excel
+            content_type = resp.headers.get("Content-Type", "")
+            if "application/vnd.ms-excel" not in content_type and "application/vnd.openxmlformats" not in content_type:
+                st.warning(f"⚠️ Periode {periode} tidak mengembalikan file Excel (Content-Type={content_type})")
+                continue
+
+            # baca excel dengan engine openpyxl
+            df = pd.read_excel(BytesIO(resp.content), engine="openpyxl")
             df["PERIODE"] = periode
             all_data.append(df)
+
         except Exception as e:
             st.warning(f"Gagal ambil data periode {periode}: {e}")
 
