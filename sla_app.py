@@ -2204,13 +2204,11 @@ def render_sela_widget():
 </head>
 <body>
   <div id="sela-root">
-    <!-- Floating Button -->
     <button id="sela-launcher" class="sela-floating-btn" title="Tanya SELA">
       💬
       <span>Tanya SELA</span>
     </button>
 
-    <!-- Panel -->
     <div id="sela-panel" class="sela-panel">
       <div class="sela-panel-header">
         <div class="sela-panel-header-left">
@@ -2250,13 +2248,9 @@ def render_sela_widget():
     </div>
   </div>
 
-  <!-- Three.js untuk 3D -->
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 
   <script type="module">
-    /**********************
-     * 1. UI TOGGLE PANEL
-     **********************/
     const launcher = document.getElementById("sela-launcher");
     const panel    = document.getElementById("sela-panel");
     const closer   = document.getElementById("sela-close");
@@ -2289,9 +2283,6 @@ def render_sela_widget():
       panel.style.display = "none";
     });
 
-    /**********************
-     * 2. THREE.JS AVATAR
-     **********************/
     const canvas   = document.getElementById("sela-canvas");
     const scene    = new THREE.Scene();
     scene.background = new THREE.Color(0x020617);
@@ -2322,7 +2313,6 @@ def render_sela_widget():
     dir.position.set(2, 4, 3);
     scene.add(dir);
 
-    // Avatar sementara: "bust" sederhana
     const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
     const headMat = new THREE.MeshStandardMaterial({
       color: 0xf9a8d4,
@@ -2383,9 +2373,6 @@ def render_sela_widget():
     }
     animate();
 
-    /**********************
-     * 3. WebLLM (LLM di browser)
-     **********************/
     import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
     let engine   = null;
@@ -2484,9 +2471,6 @@ def render_sela_widget():
       return cur;
     }
 
-    /**********************
-     * 4. Mic + Suara (Speech API)
-     **********************/
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognizer = null;
