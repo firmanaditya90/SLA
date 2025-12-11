@@ -2023,7 +2023,7 @@ with tab_pdf:
 # ==========================================================
 #  VIRTUAL ASSISTANT: "Tanya SELA" (3D + Voice + LLM di browser)
 # ==========================================================
-import streamlit.components.v1 as components  # sudah ada di atas, aman kalau double import
+import streamlit.components.v1 as components  # boleh double import kalau di atas sudah ada
 
 def render_sela_widget():
     components.html(
@@ -2253,6 +2253,9 @@ def render_sela_widget():
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 
   <script type="module">
+    import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+    import { GLTFLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
+
     /**********************
      * 1. UI TOGGLE PANEL
      **********************/
@@ -2289,7 +2292,7 @@ def render_sela_widget():
     });
 
     /**********************
-     * 2. THREE.JS AVATAR
+     * 2. THREE.JS AVATAR (Sela.glb)
      **********************/
     const canvas   = document.getElementById("sela-canvas");
     const scene    = new THREE.Scene();
@@ -2321,7 +2324,7 @@ def render_sela_widget():
     dir.position.set(2, 4, 3);
     scene.add(dir);
 
-    // Avatar sementara: "bust" sederhana (bisa diganti avatar perempuan 3D nanti)
+    /* ---------- AVATAR LAMA (FALLBACK) ---------- */
     const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
     const headMat = new THREE.MeshStandardMaterial({
       color: 0xf9a8d4,
@@ -2356,6 +2359,35 @@ def render_sela_widget():
     mouth.position.set(0, 0.48, 0.72);
     scene.add(mouth);
 
+    /* ---------- AVATAR BARU: SELA.glb ---------- */
+    let selaModel = null;
+
+    const loader = new GLTFLoader();
+    loader.load(
+      "https://raw.githubusercontent.com/firmanaditya90/SLA/main/Sela.glb",
+      (gltf) => {
+        selaModel = gltf.scene;
+
+        // Atur posisi & skala awal (silakan disesuaikan kalau kurang pas)
+        selaModel.position.set(0, -0.4, 0);
+        selaModel.scale.set(1.3, 1.3, 1.3);
+
+        // Sembunyikan avatar fallback
+        head.visible = false;
+        body.visible = false;
+        eyeL.visible = false;
+        eyeR.visible = false;
+        mouth.visible = false;
+
+        scene.add(selaModel);
+      },
+      undefined,
+      (error) => {
+        console.error("Gagal memuat Sela.glb:", error);
+        // Kalau gagal, avatar fallback (bola + silinder) tetap digunakan
+      }
+    );
+
     let talking = false;
     let talkPhase = 0;
 
@@ -2366,16 +2398,33 @@ def render_sela_widget():
 
     function animate() {
       requestAnimationFrame(animate);
-      head.rotation.y += 0.002;
-      body.rotation.y += 0.002;
 
-      if (talking) {
-        talkPhase += 0.3;
-        const scaleY = 0.8 + Math.abs(Math.sin(talkPhase)) * 0.5;
-        mouth.scale.y = scaleY;
-        mouth.position.y = 0.48 - (scaleY - 0.8) * 0.06;
+      // Jika model SELA.glb sudah ada
+      if (selaModel) {
+        selaModel.rotation.y += 0.01;
+
+        if (talking) {
+          talkPhase += 0.3;
+          const s = 1.3 + Math.abs(Math.sin(talkPhase)) * 0.06; // sedikit "bernafas" saat bicara
+          selaModel.scale.set(s, s, s);
+        } else {
+          // perlahan kembali ke skala normal
+          const target = new THREE.Vector3(1.3, 1.3, 1.3);
+          selaModel.scale.lerp(target, 0.1);
+        }
       } else {
-        mouth.scale.y = 1.0;
+        // Fallback: avatar sederhana
+        head.rotation.y += 0.002;
+        body.rotation.y += 0.002;
+
+        if (talking) {
+          talkPhase += 0.3;
+          const scaleY = 0.8 + Math.abs(Math.sin(talkPhase)) * 0.5;
+          mouth.scale.y = scaleY;
+          mouth.position.y = 0.48 - (scaleY - 0.8) * 0.06;
+        } else {
+          mouth.scale.y = 1.0;
+        }
       }
 
       renderer.render(scene, camera);
@@ -2385,8 +2434,6 @@ def render_sela_widget():
     /**********************
      * 3. WebLLM (LLM di browser)
      **********************/
-    import * as webllm from "https://esm.run/@mlc-ai/web-llm";
-
     let engine   = null;
     let messages = [
       {
@@ -2415,7 +2462,8 @@ def render_sela_widget():
         statusEl.textContent = "Status: SELA siap. Klik 🎤 lalu bicara.";
       } catch (e) {
         console.error(e);
-        statusEl.textContent = "Gagal memuat model AI di browser: " + e;
+        statusEl.textContent =
+          "Gagal memuat model AI di browser. Coba refresh halaman atau gunakan koneksi yang lebih stabil. Detail: " + e;
       }
     }
 
@@ -2471,7 +2519,8 @@ def render_sela_widget():
       recognizer.onerror = (e) => {
         recognizing = false;
         talkBtn.classList.remove("sela-listening");
-        statusEl.textContent = "Error mic: " + e.error;
+        statusEl.textContent = "Error mic: " + e.error +
+          ". Pastikan izin mikrofon sudah diaktifkan di browser.";
       };
       recognizer.onend = () => {
         recognizing = false;
@@ -2522,5 +2571,3 @@ def render_sela_widget():
 
 # PANGGIL SELA DI SEMUA HALAMAN
 render_sela_widget()
-
-
