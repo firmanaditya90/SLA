@@ -2249,9 +2249,9 @@ def render_sela_widget():
     </div>
   </div>
 
-  <!-- Three.js (global) -->
-  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+  <!-- Three.js via jsDelivr -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
 
   <script>
     /**********************
@@ -2378,7 +2378,6 @@ def render_sela_widget():
             try {
               selaModel = gltf.scene;
 
-              // center & scale
               const box = new THREE.Box3().setFromObject(selaModel);
               const size = box.getSize(new THREE.Vector3());
               const center = box.getCenter(new THREE.Vector3());
@@ -2410,7 +2409,6 @@ def render_sela_widget():
             console.error('Gagal memuat ' + label + ':', error);
             statusEl.textContent = 'Status: gagal memuat avatar 3D ' + label + '.';
             if (tryFallbackDuck) {
-              // coba bebek sebagai tes loader
               loadAvatar(
                 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF-Binary/Duck.glb',
                 'Duck (fallback)',
@@ -2425,7 +2423,7 @@ def render_sela_widget():
       }
     }
 
-    // pertama coba Sela.glb, kalau gagal baru Duck
+    // Coba Sela.glb dulu, kalau gagal baru Duck
     loadAvatar(
       'https://raw.githubusercontent.com/firmanaditya90/SLA/main/Sela.glb',
       'SELA',
@@ -2608,7 +2606,6 @@ def render_sela_widget():
         height=600,
         scrolling=False,
     )
-
 
 
 # PANGGIL SELA DI SEMUA HALAMAN
