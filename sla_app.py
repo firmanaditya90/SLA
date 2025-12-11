@@ -2023,7 +2023,7 @@ with tab_pdf:
 # ==========================================================
 #  VIRTUAL ASSISTANT: "Tanya SELA" (3D + Voice + LLM di browser)
 # ==========================================================
-import streamlit.components.v1 as components
+import streamlit.components.v1 as components  # aman kalau sudah ada di atas
 
 def render_sela_widget():
     components.html(
@@ -2369,10 +2369,23 @@ def render_sela_widget():
         function (gltf) {
           selaModel = gltf.scene;
 
-          selaModel.position.set(0, -0.6, 0);
-          selaModel.scale.set(1.3, 1.3, 1.3);
+          // Hitung bounding box untuk tahu ukuran & pusat
+          const box = new THREE.Box3().setFromObject(selaModel);
+          const size = box.getSize(new THREE.Vector3());
+          const center = box.getCenter(new THREE.Vector3());
 
-          // sembunyikan fallback
+          // Pindahkan pusat model ke origin
+          selaModel.position.sub(center);
+
+          // Skala supaya tinggi kira-kira 2.6 unit (biar pas di frame)
+          const targetHeight = 2.6;
+          const scaleFactor = targetHeight / size.y;
+          selaModel.scale.setScalar(scaleFactor);
+
+          // Geser sedikit ke bawah agar komposisi enak
+          selaModel.position.y -= 0.2;
+
+          // Sembunyikan avatar fallback
           head.visible = false;
           body.visible = false;
           eyeL.visible = false;
@@ -2380,14 +2393,25 @@ def render_sela_widget():
           mouth.visible = false;
 
           scene.add(selaModel);
+
+          statusEl.textContent = 'Status: avatar 3D SELA berhasil dimuat. Menyiapkan model AI...';
         },
-        undefined,
+        function (xhr) {
+          if (xhr.total) {
+            const pct = (xhr.loaded / xhr.total) * 100;
+            statusEl.textContent = 'Status: mengunduh avatar 3D SELA... ' + pct.toFixed(0) + '%';
+          } else {
+            statusEl.textContent = 'Status: mengunduh avatar 3D SELA...';
+          }
+        },
         function (error) {
           console.error('Gagal memuat Sela.glb:', error);
+          statusEl.textContent = 'Status: gagal memuat avatar 3D SELA, pakai avatar sederhana dulu.';
         }
       );
     } catch (e) {
       console.error('Error inisialisasi GLTFLoader:', e);
+      statusEl.textContent = 'Status: error inisialisasi avatar 3D SELA.';
     }
 
     let talking = false;
@@ -2405,12 +2429,10 @@ def render_sela_widget():
         selaModel.rotation.y += 0.01;
 
         if (talking) {
-          talkPhase += 0.3;
-          const s = 1.3 + Math.abs(Math.sin(talkPhase)) * 0.06;
-          selaModel.scale.set(s, s, s);
-        } else {
-          const target = new THREE.Vector3(1.3, 1.3, 1.3);
-          selaModel.scale.lerp(target, 0.1);
+          talkPhase += 0.2;
+          // sedikit gerakan naik-turun saat bicara
+          const baseY = -0.2;
+          selaModel.position.y = baseY + Math.sin(talkPhase) * 0.05;
         }
       } else {
         // fallback avatar animasi
@@ -2471,7 +2493,7 @@ def render_sela_widget():
         console.error('Gagal memuat WebLLM:', e);
         statusEl.textContent =
           'Gagal memuat model AI di browser. Coba refresh halaman atau gunakan koneksi yang lebih stabil.';
-        return;  // jangan lanjut ke mic kalau LLM gagal
+        return;
       }
 
       async function askSELA(userText) {
