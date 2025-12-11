@@ -2023,7 +2023,7 @@ with tab_pdf:
 
 
 # ==========================================================
-#  VIRTUAL ASSISTANT LITE: "SELA" (3D + Voice, tanpa LLM)
+#  VIRTUAL ASSISTANT LITE: "SELA" (2D animasi + Voice, tanpa LLM & tanpa 3D lib)
 # ==========================================================
 import streamlit.components.v1 as components  # aman walau sudah di-import di atas
 
@@ -2039,9 +2039,9 @@ def render_sela_widget():
       position: fixed;
       top: 16px;
       right: 16px;
-      width: 420px;
+      width: 380px;
       max-width: 95vw;
-      height: 70vh;
+      height: 68vh;
       background: rgba(15,23,42,0.96);
       border-radius: 20px;
       box-shadow: 0 18px 40px rgba(0,0,0,0.65);
@@ -2097,11 +2097,129 @@ def render_sela_widget():
       flex: 1.6;
       background: radial-gradient(circle at 20% 0%, rgba(250,249,255,0.08), transparent);
       position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    #sela-canvas {
-      width: 100%;
-      height: 100%;
-      display: block;
+
+    /* Avatar 2D gaya kartun */
+    .sela-avatar {
+      position: relative;
+      width: 180px;
+      height: 220px;
+    }
+    .sela-avatar-body {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 120px;
+      height: 110px;
+      background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+      border-radius: 60px 60px 20px 20px;
+      box-shadow: 0 -6px 16px rgba(15,23,42,0.7) inset;
+    }
+    .sela-avatar-neck {
+      position: absolute;
+      bottom: 95px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 34px;
+      height: 26px;
+      background: #fed7e2;
+      border-radius: 16px;
+    }
+    .sela-avatar-face {
+      position: absolute;
+      bottom: 115px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 130px;
+      height: 130px;
+      background: #fed7e2;
+      border-radius: 50%;
+      box-shadow: 0 10px 20px rgba(15,23,42,0.7);
+      overflow: hidden;
+    }
+    .sela-avatar-hair {
+      position: absolute;
+      top: -12px;
+      left: -4px;
+      width: 150px;
+      height: 110px;
+      background: #020617;
+      border-bottom-left-radius: 70%;
+      border-bottom-right-radius: 90%;
+      border-top-left-radius: 60%;
+      border-top-right-radius: 60%;
+      box-shadow: 0 10px 30px rgba(15,23,42,0.8);
+    }
+    .sela-avatar-hair::after {
+      content: "";
+      position: absolute;
+      right: -16px;
+      top: 45px;
+      width: 46px;
+      height: 90px;
+      background: #020617;
+      border-radius: 50px;
+    }
+    .sela-avatar-eye {
+      position: absolute;
+      top: 58px;
+      width: 18px;
+      height: 18px;
+      background: #020617;
+      border-radius: 50%;
+      box-shadow: 0 0 0 4px rgba(248,250,252,0.8);
+      transform-origin: center center;
+      animation: sela-blink 4s infinite;
+    }
+    .sela-avatar-eye.left {
+      left: 38px;
+    }
+    .sela-avatar-eye.right {
+      right: 38px;
+    }
+
+    .sela-avatar-mouth {
+      position: absolute;
+      top: 92px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 46px;
+      height: 18px;
+      background: radial-gradient(circle at 50% 20%, #fecaca, #db2777);
+      border-radius: 0 0 36px 36px;
+      overflow: hidden;
+    }
+    .sela-avatar-mouth::after {
+      content: "";
+      position: absolute;
+      bottom: -6px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 38px;
+      height: 18px;
+      background: #881337;
+      border-radius: 50%;
+    }
+    .sela-avatar-mouth.talking {
+      animation: sela-talk 0.28s infinite;
+    }
+
+    @keyframes sela-talk {
+      0%,100% { transform: translateX(-50%) scaleY(0.5); }
+      50% { transform: translateX(-50%) scaleY(1.05); }
+    }
+
+    @keyframes sela-blink {
+      0%, 92%, 100% {
+        transform: scaleY(1);
+      }
+      94%, 98% {
+        transform: scaleY(0.15);
+      }
     }
 
     .sela-status {
@@ -2129,12 +2247,13 @@ def render_sela_widget():
       width: 11px;
       height: 11px;
       border-radius: 999px;
-      background: #22c55e;
-      box-shadow: 0 0 8px rgba(34,197,94,0.9);
-    }
-    .sela-mini-led.off {
       background: #9ca3af;
       box-shadow: none;
+      transition: all 0.2s ease;
+    }
+    .sela-mini-led.on {
+      background: #22c55e;
+      box-shadow: 0 0 8px rgba(34,197,94,0.9);
     }
 
     .sela-note {
@@ -2157,11 +2276,20 @@ def render_sela_widget():
     </div>
 
     <div class="sela-3d-container">
-      <canvas id="sela-canvas"></canvas>
+      <div class="sela-avatar">
+        <div class="sela-avatar-body"></div>
+        <div class="sela-avatar-neck"></div>
+        <div class="sela-avatar-face">
+          <div class="sela-avatar-hair"></div>
+          <div class="sela-avatar-eye left"></div>
+          <div class="sela-avatar-eye right"></div>
+          <div class="sela-avatar-mouth" id="sela-mouth"></div>
+        </div>
+      </div>
     </div>
 
     <div id="sela-status" class="sela-status">
-      Status: menyiapkan tampilan SELA...
+      Status: menyiapkan tampilan SELA LITE...
     </div>
 
     <div class="sela-bottom">
@@ -2169,7 +2297,7 @@ def render_sela_widget():
         Anda bisa langsung berbicara, dan SELA akan menjawab dengan suara (versi LITE, tanpa otak AI besar).
       </div>
       <div style="display:flex; align-items:center; justify-content:space-between; margin-top:4px;">
-        <div id="sela-led" class="sela-mini-led off"></div>
+        <div id="sela-led" class="sela-mini-led"></div>
         <div class="sela-note">
           *Semua berjalan di browser (tanpa server & tanpa API key).
         </div>
@@ -2177,153 +2305,52 @@ def render_sela_widget():
     </div>
   </div>
 
-  <!-- Three.js klasik (non-module) -->
-  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
   <script>
     const panel    = document.getElementById("sela-panel");
     const closer   = document.getElementById("sela-close");
     const statusEl = document.getElementById("sela-status");
     const led      = document.getElementById("sela-led");
+    const mouthEl  = document.getElementById("sela-mouth");
 
     closer.addEventListener("click", () => {
       panel.style.display = "none";
     });
 
-    // 1) THREE.JS AVATAR SEDERHANA (wanita stylized)
-    const canvas = document.getElementById("sela-canvas");
-    const scene  = new THREE.Scene();
-    scene.background = new THREE.Color(0x020617);
-
-    const camera = new THREE.PerspectiveCamera(
-      40,
-      (canvas.clientWidth || 420) / (canvas.clientHeight || 350),
-      0.1,
-      100
-    );
-    camera.position.set(0, 1.3, 3.2);
-
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    function resizeRenderer() {
-      const width  = canvas.clientWidth || 420;
-      const height = canvas.clientHeight || 350;
-      renderer.setSize(width, height, false);
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-    }
-    resizeRenderer();
-    window.addEventListener("resize", resizeRenderer);
-
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x111827, 1.3);
-    scene.add(hemi);
-
-    const dir = new THREE.DirectionalLight(0xffffff, 1.4);
-    dir.position.set(2, 4, 3);
-    dir.castShadow = true;
-    scene.add(dir);
-
-    const groundGeo = new THREE.CircleGeometry(3, 48);
-    const groundMat = new THREE.MeshStandardMaterial({
-      color: 0x020617,
-      roughness: 0.9,
-      metalness: 0.1
-    });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -1.1;
-    scene.add(ground);
-
-    // Kepala
-    const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
-    const headMat = new THREE.MeshStandardMaterial({
-      color: 0xffd6e7,
-      metalness: 0.05,
-      roughness: 0.5
-    });
-    const head = new THREE.Mesh(headGeo, headMat);
-    head.position.y = 0.7;
-    scene.add(head);
-
-    // Rambut
-    const hairGeo = new THREE.SphereGeometry(0.85, 40, 32, 0, Math.PI * 2, 0, Math.PI * 0.8);
-    const hairMat = new THREE.MeshStandardMaterial({
-      color: 0x111827,
-      metalness: 0.2,
-      roughness: 0.35
-    });
-    const hair = new THREE.Mesh(hairGeo, hairMat);
-    hair.position.y = 0.8;
-    hair.position.z = -0.05;
-    scene.add(hair);
-
-    // Badan
-    const bodyGeo = new THREE.CylinderGeometry(0.9, 1.0, 1.5, 32);
-    const bodyMat = new THREE.MeshStandardMaterial({
-      color: 0x38bdf8,
-      metalness: 0.1,
-      roughness: 0.4
-    });
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.position.y = -0.3;
-    scene.add(body);
-
-    const avatar = new THREE.Group();
-    avatar.add(head);
-    avatar.add(hair);
-    avatar.add(body);
-    avatar.position.y = -0.2;
-    scene.add(avatar);
-
-    let talking = false;
-    let talkPhase = 0;
-    let blinkTimer = 0;
-
     function setTalking(isTalking) {
-      talking = isTalking;
-      led.classList.toggle("off", !talking);
-    }
-
-    function animate() {
-      requestAnimationFrame(animate);
-      const t = performance.now() * 0.001;
-
-      avatar.rotation.y = Math.sin(t * 0.25) * 0.17;
-      avatar.position.y = -0.2 + Math.sin(t * 0.9) * 0.03;
-
-      // (optional) gerak kecil saat talking
-      if (talking) {
-        talkPhase += 0.35;
-        head.position.y = 0.7 + Math.sin(talkPhase) * 0.03;
+      if (!mouthEl) return;
+      if (isTalking) {
+        mouthEl.classList.add("talking");
+        led.classList.add("on");
       } else {
-        head.position.y = 0.7;
+        mouthEl.classList.remove("talking");
+        led.classList.remove("on");
       }
-
-      blinkTimer += 0.016;
-      renderer.render(scene, camera);
     }
-    animate();
 
-    statusEl.textContent = "Status: tampilan 3D SELA siap. Menyiapkan suara...";
-
-    // 2) LOGIKA JAWABAN SEDERHANA (tanpa LLM)
+    // 1) LOGIKA JAWABAN SEDERHANA (tanpa LLM)
     function generateReply(text) {
       const t = (text || "").toLowerCase();
 
       if (t.includes("sla") && t.includes("pembayaran")) {
-        return "SLA pembayaran itu standar waktu maksimal penyelesaian proses pembayaran. Biasanya dihitung sejak dokumen lengkap diterima sampai dana cair ke vendor.";
+        return "SLA pembayaran adalah standar waktu maksimal penyelesaian proses pembayaran, dari dokumen lengkap diterima sampai dana cair ke vendor.";
       }
       if (t.includes("deposito")) {
-        return "Deposito adalah simpanan berjangka di bank dengan jangka waktu tertentu, bunganya biasanya lebih tinggi dari tabungan biasa tetapi tidak bisa ditarik sewaktu-waktu.";
+        return "Deposito adalah simpanan berjangka di bank dengan bunga lebih tinggi dari tabungan biasa, tapi tidak bisa ditarik sewaktu-waktu sebelum jatuh tempo.";
       }
       if (t.includes("gratifikasi")) {
-        return "Gratifikasi adalah pemberian dalam arti luas, misalnya uang, barang, rabat, komisi, pinjaman tanpa bunga, tiket, fasilitas, dan lain-lain yang diterima terkait jabatan. Di lingkungan BUMN dan ASN, gratifikasi yang berhubungan dengan jabatan wajib dilaporkan.";
+        return "Gratifikasi adalah pemberian dalam arti luas, seperti uang, barang, fasilitas, yang diterima terkait jabatan. Di lingkungan BUMN, gratifikasi yang berhubungan dengan jabatan wajib dilaporkan agar tidak jadi konflik kepentingan.";
       }
       if (t.includes("halo") || t.includes("hai") || t.includes("assalam")) {
-        return "Halo juga. Saya Sela, asisten virtual yang bisa menemani kamu ngobrol soal keuangan, SLA, karier, atau yang lain-lain.";
+        return "Halo juga. Saya Sela, asisten virtual yang siap menemani kamu ngobrol soal keuangan, SLA pembayaran, karier, atau hal lain seputar dunia kerja.";
       }
-      return "Tadi kamu bilang: '" + text + "'. Saat ini saya masih versi LITE tanpa otak AI besar, jadi jawabanku terbatas. Tapi saya tetap bisa menemani kamu dan membantu hal-hal seputar keuangan, SLA, dan kerja di keuangan perbendaharaan.";
+      if (t.includes("capek") || t.includes("lelah") || t.includes("lelah")) {
+        return "Kalau capek, jangan lupa istirahat sebentar ya. Tarik napas, minum air, dan lanjut lagi pelan-pelan. Ritme kerja yang sehat juga bagian dari budaya risiko yang baik.";
+      }
+
+      return "Tadi kamu bilang: '" + text + "'. Saat ini Sela masih versi LITE tanpa otak AI besar, jadi jawabanku terbatas. Tapi aku tetap bisa menemanimu dan bantu hal-hal dasar soal keuangan, SLA, dan kerja di keuangan perbendaharaan.";
     }
 
-    // 3) MIC + SUARA
+    // 2) MIC + SUARA
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognizer = null;
 
@@ -2336,15 +2363,15 @@ def render_sela_widget():
       recognizer.maxAlternatives = 1;
 
       recognizer.onstart = () => {
-        led.classList.remove("off");
+        led.classList.add("on");
         statusEl.textContent = "Status: mendengarkan... silakan bicara.";
       };
       recognizer.onerror = (e) => {
-        led.classList.add("off");
+        led.classList.remove("on");
         statusEl.textContent = "Error mic: " + e.error + ". Pastikan mic diizinkan.";
       };
       recognizer.onend = () => {
-        led.classList.add("off");
+        led.classList.remove("on");
       };
       recognizer.onresult = (event) => {
         const text = event.results[0][0].transcript;
@@ -2358,7 +2385,6 @@ def render_sela_widget():
           utt.onend = () => {
             setTalking(false);
             statusEl.textContent = "Status: siap mendengarkan lagi.";
-            // otomatis dengar lagi
             setTimeout(() => {
               try { recognizer.start(); } catch(e) {}
             }, 800);
@@ -2399,5 +2425,3 @@ def render_sela_widget():
 # Hanya render SELA kalau user klik tombol di sidebar
 if st.session_state.get("show_sela", False):
     render_sela_widget()
-
-
