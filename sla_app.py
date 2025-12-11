@@ -2012,6 +2012,7 @@ with tab_pdf:
 # ===============================================
 # SELA PRO — Floating 3D Assistant (SAFE VERSION)
 # ===============================================
+
 import streamlit as st
 import streamlit.components.v1 as components
 import requests, json
@@ -2022,8 +2023,7 @@ HF_MODEL = "google/flan-t5-small"
 if "sela_conv" not in st.session_state:
     st.session_state.sela_conv = []
 
-# SAFE VERSION: raw string (r""") — avoids Python interpreting JS {}
-sela_ui = r"""
+sela_ui = r'''
 <style>
 #sela-btn {
     position: fixed;
@@ -2031,10 +2031,10 @@ sela_ui = r"""
     right: 25px;
     width: 70px; height: 70px;
     background: #ff3e9e;
-    border-radius: 50%; color:white;
+    border-radius: 50%;
     display:flex; justify-content:center; align-items:center;
-    cursor:pointer; font-size:28px;
-    z-index:99999;
+    color:white; font-size:28px;
+    cursor:pointer; z-index:999999;
 }
 #sela-window{
     position:fixed;
@@ -2044,7 +2044,7 @@ sela_ui = r"""
     border-radius:16px;
     display:none; flex-direction:column;
     box-shadow:0 8px 20px rgba(0,0,0,.3);
-    z-index:99998; overflow:hidden;
+    z-index:999998; overflow:hidden;
 }
 #sela-header{
     background:#ff3e9e; color:white;
@@ -2062,17 +2062,21 @@ sela_ui = r"""
 
     <p id="sela-status" style="padding:8px;color:#777;">Siap mendengarkan...</p>
 
-    <textarea id="sela-user" style="width:92%;margin:0 auto;border-radius:8px;height:60px;"></textarea>
+    <textarea id="sela-user"
+        style="width:92%;margin:0 auto;border-radius:8px;height:60px;"></textarea>
 
-    <button id="sela-mic" style="width:92%;margin:8px auto;padding:10px;border-radius:8px;background:#ff3e9e;color:white;font-weight:700;">
+    <button id="sela-mic"
+        style="width:92%;margin:8px auto;padding:10px;border-radius:8px;background:#ff3e9e;color:white;font-weight:700;">
         🎤 Bicara
     </button>
 
-    <button id="sela-send" style="width:92%;margin:4px auto;padding:10px;border-radius:8px;background:#00c853;color:white;font-weight:700;">
+    <button id="sela-send"
+        style="width:92%;margin:4px auto;padding:10px;border-radius:8px;background:#00c853;color:white;font-weight:700;">
         💬 Kirim
     </button>
 
-    <div id="sela-reply" style="background:#f2f2f2;height:120px;margin:8px;border-radius:8px;padding:10px;overflow:auto;"></div>
+    <div id="sela-reply"
+        style="background:#f2f2f2;height:120px;margin:8px;border-radius:8px;padding:10px;overflow:auto;"></div>
 </div>
 
 <script>
@@ -2089,4 +2093,69 @@ btn.onclick = () => {
         const greet = new SpeechSynthesisUtterance("Haloooo, saya SELA. Ada yang bisa saya bantu?");
         greet.lang = "id-ID";
         speechSynthesis.speak(greet);
-        replyBox.innerHTML = "Haloooo 😊 Saya SELA. Ada yang bisa saya ba
+        replyBox.innerHTML = "Haloooo 😊 Saya SELA. Ada yang bisa saya bantu?";
+    }
+};
+
+document.getElementById("sela-mic").onclick = () => {
+    const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const rec = new Rec();
+    rec.lang = "id-ID";
+    rec.onresult = e => {
+        userBox.value = e.results[0][0].transcript;
+        sendToBackend(userBox.value);
+    };
+    rec.start();
+};
+
+document.getElementById("sela-send").onclick = () => {
+    const t = userBox.value;
+    if (t) sendToBackend(t);
+};
+
+async function sendToBackend(text){
+    replyBox.innerHTML = "Menghubungi AI...";
+    const res = await fetch("./sela_api", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({"text":text})
+    });
+    const data = await res.json();
+    replyBox.innerHTML = data.reply;
+
+    const speak = new SpeechSynthesisUtterance(data.reply);
+    speak.lang = "id-ID";
+    speechSynthesis.speak(speak);
+}
+</script>
+'''
+
+components.html(sela_ui, height=0)
+
+# BACKEND HANDLER
+def sela_backend():
+    req = st.session_state.get("_last_request")
+    if not req:
+        return {"reply":"Tidak ada input."}
+
+    text = req.get("text","")
+
+    if not HF_TOKEN:
+        return {"reply":"SELA belum terhubung AI. Tambahkan HF_TOKEN di Streamlit Secrets."}
+
+    HF_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
+    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    payload = {"inputs": text}
+
+    r = requests.post(HF_URL, headers=headers, json=payload)
+    j = r.json()
+
+    if isinstance(j, list) and "generated_text" in j[0]:
+        reply = j[0]["generated_text"]
+    else:
+        reply = str(j)
+
+    st.session_state.sela_conv.append({"role":"assistant","text":reply})
+    return {"reply": reply}
+
+st.session_state["sela_api"] = sela_backend
