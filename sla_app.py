@@ -2023,7 +2023,7 @@ with tab_pdf:
 # ==========================================================
 #  VIRTUAL ASSISTANT: "Tanya SELA" (3D + Voice + LLM di browser)
 # ==========================================================
-import streamlit.components.v1 as components  # aman kalau sudah ada di atas
+import streamlit.components.v1 as components  # aman kalau sudah ada
 
 def render_sela_widget():
     components.html(
@@ -2324,7 +2324,7 @@ def render_sela_widget():
     dir.position.set(2, 4, 3);
     scene.add(dir);
 
-    // AVATAR FALLBACK (bola + silinder) bila GLB gagal
+    // AVATAR FALLBACK (bola + silinder)
     const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
     const headMat = new THREE.MeshStandardMaterial({
       color: 0xf9a8d4,
@@ -2359,7 +2359,7 @@ def render_sela_widget():
     mouth.position.set(0, 0.48, 0.72);
     scene.add(mouth);
 
-    // AVATAR UTAMA: Sela.glb
+    // AVATAR UTAMA: Sela.glb (sederhana dulu)
     let selaModel = null;
 
     try {
@@ -2367,34 +2367,26 @@ def render_sela_widget():
       loader.load(
         'https://raw.githubusercontent.com/firmanaditya90/SLA/main/Sela.glb',
         function (gltf) {
-          selaModel = gltf.scene;
+          try {
+            selaModel = gltf.scene;
 
-          // Hitung bounding box untuk tahu ukuran & pusat
-          const box = new THREE.Box3().setFromObject(selaModel);
-          const size = box.getSize(new THREE.Vector3());
-          const center = box.getCenter(new THREE.Vector3());
+            // Atur posisi & skala manual dulu (nanti bisa di-finetune)
+            selaModel.position.set(0, -1.0, 0);
+            selaModel.scale.set(0.7, 0.7, 0.7);
 
-          // Pindahkan pusat model ke origin
-          selaModel.position.sub(center);
+            // Sembunyikan avatar fallback
+            head.visible = false;
+            body.visible = false;
+            eyeL.visible = false;
+            eyeR.visible = false;
+            mouth.visible = false;
 
-          // Skala supaya tinggi kira-kira 2.6 unit (biar pas di frame)
-          const targetHeight = 2.6;
-          const scaleFactor = targetHeight / size.y;
-          selaModel.scale.setScalar(scaleFactor);
-
-          // Geser sedikit ke bawah agar komposisi enak
-          selaModel.position.y -= 0.2;
-
-          // Sembunyikan avatar fallback
-          head.visible = false;
-          body.visible = false;
-          eyeL.visible = false;
-          eyeR.visible = false;
-          mouth.visible = false;
-
-          scene.add(selaModel);
-
-          statusEl.textContent = 'Status: avatar 3D SELA berhasil dimuat. Menyiapkan model AI...';
+            scene.add(selaModel);
+            statusEl.textContent = 'Status: avatar 3D SELA berhasil dimuat. Menyiapkan model AI...';
+          } catch (e) {
+            console.error('Error saat memproses Sela.glb:', e);
+            statusEl.textContent = 'Status: gagal memproses avatar 3D SELA, pakai avatar sederhana dulu.';
+          }
         },
         function (xhr) {
           if (xhr.total) {
@@ -2430,12 +2422,11 @@ def render_sela_widget():
 
         if (talking) {
           talkPhase += 0.2;
-          // sedikit gerakan naik-turun saat bicara
-          const baseY = -0.2;
+          const baseY = -1.0;
           selaModel.position.y = baseY + Math.sin(talkPhase) * 0.05;
         }
       } else {
-        // fallback avatar animasi
+        // fallback avatar
         head.rotation.y += 0.002;
         body.rotation.y += 0.002;
 
