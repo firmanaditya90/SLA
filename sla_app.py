@@ -2020,6 +2020,7 @@ with tab_pdf:
         st.error(f"Gagal membuat PDF: {type(e).__name__}: {e}")
         traceback.print_exc()
 
+
 # ==========================================================
 #  VIRTUAL ASSISTANT: "Tanya SELA" (3D + Voice + LLM di browser)
 # ==========================================================
@@ -2522,3 +2523,5 @@ def render_sela_widget():
 
 # PANGGIL SELA DI SEMUA HALAMAN
 render_sela_widget()
+
+
