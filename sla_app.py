@@ -2175,11 +2175,12 @@ def render_sela_widget():
     </div>
   </div>
 
-  <!-- Three.js & GLTFLoader sebagai script biasa (lebih aman) -->
-  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
-
   <script type="module">
+    /**********************
+     * IMPORT LIBRARIES (module)
+     **********************/
+    import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
+    import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
     import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
     const panel    = document.getElementById("sela-panel");
@@ -2191,7 +2192,7 @@ def render_sela_widget():
       panel.style.display = "none";
     });
 
-    // indikasi bahwa script sudah jalan
+    // indikasi script JS sudah mulai jalan
     statusEl.textContent = "Status: inisialisasi tampilan SELA...";
 
     /**********************
@@ -2240,16 +2241,17 @@ def render_sela_widget():
     scene.add(ground);
 
     let avatar = null;
-    let mouthTargets = [];
-    let blinkTargets = [];
+    let talking   = false;
+    let talkPhase = 0;
+    let blinkTimer = 0;
+    let blinking = false;
 
-    const loader = new THREE.GLTFLoader();
+    const loader = new GLTFLoader();
 
     // AVATAR SELA (.glb) di GitHub
     const AVATAR_URL = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/Sela.glb";
 
     function makeFallbackAvatar() {
-      // fallback kalau GLB gagal dimuat → kepala perempuan stylized
       const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
       const headMat = new THREE.MeshStandardMaterial({
         color: 0xffd6e7,
@@ -2302,49 +2304,6 @@ def render_sela_widget():
         avatar.scale.set(1.6, 1.6, 1.6);
         avatar.position.set(0, -1.1, 0);
         scene.add(avatar);
-
-        avatar.traverse((obj) => {
-          if (obj.isMesh && obj.morphTargetDictionary && obj.morphTargetInfluences) {
-            const dict = obj.morphTargetDictionary;
-            const mouthNames = ["mouthOpen", "jawOpen", "vrc.v_aa", "viseme_aa"];
-            const blinkNamesL = ["eyeBlinkLeft", "eyesClosedLeft", "EyeBlinkLeft"];
-            const blinkNamesR = ["eyeBlinkRight", "eyesClosedRight", "EyeBlinkRight"];
-
-            let mouthIndex = null;
-            for (const name of mouthNames) {
-              if (name in dict) {
-                mouthIndex = dict[name];
-                break;
-              }
-            }
-            if (mouthIndex !== null) {
-              mouthTargets.push({ mesh: obj, index: mouthIndex });
-            }
-
-            let blinkIndexL = null;
-            for (const name of blinkNamesL) {
-              if (name in dict) {
-                blinkIndexL = dict[name];
-                break;
-              }
-            }
-            let blinkIndexR = null;
-            for (const name of blinkNamesR) {
-              if (name in dict) {
-                blinkIndexR = dict[name];
-                break;
-              }
-            }
-            if (blinkIndexL !== null || blinkIndexR !== null) {
-              blinkTargets.push({
-                mesh: obj,
-                left: blinkIndexL,
-                right: blinkIndexR
-              });
-            }
-          }
-        });
-
         statusEl.textContent = "Status: avatar 3D SELA berhasil dimuat. Menyiapkan AI...";
       },
       undefined,
@@ -2354,11 +2313,6 @@ def render_sela_widget():
         makeFallbackAvatar();
       }
     );
-
-    let talking   = false;
-    let talkPhase = 0;
-    let blinkTimer = 0;
-    let blinking = false;
 
     function setTalking(isTalking) {
       talking = isTalking;
@@ -2375,48 +2329,11 @@ def render_sela_widget():
         avatar.position.y = (avatar.position.y || -1.1) + Math.sin(t * 0.9) * 0.01;
       }
 
-      if (talking && mouthTargets.length > 0) {
+      if (talking) {
         talkPhase += 0.35;
-        const influence = 0.2 + Math.abs(Math.sin(talkPhase)) * 0.7;
-        mouthTargets.forEach(({ mesh, index }) => {
-          mesh.morphTargetInfluences[index] = Math.min(1, influence);
-        });
-      } else if (mouthTargets.length > 0) {
-        mouthTargets.forEach(({ mesh, index }) => {
-          mesh.morphTargetInfluences[index] = 0;
-        });
       }
 
       blinkTimer += 0.016;
-      if (!blinking && blinkTimer > 3 + Math.random() * 3) {
-        blinking = true;
-        blinkTimer = 0;
-      }
-
-      if (blinking && blinkTargets.length > 0) {
-        const f = Math.sin(blinkTimer * Math.PI * 6);
-        const clamp = Math.max(0, Math.min(1, f));
-        blinkTargets.forEach(({ mesh, left, right }) => {
-          if (left !== null && left !== undefined) {
-            mesh.morphTargetInfluences[left] = clamp;
-          }
-          if (right !== null && right !== undefined) {
-            mesh.morphTargetInfluences[right] = clamp;
-          }
-        });
-        if (blinkTimer > 0.25) {
-          blinking = false;
-          blinkTargets.forEach(({ mesh, left, right }) => {
-            if (left !== null && left !== undefined) {
-              mesh.morphTargetInfluences[left] = 0;
-            }
-            if (right !== null && right !== undefined) {
-              mesh.morphTargetInfluences[right] = 0;
-            }
-          });
-        }
-      }
-
       renderer.render(scene, camera);
     }
     animate();
