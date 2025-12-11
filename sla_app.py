@@ -2175,17 +2175,13 @@ def render_sela_widget():
     </div>
   </div>
 
+  <!-- Three.js & GLTFLoader sebagai script biasa (lebih aman) -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+
   <script type="module">
-    /**********************
-     * IMPORTS: Three.js + GLTFLoader + WebLLM
-     **********************/
-    import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
-    import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/loaders/GLTFLoader.js";
     import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
-    /**********************
-     * 1. CLOSE PANEL
-     **********************/
     const panel    = document.getElementById("sela-panel");
     const closer   = document.getElementById("sela-close");
     const statusEl = document.getElementById("sela-status");
@@ -2195,11 +2191,14 @@ def render_sela_widget():
       panel.style.display = "none";
     });
 
+    // indikasi bahwa script sudah jalan
+    statusEl.textContent = "Status: inisialisasi tampilan SELA...";
+
     /**********************
-     * 2. THREE.JS AVATAR – model 3D perempuan (GLB)
+     * 1) THREE.JS AVATAR
      **********************/
-    const canvas   = document.getElementById("sela-canvas");
-    const scene    = new THREE.Scene();
+    const canvas = document.getElementById("sela-canvas");
+    const scene  = new THREE.Scene();
     scene.background = new THREE.Color(0x020617);
 
     const camera = new THREE.PerspectiveCamera(
@@ -2236,7 +2235,7 @@ def render_sela_widget():
       metalness: 0.1
     });
     const ground = new THREE.Mesh(groundGeo, groundMat);
-    ground.rotation.x = -Math.PI/2;
+    ground.rotation.x = -Math.PI / 2;
     ground.position.y = -1.1;
     scene.add(ground);
 
@@ -2244,10 +2243,51 @@ def render_sela_widget():
     let mouthTargets = [];
     let blinkTargets = [];
 
-    const loader = new GLTFLoader();
+    const loader = new THREE.GLTFLoader();
 
-    // ⬇️ GANTI URL INI dengan URL GLB yang kamu host di GitHub (atau server lain)
+    // AVATAR SELA (.glb) di GitHub
     const AVATAR_URL = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/Sela.glb";
+
+    function makeFallbackAvatar() {
+      // fallback kalau GLB gagal dimuat → kepala perempuan stylized
+      const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
+      const headMat = new THREE.MeshStandardMaterial({
+        color: 0xffd6e7,
+        metalness: 0.05,
+        roughness: 0.5
+      });
+      const head = new THREE.Mesh(headGeo, headMat);
+      head.position.y = 0.7;
+      scene.add(head);
+
+      const hairGeo = new THREE.SphereGeometry(0.85, 40, 32, 0, Math.PI * 2, 0, Math.PI * 0.8);
+      const hairMat = new THREE.MeshStandardMaterial({
+        color: 0x111827,
+        metalness: 0.2,
+        roughness: 0.35
+      });
+      const hair = new THREE.Mesh(hairGeo, hairMat);
+      hair.position.y = 0.8;
+      hair.position.z = -0.05;
+      scene.add(hair);
+
+      const bodyGeo = new THREE.CylinderGeometry(0.9, 1.0, 1.5, 32);
+      const bodyMat = new THREE.MeshStandardMaterial({
+        color: 0x38bdf8,
+        metalness: 0.1,
+        roughness: 0.4
+      });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      body.position.y = -0.3;
+      scene.add(body);
+
+      avatar = new THREE.Group();
+      avatar.add(head);
+      avatar.add(hair);
+      avatar.add(body);
+      avatar.position.y = -0.2;
+      scene.add(avatar);
+    }
 
     loader.load(
       AVATAR_URL,
@@ -2263,7 +2303,6 @@ def render_sela_widget():
         avatar.position.set(0, -1.1, 0);
         scene.add(avatar);
 
-        // Coba deteksi morph target untuk mulut & kedipan (kalau model mendukung)
         avatar.traverse((obj) => {
           if (obj.isMesh && obj.morphTargetDictionary && obj.morphTargetInfluences) {
             const dict = obj.morphTargetDictionary;
@@ -2306,11 +2345,13 @@ def render_sela_widget():
           }
         });
 
+        statusEl.textContent = "Status: avatar 3D SELA berhasil dimuat. Menyiapkan AI...";
       },
       undefined,
       (error) => {
         console.error("Gagal memuat avatar SELA:", error);
-        statusEl.textContent = "Gagal memuat avatar 3D SELA. Coba reload halaman.";
+        statusEl.textContent = "Avatar 3D gagal dimuat, menggunakan avatar sederhana.";
+        makeFallbackAvatar();
       }
     );
 
@@ -2331,10 +2372,9 @@ def render_sela_widget():
 
       if (avatar) {
         avatar.rotation.y = Math.sin(t * 0.25) * 0.17;
-        avatar.position.y = -1.1 + Math.sin(t * 0.9) * 0.03;
+        avatar.position.y = (avatar.position.y || -1.1) + Math.sin(t * 0.9) * 0.01;
       }
 
-      // Mulut (kalau punya morph target)
       if (talking && mouthTargets.length > 0) {
         talkPhase += 0.35;
         const influence = 0.2 + Math.abs(Math.sin(talkPhase)) * 0.7;
@@ -2347,7 +2387,6 @@ def render_sela_widget():
         });
       }
 
-      // Kedipan
       blinkTimer += 0.016;
       if (!blinking && blinkTimer > 3 + Math.random() * 3) {
         blinking = true;
@@ -2383,7 +2422,7 @@ def render_sela_widget():
     animate();
 
     /**********************
-     * 3. WebLLM (LLM di browser)
+     * 2) WebLLM (AI di browser)
      **********************/
     let engine   = null;
     let messages = [
@@ -2413,7 +2452,7 @@ def render_sela_widget():
         statusEl.textContent = "Status: SELA siap. Silakan berbicara.";
       } catch (e) {
         console.error(e);
-        statusEl.textContent = "Gagal memuat model AI di browser: " + e;
+        statusEl.textContent = "Gagal memuat AI di browser: " + e;
       }
     }
 
@@ -2444,7 +2483,7 @@ def render_sela_widget():
     }
 
     /**********************
-     * 4. Mic + Suara – auto mendengar
+     * 3) Mic + Suara (auto listen)
      **********************/
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -2531,5 +2570,3 @@ def render_sela_widget():
 # Hanya render SELA kalau user klik tombol di sidebar
 if st.session_state.get("show_sela", False):
     render_sela_widget()
-
-
