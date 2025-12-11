@@ -2023,7 +2023,7 @@ with tab_pdf:
 # ==========================================================
 #  VIRTUAL ASSISTANT: "Tanya SELA" (3D + Voice + LLM di browser)
 # ==========================================================
-import streamlit.components.v1 as components  # aman walau sudah di-import
+import streamlit.components.v1 as components
 
 def render_sela_widget():
     components.html(
@@ -2249,14 +2249,11 @@ def render_sela_widget():
     </div>
   </div>
 
-  <!-- Three.js via jsDelivr -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+  <!-- Semua JS pakai ES Module -->
+  <script type="module">
+    import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
+    import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
-  <script>
-    /**********************
-     * 1. UI TOGGLE PANEL
-     **********************/
     const launcher = document.getElementById('sela-launcher');
     const panel    = document.getElementById('sela-panel');
     const closer   = document.getElementById('sela-close');
@@ -2264,6 +2261,9 @@ def render_sela_widget():
     const talkBtn  = document.getElementById('sela-talk-btn');
     const led      = document.getElementById('sela-led');
 
+    /**********************
+     * 1. UI TOGGLE PANEL
+     **********************/
     statusEl.textContent = 'Status: inisialisasi SELA di browser...';
 
     let panelOpen = false;
@@ -2292,7 +2292,7 @@ def render_sela_widget():
     });
 
     /**********************
-     * 2. THREE.JS AVATAR (Sela.glb + fallback Duck)
+     * 2. THREE.JS AVATAR + Sela.glb
      **********************/
     const canvas   = document.getElementById('sela-canvas');
     const scene    = new THREE.Scene();
@@ -2324,7 +2324,7 @@ def render_sela_widget():
     dir.position.set(2, 4, 3);
     scene.add(dir);
 
-    // Fallback avatar (bola + silinder)
+    // Fallback avatar
     const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
     const headMat = new THREE.MeshStandardMaterial({
       color: 0xf9a8d4,
@@ -2369,66 +2369,45 @@ def render_sela_widget():
       mouth.visible = false;
     }
 
-    function loadAvatar(url, label, tryFallbackDuck) {
-      try {
-        const loader = new THREE.GLTFLoader();
-        loader.load(
-          url,
-          function (gltf) {
-            try {
-              selaModel = gltf.scene;
+    // Load Sela.glb sebagai avatar utama
+    function loadSelaAvatar() {
+      statusEl.textContent = 'Status: mengunduh avatar 3D SELA...';
+      const loader = new GLTFLoader();
+      loader.load(
+        "https://raw.githubusercontent.com/firmanaditya90/SLA/main/Sela.glb",
+        (gltf) => {
+          try {
+            selaModel = gltf.scene;
 
-              const box = new THREE.Box3().setFromObject(selaModel);
-              const size = box.getSize(new THREE.Vector3());
-              const center = box.getCenter(new THREE.Vector3());
+            const box = new THREE.Box3().setFromObject(selaModel);
+            const size = box.getSize(new THREE.Vector3());
+            const center = box.getCenter(new THREE.Vector3());
 
-              selaModel.position.sub(center);
-              const targetHeight = 2.6;
-              const scaleFactor = targetHeight / (size.y || 1);
-              selaModel.scale.setScalar(scaleFactor);
-              selaModel.position.y -= 0.2;
+            selaModel.position.sub(center);
+            const targetHeight = 2.6;
+            const scaleFactor = targetHeight / (size.y || 1);
+            selaModel.scale.setScalar(scaleFactor);
+            selaModel.position.y -= 0.2;
 
-              hideFallback();
-              scene.add(selaModel);
-              statusEl.textContent = 'Status: avatar 3D ' + label + ' berhasil dimuat. Menyiapkan model AI...';
-            } catch (e) {
-              console.error('Error saat memproses ' + label + ':', e);
-              statusEl.textContent = 'Status: gagal memproses avatar 3D ' + label + ', pakai avatar sederhana dulu.';
-            }
-          },
-          function (xhr) {
-            if (xhr.total) {
-              const pct = (xhr.loaded / xhr.total) * 100;
-              statusEl.textContent =
-                'Status: mengunduh avatar 3D ' + label + '... ' + pct.toFixed(0) + '%';
-            } else {
-              statusEl.textContent = 'Status: mengunduh avatar 3D ' + label + '...';
-            }
-          },
-          function (error) {
-            console.error('Gagal memuat ' + label + ':', error);
-            statusEl.textContent = 'Status: gagal memuat avatar 3D ' + label + '.';
-            if (tryFallbackDuck) {
-              loadAvatar(
-                'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF-Binary/Duck.glb',
-                'Duck (fallback)',
-                false
-              );
-            }
+            hideFallback();
+            scene.add(selaModel);
+
+            console.log("[SELA] Sela.glb loaded. size=", size);
+            statusEl.textContent = 'Status: avatar 3D SELA berhasil dimuat. Menyiapkan model AI...';
+          } catch (e) {
+            console.error("[SELA] Error saat memproses Sela.glb:", e);
+            statusEl.textContent = 'Status: gagal memproses avatar 3D SELA, pakai avatar sederhana dulu.';
           }
-        );
-      } catch (e) {
-        console.error('Error inisialisasi GLTFLoader:', e);
-        statusEl.textContent = 'Status: error inisialisasi avatar 3D.';
-      }
+        },
+        undefined,
+        (error) => {
+          console.error("[SELA] Gagal memuat Sela.glb:", error);
+          statusEl.textContent = 'Status: gagal memuat avatar 3D SELA, pakai avatar sederhana dulu.';
+        }
+      );
     }
 
-    // Coba Sela.glb dulu, kalau gagal baru Duck
-    loadAvatar(
-      'https://raw.githubusercontent.com/firmanaditya90/SLA/main/Sela.glb',
-      'SELA',
-      true
-    );
+    loadSelaAvatar();
 
     let talking = false;
     let talkPhase = 0;
@@ -2467,7 +2446,7 @@ def render_sela_widget():
     animate();
 
     /**********************
-     * 3. WebLLM + MIC (dynamic import)
+     * 3. WebLLM + MIC
      **********************/
     (async function initLLMAndMic() {
       let engine   = null;
@@ -2484,7 +2463,7 @@ def render_sela_widget():
 
       try {
         statusEl.textContent = 'Status: mengunduh & memuat model AI ke browser...';
-        const webllm = await import('https://esm.run/@mlc-ai/web-llm');
+        const webllm = await import("https://esm.run/@mlc-ai/web-llm");
 
         engine = new webllm.MLCEngine();
         engine.setInitProgressCallback((report) => {
@@ -2503,7 +2482,7 @@ def render_sela_widget():
         await engine.reload(modelId, { temperature: 0.7, top_p: 0.9 });
         statusEl.textContent = 'Status: SELA siap. Klik 🎤 lalu bicara.';
       } catch (e) {
-        console.error('Gagal memuat WebLLM:', e);
+        console.error('[SELA] Gagal memuat WebLLM:', e);
         statusEl.textContent =
           'Gagal memuat model AI di browser. Coba refresh halaman atau gunakan koneksi yang lebih stabil.';
         return;
