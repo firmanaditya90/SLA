@@ -2306,122 +2306,131 @@ def render_sela_widget():
 
   <script>
   (function() {
-    const panel    = document.getElementById("sela-panel");
-    const closer   = document.getElementById("sela-close");
-    const statusEl = document.getElementById("sela-status");
-    const led      = document.getElementById("sela-led");
-    const mouthEl  = document.getElementById("sela-mouth");
+    var panel    = document.getElementById("sela-panel");
+    var closer   = document.getElementById("sela-close");
+    var statusEl = document.getElementById("sela-status");
+    var led      = document.getElementById("sela-led");
+    var mouthEl  = document.getElementById("sela-mouth");
 
     if (!panel || !statusEl) {
       return;
     }
 
-    closer.addEventListener("click", () => {
-      panel.style.display = "none";
-    });
+    try {
+      // Kalau JS berhasil jalan, ganti dulu status awal
+      statusEl.textContent = "Status: inisialisasi skrip SELA...";
 
-    function setTalking(isTalking) {
-      if (!mouthEl || !led) return;
-      if (isTalking) {
-        mouthEl.classList.add("talking");
-        led.classList.add("on");
-      } else {
-        mouthEl.classList.remove("talking");
-        led.classList.remove("on");
-      }
-    }
+      closer.addEventListener("click", function() {
+        panel.style.display = "none";
+      });
 
-    // 1) LOGIKA JAWABAN SEDERHANA (tanpa LLM)
-    function generateReply(text) {
-      const t = (text || "").toLowerCase();
-
-      if (t.includes("sla") && t.includes("pembayaran")) {
-        return "SLA pembayaran adalah standar waktu maksimal penyelesaian proses pembayaran, dari dokumen lengkap diterima sampai dana cair ke vendor.";
-      }
-      if (t.includes("deposito")) {
-        return "Deposito adalah simpanan berjangka di bank dengan bunga lebih tinggi dari tabungan biasa, tapi tidak bisa ditarik sewaktu-waktu sebelum jatuh tempo.";
-      }
-      if (t.includes("gratifikasi")) {
-        return "Gratifikasi adalah pemberian dalam arti luas, seperti uang, barang, atau fasilitas yang diterima terkait jabatan. Di lingkungan BUMN, gratifikasi yang berhubungan dengan jabatan wajib dilaporkan agar tidak menimbulkan konflik kepentingan.";
-      }
-      if (t.includes("halo") || t.includes("hai") || t.includes("assalam")) {
-        return "Halo juga. Saya Sela, asisten virtual yang siap menemani kamu ngobrol soal keuangan, SLA pembayaran, karier, atau hal lain seputar dunia kerja.";
-      }
-      if (t.includes("capek") || t.includes("lelah")) {
-        return "Kalau capek, jangan lupa istirahat sebentar ya. Tarik napas dulu, minum air, lalu lanjut lagi pelan-pelan. Ritme kerja yang sehat juga bagian dari budaya risiko yang baik.";
+      function setTalking(isTalking) {
+        if (!mouthEl || !led) return;
+        if (isTalking) {
+          mouthEl.classList.add("talking");
+          led.classList.add("on");
+        } else {
+          mouthEl.classList.remove("talking");
+          led.classList.remove("on");
+        }
       }
 
-      return "Tadi kamu bilang: '" + text + "'. Saat ini Sela masih versi LITE tanpa otak AI besar, jadi jawabanku terbatas. Tapi aku tetap bisa menemanimu dan bantu hal-hal dasar soal keuangan, SLA, dan kerja di keuangan perbendaharaan.";
-    }
+      // -------- LOGIKA JAWABAN SEDERHANA --------
+      function generateReply(text) {
+        var t = (text || "").toLowerCase();
 
-    // 2) MIC + SUARA
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition || null;
-    let recognizer = null;
+        if (t.indexOf("sla") !== -1 && t.indexOf("pembayaran") !== -1) {
+          return "SLA pembayaran adalah standar waktu maksimal penyelesaian proses pembayaran, dari dokumen lengkap diterima sampai dana cair ke vendor.";
+        }
+        if (t.indexOf("deposito") !== -1) {
+          return "Deposito adalah simpanan berjangka di bank dengan bunga lebih tinggi dari tabungan biasa, tapi tidak bisa ditarik sewaktu-waktu sebelum jatuh tempo.";
+        }
+        if (t.indexOf("gratifikasi") !== -1) {
+          return "Gratifikasi adalah pemberian dalam arti luas, seperti uang, barang, atau fasilitas yang diterima terkait jabatan. Di lingkungan BUMN, gratifikasi yang berhubungan dengan jabatan wajib dilaporkan agar tidak menimbulkan konflik kepentingan.";
+        }
+        if (t.indexOf("halo") !== -1 || t.indexOf("hai") !== -1 || t.indexOf("assalam") !== -1) {
+          return "Halo juga. Saya Sela, asisten virtual yang siap menemani kamu ngobrol soal keuangan, SLA pembayaran, karier, atau hal lain seputar dunia kerja.";
+        }
+        if (t.indexOf("capek") !== -1 || t.indexOf("lelah") !== -1) {
+          return "Kalau capek, jangan lupa istirahat sebentar ya. Tarik napas dulu, minum air, lalu lanjut lagi pelan-pelan. Ritme kerja yang sehat juga bagian dari budaya risiko yang baik.";
+        }
 
-    if (!SpeechRecognition) {
-      statusEl.textContent = "Browser ini tidak mendukung pengenalan suara. Coba gunakan Google Chrome (desktop/Android).";
-      return;
-    }
-
-    recognizer = new SpeechRecognition();
-    recognizer.lang = "id-ID";
-    recognizer.interimResults = false;
-    recognizer.maxAlternatives = 1;
-
-    recognizer.onstart = () => {
-      if (led) led.classList.add("on");
-      statusEl.textContent = "Status: mendengarkan... silakan bicara.";
-    };
-
-    recognizer.onerror = (e) => {
-      if (led) led.classList.remove("on");
-      statusEl.textContent = "Error mic: " + e.error + ". Pastikan izin mic sudah diberikan.";
-    };
-
-    recognizer.onend = () => {
-      if (led) led.classList.remove("on");
-    };
-
-    recognizer.onresult = (event) => {
-      const text = event.results[0][0].transcript;
-      const reply = generateReply(text);
-      statusEl.textContent = "Kamu: \"" + text + "\". SELA menjawab...";
-
-      if ("speechSynthesis" in window) {
-        const utt = new SpeechSynthesisUtterance(reply);
-        utt.lang = "id-ID";
-        utt.onstart = () => setTalking(true);
-        utt.onend = () => {
-          setTalking(false);
-          statusEl.textContent = "Status: siap mendengarkan lagi.";
-          setTimeout(() => {
-            try { recognizer.start(); } catch(e) {}
-          }, 800);
-        };
-        window.speechSynthesis.speak(utt);
-      } else {
-        statusEl.textContent = "SELA (teks): " + reply;
+        return "Tadi kamu bilang: '" + text + "'. Saat ini Sela masih versi LITE tanpa otak AI besar, jadi jawabanku terbatas. Tapi aku tetap bisa menemanimu dan bantu hal-hal dasar soal keuangan, SLA, dan kerja di keuangan perbendaharaan.";
       }
-    };
 
-    function greetAndListen() {
-      if (!("speechSynthesis" in window)) {
-        try { recognizer.start(); } catch(e) {}
+      // -------- MIC + SUARA --------
+      var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+      var recognizer = null;
+
+      if (!SpeechRecognition) {
+        statusEl.textContent = "Browser ini tidak mendukung pengenalan suara. Coba gunakan Google Chrome (desktop/Android).";
         return;
       }
-      const text = "Haloooo, saya Sela. Ada yang bisa saya bantu?";
-      const utt  = new SpeechSynthesisUtterance(text);
-      utt.lang   = "id-ID";
-      utt.onstart = () => setTalking(true);
-      utt.onend  = () => {
-        setTalking(false);
-        try { recognizer.start(); } catch(e) {}
-      };
-      window.speechSynthesis.speak(utt);
-    }
 
-    statusEl.textContent = "Status: siap. SELA akan menyapa dan mulai mendengarkan.";
-    greetAndListen();
+      recognizer = new SpeechRecognition();
+      recognizer.lang = "id-ID";
+      recognizer.interimResults = false;
+      recognizer.maxAlternatives = 1;
+
+      recognizer.onstart = function() {
+        if (led) led.classList.add("on");
+        statusEl.textContent = "Status: mendengarkan... silakan bicara.";
+      };
+
+      recognizer.onerror = function(e) {
+        if (led) led.classList.remove("on");
+        statusEl.textContent = "Error mic: " + e.error + ". Pastikan izin mic sudah diberikan.";
+      };
+
+      recognizer.onend = function() {
+        if (led) led.classList.remove("on");
+      };
+
+      recognizer.onresult = function(event) {
+        var text = event.results[0][0].transcript;
+        var reply = generateReply(text);
+        statusEl.textContent = "Kamu: \"" + text + "\". SELA menjawab...";
+
+        if ("speechSynthesis" in window) {
+          var utt = new SpeechSynthesisUtterance(reply);
+          utt.lang = "id-ID";
+          utt.onstart = function() { setTalking(true); };
+          utt.onend = function() {
+            setTalking(false);
+            statusEl.textContent = "Status: siap mendengarkan lagi.";
+            setTimeout(function() {
+              try { recognizer.start(); } catch(e) {}
+            }, 800);
+          };
+          window.speechSynthesis.speak(utt);
+        } else {
+          statusEl.textContent = "SELA (teks): " + reply;
+        }
+      };
+
+      function greetAndListen() {
+        if (!("speechSynthesis" in window)) {
+          try { recognizer.start(); } catch(e) {}
+          return;
+        }
+        var text = "Haloooo, saya Sela. Ada yang bisa saya bantu?";
+        var utt  = new SpeechSynthesisUtterance(text);
+        utt.lang = "id-ID";
+        utt.onstart = function() { setTalking(true); };
+        utt.onend  = function() {
+          setTalking(false);
+          try { recognizer.start(); } catch(e) {}
+        };
+        window.speechSynthesis.speak(utt);
+      }
+
+      statusEl.textContent = "Status: siap. SELA akan menyapa dan mulai mendengarkan.";
+      greetAndListen();
+
+    } catch (e) {
+      // Kalau ada error JS apa pun, tampilkan jelas di status
+      statusEl.textContent = "Terjadi error di skrip SELA: " + e.message;
+    }
   })();
   </script>
 </body>
@@ -2433,5 +2442,3 @@ def render_sela_widget():
 # Hanya render SELA kalau user klik tombol di sidebar
 if st.session_state.get("show_sela", False):
     render_sela_widget()
-
-
