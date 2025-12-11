@@ -2249,7 +2249,7 @@ def render_sela_widget():
     </div>
   </div>
 
-  <!-- Semua JS pakai ES Module via esm.run (auto-resolve "three") -->
+  <!-- Semua JS pakai ES Module via esm.run -->
   <script type="module">
     import * as THREE from "https://esm.run/three@0.160.0";
     import { GLTFLoader } from "https://esm.run/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
@@ -2292,7 +2292,7 @@ def render_sela_widget():
     });
 
     /**********************
-     * 2. THREE.JS AVATAR + Sela.glb
+     * 2. THREE.JS AVATAR + Sela.glb (proporsional)
      **********************/
     const canvas   = document.getElementById('sela-canvas');
     const scene    = new THREE.Scene();
@@ -2304,7 +2304,9 @@ def render_sela_widget():
       0.1,
       100
     );
-    camera.position.set(0, 0.2, 4);
+    // Kamera agak tinggi & mendekat, menghadap ke tengah badan SELA
+    camera.position.set(0, 1.0, 4);
+    camera.lookAt(0, 1.0, 0);
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     function resizeRenderer() {
@@ -2324,7 +2326,7 @@ def render_sela_widget():
     dir.position.set(2, 4, 3);
     scene.add(dir);
 
-    // Fallback avatar
+    // Fallback avatar (kalau GLB gagal)
     const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
     const headMat = new THREE.MeshStandardMaterial({
       color: 0xf9a8d4,
@@ -2360,6 +2362,8 @@ def render_sela_widget():
     scene.add(mouth);
 
     let selaModel = null;
+    const SELA_CENTER_Y = 1.0;        // titik tengah badan di layar
+    const SELA_TARGET_HEIGHT = 3.0;   // tinggi kira-kira 3 unit (proporsional)
 
     function hideFallback() {
       head.visible = false;
@@ -2378,15 +2382,24 @@ def render_sela_widget():
           try {
             selaModel = gltf.scene;
 
-            const box = new THREE.Box3().setFromObject(selaModel);
-            const size = box.getSize(new THREE.Vector3());
-            const center = box.getCenter(new THREE.Vector3());
+            // Hitung ukuran & pusat awal
+            let box = new THREE.Box3().setFromObject(selaModel);
+            let size = box.getSize(new THREE.Vector3());
+            let center = box.getCenter(new THREE.Vector3());
 
-            selaModel.position.sub(center);
-            const targetHeight = 2.6;
-            const scaleFactor = targetHeight / (size.y || 1);
+            // Skala supaya tinggi kira-kira 3.0 unit
+            const height = size.y || 1;
+            const scaleFactor = SELA_TARGET_HEIGHT / height;
             selaModel.scale.setScalar(scaleFactor);
-            selaModel.position.y -= 0.2;
+
+            // Re-calc sesudah di-scale
+            box.setFromObject(selaModel);
+            size = box.getSize(new THREE.Vector3());
+            center = box.getCenter(new THREE.Vector3());
+
+            // Geser sehingga pusat ada di SELA_CENTER_Y (tengah panel)
+            selaModel.position.sub(center);        // center -> origin
+            selaModel.position.y += SELA_CENTER_Y; // angkat ke tengah
 
             hideFallback();
             scene.add(selaModel);
@@ -2420,13 +2433,16 @@ def render_sela_widget():
       requestAnimationFrame(animate);
 
       if (selaModel) {
-        selaModel.rotation.y += 0.01;
+        // SELA tidak berputar, hanya "bernapas" saat bicara
         if (talking) {
           talkPhase += 0.2;
-          const baseY = selaModel.position.y;
-          selaModel.position.y = baseY + Math.sin(talkPhase) * 0.02;
+          const dy = Math.sin(talkPhase) * 0.05; // naik-turun halus
+          selaModel.position.y = SELA_CENTER_Y + dy;
+        } else {
+          selaModel.position.y = SELA_CENTER_Y;
         }
       } else {
+        // Fallback tetap diputer pelan
         head.rotation.y += 0.002;
         body.rotation.y += 0.002;
 
@@ -2584,7 +2600,6 @@ def render_sela_widget():
         height=600,
         scrolling=False,
     )
-
 
 
 # PANGGIL SELA DI SEMUA HALAMAN
