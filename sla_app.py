@@ -2009,6 +2009,7 @@ with tab_pdf:
         st.error(f"Gagal membuat PDF: {type(e).__name__}: {e}")
         traceback.print_exc()
 
+
 # ==========================================================
 #  VIRTUAL ASSISTANT: "Tanya SELA" (3D + Voice + LLM di browser)
 # ==========================================================
@@ -2471,7 +2472,7 @@ def render_sela_widget():
       };
       recognizer.onresult = async (event) => {
         const text = event.results[0][0].transcript;
-        statusEl.textContent = "Kamu: \"" + text + "\". SELA sedang berpikir...";
+        statusEl.textContent = "Kamu: \\"" + text + "\\". SELA sedang berpikir...";
         window._sela_processing = true;
 
         const reply = await askSELA(text);
@@ -2507,9 +2508,7 @@ def render_sela_widget():
         """,
         height=600,
         scrolling=False,
-        key="sela_widget",
     )
 
 # PANGGIL SELA DI SEMUA HALAMAN
 render_sela_widget()
-
