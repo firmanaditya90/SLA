@@ -2020,8 +2020,10 @@ with tab_pdf:
         st.error(f"Gagal membuat PDF: {type(e).__name__}: {e}")
         traceback.print_exc()
 
+
+
 # ==========================================================
-#  VIRTUAL ASSISTANT: "SELA" (3D + Voice + LLM di browser)
+#  VIRTUAL ASSISTANT LITE: "SELA" (3D + Voice, tanpa LLM)
 # ==========================================================
 import streamlit.components.v1 as components  # aman walau sudah di-import di atas
 
@@ -2159,30 +2161,25 @@ def render_sela_widget():
     </div>
 
     <div id="sela-status" class="sela-status">
-      Status: menyiapkan otak SELA (model AI) di browser...
+      Status: menyiapkan tampilan SELA...
     </div>
 
     <div class="sela-bottom">
       <div class="sela-tip">
-        Anda bisa langsung berbicara, dan SELA akan menjawab dengan suara.
+        Anda bisa langsung berbicara, dan SELA akan menjawab dengan suara (versi LITE, tanpa otak AI besar).
       </div>
       <div style="display:flex; align-items:center; justify-content:space-between; margin-top:4px;">
         <div id="sela-led" class="sela-mini-led off"></div>
         <div class="sela-note">
-          *AI & suara berjalan di browser Anda (tanpa server & tanpa biaya).
+          *Semua berjalan di browser (tanpa server & tanpa API key).
         </div>
       </div>
     </div>
   </div>
 
-  <script type="module">
-    /**********************
-     * IMPORT LIBRARIES (module)
-     **********************/
-    import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
-    import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
-    import * as webllm from "https://esm.run/@mlc-ai/web-llm";
-
+  <!-- Three.js klasik (non-module) -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script>
     const panel    = document.getElementById("sela-panel");
     const closer   = document.getElementById("sela-close");
     const statusEl = document.getElementById("sela-status");
@@ -2192,12 +2189,7 @@ def render_sela_widget():
       panel.style.display = "none";
     });
 
-    // indikasi script JS sudah mulai jalan
-    statusEl.textContent = "Status: inisialisasi tampilan SELA...";
-
-    /**********************
-     * 1) THREE.JS AVATAR
-     **********************/
+    // 1) THREE.JS AVATAR SEDERHANA (wanita stylized)
     const canvas = document.getElementById("sela-canvas");
     const scene  = new THREE.Scene();
     scene.background = new THREE.Color(0x020617);
@@ -2240,79 +2232,50 @@ def render_sela_widget():
     ground.position.y = -1.1;
     scene.add(ground);
 
-    let avatar = null;
-    let talking   = false;
+    // Kepala
+    const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
+    const headMat = new THREE.MeshStandardMaterial({
+      color: 0xffd6e7,
+      metalness: 0.05,
+      roughness: 0.5
+    });
+    const head = new THREE.Mesh(headGeo, headMat);
+    head.position.y = 0.7;
+    scene.add(head);
+
+    // Rambut
+    const hairGeo = new THREE.SphereGeometry(0.85, 40, 32, 0, Math.PI * 2, 0, Math.PI * 0.8);
+    const hairMat = new THREE.MeshStandardMaterial({
+      color: 0x111827,
+      metalness: 0.2,
+      roughness: 0.35
+    });
+    const hair = new THREE.Mesh(hairGeo, hairMat);
+    hair.position.y = 0.8;
+    hair.position.z = -0.05;
+    scene.add(hair);
+
+    // Badan
+    const bodyGeo = new THREE.CylinderGeometry(0.9, 1.0, 1.5, 32);
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      metalness: 0.1,
+      roughness: 0.4
+    });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = -0.3;
+    scene.add(body);
+
+    const avatar = new THREE.Group();
+    avatar.add(head);
+    avatar.add(hair);
+    avatar.add(body);
+    avatar.position.y = -0.2;
+    scene.add(avatar);
+
+    let talking = false;
     let talkPhase = 0;
     let blinkTimer = 0;
-    let blinking = false;
-
-    const loader = new GLTFLoader();
-
-    // AVATAR SELA (.glb) di GitHub
-    const AVATAR_URL = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/Sela.glb";
-
-    function makeFallbackAvatar() {
-      const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
-      const headMat = new THREE.MeshStandardMaterial({
-        color: 0xffd6e7,
-        metalness: 0.05,
-        roughness: 0.5
-      });
-      const head = new THREE.Mesh(headGeo, headMat);
-      head.position.y = 0.7;
-      scene.add(head);
-
-      const hairGeo = new THREE.SphereGeometry(0.85, 40, 32, 0, Math.PI * 2, 0, Math.PI * 0.8);
-      const hairMat = new THREE.MeshStandardMaterial({
-        color: 0x111827,
-        metalness: 0.2,
-        roughness: 0.35
-      });
-      const hair = new THREE.Mesh(hairGeo, hairMat);
-      hair.position.y = 0.8;
-      hair.position.z = -0.05;
-      scene.add(hair);
-
-      const bodyGeo = new THREE.CylinderGeometry(0.9, 1.0, 1.5, 32);
-      const bodyMat = new THREE.MeshStandardMaterial({
-        color: 0x38bdf8,
-        metalness: 0.1,
-        roughness: 0.4
-      });
-      const body = new THREE.Mesh(bodyGeo, bodyMat);
-      body.position.y = -0.3;
-      scene.add(body);
-
-      avatar = new THREE.Group();
-      avatar.add(head);
-      avatar.add(hair);
-      avatar.add(body);
-      avatar.position.y = -0.2;
-      scene.add(avatar);
-    }
-
-    loader.load(
-      AVATAR_URL,
-      (gltf) => {
-        avatar = gltf.scene;
-        avatar.traverse((obj) => {
-          if (obj.isMesh) {
-            obj.castShadow = true;
-            obj.receiveShadow = true;
-          }
-        });
-        avatar.scale.set(1.6, 1.6, 1.6);
-        avatar.position.set(0, -1.1, 0);
-        scene.add(avatar);
-        statusEl.textContent = "Status: avatar 3D SELA berhasil dimuat. Menyiapkan AI...";
-      },
-      undefined,
-      (error) => {
-        console.error("Gagal memuat avatar SELA:", error);
-        statusEl.textContent = "Avatar 3D gagal dimuat, menggunakan avatar sederhana.";
-        makeFallbackAvatar();
-      }
-    );
 
     function setTalking(isTalking) {
       talking = isTalking;
@@ -2321,16 +2284,17 @@ def render_sela_widget():
 
     function animate() {
       requestAnimationFrame(animate);
-
       const t = performance.now() * 0.001;
 
-      if (avatar) {
-        avatar.rotation.y = Math.sin(t * 0.25) * 0.17;
-        avatar.position.y = (avatar.position.y || -1.1) + Math.sin(t * 0.9) * 0.01;
-      }
+      avatar.rotation.y = Math.sin(t * 0.25) * 0.17;
+      avatar.position.y = -0.2 + Math.sin(t * 0.9) * 0.03;
 
+      // (optional) gerak kecil saat talking
       if (talking) {
         talkPhase += 0.35;
+        head.position.y = 0.7 + Math.sin(talkPhase) * 0.03;
+      } else {
+        head.position.y = 0.7;
       }
 
       blinkTimer += 0.016;
@@ -2338,88 +2302,33 @@ def render_sela_widget():
     }
     animate();
 
-    /**********************
-     * 2) WebLLM (AI di browser)
-     **********************/
-    let engine   = null;
-    let messages = [
-      {
-        role: "system",
-        content:
-          "Kamu adalah SELA, asisten virtual perempuan yang ramah, " +
-          "berbahasa Indonesia, dan membantu soal keuangan, SLA pembayaran, " +
-          "karier, serta pertanyaan umum. Jawab singkat (2-5 kalimat), jelas, " +
-          "dan jangan terlalu teknis kecuali diminta."
+    statusEl.textContent = "Status: tampilan 3D SELA siap. Menyiapkan suara...";
+
+    // 2) LOGIKA JAWABAN SEDERHANA (tanpa LLM)
+    function generateReply(text) {
+      const t = (text || "").toLowerCase();
+
+      if (t.includes("sla") && t.includes("pembayaran")) {
+        return "SLA pembayaran itu standar waktu maksimal penyelesaian proses pembayaran. Biasanya dihitung sejak dokumen lengkap diterima sampai dana cair ke vendor.";
       }
-    ];
-
-    async function initLLM() {
-      try {
-        statusEl.textContent = "Status: mengunduh & memuat model AI ke browser...";
-        engine = new webllm.MLCEngine();
-        engine.setInitProgressCallback((report) => {
-          statusEl.textContent = "Status: " + report.text;
-        });
-
-        const modelId =
-          webllm.prebuiltAppConfig.model_list[0]?.model_id ||
-          "TinyLlama-1.1B-Chat-v0.4-q4f32_1-MLC-1k";
-
-        await engine.reload(modelId, { temperature: 0.6, top_p: 0.9, max_tokens: 128 });
-        statusEl.textContent = "Status: SELA siap. Silakan berbicara.";
-      } catch (e) {
-        console.error(e);
-        statusEl.textContent = "Gagal memuat AI di browser: " + e;
+      if (t.includes("deposito")) {
+        return "Deposito adalah simpanan berjangka di bank dengan jangka waktu tertentu, bunganya biasanya lebih tinggi dari tabungan biasa tetapi tidak bisa ditarik sewaktu-waktu.";
       }
+      if (t.includes("gratifikasi")) {
+        return "Gratifikasi adalah pemberian dalam arti luas, misalnya uang, barang, rabat, komisi, pinjaman tanpa bunga, tiket, fasilitas, dan lain-lain yang diterima terkait jabatan. Di lingkungan BUMN dan ASN, gratifikasi yang berhubungan dengan jabatan wajib dilaporkan.";
+      }
+      if (t.includes("halo") || t.includes("hai") || t.includes("assalam")) {
+        return "Halo juga. Saya Sela, asisten virtual yang bisa menemani kamu ngobrol soal keuangan, SLA, karier, atau yang lain-lain.";
+      }
+      return "Tadi kamu bilang: '" + text + "'. Saat ini saya masih versi LITE tanpa otak AI besar, jadi jawabanku terbatas. Tapi saya tetap bisa menemani kamu dan membantu hal-hal seputar keuangan, SLA, dan kerja di keuangan perbendaharaan.";
     }
 
-    initLLM();
-
-    async function askSELA(userText) {
-      if (!engine) {
-        return "Maaf, otak SELA belum siap. Tunggu sebentar lalu coba lagi.";
-      }
-      messages.push({ role: "user", content: userText });
-
-      let cur = "";
-      setTalking(true);
-
-      const completion = await engine.chat.completions.create({
-        stream: true,
-        messages,
-      });
-
-      for await (const chunk of completion) {
-        const delta = chunk.choices[0].delta.content;
-        if (delta) cur += delta;
-      }
-
-      setTalking(false);
-      messages.push({ role: "assistant", content: cur });
-      return cur;
-    }
-
-    /**********************
-     * 3) Mic + Suara (auto listen)
-     **********************/
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
+    // 3) MIC + SUARA
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognizer = null;
-    window._sela_processing = false;
-
-    function startListening() {
-      if (!recognizer) return;
-      try {
-        recognizer.start();
-        statusEl.textContent = "Status: mendengarkan... silakan bicara.";
-      } catch (e) {
-        console.warn("Gagal start recognizer:", e);
-      }
-    }
 
     if (!SpeechRecognition) {
-      statusEl.textContent =
-        "Browser ini tidak mendukung pengenalan suara. Coba Chrome (desktop/Android).";
+      statusEl.textContent = "Browser ini tidak mendukung pengenalan suara. Coba Chrome (desktop/Android).";
     } else {
       recognizer = new SpeechRecognition();
       recognizer.lang = "id-ID";
@@ -2428,21 +2337,19 @@ def render_sela_widget():
 
       recognizer.onstart = () => {
         led.classList.remove("off");
+        statusEl.textContent = "Status: mendengarkan... silakan bicara.";
       };
       recognizer.onerror = (e) => {
-        statusEl.textContent = "Error mic: " + e.error + ". Pastikan mic diizinkan.";
         led.classList.add("off");
+        statusEl.textContent = "Error mic: " + e.error + ". Pastikan mic diizinkan.";
       };
       recognizer.onend = () => {
         led.classList.add("off");
       };
-      recognizer.onresult = async (event) => {
+      recognizer.onresult = (event) => {
         const text = event.results[0][0].transcript;
-        statusEl.textContent = 'Kamu: "' + text + '". SELA sedang berpikir...';
-        window._sela_processing = true;
-
-        const reply = await askSELA(text);
-        statusEl.textContent = "SELA: " + reply;
+        const reply = generateReply(text);
+        statusEl.textContent = "Kamu: \"" + text + "\". SELA menjawab...";
 
         if ("speechSynthesis" in window) {
           const utt = new SpeechSynthesisUtterance(reply);
@@ -2450,33 +2357,38 @@ def render_sela_widget():
           utt.onstart = () => setTalking(true);
           utt.onend = () => {
             setTalking(false);
-            window._sela_processing = false;
-            statusEl.textContent = "Status: mendengarkan lagi...";
-            startListening();
+            statusEl.textContent = "Status: siap mendengarkan lagi.";
+            // otomatis dengar lagi
+            setTimeout(() => {
+              try { recognizer.start(); } catch(e) {}
+            }, 800);
           };
           window.speechSynthesis.speak(utt);
         } else {
-          window._sela_processing = false;
-          startListening();
+          statusEl.textContent = "SELA (teks): " + reply;
         }
       };
-    }
 
-    function greetAndListen() {
-      if (!("speechSynthesis" in window)) {
-        startListening();
-        return;
+      // Greeting pertama
+      function greetAndListen() {
+        if (!("speechSynthesis" in window)) {
+          try { recognizer.start(); } catch(e) {}
+          return;
+        }
+        const text = "Haloooo, saya Sela. Ada yang bisa saya bantu?";
+        const utt  = new SpeechSynthesisUtterance(text);
+        utt.lang   = "id-ID";
+        utt.onstart = () => setTalking(true);
+        utt.onend  = () => {
+          setTalking(false);
+          try { recognizer.start(); } catch(e) {}
+        };
+        window.speechSynthesis.speak(utt);
       }
-      const text = "Haloooo, saya Sela. Ada yang bisa saya bantu?";
-      const utt  = new SpeechSynthesisUtterance(text);
-      utt.lang   = "id-ID";
-      utt.onend  = () => {
-        startListening();
-      };
-      window.speechSynthesis.speak(utt);
-    }
 
-    greetAndListen();
+      statusEl.textContent = "Status: siap. SELA akan menyapa dan mulai mendengarkan.";
+      greetAndListen();
+    }
   </script>
 </body>
 </html>""",
@@ -2487,3 +2399,5 @@ def render_sela_widget():
 # Hanya render SELA kalau user klik tombol di sidebar
 if st.session_state.get("show_sela", False):
     render_sela_widget()
+
+
