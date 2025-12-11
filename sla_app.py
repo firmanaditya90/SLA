@@ -2028,7 +2028,7 @@ import streamlit.components.v1 as components  # sudah ada di atas, aman kalau do
 
 def render_sela_widget():
     components.html(
-        """
+        '''
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -2546,7 +2546,7 @@ Hindari menjawab seperti robot; jawab alami, tapi tetap profesional.
   </script>
 </body>
 </html>
-        """,
+        ''',
         height=600,
         scrolling=False,
     )
