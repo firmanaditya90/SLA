@@ -2249,10 +2249,10 @@ def render_sela_widget():
     </div>
   </div>
 
-  <!-- Semua JS pakai ES Module -->
+  <!-- Semua JS pakai ES Module via esm.run (auto-resolve "three") -->
   <script type="module">
-    import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
-    import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
+    import * as THREE from "https://esm.run/three@0.160.0";
+    import { GLTFLoader } from "https://esm.run/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
     const launcher = document.getElementById('sela-launcher');
     const panel    = document.getElementById('sela-panel');
@@ -2369,7 +2369,6 @@ def render_sela_widget():
       mouth.visible = false;
     }
 
-    // Load Sela.glb sebagai avatar utama
     function loadSelaAvatar() {
       statusEl.textContent = 'Status: mengunduh avatar 3D SELA...';
       const loader = new GLTFLoader();
@@ -2585,6 +2584,7 @@ def render_sela_widget():
         height=600,
         scrolling=False,
     )
+
 
 
 # PANGGIL SELA DI SEMUA HALAMAN
