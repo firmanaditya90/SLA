@@ -2249,52 +2249,53 @@ def render_sela_widget():
     </div>
   </div>
 
-  <!-- Three.js + GLTFLoader (global) -->
-  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
-
+  <!-- Semua JS pakai module import -->
   <script type="module">
+    import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+    import { GLTFLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
     import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
     /**********************
      * 1. UI TOGGLE PANEL
      **********************/
-    const launcher = document.getElementById("sela-launcher");
-    const panel    = document.getElementById("sela-panel");
-    const closer   = document.getElementById("sela-close");
-    const statusEl = document.getElementById("sela-status");
-    const talkBtn  = document.getElementById("sela-talk-btn");
-    const led      = document.getElementById("sela-led");
+    const launcher = document.getElementById('sela-launcher');
+    const panel    = document.getElementById('sela-panel');
+    const closer   = document.getElementById('sela-close');
+    const statusEl = document.getElementById('sela-status');
+    const talkBtn  = document.getElementById('sela-talk-btn');
+    const led      = document.getElementById('sela-led');
+
+    statusEl.textContent = 'Status: inisialisasi script SELA...';
 
     let panelOpen = false;
     let greeted   = false;
 
     function speakGreeting() {
-      if (!("speechSynthesis" in window)) return;
-      const text = "Haloooo, saya Sela. Ada yang bisa saya bantu?";
+      if (!('speechSynthesis' in window)) return;
+      const text = 'Haloooo, saya Sela. Ada yang bisa saya bantu?';
       const utt  = new SpeechSynthesisUtterance(text);
-      utt.lang   = "id-ID";
+      utt.lang   = 'id-ID';
       window.speechSynthesis.speak(utt);
     }
 
-    launcher.addEventListener("click", () => {
+    launcher.addEventListener('click', () => {
       panelOpen = !panelOpen;
-      panel.style.display = panelOpen ? "flex" : "none";
+      panel.style.display = panelOpen ? 'flex' : 'none';
       if (panelOpen && !greeted) {
         greeted = true;
         setTimeout(() => speakGreeting(), 600);
       }
     });
 
-    closer.addEventListener("click", () => {
+    closer.addEventListener('click', () => {
       panelOpen = false;
-      panel.style.display = "none";
+      panel.style.display = 'none';
     });
 
     /**********************
      * 2. THREE.JS AVATAR (Sela.glb + fallback)
      **********************/
-    const canvas   = document.getElementById("sela-canvas");
+    const canvas   = document.getElementById('sela-canvas');
     const scene    = new THREE.Scene();
     scene.background = new THREE.Color(0x020617);
 
@@ -2315,7 +2316,7 @@ def render_sela_widget():
       camera.updateProjectionMatrix();
     }
     resizeRenderer();
-    window.addEventListener("resize", resizeRenderer);
+    window.addEventListener('resize', resizeRenderer);
 
     const hemi = new THREE.HemisphereLight(0xffffff, 0x111827, 1.2);
     scene.add(hemi);
@@ -2324,7 +2325,7 @@ def render_sela_widget():
     dir.position.set(2, 4, 3);
     scene.add(dir);
 
-    /* ---------- AVATAR LAMA (FALLBACK) ---------- */
+    // AVATAR FALLBACK (bola + silinder) bila GLB gagal
     const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
     const headMat = new THREE.MeshStandardMaterial({
       color: 0xf9a8d4,
@@ -2359,41 +2360,43 @@ def render_sela_widget():
     mouth.position.set(0, 0.48, 0.72);
     scene.add(mouth);
 
-    /* ---------- AVATAR BARU: SELA.glb ---------- */
+    // AVATAR UTAMA: Sela.glb
     let selaModel = null;
 
-    const loader = new THREE.GLTFLoader();
-    loader.load(
-      "https://raw.githubusercontent.com/firmanaditya90/SLA/main/Sela.glb",
-      (gltf) => {
-        selaModel = gltf.scene;
+    try {
+      const loader = new GLTFLoader();
+      loader.load(
+        'https://raw.githubusercontent.com/firmanaditya90/SLA/main/Sela.glb',
+        (gltf) => {
+          selaModel = gltf.scene;
 
-        // Atur posisi & skala awal (silakan disesuaikan kalau kurang pas)
-        selaModel.position.set(0, -0.6, 0);
-        selaModel.scale.set(1.3, 1.3, 1.3);
+          selaModel.position.set(0, -0.6, 0);
+          selaModel.scale.set(1.3, 1.3, 1.3);
 
-        // Sembunyikan avatar fallback
-        head.visible = false;
-        body.visible = false;
-        eyeL.visible = false;
-        eyeR.visible = false;
-        mouth.visible = false;
+          // sembunyikan fallback
+          head.visible = false;
+          body.visible = false;
+          eyeL.visible = false;
+          eyeR.visible = false;
+          mouth.visible = false;
 
-        scene.add(selaModel);
-      },
-      undefined,
-      (error) => {
-        console.error("Gagal memuat Sela.glb:", error);
-        // Kalau gagal, avatar fallback (bola + silinder) tetap digunakan
-      }
-    );
+          scene.add(selaModel);
+        },
+        undefined,
+        (error) => {
+          console.error('Gagal memuat Sela.glb:', error);
+        }
+      );
+    } catch (e) {
+      console.error('Error inisialisasi GLTFLoader:', e);
+    }
 
     let talking = false;
     let talkPhase = 0;
 
     function setTalking(isTalking) {
       talking = isTalking;
-      led.classList.toggle("off", !talking);
+      led.classList.toggle('off', !talking);
     }
 
     function animate() {
@@ -2404,14 +2407,14 @@ def render_sela_widget():
 
         if (talking) {
           talkPhase += 0.3;
-          const s = 1.3 + Math.abs(Math.sin(talkPhase)) * 0.06; // efek "bernafas"
+          const s = 1.3 + Math.abs(Math.sin(talkPhase)) * 0.06;
           selaModel.scale.set(s, s, s);
         } else {
           const target = new THREE.Vector3(1.3, 1.3, 1.3);
           selaModel.scale.lerp(target, 0.1);
         }
       } else {
-        // Fallback avatar
+        // fallback avatar animasi
         head.rotation.y += 0.002;
         body.rotation.y += 0.002;
 
@@ -2435,33 +2438,38 @@ def render_sela_widget():
     let engine   = null;
     let messages = [
       {
-        role: "system",
+        role: 'system',
         content:
-          "Kamu adalah SELA, asisten virtual perempuan yang ramah, " +
-          "berbahasa Indonesia, dan membantu soal keuangan, SLA pembayaran, " +
-          "karier, serta pertanyaan umum. Jawab singkat (2-5 kalimat), jelas, " +
-          "dan jangan terlalu teknis kecuali diminta."
+          'Kamu adalah SELA, asisten virtual perempuan yang ramah, ' +
+          'berbahasa Indonesia, dan membantu soal keuangan, SLA pembayaran, ' +
+          'karier, serta pertanyaan umum. Jawab singkat (2-5 kalimat), jelas, ' +
+          'dan jangan terlalu teknis kecuali diminta.'
       }
     ];
 
     async function initLLM() {
       try {
-        statusEl.textContent = "Status: mengunduh & memuat model AI ke browser...";
+        statusEl.textContent = 'Status: mengunduh & memuat model AI ke browser...';
         engine = new webllm.MLCEngine();
         engine.setInitProgressCallback((report) => {
-          statusEl.textContent = "Status: " + report.text;
+          if (report && report.text) {
+            statusEl.textContent = 'Status: ' + report.text;
+          }
         });
 
         const modelId =
-          webllm.prebuiltAppConfig.model_list[0]?.model_id ||
-          "TinyLlama-1.1B-Chat-v0.4-q4f32_1-MLC-1k";
+          (webllm.prebuiltAppConfig &&
+           webllm.prebuiltAppConfig.model_list &&
+           webllm.prebuiltAppConfig.model_list[0] &&
+           webllm.prebuiltAppConfig.model_list[0].model_id) ||
+          'TinyLlama-1.1B-Chat-v0.4-q4f32_1-MLC-1k';
 
         await engine.reload(modelId, { temperature: 0.7, top_p: 0.9 });
-        statusEl.textContent = "Status: SELA siap. Klik 🎤 lalu bicara.";
+        statusEl.textContent = 'Status: SELA siap. Klik 🎤 lalu bicara.';
       } catch (e) {
         console.error(e);
         statusEl.textContent =
-          "Gagal memuat model AI di browser. Coba refresh halaman atau gunakan koneksi yang lebih stabil. Detail: " + e;
+          'Gagal memuat model AI di browser. Coba refresh halaman atau gunakan koneksi yang lebih stabil. (' + e + ')';
       }
     }
 
@@ -2469,11 +2477,11 @@ def render_sela_widget():
 
     async function askSELA(userText) {
       if (!engine) {
-        return "Maaf, otak SELA belum siap. Tunggu sebentar lalu coba lagi.";
+        return 'Maaf, otak SELA belum siap. Tunggu sebentar lalu coba lagi.';
       }
-      messages.push({ role: "user", content: userText });
+      messages.push({ role: 'user', content: userText });
 
-      let cur = "";
+      let cur = '';
       setTalking(true);
 
       const completion = await engine.chat.completions.create({
@@ -2487,7 +2495,7 @@ def render_sela_widget():
       }
 
       setTalking(false);
-      messages.push({ role: "assistant", content: cur });
+      messages.push({ role: 'assistant', content: cur });
       return cur;
     }
 
@@ -2502,47 +2510,47 @@ def render_sela_widget():
 
     if (!SpeechRecognition) {
       statusEl.textContent =
-        "Browser ini tidak mendukung pengenalan suara. Coba Chrome (desktop/Android).";
+        'Browser ini tidak mendukung pengenalan suara. Coba Chrome (desktop/Android).';
     } else {
       recognizer = new SpeechRecognition();
-      recognizer.lang = "id-ID";
+      recognizer.lang = 'id-ID';
       recognizer.interimResults = false;
       recognizer.maxAlternatives = 1;
 
       recognizer.onstart = () => {
         recognizing = true;
-        talkBtn.classList.add("sela-listening");
-        statusEl.textContent = "Status: mendengarkan... silakan bicara.";
+        talkBtn.classList.add('sela-listening');
+        statusEl.textContent = 'Status: mendengarkan... silakan bicara.';
       };
       recognizer.onerror = (e) => {
         recognizing = false;
-        talkBtn.classList.remove("sela-listening");
-        statusEl.textContent = "Error mic: " + e.error +
-          ". Pastikan izin mikrofon sudah diaktifkan di browser.";
+        talkBtn.classList.remove('sela-listening');
+        statusEl.textContent = 'Error mic: ' + e.error +
+          '. Pastikan izin mikrofon sudah diaktifkan di browser.';
       };
       recognizer.onend = () => {
         recognizing = false;
-        talkBtn.classList.remove("sela-listening");
+        talkBtn.classList.remove('sela-listening');
         if (!window._sela_processing) {
-          statusEl.textContent = "Status: selesai mendengar, memproses atau menunggu.";
+          statusEl.textContent = 'Status: selesai mendengar, memproses atau menunggu.';
         }
       };
       recognizer.onresult = async (event) => {
         const text = event.results[0][0].transcript;
-        statusEl.textContent = "Kamu: \\"" + text + "\\". SELA sedang berpikir...";
+        statusEl.textContent = 'Kamu: "' + text + '". SELA sedang berpikir...';
         window._sela_processing = true;
 
         const reply = await askSELA(text);
-        statusEl.textContent = "SELA: " + reply;
+        statusEl.textContent = 'SELA: ' + reply;
 
-        if ("speechSynthesis" in window) {
+        if ('speechSynthesis' in window) {
           const utt = new SpeechSynthesisUtterance(reply);
-          utt.lang = "id-ID";
+          utt.lang = 'id-ID';
           utt.onstart = () => setTalking(true);
           utt.onend = () => {
             setTalking(false);
             window._sela_processing = false;
-            statusEl.textContent = "Status: siap bicara lagi dengan SELA.";
+            statusEl.textContent = 'Status: siap bicara lagi dengan SELA.';
           };
           window.speechSynthesis.speak(utt);
         } else {
@@ -2551,7 +2559,7 @@ def render_sela_widget():
       };
     }
 
-    talkBtn.addEventListener("click", () => {
+    talkBtn.addEventListener('click', () => {
       if (!recognizer) return;
       if (!recognizing) {
         recognizer.start();
@@ -2566,6 +2574,7 @@ def render_sela_widget():
         height=600,
         scrolling=False,
     )
+
 
 # PANGGIL SELA DI SEMUA HALAMAN
 render_sela_widget()
