@@ -2020,14 +2020,14 @@ with tab_pdf:
         st.error(f"Gagal membuat PDF: {type(e).__name__}: {e}")
         traceback.print_exc()
 
-
 # ==========================================================
 #  VIRTUAL ASSISTANT: "Tanya SELA" (3D + Voice + LLM di browser)
 # ==========================================================
-import streamlit.components.v1 as components  # aman meski double import
+import streamlit.components.v1 as components  # sudah ada di atas, aman kalau double import
 
 def render_sela_widget():
-    sela_html = r'''
+    components.html(
+        """
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -2391,47 +2391,27 @@ def render_sela_widget():
     let messages = [
       {
         role: "system",
-        content: `
-Kamu adalah SELA, asisten virtual perempuan yang ramah dan profesional.
-Bahasa utama: Bahasa Indonesia santai namun sopan.
-
-Fokus utama:
-- Menjawab tentang keuangan, SLA pembayaran, proses bisnis, karier, dan pertanyaan umum.
-- Jika kurang yakin dengan data, jujur katakan bahwa kamu kurang yakin, lalu berikan saran yang aman dan umum.
-
-Gaya bicara:
-- Hangat dan menenangkan, tidak berlebihan.
-- Jawaban ringkas 2–6 kalimat.
-- Gunakan paragraf pendek atau bullet jika membantu.
-
-Cara berpikir & menjawab:
-1. Pahami dulu maksud pertanyaan dan konteksnya.
-2. Jika pertanyaan mengandung angka atau perhitungan, pastikan langkah-langkahnya konsisten.
-3. Jelaskan dengan bahasa yang mudah dimengerti, hindari istilah teknis berlebihan kecuali diminta.
-4. Gunakan konteks dari percakapan sebelumnya jika relevan agar jawaban terasa nyambung.
-5. Jika pertanyaan terlalu luas, bantu user memperjelas dengan 1–2 pertanyaan lanjutan yang sopan.
-
-Hindari menjawab seperti robot; jawab alami, tapi tetap profesional.
-`
+        content:
+          "Kamu adalah SELA, asisten virtual perempuan yang ramah, " +
+          "berbahasa Indonesia, dan membantu soal keuangan, SLA pembayaran, " +
+          "karier, serta pertanyaan umum. Jawab singkat (2-5 kalimat), jelas, " +
+          "dan jangan terlalu teknis kecuali diminta."
       }
     ];
 
     async function initLLM() {
       try {
         statusEl.textContent = "Status: mengunduh & memuat model AI ke browser...";
-
-        const fallbackModel = "TinyLlama-1.1B-Chat-v0.4-q4f32_1-MLC-1k";
-        const modelId =
-          (webllm.prebuiltAppConfig?.model_list?.[0]?.model_id) || fallbackModel;
-
-        engine = await webllm.CreateMLCEngine(modelId, {
-          initProgressCallback: (report) => {
-            statusEl.textContent = "Status: " + report.text;
-          },
-          temperature: 0.5,
-          top_p: 0.85,
+        engine = new webllm.MLCEngine();
+        engine.setInitProgressCallback((report) => {
+          statusEl.textContent = "Status: " + report.text;
         });
 
+        const modelId =
+          webllm.prebuiltAppConfig.model_list[0]?.model_id ||
+          "TinyLlama-1.1B-Chat-v0.4-q4f32_1-MLC-1k";
+
+        await engine.reload(modelId, { temperature: 0.7, top_p: 0.9 });
         statusEl.textContent = "Status: SELA siap. Klik 🎤 lalu bicara.";
       } catch (e) {
         console.error(e);
@@ -2443,28 +2423,21 @@ Hindari menjawab seperti robot; jawab alami, tapi tetap profesional.
 
     async function askSELA(userText) {
       if (!engine) {
-        return "Maaf, otak SELA belum siap. Model AI di browser masih dimuat, coba sebentar lagi ya.";
+        return "Maaf, otak SELA belum siap. Tunggu sebentar lalu coba lagi.";
       }
       messages.push({ role: "user", content: userText });
 
       let cur = "";
       setTalking(true);
-      statusEl.textContent = "SELA sedang berpikir...";
 
       const completion = await engine.chat.completions.create({
         stream: true,
         messages,
-        temperature: 0.5,
-        top_p: 0.85,
-        max_tokens: 256,
       });
 
       for await (const chunk of completion) {
-        const delta = chunk.choices?.[0]?.delta?.content || "";
-        if (delta) {
-          cur += delta;
-          statusEl.textContent = "SELA: " + cur;
-        }
+        const delta = chunk.choices[0].delta.content;
+        if (delta) cur += delta;
       }
 
       setTalking(false);
@@ -2483,7 +2456,7 @@ Hindari menjawab seperti robot; jawab alami, tapi tetap profesional.
 
     if (!SpeechRecognition) {
       statusEl.textContent =
-        "Browser ini tidak mendukung pengenalan suara. Coba gunakan Chrome atau Edge terbaru ya.";
+        "Browser ini tidak mendukung pengenalan suara. Coba Chrome (desktop/Android).";
     } else {
       recognizer = new SpeechRecognition();
       recognizer.lang = "id-ID";
@@ -2498,8 +2471,7 @@ Hindari menjawab seperti robot; jawab alami, tapi tetap profesional.
       recognizer.onerror = (e) => {
         recognizing = false;
         talkBtn.classList.remove("sela-listening");
-        statusEl.textContent =
-          "Ada masalah dengan mikrofon: " + e.error + ". Coba cek izin mic di browser, lalu coba lagi ya.";
+        statusEl.textContent = "Error mic: " + e.error;
       };
       recognizer.onend = () => {
         recognizing = false;
@@ -2543,13 +2515,12 @@ Hindari menjawab seperti robot; jawab alami, tapi tetap profesional.
   </script>
 </body>
 </html>
-    '''
-
-    components.html(
-        sela_html,
+        """,
         height=600,
         scrolling=False,
     )
 
 # PANGGIL SELA DI SEMUA HALAMAN
 render_sela_widget()
+
+
