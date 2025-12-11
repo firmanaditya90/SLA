@@ -2023,7 +2023,7 @@ with tab_pdf:
 # ==========================================================
 #  VIRTUAL ASSISTANT: "Tanya SELA" (3D + Voice + LLM di browser)
 # ==========================================================
-import streamlit.components.v1 as components  # aman kalau sudah ada
+import streamlit.components.v1 as components  # aman walau sudah di-import
 
 def render_sela_widget():
     components.html(
@@ -2249,7 +2249,7 @@ def render_sela_widget():
     </div>
   </div>
 
-  <!-- Three.js (non-module, global THREE) -->
+  <!-- Three.js (global) -->
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
   <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
 
@@ -2292,7 +2292,7 @@ def render_sela_widget():
     });
 
     /**********************
-     * 2. THREE.JS AVATAR (Sela.glb + fallback)
+     * 2. THREE.JS AVATAR (Sela.glb + fallback Duck)
      **********************/
     const canvas   = document.getElementById('sela-canvas');
     const scene    = new THREE.Scene();
@@ -2324,7 +2324,7 @@ def render_sela_widget():
     dir.position.set(2, 4, 3);
     scene.add(dir);
 
-    // AVATAR FALLBACK (bola + silinder)
+    // Fallback avatar (bola + silinder)
     const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
     const headMat = new THREE.MeshStandardMaterial({
       color: 0xf9a8d4,
@@ -2359,52 +2359,78 @@ def render_sela_widget():
     mouth.position.set(0, 0.48, 0.72);
     scene.add(mouth);
 
-    // AVATAR UTAMA: Sela.glb (sederhana dulu)
     let selaModel = null;
 
-    try {
-      const loader = new THREE.GLTFLoader();
-      loader.load(
-        'https://raw.githubusercontent.com/firmanaditya90/SLA/main/Sela.glb',
-        function (gltf) {
-          try {
-            selaModel = gltf.scene;
-
-            // Atur posisi & skala manual dulu (nanti bisa di-finetune)
-            selaModel.position.set(0, -1.0, 0);
-            selaModel.scale.set(0.7, 0.7, 0.7);
-
-            // Sembunyikan avatar fallback
-            head.visible = false;
-            body.visible = false;
-            eyeL.visible = false;
-            eyeR.visible = false;
-            mouth.visible = false;
-
-            scene.add(selaModel);
-            statusEl.textContent = 'Status: avatar 3D SELA berhasil dimuat. Menyiapkan model AI...';
-          } catch (e) {
-            console.error('Error saat memproses Sela.glb:', e);
-            statusEl.textContent = 'Status: gagal memproses avatar 3D SELA, pakai avatar sederhana dulu.';
-          }
-        },
-        function (xhr) {
-          if (xhr.total) {
-            const pct = (xhr.loaded / xhr.total) * 100;
-            statusEl.textContent = 'Status: mengunduh avatar 3D SELA... ' + pct.toFixed(0) + '%';
-          } else {
-            statusEl.textContent = 'Status: mengunduh avatar 3D SELA...';
-          }
-        },
-        function (error) {
-          console.error('Gagal memuat Sela.glb:', error);
-          statusEl.textContent = 'Status: gagal memuat avatar 3D SELA, pakai avatar sederhana dulu.';
-        }
-      );
-    } catch (e) {
-      console.error('Error inisialisasi GLTFLoader:', e);
-      statusEl.textContent = 'Status: error inisialisasi avatar 3D SELA.';
+    function hideFallback() {
+      head.visible = false;
+      body.visible = false;
+      eyeL.visible = false;
+      eyeR.visible = false;
+      mouth.visible = false;
     }
+
+    function loadAvatar(url, label, tryFallbackDuck) {
+      try {
+        const loader = new THREE.GLTFLoader();
+        loader.load(
+          url,
+          function (gltf) {
+            try {
+              selaModel = gltf.scene;
+
+              // center & scale
+              const box = new THREE.Box3().setFromObject(selaModel);
+              const size = box.getSize(new THREE.Vector3());
+              const center = box.getCenter(new THREE.Vector3());
+
+              selaModel.position.sub(center);
+              const targetHeight = 2.6;
+              const scaleFactor = targetHeight / (size.y || 1);
+              selaModel.scale.setScalar(scaleFactor);
+              selaModel.position.y -= 0.2;
+
+              hideFallback();
+              scene.add(selaModel);
+              statusEl.textContent = 'Status: avatar 3D ' + label + ' berhasil dimuat. Menyiapkan model AI...';
+            } catch (e) {
+              console.error('Error saat memproses ' + label + ':', e);
+              statusEl.textContent = 'Status: gagal memproses avatar 3D ' + label + ', pakai avatar sederhana dulu.';
+            }
+          },
+          function (xhr) {
+            if (xhr.total) {
+              const pct = (xhr.loaded / xhr.total) * 100;
+              statusEl.textContent =
+                'Status: mengunduh avatar 3D ' + label + '... ' + pct.toFixed(0) + '%';
+            } else {
+              statusEl.textContent = 'Status: mengunduh avatar 3D ' + label + '...';
+            }
+          },
+          function (error) {
+            console.error('Gagal memuat ' + label + ':', error);
+            statusEl.textContent = 'Status: gagal memuat avatar 3D ' + label + '.';
+            if (tryFallbackDuck) {
+              // coba bebek sebagai tes loader
+              loadAvatar(
+                'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF-Binary/Duck.glb',
+                'Duck (fallback)',
+                false
+              );
+            }
+          }
+        );
+      } catch (e) {
+        console.error('Error inisialisasi GLTFLoader:', e);
+        statusEl.textContent = 'Status: error inisialisasi avatar 3D.';
+      }
+    }
+
+    // pertama coba Sela.glb, kalau gagal baru Duck
+    loadAvatar(
+      'https://raw.githubusercontent.com/firmanaditya90/SLA/main/Sela.glb',
+      'SELA',
+      true
+    );
 
     let talking = false;
     let talkPhase = 0;
@@ -2419,14 +2445,12 @@ def render_sela_widget():
 
       if (selaModel) {
         selaModel.rotation.y += 0.01;
-
         if (talking) {
           talkPhase += 0.2;
-          const baseY = -1.0;
-          selaModel.position.y = baseY + Math.sin(talkPhase) * 0.05;
+          const baseY = selaModel.position.y;
+          selaModel.position.y = baseY + Math.sin(talkPhase) * 0.02;
         }
       } else {
-        // fallback avatar
         head.rotation.y += 0.002;
         body.rotation.y += 0.002;
 
@@ -2584,6 +2608,7 @@ def render_sela_widget():
         height=600,
         scrolling=False,
     )
+
 
 
 # PANGGIL SELA DI SEMUA HALAMAN
