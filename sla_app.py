@@ -2023,6 +2023,7 @@ with tab_pdf:
 # ==========================================================
 #  VIRTUAL ASSISTANT: "Tanya SELA" (3D + Voice + LLM di browser)
 # ==========================================================
+
 import streamlit.components.v1 as components  # sudah ada di atas, aman kalau double import
 
 def render_sela_widget():
@@ -2392,26 +2393,64 @@ def render_sela_widget():
       {
         role: "system",
         content:
-          "Kamu adalah SELA, asisten virtual perempuan yang ramah, " +
-          "berbahasa Indonesia, dan membantu soal keuangan, SLA pembayaran, " +
-          "karier, serta pertanyaan umum. Jawab singkat (2-5 kalimat), jelas, " +
-          "dan jangan terlalu teknis kecuali diminta."
+          "Kamu adalah SELA, asisten virtual perempuan yang ramah dan profesional. " +
+          "Bahasanya santai namun tetap sopan, pakai bahasa Indonesia. " +
+          "Fokus utama: keuangan pribadi, keuangan perusahaan, SLA pembayaran, karier, " +
+          "dan pertanyaan umum seputar kerja kantoran. " +
+          "Cara berpikir: seperti konsultan yang teliti. " +
+          "Jika pertanyaan kurang jelas, minta klarifikasi singkat. " +
+          "Jawaban akhir selalu singkat (2–5 kalimat), jelas, dan terstruktur. " +
+          "Gunakan contoh sederhana bila membantu."
       }
     ];
 
     async function initLLM() {
       try {
         statusEl.textContent = "Status: mengunduh & memuat model AI ke browser...";
+
         engine = new webllm.MLCEngine();
         engine.setInitProgressCallback((report) => {
           statusEl.textContent = "Status: " + report.text;
         });
 
-        const modelId =
-          webllm.prebuiltAppConfig.model_list[0]?.model_id ||
-          "TinyLlama-1.1B-Chat-v0.4-q4f32_1-MLC-1k";
+        // Pilih model terbaik yang tersedia dari daftar prebuilt
+        const modelList = webllm.prebuiltAppConfig.model_list || [];
+        console.log("Daftar model WebLLM:", modelList);
 
-        await engine.reload(modelId, { temperature: 0.7, top_p: 0.9 });
+        const preferredModels = [
+          "Llama-3-8B-Instruct-q4f32_1-MLC",
+          "Llama-3-8B-Instruct-q4f16_1-MLC",
+          "Qwen2-7B-Instruct-q4f32_1-MLC",
+          "Phi-3-mini-4k-instruct-q4f32_1-MLC"
+        ];
+
+        let modelId = null;
+
+        // Coba cari model yang termasuk dalam daftar preferred
+        for (const pref of preferredModels) {
+          if (modelList.some(m => m.model_id === pref)) {
+            modelId = pref;
+            break;
+          }
+        }
+
+        // Kalau tidak ada yang preferred, pakai model pertama yang tersedia
+        if (!modelId && modelList.length > 0) {
+          modelId = modelList[0].model_id;
+        }
+
+        // Fallback terakhir: TinyLlama
+        if (!modelId) {
+          modelId = "TinyLlama-1.1B-Chat-v0.4-q4f32_1-MLC";
+        }
+
+        console.log("Memuat model WebLLM:", modelId);
+
+        await engine.reload(modelId, {
+          temperature: 0.7,
+          top_p: 0.9,
+        });
+
         statusEl.textContent = "Status: SELA siap. Klik 🎤 lalu bicara.";
       } catch (e) {
         console.error(e);
@@ -2429,15 +2468,21 @@ def render_sela_widget():
 
       let cur = "";
       setTalking(true);
+      statusEl.textContent = "SELA sedang berpikir...";
 
       const completion = await engine.chat.completions.create({
         stream: true,
         messages,
+        temperature: 0.6,
+        top_p: 0.9,
+        max_tokens: 512
       });
 
       for await (const chunk of completion) {
         const delta = chunk.choices[0].delta.content;
-        if (delta) cur += delta;
+        if (delta) {
+          cur += delta;
+        }
       }
 
       setTalking(false);
@@ -2501,24 +2546,3 @@ def render_sela_widget():
         } else {
           window._sela_processing = false;
         }
-      };
-    }
-
-    talkBtn.addEventListener("click", () => {
-      if (!recognizer) return;
-      if (!recognizing) {
-        recognizer.start();
-      } else {
-        recognizer.stop();
-      }
-    });
-  </script>
-</body>
-</html>
-        """,
-        height=600,
-        scrolling=False,
-    )
-
-# PANGGIL SELA DI SEMUA HALAMAN
-render_sela_widget()
