@@ -2020,8 +2020,6 @@ with tab_pdf:
         st.error(f"Gagal membuat PDF: {type(e).__name__}: {e}")
         traceback.print_exc()
 
-
-
 # ==========================================================
 #  VIRTUAL ASSISTANT LITE: "SELA" (2D animasi + Voice, tanpa LLM & tanpa 3D lib)
 # ==========================================================
@@ -2192,6 +2190,7 @@ def render_sela_widget():
       background: radial-gradient(circle at 50% 20%, #fecaca, #db2777);
       border-radius: 0 0 36px 36px;
       overflow: hidden;
+      transform-origin: center top;
     }
     .sela-avatar-mouth::after {
       content: "";
@@ -2306,18 +2305,23 @@ def render_sela_widget():
   </div>
 
   <script>
+  (function() {
     const panel    = document.getElementById("sela-panel");
     const closer   = document.getElementById("sela-close");
     const statusEl = document.getElementById("sela-status");
     const led      = document.getElementById("sela-led");
     const mouthEl  = document.getElementById("sela-mouth");
 
+    if (!panel || !statusEl) {
+      return;
+    }
+
     closer.addEventListener("click", () => {
       panel.style.display = "none";
     });
 
     function setTalking(isTalking) {
-      if (!mouthEl) return;
+      if (!mouthEl || !led) return;
       if (isTalking) {
         mouthEl.classList.add("talking");
         led.classList.add("on");
@@ -2338,83 +2342,87 @@ def render_sela_widget():
         return "Deposito adalah simpanan berjangka di bank dengan bunga lebih tinggi dari tabungan biasa, tapi tidak bisa ditarik sewaktu-waktu sebelum jatuh tempo.";
       }
       if (t.includes("gratifikasi")) {
-        return "Gratifikasi adalah pemberian dalam arti luas, seperti uang, barang, fasilitas, yang diterima terkait jabatan. Di lingkungan BUMN, gratifikasi yang berhubungan dengan jabatan wajib dilaporkan agar tidak jadi konflik kepentingan.";
+        return "Gratifikasi adalah pemberian dalam arti luas, seperti uang, barang, atau fasilitas yang diterima terkait jabatan. Di lingkungan BUMN, gratifikasi yang berhubungan dengan jabatan wajib dilaporkan agar tidak menimbulkan konflik kepentingan.";
       }
       if (t.includes("halo") || t.includes("hai") || t.includes("assalam")) {
         return "Halo juga. Saya Sela, asisten virtual yang siap menemani kamu ngobrol soal keuangan, SLA pembayaran, karier, atau hal lain seputar dunia kerja.";
       }
-      if (t.includes("capek") || t.includes("lelah") || t.includes("lelah")) {
-        return "Kalau capek, jangan lupa istirahat sebentar ya. Tarik napas, minum air, dan lanjut lagi pelan-pelan. Ritme kerja yang sehat juga bagian dari budaya risiko yang baik.";
+      if (t.includes("capek") || t.includes("lelah")) {
+        return "Kalau capek, jangan lupa istirahat sebentar ya. Tarik napas dulu, minum air, lalu lanjut lagi pelan-pelan. Ritme kerja yang sehat juga bagian dari budaya risiko yang baik.";
       }
 
       return "Tadi kamu bilang: '" + text + "'. Saat ini Sela masih versi LITE tanpa otak AI besar, jadi jawabanku terbatas. Tapi aku tetap bisa menemanimu dan bantu hal-hal dasar soal keuangan, SLA, dan kerja di keuangan perbendaharaan.";
     }
 
     // 2) MIC + SUARA
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition || null;
     let recognizer = null;
 
     if (!SpeechRecognition) {
-      statusEl.textContent = "Browser ini tidak mendukung pengenalan suara. Coba Chrome (desktop/Android).";
-    } else {
-      recognizer = new SpeechRecognition();
-      recognizer.lang = "id-ID";
-      recognizer.interimResults = false;
-      recognizer.maxAlternatives = 1;
+      statusEl.textContent = "Browser ini tidak mendukung pengenalan suara. Coba gunakan Google Chrome (desktop/Android).";
+      return;
+    }
 
-      recognizer.onstart = () => {
-        led.classList.add("on");
-        statusEl.textContent = "Status: mendengarkan... silakan bicara.";
-      };
-      recognizer.onerror = (e) => {
-        led.classList.remove("on");
-        statusEl.textContent = "Error mic: " + e.error + ". Pastikan mic diizinkan.";
-      };
-      recognizer.onend = () => {
-        led.classList.remove("on");
-      };
-      recognizer.onresult = (event) => {
-        const text = event.results[0][0].transcript;
-        const reply = generateReply(text);
-        statusEl.textContent = "Kamu: \"" + text + "\". SELA menjawab...";
+    recognizer = new SpeechRecognition();
+    recognizer.lang = "id-ID";
+    recognizer.interimResults = false;
+    recognizer.maxAlternatives = 1;
 
-        if ("speechSynthesis" in window) {
-          const utt = new SpeechSynthesisUtterance(reply);
-          utt.lang = "id-ID";
-          utt.onstart = () => setTalking(true);
-          utt.onend = () => {
-            setTalking(false);
-            statusEl.textContent = "Status: siap mendengarkan lagi.";
-            setTimeout(() => {
-              try { recognizer.start(); } catch(e) {}
-            }, 800);
-          };
-          window.speechSynthesis.speak(utt);
-        } else {
-          statusEl.textContent = "SELA (teks): " + reply;
-        }
-      };
+    recognizer.onstart = () => {
+      if (led) led.classList.add("on");
+      statusEl.textContent = "Status: mendengarkan... silakan bicara.";
+    };
 
-      // Greeting pertama
-      function greetAndListen() {
-        if (!("speechSynthesis" in window)) {
-          try { recognizer.start(); } catch(e) {}
-          return;
-        }
-        const text = "Haloooo, saya Sela. Ada yang bisa saya bantu?";
-        const utt  = new SpeechSynthesisUtterance(text);
-        utt.lang   = "id-ID";
+    recognizer.onerror = (e) => {
+      if (led) led.classList.remove("on");
+      statusEl.textContent = "Error mic: " + e.error + ". Pastikan izin mic sudah diberikan.";
+    };
+
+    recognizer.onend = () => {
+      if (led) led.classList.remove("on");
+    };
+
+    recognizer.onresult = (event) => {
+      const text = event.results[0][0].transcript;
+      const reply = generateReply(text);
+      statusEl.textContent = "Kamu: \"" + text + "\". SELA menjawab...";
+
+      if ("speechSynthesis" in window) {
+        const utt = new SpeechSynthesisUtterance(reply);
+        utt.lang = "id-ID";
         utt.onstart = () => setTalking(true);
-        utt.onend  = () => {
+        utt.onend = () => {
           setTalking(false);
-          try { recognizer.start(); } catch(e) {}
+          statusEl.textContent = "Status: siap mendengarkan lagi.";
+          setTimeout(() => {
+            try { recognizer.start(); } catch(e) {}
+          }, 800);
         };
         window.speechSynthesis.speak(utt);
+      } else {
+        statusEl.textContent = "SELA (teks): " + reply;
       }
+    };
 
-      statusEl.textContent = "Status: siap. SELA akan menyapa dan mulai mendengarkan.";
-      greetAndListen();
+    function greetAndListen() {
+      if (!("speechSynthesis" in window)) {
+        try { recognizer.start(); } catch(e) {}
+        return;
+      }
+      const text = "Haloooo, saya Sela. Ada yang bisa saya bantu?";
+      const utt  = new SpeechSynthesisUtterance(text);
+      utt.lang   = "id-ID";
+      utt.onstart = () => setTalking(true);
+      utt.onend  = () => {
+        setTalking(false);
+        try { recognizer.start(); } catch(e) {}
+      };
+      window.speechSynthesis.speak(utt);
     }
+
+    statusEl.textContent = "Status: siap. SELA akan menyapa dan mulai mendengarkan.";
+    greetAndListen();
+  })();
   </script>
 </body>
 </html>""",
@@ -2425,3 +2433,5 @@ def render_sela_widget():
 # Hanya render SELA kalau user klik tombol di sidebar
 if st.session_state.get("show_sela", False):
     render_sela_widget()
+
+
