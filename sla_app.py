@@ -2023,7 +2023,7 @@ with tab_pdf:
 # ==========================================================
 #  VIRTUAL ASSISTANT: "Tanya SELA" (3D + Voice + LLM di browser)
 # ==========================================================
-import streamlit.components.v1 as components  # boleh double import kalau di atas sudah ada
+import streamlit.components.v1 as components  # aman kalau sudah ada di atas
 
 def render_sela_widget():
     components.html(
@@ -2249,12 +2249,12 @@ def render_sela_widget():
     </div>
   </div>
 
-  <!-- Three.js untuk 3D -->
+  <!-- Three.js + GLTFLoader (global) -->
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
 
   <script type="module">
     import * as webllm from "https://esm.run/@mlc-ai/web-llm";
-    import { GLTFLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
     /**********************
      * 1. UI TOGGLE PANEL
@@ -2292,7 +2292,7 @@ def render_sela_widget():
     });
 
     /**********************
-     * 2. THREE.JS AVATAR (Sela.glb)
+     * 2. THREE.JS AVATAR (Sela.glb + fallback)
      **********************/
     const canvas   = document.getElementById("sela-canvas");
     const scene    = new THREE.Scene();
@@ -2300,7 +2300,7 @@ def render_sela_widget():
 
     const camera = new THREE.PerspectiveCamera(
       40,
-      canvas.clientWidth / canvas.clientHeight || 1,
+      (canvas.clientWidth || 360) / (canvas.clientHeight || 260),
       0.1,
       100
     );
@@ -2362,14 +2362,14 @@ def render_sela_widget():
     /* ---------- AVATAR BARU: SELA.glb ---------- */
     let selaModel = null;
 
-    const loader = new GLTFLoader();
+    const loader = new THREE.GLTFLoader();
     loader.load(
       "https://raw.githubusercontent.com/firmanaditya90/SLA/main/Sela.glb",
       (gltf) => {
         selaModel = gltf.scene;
 
         // Atur posisi & skala awal (silakan disesuaikan kalau kurang pas)
-        selaModel.position.set(0, -0.4, 0);
+        selaModel.position.set(0, -0.6, 0);
         selaModel.scale.set(1.3, 1.3, 1.3);
 
         // Sembunyikan avatar fallback
@@ -2399,21 +2399,19 @@ def render_sela_widget():
     function animate() {
       requestAnimationFrame(animate);
 
-      // Jika model SELA.glb sudah ada
       if (selaModel) {
         selaModel.rotation.y += 0.01;
 
         if (talking) {
           talkPhase += 0.3;
-          const s = 1.3 + Math.abs(Math.sin(talkPhase)) * 0.06; // sedikit "bernafas" saat bicara
+          const s = 1.3 + Math.abs(Math.sin(talkPhase)) * 0.06; // efek "bernafas"
           selaModel.scale.set(s, s, s);
         } else {
-          // perlahan kembali ke skala normal
           const target = new THREE.Vector3(1.3, 1.3, 1.3);
           selaModel.scale.lerp(target, 0.1);
         }
       } else {
-        // Fallback: avatar sederhana
+        // Fallback avatar
         head.rotation.y += 0.002;
         body.rotation.y += 0.002;
 
@@ -2571,3 +2569,4 @@ def render_sela_widget():
 
 # PANGGIL SELA DI SEMUA HALAMAN
 render_sela_widget()
+
