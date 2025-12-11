@@ -2023,12 +2023,11 @@ with tab_pdf:
 # ==========================================================
 #  VIRTUAL ASSISTANT: "Tanya SELA" (3D + Voice + LLM di browser)
 # ==========================================================
-
-import streamlit.components.v1 as components  # aman kalau double import
+import streamlit.components.v1 as components  # sudah ada di atas, aman kalau double import
 
 def render_sela_widget():
     components.html(
-        '''
+        """
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -2204,11 +2203,13 @@ def render_sela_widget():
 </head>
 <body>
   <div id="sela-root">
+    <!-- Floating Button -->
     <button id="sela-launcher" class="sela-floating-btn" title="Tanya SELA">
       💬
       <span>Tanya SELA</span>
     </button>
 
+    <!-- Panel -->
     <div id="sela-panel" class="sela-panel">
       <div class="sela-panel-header">
         <div class="sela-panel-header-left">
@@ -2248,9 +2249,13 @@ def render_sela_widget():
     </div>
   </div>
 
+  <!-- Three.js untuk 3D -->
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 
   <script type="module">
+    /**********************
+     * 1. UI TOGGLE PANEL
+     **********************/
     const launcher = document.getElementById("sela-launcher");
     const panel    = document.getElementById("sela-panel");
     const closer   = document.getElementById("sela-close");
@@ -2283,6 +2288,9 @@ def render_sela_widget():
       panel.style.display = "none";
     });
 
+    /**********************
+     * 2. THREE.JS AVATAR
+     **********************/
     const canvas   = document.getElementById("sela-canvas");
     const scene    = new THREE.Scene();
     scene.background = new THREE.Color(0x020617);
@@ -2313,6 +2321,7 @@ def render_sela_widget():
     dir.position.set(2, 4, 3);
     scene.add(dir);
 
+    // Avatar sementara: "bust" sederhana (bisa diganti avatar perempuan 3D nanti)
     const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
     const headMat = new THREE.MeshStandardMaterial({
       color: 0xf9a8d4,
@@ -2373,6 +2382,9 @@ def render_sela_widget():
     }
     animate();
 
+    /**********************
+     * 3. WebLLM (LLM di browser)
+     **********************/
     import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
     let engine   = null;
@@ -2380,60 +2392,26 @@ def render_sela_widget():
       {
         role: "system",
         content:
-          "Kamu adalah SELA, asisten virtual perempuan yang ramah dan profesional. " +
-          "Bahasanya santai namun tetap sopan, pakai bahasa Indonesia. " +
-          "Fokus utama: keuangan pribadi, keuangan perusahaan, SLA pembayaran, karier, " +
-          "dan pertanyaan umum seputar kerja kantoran. " +
-          "Cara berpikir: seperti konsultan yang teliti. " +
-          "Jika pertanyaan kurang jelas, minta klarifikasi singkat. " +
-          "Jawaban akhir selalu singkat (2–5 kalimat), jelas, dan terstruktur. " +
-          "Gunakan contoh sederhana bila membantu."
+          "Kamu adalah SELA, asisten virtual perempuan yang ramah, " +
+          "berbahasa Indonesia, dan membantu soal keuangan, SLA pembayaran, " +
+          "karier, serta pertanyaan umum. Jawab singkat (2-5 kalimat), jelas, " +
+          "dan jangan terlalu teknis kecuali diminta."
       }
     ];
 
     async function initLLM() {
       try {
         statusEl.textContent = "Status: mengunduh & memuat model AI ke browser...";
-
         engine = new webllm.MLCEngine();
         engine.setInitProgressCallback((report) => {
           statusEl.textContent = "Status: " + report.text;
         });
 
-        const modelList = webllm.prebuiltAppConfig.model_list || [];
-        console.log("Daftar model WebLLM:", modelList);
+        const modelId =
+          webllm.prebuiltAppConfig.model_list[0]?.model_id ||
+          "TinyLlama-1.1B-Chat-v0.4-q4f32_1-MLC-1k";
 
-        const preferredModels = [
-          "Llama-3-8B-Instruct-q4f32_1-MLC",
-          "Llama-3-8B-Instruct-q4f16_1-MLC",
-          "Qwen2-7B-Instruct-q4f32_1-MLC",
-          "Phi-3-mini-4k-instruct-q4f32_1-MLC"
-        ];
-
-        let modelId = null;
-
-        for (const pref of preferredModels) {
-          if (modelList.some(m => m.model_id === pref)) {
-            modelId = pref;
-            break;
-          }
-        }
-
-        if (!modelId && modelList.length > 0) {
-          modelId = modelList[0].model_id;
-        }
-
-        if (!modelId) {
-          modelId = "TinyLlama-1.1B-Chat-v0.4-q4f32_1-MLC";
-        }
-
-        console.log("Memuat model WebLLM:", modelId);
-
-        await engine.reload(modelId, {
-          temperature: 0.7,
-          top_p: 0.9
-        });
-
+        await engine.reload(modelId, { temperature: 0.7, top_p: 0.9 });
         statusEl.textContent = "Status: SELA siap. Klik 🎤 lalu bicara.";
       } catch (e) {
         console.error(e);
@@ -2451,14 +2429,10 @@ def render_sela_widget():
 
       let cur = "";
       setTalking(true);
-      statusEl.textContent = "SELA sedang berpikir...";
 
       const completion = await engine.chat.completions.create({
         stream: true,
         messages,
-        temperature: 0.6,
-        top_p: 0.9,
-        max_tokens: 512
       });
 
       for await (const chunk of completion) {
@@ -2471,6 +2445,9 @@ def render_sela_widget():
       return cur;
     }
 
+    /**********************
+     * 4. Mic + Suara (Speech API)
+     **********************/
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognizer = null;
@@ -2505,7 +2482,7 @@ def render_sela_widget():
       };
       recognizer.onresult = async (event) => {
         const text = event.results[0][0].transcript;
-        statusEl.textContent = 'Kamu: "' + text + '". SELA sedang berpikir...';
+        statusEl.textContent = "Kamu: \\"" + text + "\\". SELA sedang berpikir...";
         window._sela_processing = true;
 
         const reply = await askSELA(text);
@@ -2538,7 +2515,7 @@ def render_sela_widget():
   </script>
 </body>
 </html>
-        ''',
+        """,
         height=600,
         scrolling=False,
     )
