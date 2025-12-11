@@ -2249,7 +2249,6 @@ def render_sela_widget():
     </div>
   </div>
 
-  <!-- Semua JS pakai ES Module via esm.run -->
   <script type="module">
     import * as THREE from "https://esm.run/three@0.160.0";
     import { GLTFLoader } from "https://esm.run/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
@@ -2262,7 +2261,7 @@ def render_sela_widget():
     const led      = document.getElementById('sela-led');
 
     /**********************
-     * 1. UI TOGGLE PANEL
+     * 1. UI PANEL
      **********************/
     statusEl.textContent = 'Status: inisialisasi SELA di browser...';
 
@@ -2292,7 +2291,7 @@ def render_sela_widget():
     });
 
     /**********************
-     * 2. THREE.JS AVATAR + Sela.glb (fit otomatis ke frame)
+     * 2. THREE.JS AVATAR (half-body shot)
      **********************/
     const canvas   = document.getElementById('sela-canvas');
     const scene    = new THREE.Scene();
@@ -2304,7 +2303,7 @@ def render_sela_widget():
       0.1,
       100
     );
-    camera.position.set(0, 1.2, 6);   // posisi awal untuk fallback
+    camera.position.set(0, 1.2, 6);   // nilai awal (nanti disesuaikan setelah GLB load)
     camera.lookAt(0, 1.2, 0);
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -2325,7 +2324,7 @@ def render_sela_widget():
     dir.position.set(2, 4, 3);
     scene.add(dir);
 
-    // Fallback avatar (kalau GLB gagal)
+    // Fallback avatar
     const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
     const headMat = new THREE.MeshStandardMaterial({
       color: 0xf9a8d4,
@@ -2361,7 +2360,7 @@ def render_sela_widget():
     scene.add(mouth);
 
     let selaModel = null;
-    const SELA_IDLE_Y = 0.0;   // center model di (0,0,0)
+    let selaLookY = 1.4; // titik fokus bust shot
 
     function hideFallback() {
       head.visible = false;
@@ -2371,16 +2370,25 @@ def render_sela_widget():
       mouth.visible = false;
     }
 
-    function fitCameraToObject(size, center) {
-      const maxDim = Math.max(size.x, size.y, size.z);
-      const fov    = camera.fov * (Math.PI / 180);    // radian
-      const dist   = (maxDim / 2) / Math.tan(fov / 2); // jarak minimum
+    function positionCameraForBust(size, min, max) {
+      const height = size.y || 1;
 
-      const offset = 1.2;  // sedikit jarak ekstra
-      const newZ   = dist * offset;
+      // Titik kira-kira di area dada: sedikit di bawah kepala
+      const topY   = max.y;
+      const bustY  = topY - 0.35 * height;   // tweak kalau mau lebih ke atas/bawah
+      selaLookY    = bustY;
 
-      camera.position.set(center.x, center.y + size.y * 0.05, newZ);
-      camera.lookAt(center.x, center.y, center.z);
+      // Tinggi bagian yang mau kelihatan (dari sekitar perut ke atas)
+      const visibleHeight = height * 0.7;    // 70% dari tinggi karakter
+
+      const fovRad = camera.fov * (Math.PI / 180);
+      const dist   = (visibleHeight / 2) / Math.tan(fovRad / 2);
+
+      const offset = 1.15;                  // sedikit mundur supaya aman
+      const zPos   = dist * offset;
+
+      camera.position.set(0, bustY, zPos);
+      camera.lookAt(0, bustY, 0);
     }
 
     function loadSelaAvatar() {
@@ -2392,24 +2400,23 @@ def render_sela_widget():
           try {
             selaModel = gltf.scene;
 
-            // Hitung bounding box asli
-            const box  = new THREE.Box3().setFromObject(selaModel);
-            const size = box.getSize(new THREE.Vector3());
-            const center = box.getCenter(new THREE.Vector3());
+            // Hitung bounding box model asli
+            const box   = new THREE.Box3().setFromObject(selaModel);
+            const size  = box.getSize(new THREE.Vector3());
+            const min   = box.min.clone();
+            const max   = box.max.clone();
+            const center= box.getCenter(new THREE.Vector3());
 
-            // Geser model sehingga center ada di origin (0,0,0)
+            // Center-kan secara horizontal, tapi biarkan tinggi (Y) apa adanya
             selaModel.position.x -= center.x;
-            selaModel.position.y -= center.y;
             selaModel.position.z -= center.z;
-
-            // Idle di sedikit atas center
-            selaModel.position.y += SELA_IDLE_Y;
+            // Y dibiarkan (feet/head tetap relatif)
 
             hideFallback();
             scene.add(selaModel);
 
-            // Atur kamera supaya seluruh model masuk frame
-            fitCameraToObject(size, new THREE.Vector3(0, SELA_IDLE_Y, 0));
+            // Sesuaikan kamera supaya half-body / bust shot
+            positionCameraForBust(size, min, max);
 
             console.log("[SELA] Sela.glb loaded. size=", size);
             statusEl.textContent = 'Status: SELA siap. Klik 🎤 lalu bicara.';
@@ -2440,16 +2447,16 @@ def render_sela_widget():
       requestAnimationFrame(animate);
 
       if (selaModel) {
-        // SELA "bernapas" naik turun tipis saat bicara
+        // SELA sedikit mengangguk/naik-turun halus saat bicara
         if (talking) {
-          talkPhase += 0.2;
-          const dy = Math.sin(talkPhase) * 0.05;
-          selaModel.position.y = SELA_IDLE_Y + dy;
+          talkPhase += 0.15;
+          const dy = Math.sin(talkPhase) * 0.03;
+          selaModel.position.y = dy;             // gerak kecil, kamera tetap fokus ke bustY
         } else {
-          selaModel.position.y = SELA_IDLE_Y;
+          selaModel.position.y = 0;
         }
       } else {
-        // Fallback dibikin hidup sedikit
+        // Fallback avatar animasi sederhana
         head.rotation.y += 0.002;
         body.rotation.y += 0.002;
 
@@ -2607,6 +2614,7 @@ def render_sela_widget():
         height=600,
         scrolling=False,
     )
+
 
 # PANGGIL SELA DI SEMUA HALAMAN
 render_sela_widget()
