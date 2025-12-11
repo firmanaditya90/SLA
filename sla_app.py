@@ -2023,7 +2023,7 @@ with tab_pdf:
 # ==========================================================
 #  VIRTUAL ASSISTANT: "Tanya SELA" (3D + Voice + LLM di browser)
 # ==========================================================
-import streamlit.components.v1 as components  # aman kalau sudah ada di atas
+import streamlit.components.v1 as components
 
 def render_sela_widget():
     components.html(
@@ -2249,12 +2249,11 @@ def render_sela_widget():
     </div>
   </div>
 
-  <!-- Semua JS pakai module import -->
-  <script type="module">
-    import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
-    import { GLTFLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
-    import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+  <!-- Three.js (non-module, global THREE) -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
 
+  <script>
     /**********************
      * 1. UI TOGGLE PANEL
      **********************/
@@ -2265,7 +2264,7 @@ def render_sela_widget():
     const talkBtn  = document.getElementById('sela-talk-btn');
     const led      = document.getElementById('sela-led');
 
-    statusEl.textContent = 'Status: inisialisasi script SELA...';
+    statusEl.textContent = 'Status: inisialisasi SELA di browser...';
 
     let panelOpen = false;
     let greeted   = false;
@@ -2364,10 +2363,10 @@ def render_sela_widget():
     let selaModel = null;
 
     try {
-      const loader = new GLTFLoader();
+      const loader = new THREE.GLTFLoader();
       loader.load(
         'https://raw.githubusercontent.com/firmanaditya90/SLA/main/Sela.glb',
-        (gltf) => {
+        function (gltf) {
           selaModel = gltf.scene;
 
           selaModel.position.set(0, -0.6, 0);
@@ -2383,7 +2382,7 @@ def render_sela_widget():
           scene.add(selaModel);
         },
         undefined,
-        (error) => {
+        function (error) {
           console.error('Gagal memuat Sela.glb:', error);
         }
       );
@@ -2433,23 +2432,25 @@ def render_sela_widget():
     animate();
 
     /**********************
-     * 3. WebLLM (LLM di browser)
+     * 3. WebLLM + MIC (dynamic import)
      **********************/
-    let engine   = null;
-    let messages = [
-      {
-        role: 'system',
-        content:
-          'Kamu adalah SELA, asisten virtual perempuan yang ramah, ' +
-          'berbahasa Indonesia, dan membantu soal keuangan, SLA pembayaran, ' +
-          'karier, serta pertanyaan umum. Jawab singkat (2-5 kalimat), jelas, ' +
-          'dan jangan terlalu teknis kecuali diminta.'
-      }
-    ];
+    (async function initLLMAndMic() {
+      let engine   = null;
+      let messages = [
+        {
+          role: 'system',
+          content:
+            'Kamu adalah SELA, asisten virtual perempuan yang ramah, ' +
+            'berbahasa Indonesia, dan membantu soal keuangan, SLA pembayaran, ' +
+            'karier, serta pertanyaan umum. Jawab singkat (2-5 kalimat), jelas, ' +
+            'dan jangan terlalu teknis kecuali diminta.'
+        }
+      ];
 
-    async function initLLM() {
       try {
         statusEl.textContent = 'Status: mengunduh & memuat model AI ke browser...';
+        const webllm = await import('https://esm.run/@mlc-ai/web-llm');
+
         engine = new webllm.MLCEngine();
         engine.setInitProgressCallback((report) => {
           if (report && report.text) {
@@ -2467,106 +2468,102 @@ def render_sela_widget():
         await engine.reload(modelId, { temperature: 0.7, top_p: 0.9 });
         statusEl.textContent = 'Status: SELA siap. Klik 🎤 lalu bicara.';
       } catch (e) {
-        console.error(e);
+        console.error('Gagal memuat WebLLM:', e);
         statusEl.textContent =
-          'Gagal memuat model AI di browser. Coba refresh halaman atau gunakan koneksi yang lebih stabil. (' + e + ')';
-      }
-    }
-
-    initLLM();
-
-    async function askSELA(userText) {
-      if (!engine) {
-        return 'Maaf, otak SELA belum siap. Tunggu sebentar lalu coba lagi.';
-      }
-      messages.push({ role: 'user', content: userText });
-
-      let cur = '';
-      setTalking(true);
-
-      const completion = await engine.chat.completions.create({
-        stream: true,
-        messages,
-      });
-
-      for await (const chunk of completion) {
-        const delta = chunk.choices[0].delta.content;
-        if (delta) cur += delta;
+          'Gagal memuat model AI di browser. Coba refresh halaman atau gunakan koneksi yang lebih stabil.';
+        return;  // jangan lanjut ke mic kalau LLM gagal
       }
 
-      setTalking(false);
-      messages.push({ role: 'assistant', content: cur });
-      return cur;
-    }
-
-    /**********************
-     * 4. Mic + Suara (Speech API)
-     **********************/
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-    let recognizer = null;
-    let recognizing = false;
-    window._sela_processing = false;
-
-    if (!SpeechRecognition) {
-      statusEl.textContent =
-        'Browser ini tidak mendukung pengenalan suara. Coba Chrome (desktop/Android).';
-    } else {
-      recognizer = new SpeechRecognition();
-      recognizer.lang = 'id-ID';
-      recognizer.interimResults = false;
-      recognizer.maxAlternatives = 1;
-
-      recognizer.onstart = () => {
-        recognizing = true;
-        talkBtn.classList.add('sela-listening');
-        statusEl.textContent = 'Status: mendengarkan... silakan bicara.';
-      };
-      recognizer.onerror = (e) => {
-        recognizing = false;
-        talkBtn.classList.remove('sela-listening');
-        statusEl.textContent = 'Error mic: ' + e.error +
-          '. Pastikan izin mikrofon sudah diaktifkan di browser.';
-      };
-      recognizer.onend = () => {
-        recognizing = false;
-        talkBtn.classList.remove('sela-listening');
-        if (!window._sela_processing) {
-          statusEl.textContent = 'Status: selesai mendengar, memproses atau menunggu.';
+      async function askSELA(userText) {
+        if (!engine) {
+          return 'Maaf, otak SELA belum siap. Tunggu sebentar lalu coba lagi.';
         }
-      };
-      recognizer.onresult = async (event) => {
-        const text = event.results[0][0].transcript;
-        statusEl.textContent = 'Kamu: "' + text + '". SELA sedang berpikir...';
-        window._sela_processing = true;
+        messages.push({ role: 'user', content: userText });
 
-        const reply = await askSELA(text);
-        statusEl.textContent = 'SELA: ' + reply;
+        let cur = '';
+        setTalking(true);
 
-        if ('speechSynthesis' in window) {
-          const utt = new SpeechSynthesisUtterance(reply);
-          utt.lang = 'id-ID';
-          utt.onstart = () => setTalking(true);
-          utt.onend = () => {
-            setTalking(false);
-            window._sela_processing = false;
-            statusEl.textContent = 'Status: siap bicara lagi dengan SELA.';
-          };
-          window.speechSynthesis.speak(utt);
-        } else {
-          window._sela_processing = false;
+        const completion = await engine.chat.completions.create({
+          stream: true,
+          messages,
+        });
+
+        for await (const chunk of completion) {
+          const delta = chunk.choices[0].delta.content;
+          if (delta) cur += delta;
         }
-      };
-    }
 
-    talkBtn.addEventListener('click', () => {
-      if (!recognizer) return;
-      if (!recognizing) {
-        recognizer.start();
+        setTalking(false);
+        messages.push({ role: 'assistant', content: cur });
+        return cur;
+      }
+
+      const SpeechRecognition =
+        window.SpeechRecognition || window.webkitSpeechRecognition;
+      let recognizer = null;
+      let recognizing = false;
+      window._sela_processing = false;
+
+      if (!SpeechRecognition) {
+        statusEl.textContent =
+          'Browser ini tidak mendukung pengenalan suara. Coba Chrome (desktop/Android).';
       } else {
-        recognizer.stop();
+        recognizer = new SpeechRecognition();
+        recognizer.lang = 'id-ID';
+        recognizer.interimResults = false;
+        recognizer.maxAlternatives = 1;
+
+        recognizer.onstart = () => {
+          recognizing = true;
+          talkBtn.classList.add('sela-listening');
+          statusEl.textContent = 'Status: mendengarkan... silakan bicara.';
+        };
+        recognizer.onerror = (e) => {
+          recognizing = false;
+          talkBtn.classList.remove('sela-listening');
+          statusEl.textContent = 'Error mic: ' + e.error +
+            '. Pastikan izin mikrofon sudah diaktifkan di browser.';
+        };
+        recognizer.onend = () => {
+          recognizing = false;
+          talkBtn.classList.remove('sela-listening');
+          if (!window._sela_processing) {
+            statusEl.textContent = 'Status: selesai mendengar, memproses atau menunggu.';
+          }
+        };
+        recognizer.onresult = async (event) => {
+          const text = event.results[0][0].transcript;
+          statusEl.textContent = 'Kamu: "' + text + '". SELA sedang berpikir...';
+          window._sela_processing = true;
+
+          const reply = await askSELA(text);
+          statusEl.textContent = 'SELA: ' + reply;
+
+          if ('speechSynthesis' in window) {
+            const utt = new SpeechSynthesisUtterance(reply);
+            utt.lang = 'id-ID';
+            utt.onstart = () => setTalking(true);
+            utt.onend = () => {
+              setTalking(false);
+              window._sela_processing = false;
+              statusEl.textContent = 'Status: siap bicara lagi dengan SELA.';
+            };
+            window.speechSynthesis.speak(utt);
+          } else {
+            window._sela_processing = false;
+          }
+        };
       }
-    });
+
+      talkBtn.addEventListener('click', () => {
+        if (!recognizer) return;
+        if (!recognizing) {
+          recognizer.start();
+        } else {
+          recognizer.stop();
+        }
+      });
+    })();
   </script>
 </body>
 </html>
