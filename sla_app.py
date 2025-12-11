@@ -2247,7 +2247,7 @@ def render_sela_widget():
     const loader = new GLTFLoader();
 
     // ⬇️ GANTI URL INI dengan URL GLB yang kamu host di GitHub (atau server lain)
-    const AVATAR_URL = "https://raw.githubusercontent.com/USERNAME/REPO/BRANCH/models/sela.glb";
+    const AVATAR_URL = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/Sela.glb";
 
     loader.load(
       AVATAR_URL,
