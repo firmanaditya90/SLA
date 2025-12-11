@@ -2024,11 +2024,11 @@ with tab_pdf:
 #  VIRTUAL ASSISTANT: "Tanya SELA" (3D + Voice + LLM di browser)
 # ==========================================================
 
-import streamlit.components.v1 as components  # sudah ada di atas, aman kalau double import
+import streamlit.components.v1 as components  # aman kalau double import
 
 def render_sela_widget():
     components.html(
-        """
+        '''
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -2322,7 +2322,7 @@ def render_sela_widget():
     dir.position.set(2, 4, 3);
     scene.add(dir);
 
-    // Avatar sementara: "bust" sederhana (bisa diganti avatar perempuan 3D nanti)
+    // Avatar sementara: "bust" sederhana
     const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
     const headMat = new THREE.MeshStandardMaterial({
       color: 0xf9a8d4,
@@ -2413,7 +2413,6 @@ def render_sela_widget():
           statusEl.textContent = "Status: " + report.text;
         });
 
-        // Pilih model terbaik yang tersedia dari daftar prebuilt
         const modelList = webllm.prebuiltAppConfig.model_list || [];
         console.log("Daftar model WebLLM:", modelList);
 
@@ -2426,7 +2425,6 @@ def render_sela_widget():
 
         let modelId = null;
 
-        // Coba cari model yang termasuk dalam daftar preferred
         for (const pref of preferredModels) {
           if (modelList.some(m => m.model_id === pref)) {
             modelId = pref;
@@ -2434,12 +2432,10 @@ def render_sela_widget():
           }
         }
 
-        // Kalau tidak ada yang preferred, pakai model pertama yang tersedia
         if (!modelId && modelList.length > 0) {
           modelId = modelList[0].model_id;
         }
 
-        // Fallback terakhir: TinyLlama
         if (!modelId) {
           modelId = "TinyLlama-1.1B-Chat-v0.4-q4f32_1-MLC";
         }
@@ -2448,7 +2444,7 @@ def render_sela_widget():
 
         await engine.reload(modelId, {
           temperature: 0.7,
-          top_p: 0.9,
+          top_p: 0.9
         });
 
         statusEl.textContent = "Status: SELA siap. Klik 🎤 lalu bicara.";
@@ -2480,9 +2476,7 @@ def render_sela_widget():
 
       for await (const chunk of completion) {
         const delta = chunk.choices[0].delta.content;
-        if (delta) {
-          cur += delta;
-        }
+        if (delta) cur += delta;
       }
 
       setTalking(false);
@@ -2527,7 +2521,7 @@ def render_sela_widget():
       };
       recognizer.onresult = async (event) => {
         const text = event.results[0][0].transcript;
-        statusEl.textContent = "Kamu: \\"" + text + "\\". SELA sedang berpikir...";
+        statusEl.textContent = 'Kamu: "' + text + '". SELA sedang berpikir...';
         window._sela_processing = true;
 
         const reply = await askSELA(text);
@@ -2546,3 +2540,24 @@ def render_sela_widget():
         } else {
           window._sela_processing = false;
         }
+      };
+    }
+
+    talkBtn.addEventListener("click", () => {
+      if (!recognizer) return;
+      if (!recognizing) {
+        recognizer.start();
+      } else {
+        recognizer.stop();
+      }
+    });
+  </script>
+</body>
+</html>
+        ''',
+        height=600,
+        scrolling=False,
+    )
+
+# PANGGIL SELA DI SEMUA HALAMAN
+render_sela_widget()
