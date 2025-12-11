@@ -604,8 +604,6 @@ if st.sidebar.button("💬 Tanya SELA"):
     # klik = toggle on/off
     st.session_state["show_sela"] = not st.session_state["show_sela"]
 
-
-
 # ==============================
 # Parsing SLA setelah filter (TIDAK DIUBAH)
 # ==============================
@@ -2022,7 +2020,6 @@ with tab_pdf:
         st.error(f"Gagal membuat PDF: {type(e).__name__}: {e}")
         traceback.print_exc()
 
-
 # ==========================================================
 #  VIRTUAL ASSISTANT: "SELA" (3D + Voice + LLM di browser)
 # ==========================================================
@@ -2030,8 +2027,7 @@ import streamlit.components.v1 as components  # aman walau sudah di-import di at
 
 def render_sela_widget():
     components.html(
-        """
-<!DOCTYPE html>
+        """<!DOCTYPE html>
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
@@ -2200,7 +2196,7 @@ def render_sela_widget():
     });
 
     /**********************
-     * 2. THREE.JS AVATAR – model 3D perempuan (Ready Player Me)
+     * 2. THREE.JS AVATAR – model 3D perempuan (GLB)
      **********************/
     const canvas   = document.getElementById("sela-canvas");
     const scene    = new THREE.Scene();
@@ -2250,8 +2246,8 @@ def render_sela_widget():
 
     const loader = new GLTFLoader();
 
-    // GANTI URL INI dengan URL avatar Ready Player Me kamu sendiri
-    const AVATAR_URL = "https://models.readyplayer.me/62ea7bc28a6d28ec134bbcce.glb";
+    // ⬇️ GANTI URL INI dengan URL GLB yang kamu host di GitHub (atau server lain)
+    const AVATAR_URL = "https://raw.githubusercontent.com/USERNAME/REPO/BRANCH/models/sela.glb";
 
     loader.load(
       AVATAR_URL,
@@ -2267,7 +2263,7 @@ def render_sela_widget():
         avatar.position.set(0, -1.1, 0);
         scene.add(avatar);
 
-        // Cari morph targets untuk mulut & kedipan mata (kalau ada)
+        // Coba deteksi morph target untuk mulut & kedipan (kalau model mendukung)
         avatar.traverse((obj) => {
           if (obj.isMesh && obj.morphTargetDictionary && obj.morphTargetInfluences) {
             const dict = obj.morphTargetDictionary;
@@ -2338,6 +2334,7 @@ def render_sela_widget():
         avatar.position.y = -1.1 + Math.sin(t * 0.9) * 0.03;
       }
 
+      // Mulut (kalau punya morph target)
       if (talking && mouthTargets.length > 0) {
         talkPhase += 0.35;
         const influence = 0.2 + Math.abs(Math.sin(talkPhase)) * 0.7;
@@ -2350,7 +2347,7 @@ def render_sela_widget():
         });
       }
 
-      // Kedipan mata menggunakan morph targets kalau ada
+      // Kedipan
       blinkTimer += 0.016;
       if (!blinking && blinkTimer > 3 + Math.random() * 3) {
         blinking = true;
@@ -2482,7 +2479,6 @@ def render_sela_widget():
       };
       recognizer.onend = () => {
         led.classList.add("off");
-        // restart nanti setelah SELA selesai menjawab
       };
       recognizer.onresult = async (event) => {
         const text = event.results[0][0].transcript;
@@ -2524,12 +2520,10 @@ def render_sela_widget():
       window.speechSynthesis.speak(utt);
     }
 
-    // panggil saat panel muncul
     greetAndListen();
   </script>
 </body>
-</html>
-        """,
+</html>""",
         height=600,
         scrolling=False,
     )
@@ -2537,4 +2531,5 @@ def render_sela_widget():
 # Hanya render SELA kalau user klik tombol di sidebar
 if st.session_state.get("show_sela", False):
     render_sela_widget()
+
 
