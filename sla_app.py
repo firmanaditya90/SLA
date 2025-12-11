@@ -2009,381 +2009,84 @@ with tab_pdf:
         st.error(f"Gagal membuat PDF: {type(e).__name__}: {e}")
         traceback.print_exc()
 
-# ==============================
-# SELA PRO — FLOATING 3D ASSISTANT (FULL)
-# Paste this at the VERY END of your app.py
-# ==============================
+# ===============================================
+# SELA PRO — Floating 3D Assistant (SAFE VERSION)
+# ===============================================
 import streamlit as st
 import streamlit.components.v1 as components
-import requests, json, time
+import requests, json
 
-# --- Config: ganti model jika perlu ---
 HF_TOKEN = st.secrets.get("HF_TOKEN", None)
-HF_MODEL = st.secrets.get("HF_MODEL", "google/flan-t5-small")  # default ringan
+HF_MODEL = "google/flan-t5-small"
 
-# Admin toggle (optional)
-if "sela_enabled" not in st.session_state:
-    st.session_state.sela_enabled = True
-
-with st.sidebar.expander("🤖 SELA Assistant (Admin)", expanded=False):
-    sela_toggle = st.checkbox("Enable SELA Assistant (floating)", value=st.session_state.sela_enabled)
-    st.session_state.sela_enabled = sela_toggle
-    st.markdown("**Hugging Face** token: " + ("✅ set" if HF_TOKEN else "❌ not set"))
-    st.markdown("Model: `" + HF_MODEL + "`")
-    st.markdown("Notes: Jika HF_TOKEN tidak diset, SELA akan pakai fallback sederhana.")
-
-# Ensure conversation memory exists
 if "sela_conv" not in st.session_state:
-    st.session_state.sela_conv = []  # list of dicts: {"role":"user/assistant","text":...}
+    st.session_state.sela_conv = []
 
-# Helper: call HF inference (server-side)
-def call_hf_model(prompt: str, max_attempts: int = 2) -> str:
-    """Call HF Inference API; returns reply string or error message."""
-    if not HF_TOKEN:
-        # fallback simple rules
-        p = prompt.lower()
-        if "halo" in p or "hai" in p or "selamat" in p:
-            return "Halo! Saya SELA. Saya bisa membantu menjelaskan grafik dan metrik di dashboard ini."
-        if "apa itu sla" in p or "jelaskan sla" in p:
-            return "SLA adalah Service Level Agreement — batas waktu penyelesaian proses penagihan. Saya bantu analisis grafik jika diperlukan."
-        return "Maaf, saya belum terhubung ke model canggih. Silakan tambahkan HF_TOKEN di Streamlit Secrets untuk jawaban lebih lengkap."
-    HF_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-    payload = {"inputs": prompt}
-    try:
-        r = requests.post(HF_URL, headers=headers, json=payload, timeout=60)
-        if r.status_code == 200:
-            j = r.json()
-            # try common HF formats
-            if isinstance(j, list):
-                if len(j) > 0 and isinstance(j[0], dict) and "generated_text" in j[0]:
-                    return j[0]["generated_text"]
-                else:
-                    return str(j[0])
-            elif isinstance(j, dict):
-                if "generated_text" in j:
-                    return j["generated_text"]
-                elif "error" in j:
-                    return "Model error: " + str(j["error"])
-                else:
-                    return str(j)
-            else:
-                return str(j)
-        else:
-            return f"HuggingFace error {r.status_code}: {r.text}"
-    except Exception as e:
-        return f"Error calling HF: {str(e)}"
+# SAFE VERSION: raw string (r""") — avoids Python interpreting JS {}
+sela_ui = r"""
+<style>
+#sela-btn {
+    position: fixed;
+    bottom: 25px;
+    right: 25px;
+    width: 70px; height: 70px;
+    background: #ff3e9e;
+    border-radius: 50%; color:white;
+    display:flex; justify-content:center; align-items:center;
+    cursor:pointer; font-size:28px;
+    z-index:99999;
+}
+#sela-window{
+    position:fixed;
+    bottom:110px; right:25px;
+    width:380px; height:520px;
+    background:white;
+    border-radius:16px;
+    display:none; flex-direction:column;
+    box-shadow:0 8px 20px rgba(0,0,0,.3);
+    z-index:99998; overflow:hidden;
+}
+#sela-header{
+    background:#ff3e9e; color:white;
+    text-align:center; padding:12px; font-weight:700;
+}
+</style>
 
-# Build the SELA UI (floating) using components.html
-if st.session_state.sela_enabled:
-    sela_ui = f"""
-    <style>
-    /* Floating Button */
-    #sela-btn {{
-        position: fixed;
-        bottom: 28px;
-        right: 28px;
-        width: 72px;
-        height: 72px;
-        background: linear-gradient(135deg,#ff6fb5,#ff3e9e);
-        border-radius: 50%;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        color: white;
-        font-size: 30px;
-        cursor: pointer;
-        z-index: 999999;
-        box-shadow: 0 8px 30px rgba(0,0,0,0.35);
-    }}
-    #sela-window {{
-        position: fixed;
-        bottom: 110px;
-        right: 30px;
-        width: 420px;
-        height: 560px;
-        background: rgba(255,255,255,0.98);
-        border-radius: 16px;
-        box-shadow: 0 10px 40px rgba(0,0,0,0.35);
-        display: none;
-        flex-direction: column;
-        z-index: 999998;
-        overflow: hidden;
-        font-family: Inter, Arial, sans-serif;
-    }}
-    #sela-header {{
-        background: linear-gradient(90deg,#ff6fb5,#ff3e9e);
-        color: white;
-        padding: 12px;
-        font-weight: 700;
-        text-align: center;
-    }}
-    #sela-body {{ padding: 10px; flex: 1; display:flex; flex-direction:column; gap:8px; }}
-    #sela-avatar {{ width:100%; height: 300px; border-radius:10px; overflow:hidden; border:0; }}
-    #sela-controls {{ display:flex; gap:8px; align-items:center; }}
-    #sela-controls button {{ flex:1; padding:10px; border-radius:10px; border:0; cursor:pointer; font-weight:700; }}
-    #sela-mic {{ background:#ff3e9e; color:white; }}
-    #sela-stop {{ background:#888; color:white; }}
-    #sela-reply {{ background:#f6f7fb; padding:8px; border-radius:10px; height:110px; overflow:auto; white-space:pre-wrap; }}
-    </style>
+<div id="sela-btn">💬</div>
 
-    <div id="sela-btn" title="Tanya SELA">💬</div>
+<div id="sela-window">
+    <div id="sela-header">SELA — Virtual Assistant</div>
 
-    <div id="sela-window" role="dialog" aria-label="SELA Assistant">
-      <div id="sela-header">SELA — Virtual Assistant</div>
-      <div id="sela-body">
-        <iframe id="sela-avatar" src="https://demo.readyplayer.me/avatar?frameApi" allow="camera;microphone"></iframe>
+    <iframe src="https://demo.readyplayer.me/avatar?frameApi"
+        style="width:100%;height:260px;border:0;"></iframe>
 
-        <div style="font-size:13px;color:#444;">Status: <span id="sela-status">siap</span></div>
+    <p id="sela-status" style="padding:8px;color:#777;">Siap mendengarkan...</p>
 
-        <textarea id="sela-usertext" placeholder="Bicara atau ketik pertanyaan di sini..." style="width:100%;height:64px;border-radius:8px;padding:8px;"></textarea>
+    <textarea id="sela-user" style="width:92%;margin:0 auto;border-radius:8px;height:60px;"></textarea>
 
-        <div id="sela-controls">
-          <button id="sela-mic">🎤 Bicara</button>
-          <button id="sela-stop">⏹️ Stop</button>
-          <button id="sela-send" style="background:#00c853;color:white;">💬 Kirim</button>
-        </div>
+    <button id="sela-mic" style="width:92%;margin:8px auto;padding:10px;border-radius:8px;background:#ff3e9e;color:white;font-weight:700;">
+        🎤 Bicara
+    </button>
 
-        <div style="font-size:13px;font-weight:700;">Jawaban SELA:</div>
-        <div id="sela-reply">...selamat datang 👋</div>
-      </div>
-    </div>
+    <button id="sela-send" style="width:92%;margin:4px auto;padding:10px;border-radius:8px;background:#00c853;color:white;font-weight:700;">
+        💬 Kirim
+    </button>
 
-    <script>
-    (function(){
-      const selaBtn = document.getElementById("sela-btn");
-      const selaWin = document.getElementById("sela-window");
-      const statusEl = document.getElementById("sela-status");
-      const userText = document.getElementById("sela-usertext");
-      const replyBox = document.getElementById("sela-reply");
-      const micBtn = document.getElementById("sela-mic");
-      const stopBtn = document.getElementById("sela-stop");
-      const sendBtn = document.getElementById("sela-send");
-      const avatarIframe = document.getElementById("sela-avatar");
+    <div id="sela-reply" style="background:#f2f2f2;height:120px;margin:8px;border-radius:8px;padding:10px;overflow:auto;"></div>
+</div>
 
-      // toggle window
-      selaBtn.onclick = () => {
-        if (selaWin.style.display === "flex") {
-          selaWin.style.display = "none";
-        } else {
-          selaWin.style.display = "flex";
-          // greeting
-          const g = new SpeechSynthesisUtterance("Haloooo, saya SELA. Ada yang bisa saya bantu?");
-          g.lang = "id-ID";
-          // small delay to let audio context resume on user gesture
-          setTimeout(()=>{ speechSynthesis.speak(g); }, 120);
-          replyBox.textContent = "Halooo 😊 Saya SELA. Ada yang bisa saya bantu?";
-        }
-      };
+<script>
+const btn = document.getElementById("sela-btn");
+const win = document.getElementById("sela-window");
+const userBox = document.getElementById("sela-user");
+const replyBox = document.getElementById("sela-reply");
 
-      // --- Ready Player Me: helper to send simple viseme (lip) command ---
-      function sendAvatarCmd(cmd) {
-        try {
-          avatarIframe.contentWindow.postMessage(cmd, "*");
-        } catch(e) {
-          // ignore
-        }
-      }
-
-      // approximate lip-sync: when speaking -> open mouth, when done -> close
-      function playAndLipSync(text) {
-        // open mouth
-        sendAvatarCmd({source: "sela", type:"setExpression", expression:{mouthOpen:1.0}});
-        const u = new SpeechSynthesisUtterance(text);
-        u.lang = "id-ID";
-        u.rate = 1.0;
-        u.onend = () => {
-          // close mouth
-          sendAvatarCmd({source: "sela", type:"setExpression", expression:{mouthOpen:0.0}});
-        };
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(u);
-      }
-
-      // Web Speech API recognition
-      let recognition = null;
-      try {
-        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-        recognition = new SR();
-        recognition.lang = "id-ID";
-        recognition.interimResults = false;
-        recognition.maxAlternatives = 1;
-
-        recognition.onstart = () => { statusEl.textContent = "mendengarkan..."; }
-        recognition.onend = () => { statusEl.textContent = "siap"; }
-        recognition.onerror = (e) => { statusEl.textContent = "error: " + e.error; }
-
-        recognition.onresult = (ev) => {
-          const t = ev.results[0][0].transcript;
-          userText.value = t;
-          // auto-send after recognition result
-          sendQuestionToServer(t);
-        };
-      } catch(e) {
-        // browser unsupported
-        statusEl.textContent = "Browser tidak mendukung WebSpeech";
-        micBtn.disabled = true;
-        stopBtn.disabled = true;
-      }
-
-      micBtn.onclick = () => { if(recognition) recognition.start(); };
-      stopBtn.onclick = () => { if(recognition) recognition.stop(); };
-
-      sendBtn.onclick = () => {
-        const t = userText.value.trim();
-        if (!t) {
-          alert("Silakan ketik atau bicara terlebih dahulu.");
-          return;
-        }
-        sendQuestionToServer(t);
-      };
-
-      // send text to Streamlit backend: try direct fetch to /__sela_inference first
-      async function sendQuestionToServer(text) {
-        replyBox.textContent = "Menghubungi SELA ...";
-        statusEl.textContent = "mengirim ke AI...";
-
-        // store locally to make conversation multi-turn on server via hidden form (see Python)
-        // Try POST to relative path; if CORS/blocked, the server-side fallback (Streamlit button) is available.
-        let payload = {text: text};
-        try {
-          const resp = await fetch("./__sela_inference", {
-            method: "POST",
-            headers: {"Content-Type":"application/json"},
-            body: JSON.stringify(payload)
-          });
-          if (resp.ok) {
-            const data = await resp.json();
-            const reply = data.reply || "(tidak ada balasan)";
-            replyBox.textContent = reply;
-            statusEl.textContent = "siap";
-            // speak + lip-sync
-            playAndLipSync(reply);
-          } else {
-            // fallback: call Streamlit via /?sela_text=... (simple)
-            replyBox.textContent = "Gagal memanggil endpoint langsung. Menggunakan fallback server.";
-            // Use Streamlit-friendly fallback: set window.location search param (causes reload) -> handled by Python below
-            const q = encodeURIComponent(text);
-            // open a small window to trigger server-side form (non-reload option is limited)
-            window.open(window.location.pathname + "?sela_text=" + q, "_self");
-          }
-        } catch (e) {
-          // fail: fallback to query param approach
-          replyBox.textContent = "Tidak bisa terhubung langsung ke backend. Memakai fallback.";
-          const q = encodeURIComponent(text);
-          window.open(window.location.pathname + "?sela_text=" + q, "_self");
-        }
-      }
-    })();
-    </script>
-    """
-
-    # inject UI
-    components.html(sela_ui, height=0, scrolling=False)
-
-    # ------------------------------
-    # SERVER-SIDE: handle fallback query param or POST (simple)
-    # Two entry points:
-    # 1) JS attempts POST to '/__sela_inference' (many Streamlit deployments will not expose this).
-    #    We try to support it by checking for Streamlit experimental query param 'sela_text' as fallback.
-    # 2) If user lands back with ?sela_text=..., we handle it here (after page reload).
-    # ------------------------------
-
-    # 1) If user used query param ?sela_text=..., capture and respond (page reload)
-    import urllib.parse
-    query_params = st.experimental_get_query_params()
-    if "sela_text" in query_params:
-        incoming = query_params.get("sela_text", [""])[0]
-        # decode
-        incoming_text = urllib.parse.unquote(incoming)
-        if incoming_text:
-            # add to conv memory
-            st.session_state.sela_conv.append({"role":"user","text":incoming_text})
-            # build prompt with context (last few turns)
-            context = ""
-            for turn in st.session_state.sela_conv[-6:]:
-                role = turn["role"]
-                t = turn["text"]
-                context += f"{role}: {t}\n"
-            prompt = context + "\nassistant:"
-
-            reply = call_hf_model(prompt)
-            # save assistant reply
-            st.session_state.sela_conv.append({"role":"assistant","text":reply})
-
-            # show reply on page + play TTS via injecting JS
-            st.markdown("**SELA (jawaban):**")
-            st.write(reply)
-
-            # inject JS to play and to attempt lip-sync message to iframe
-            play_js = f"""
-            <script>
-              try {{
-                var r = {json.dumps(reply)};
-                var utter = new SpeechSynthesisUtterance(r);
-                utter.lang = "id-ID";
-                window.speechSynthesis.cancel();
-                // open mouth (postMessage to iframe)
-                try {{ document.getElementById('sela-avatar').contentWindow.postMessage({{source:'sela',type:'setExpression',expression:{{mouthOpen:1.0}}}}, "*"); }} catch(e){{}}
-                window.speechSynthesis.speak(utter);
-                utter.onend = function() {{
-                  try {{ document.getElementById('sela-avatar').contentWindow.postMessage({{source:'sela',type:'setExpression',expression:{{mouthOpen:0.0}}}}, "*"); }} catch(e){{}}
-                }};
-              }} catch(e) {{ console.error(e); }}
-            </script>
-            """
-            components.html(play_js, height=0)
-            # remove query param to avoid re-run repeating (best-effort)
-            st.experimental_set_query_params()
-            # stop further rendering duplication
-            st.stop()
-
-    # 2) Additionally: implement a tiny handler for POST if possible (Streamlit doesn't natively expose custom endpoints).
-    # We provide a simple "button" fallback UI so user can paste text and press Ask (server), which will call HF.
-    st_js_fallback = """
-    <div style="display:none">
-      <!-- hidden fallback marker -->
-    </div>
-    """
-    components.html(st_js_fallback, height=0)
-
-    # Provide a small non-visual form (server-side) so admin/tester can quickly send queries without UI fetch
-    with st.container():
-        st.markdown("### SELA — Server fallback (if needed)")
-        user_text_server = st.text_input("Ketik pertanyaan untuk SELA (fallback server)", value="", key="sela_server_input")
-        if st.button("📡 Kirim ke SELA (server)"):
-            if not user_text_server.strip():
-                st.warning("Masukkan teks terlebih dahulu.")
-            else:
-                st.session_state.sela_conv.append({"role":"user","text":user_text_server})
-                # build context
-                context = ""
-                for turn in st.session_state.sela_conv[-6:]:
-                    context += f"{turn['role']}: {turn['text']}\n"
-                prompt = context + "\nassistant:"
-                with st.spinner("Menghubungi model AI..."):
-                    reply = call_hf_model(prompt)
-                st.session_state.sela_conv.append({"role":"assistant","text":reply})
-                st.success("Balasan SELA:")
-                st.write(reply)
-                # TTS + lip sync via injected JS
-                play_js2 = f"""
-                <script>
-                  try {{
-                    var r = {json.dumps(reply)};
-                    var utter = new SpeechSynthesisUtterance(r);
-                    utter.lang = "id-ID";
-                    window.speechSynthesis.cancel();
-                    try {{ document.getElementById('sela-avatar').contentWindow.postMessage({{source:'sela',type:'setExpression',expression:{{mouthOpen:1.0}}}}, "*"); }} catch(e){{}}
-                    window.speechSynthesis.speak(utter);
-                    utter.onend = function() {{
-                      try {{ document.getElementById('sela-avatar').contentWindow.postMessage({{source:'sela',type:'setExpression',expression:{{mouthOpen:0.0}}}}, "*"); }} catch(e){{}}
-                    }};
-                  }} catch(e) {{ console.error(e); }}
-                </script>
-                """
-                components.html(play_js2, height=0)
-
-# END OF SELA PRO BLOCK
-
-
+btn.onclick = () => {
+    if (win.style.display === "flex") {
+        win.style.display = "none";
+    } else {
+        win.style.display = "flex";
+        const greet = new SpeechSynthesisUtterance("Haloooo, saya SELA. Ada yang bisa saya bantu?");
+        greet.lang = "id-ID";
+        speechSynthesis.speak(greet);
+        replyBox.innerHTML = "Haloooo 😊 Saya SELA. Ada yang bisa saya ba
