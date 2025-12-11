@@ -2292,7 +2292,7 @@ def render_sela_widget():
     });
 
     /**********************
-     * 2. THREE.JS AVATAR + Sela.glb (proporsional)
+     * 2. THREE.JS AVATAR + Sela.glb (fit otomatis ke frame)
      **********************/
     const canvas   = document.getElementById('sela-canvas');
     const scene    = new THREE.Scene();
@@ -2304,9 +2304,8 @@ def render_sela_widget():
       0.1,
       100
     );
-    // Kamera agak tinggi & mendekat, menghadap ke tengah badan SELA
-    camera.position.set(0, 1.0, 4);
-    camera.lookAt(0, 1.0, 0);
+    camera.position.set(0, 1.2, 6);   // posisi awal untuk fallback
+    camera.lookAt(0, 1.2, 0);
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     function resizeRenderer() {
@@ -2362,8 +2361,7 @@ def render_sela_widget():
     scene.add(mouth);
 
     let selaModel = null;
-    const SELA_CENTER_Y = 1.0;        // titik tengah badan di layar
-    const SELA_TARGET_HEIGHT = 3.0;   // tinggi kira-kira 3 unit (proporsional)
+    const SELA_IDLE_Y = 0.0;   // center model di (0,0,0)
 
     function hideFallback() {
       head.visible = false;
@@ -2371,6 +2369,18 @@ def render_sela_widget():
       eyeL.visible = false;
       eyeR.visible = false;
       mouth.visible = false;
+    }
+
+    function fitCameraToObject(size, center) {
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const fov    = camera.fov * (Math.PI / 180);    // radian
+      const dist   = (maxDim / 2) / Math.tan(fov / 2); // jarak minimum
+
+      const offset = 1.2;  // sedikit jarak ekstra
+      const newZ   = dist * offset;
+
+      camera.position.set(center.x, center.y + size.y * 0.05, newZ);
+      camera.lookAt(center.x, center.y, center.z);
     }
 
     function loadSelaAvatar() {
@@ -2382,30 +2392,27 @@ def render_sela_widget():
           try {
             selaModel = gltf.scene;
 
-            // Hitung ukuran & pusat awal
-            let box = new THREE.Box3().setFromObject(selaModel);
-            let size = box.getSize(new THREE.Vector3());
-            let center = box.getCenter(new THREE.Vector3());
+            // Hitung bounding box asli
+            const box  = new THREE.Box3().setFromObject(selaModel);
+            const size = box.getSize(new THREE.Vector3());
+            const center = box.getCenter(new THREE.Vector3());
 
-            // Skala supaya tinggi kira-kira 3.0 unit
-            const height = size.y || 1;
-            const scaleFactor = SELA_TARGET_HEIGHT / height;
-            selaModel.scale.setScalar(scaleFactor);
+            // Geser model sehingga center ada di origin (0,0,0)
+            selaModel.position.x -= center.x;
+            selaModel.position.y -= center.y;
+            selaModel.position.z -= center.z;
 
-            // Re-calc sesudah di-scale
-            box.setFromObject(selaModel);
-            size = box.getSize(new THREE.Vector3());
-            center = box.getCenter(new THREE.Vector3());
-
-            // Geser sehingga pusat ada di SELA_CENTER_Y (tengah panel)
-            selaModel.position.sub(center);        // center -> origin
-            selaModel.position.y += SELA_CENTER_Y; // angkat ke tengah
+            // Idle di sedikit atas center
+            selaModel.position.y += SELA_IDLE_Y;
 
             hideFallback();
             scene.add(selaModel);
 
+            // Atur kamera supaya seluruh model masuk frame
+            fitCameraToObject(size, new THREE.Vector3(0, SELA_IDLE_Y, 0));
+
             console.log("[SELA] Sela.glb loaded. size=", size);
-            statusEl.textContent = 'Status: avatar 3D SELA berhasil dimuat. Menyiapkan model AI...';
+            statusEl.textContent = 'Status: SELA siap. Klik 🎤 lalu bicara.';
           } catch (e) {
             console.error("[SELA] Error saat memproses Sela.glb:", e);
             statusEl.textContent = 'Status: gagal memproses avatar 3D SELA, pakai avatar sederhana dulu.';
@@ -2433,16 +2440,16 @@ def render_sela_widget():
       requestAnimationFrame(animate);
 
       if (selaModel) {
-        // SELA tidak berputar, hanya "bernapas" saat bicara
+        // SELA "bernapas" naik turun tipis saat bicara
         if (talking) {
           talkPhase += 0.2;
-          const dy = Math.sin(talkPhase) * 0.05; // naik-turun halus
-          selaModel.position.y = SELA_CENTER_Y + dy;
+          const dy = Math.sin(talkPhase) * 0.05;
+          selaModel.position.y = SELA_IDLE_Y + dy;
         } else {
-          selaModel.position.y = SELA_CENTER_Y;
+          selaModel.position.y = SELA_IDLE_Y;
         }
       } else {
-        // Fallback tetap diputer pelan
+        // Fallback dibikin hidup sedikit
         head.rotation.y += 0.002;
         body.rotation.y += 0.002;
 
@@ -2600,7 +2607,6 @@ def render_sela_widget():
         height=600,
         scrolling=False,
     )
-
 
 # PANGGIL SELA DI SEMUA HALAMAN
 render_sela_widget()
