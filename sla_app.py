@@ -2024,10 +2024,10 @@ with tab_pdf:
 # ==========================================================
 #  VIRTUAL ASSISTANT: "Tanya SELA" (3D + Voice + LLM di browser)
 # ==========================================================
-import streamlit.components.v1 as components  # sudah ada di atas, aman kalau double import
+import streamlit.components.v1 as components  # aman meski double import
 
 def render_sela_widget():
-    components.html(
+    sela_html = r'''
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -2420,10 +2420,9 @@ Hindari menjawab seperti robot; jawab alami, tapi tetap profesional.
       try {
         statusEl.textContent = "Status: mengunduh & memuat model AI ke browser...";
 
-        // Pilih model dari daftar prebuilt, atau gunakan fallback TinyLlama
         const fallbackModel = "TinyLlama-1.1B-Chat-v0.4-q4f32_1-MLC-1k";
         const modelId =
-          webllm.prebuiltAppConfig?.model_list?.[0]?.model_id || fallbackModel;
+          (webllm.prebuiltAppConfig?.model_list?.[0]?.model_id) || fallbackModel;
 
         engine = await webllm.CreateMLCEngine(modelId, {
           initProgressCallback: (report) => {
@@ -2464,7 +2463,6 @@ Hindari menjawab seperti robot; jawab alami, tapi tetap profesional.
         const delta = chunk.choices?.[0]?.delta?.content || "";
         if (delta) {
           cur += delta;
-          // tampilkan streaming ke UI, biar terasa "AI lagi ngetik"
           statusEl.textContent = "SELA: " + cur;
         }
       }
@@ -2545,14 +2543,13 @@ Hindari menjawab seperti robot; jawab alami, tapi tetap profesional.
   </script>
 </body>
 </html>
-        ,
+    '''
+
+    components.html(
+        sela_html,
         height=600,
         scrolling=False,
     )
 
 # PANGGIL SELA DI SEMUA HALAMAN
 render_sela_widget()
-
-
-
-
