@@ -3420,10 +3420,6 @@ def render_sela_widget(df_filtered, periode_col):
 
 
 # PANGGIL SELA DI SEMUA HALAMAN (dengan data hasil filter)
-# setelah kamu tentukan df_filtered dan kolom periode:
-df_filtered = df_sla_aktif  # misal
-periode_col = "PERIODE"     # sesuaikan dengan nama kolom di df
-
 render_sela_widget(df_filtered, periode_col)
 
 
