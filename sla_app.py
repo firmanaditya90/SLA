@@ -2023,7 +2023,7 @@ with tab_pdf:
 # ==========================================================
 #  VIRTUAL ASSISTANT: "Tanya SELA" (3D + Voice + LLM di browser)
 # ==========================================================
-import streamlit.components.v1 as components  # aman kalau sudah ada
+import streamlit.components.v1 as components
 
 def render_sela_widget():
     components.html(
@@ -2066,11 +2066,11 @@ def render_sela_widget():
     }
     .sela-panel {
       position: fixed;
-      bottom: 50px;              /* diturunkan sedikit supaya bagian atas tidak kepotong */
+      bottom: 70px;              /* sedikit naik, supaya bagian atas tidak kepotong */
       right: 24px;
       width: 360px;
       max-width: 90vw;
-      height: 500px;             /* sedikit lebih pendek */
+      height: 500px;
       background: rgba(15,23,42,0.96);
       border-radius: 20px;
       box-shadow: 0 18px 40px rgba(0,0,0,0.65);
@@ -2124,7 +2124,7 @@ def render_sela_widget():
 
     .sela-3d-container {
       flex: 1.6;
-      background: #ffffff; /* background putih */
+      background: #ffffff;
       position: relative;
     }
     #sela-canvas {
@@ -2251,7 +2251,6 @@ def render_sela_widget():
     import * as THREE from "https://esm.run/three@0.160.0";
     import { GLTFLoader } from "https://esm.run/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
-    // Avatar wanita Ready Player Me (demo/non-komersial)
     const AVATAR_URL = "https://raw.githubusercontent.com/met4citizen/TalkingHead/main/avatars/brunette.glb";
 
     const launcher = document.getElementById('sela-launcher');
@@ -2268,8 +2267,7 @@ def render_sela_widget():
 
     function pickIndonesianVoice() {
       if (!('speechSynthesis' in window)) return null;
-      const voices = window.speechSynthesis.getVoices();
-      if (!voices || !voices.length) return null;
+      const voices = window.speechSynthesis.getVoices() || [];
       for (const v of voices) {
         if (v.lang && v.lang.toLowerCase().startsWith('id')) return v;
       }
@@ -2302,7 +2300,7 @@ def render_sela_widget():
       panel.style.display = 'none';
     });
 
-    // ============= THREE.JS AVATAR (CLOSE UP WAJAH) =============
+    // ------------ THREE.JS AVATAR (CLOSE UP WAJAH) ------------
     const canvas   = document.getElementById('sela-canvas');
     const scene    = new THREE.Scene();
     scene.background = new THREE.Color(0xffffff);
@@ -2329,28 +2327,19 @@ def render_sela_widget():
 
     const hemi = new THREE.HemisphereLight(0xffffff, 0xdddddd, 1.2);
     scene.add(hemi);
-
     const dir = new THREE.DirectionalLight(0xffffff, 0.9);
     dir.position.set(2, 4, 3);
     scene.add(dir);
 
     // Fallback avatar
     const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
-    const headMat = new THREE.MeshStandardMaterial({
-      color: 0xf9a8d4,
-      metalness: 0.1,
-      roughness: 0.3
-    });
+    const headMat = new THREE.MeshStandardMaterial({ color: 0xf9a8d4, metalness: 0.1, roughness: 0.3 });
     const head = new THREE.Mesh(headGeo, headMat);
     head.position.y = 0.6;
     scene.add(head);
 
     const bodyGeo = new THREE.CylinderGeometry(0.9, 1.0, 1.3, 32);
-    const bodyMat = new THREE.MeshStandardMaterial({
-      color: 0x38bdf8,
-      metalness: 0.1,
-      roughness: 0.4
-    });
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.1, roughness: 0.4 });
     const body = new THREE.Mesh(bodyGeo, bodyMat);
     body.position.y = -0.4;
     scene.add(body);
@@ -2370,11 +2359,7 @@ def render_sela_widget():
     scene.add(mouth_fb);
 
     function hideFallback() {
-      head.visible      = false;
-      body.visible      = false;
-      eyeL_fb.visible   = false;
-      eyeR_fb.visible   = false;
-      mouth_fb.visible  = false;
+      head.visible = body.visible = eyeL_fb.visible = eyeR_fb.visible = mouth_fb.visible = false;
     }
 
     let selaModel    = null;
@@ -2382,15 +2367,27 @@ def render_sela_widget():
     let mouthTargets = [];
     let blinkTargetsL= [];
     let blinkTargetsR= [];
+    let headBone     = null;
+    let jawBone      = null;
 
     function detectMorphTargets(root) {
       morphMesh = null;
-      root.traverse((obj) => {
+      headBone = jawBone = null;
+
+      root.traverse(obj => {
+        const name = (obj.name || "").toLowerCase();
+
+        // bone untuk gerak kepala / rahang
+        if (obj.isBone) {
+          if (!headBone && name.includes("head")) headBone = obj;
+          if (!jawBone  && (name.includes("jaw") || name.includes("mouth"))) jawBone = obj;
+        }
+
+        // mesh dengan morph
         if (obj.isMesh && obj.morphTargetDictionary && !morphMesh) {
           morphMesh = obj;
-          // aktifkan morphTargets di material
           if (Array.isArray(obj.material)) {
-            obj.material.forEach((m) => { if (m) m.morphTargets = true; });
+            obj.material.forEach(m => { if (m) m.morphTargets = true; });
           } else if (obj.material) {
             obj.material.morphTargets = true;
           }
@@ -2398,7 +2395,7 @@ def render_sela_widget():
       });
 
       if (!morphMesh || !morphMesh.morphTargetDictionary) {
-        console.log("[SELA] Tidak menemukan morph targets untuk wajah.");
+        console.log("[SELA] Tidak menemukan morph targets, hanya pakai bone.");
         return;
       }
 
@@ -2412,32 +2409,21 @@ def render_sela_widget():
       const mouthNames = [
         "mouthOpen","jawOpen","mouthSmile","mouthFunnel",
         "viseme_aa","viseme_ih","viseme_E","viseme_O","viseme_U",
-        "viseme_oh","viseme_sil","viseme_PP","viseme_FF","viseme_CH",
+        "viseme_sil","viseme_PP","viseme_FF","viseme_CH",
         "viseme_RR","viseme_nn","viseme_dd","viseme_kk"
       ];
-      mouthNames.forEach(name => {
-        if (dict[name] !== undefined) mouthTargets.push(dict[name]);
-      });
+      mouthNames.forEach(n => { if (dict[n] !== undefined) mouthTargets.push(dict[n]); });
 
       const blinkLeftNames  = ["eyeBlinkLeft","eyesClosedLeft","eyeSquintLeft","eyeBlink_L"];
       const blinkRightNames = ["eyeBlinkRight","eyesClosedRight","eyeSquintRight","eyeBlink_R"];
+      blinkLeftNames.forEach(n  => { if (dict[n] !== undefined) blinkTargetsL.push(dict[n]); });
+      blinkRightNames.forEach(n => { if (dict[n] !== undefined) blinkTargetsR.push(dict[n]); });
 
-      blinkLeftNames.forEach(name => {
-        if (dict[name] !== undefined) blinkTargetsL.push(dict[name]);
-      });
-      blinkRightNames.forEach(name => {
-        if (dict[name] !== undefined) blinkTargetsR.push(dict[name]);
-      });
-
-      console.log("[SELA] mouthTargets:", mouthTargets,
-                  "blinkL:", blinkTargetsL,
-                  "blinkR:", blinkTargetsR);
+      console.log("[SELA] mouthTargets:", mouthTargets, "blinkL:", blinkTargetsL, "blinkR:", blinkTargetsR);
     }
 
     function loadSelaAvatar() {
       statusEl.textContent = 'Status: mengunduh avatar 3D SELA...';
-      console.log("[SELA] Loading avatar from", AVATAR_URL);
-
       const loader = new GLTFLoader();
       loader.load(
         AVATAR_URL,
@@ -2445,12 +2431,11 @@ def render_sela_widget():
           try {
             selaModel = gltf.scene;
 
-            // Scale & center
             const box0  = new THREE.Box3().setFromObject(selaModel);
             const size0 = box0.getSize(new THREE.Vector3());
             const h0    = size0.y || 1;
 
-            const targetHeight = 2.2;      // tinggi total di world
+            const targetHeight = 2.2;
             const s            = targetHeight / h0;
             selaModel.scale.setScalar(s);
 
@@ -2459,51 +2444,49 @@ def render_sela_widget():
             selaModel.position.sub(center1);
 
             const box    = new THREE.Box3().setFromObject(selaModel);
-            const size   = box.getSize(new THREE.Vector3());
-            const height = size.y;
+            const height = box.getSize(new THREE.Vector3()).y;
             const bottomY= box.min.y;
             const headY  = box.max.y;
 
             hideFallback();
             scene.add(selaModel);
 
-            // CLOSE UP WAJAH: fokus ke area mata, hanya wajah yang terlihat
-            const faceY         = bottomY + height * 0.82;  // kira-kira posisi mata
-            const visibleHeight = height * 0.25;            // makin kecil → makin zoom
+            // close up: dari pundak ke atas
+            const shouldersY    = bottomY + height * 0.65;
+            const faceCenterY   = (headY + shouldersY) / 2;
+            const visibleHeight = headY - shouldersY;   // area pundak–kepala
             const fovRad        = camera.fov * Math.PI / 180;
             const dist          = (visibleHeight / 2) / Math.tan(fovRad / 2);
-            const zPos          = dist * 1.02;
+            const zPos          = dist * 1.05;
 
-            camera.position.set(0, faceY, zPos);
-            camera.lookAt(0, faceY, 0);
+            camera.position.set(0, faceCenterY, zPos);
+            camera.lookAt(0, faceCenterY, 0);
 
             detectMorphTargets(selaModel);
 
             statusEl.textContent = 'Status: SELA siap. Klik 🎤 lalu bicara.';
           } catch (e) {
             console.error("[SELA] Error memproses avatar:", e);
-            statusEl.textContent =
-              'Status: avatar 3D SELA statis (mata/mulut butuh pengaturan khusus di file 3D).';
+            statusEl.textContent = 'Status: avatar 3D SELA statis.';
           }
         },
         undefined,
-        (error) => {
-          console.error("[SELA] Gagal memuat avatar:", error);
-          statusEl.textContent =
-            'Status: gagal memuat avatar 3D SELA, pakai avatar sederhana dulu.';
+        (err) => {
+          console.error("[SELA] Gagal memuat avatar:", err);
+          statusEl.textContent = 'Status: gagal memuat avatar 3D SELA, pakai avatar sederhana.';
         }
       );
     }
 
     loadSelaAvatar();
 
-    // ============= ANIMASI (MATA KEDIP + MULUT BICARA) =============
+    // ------------ ANIMASI: KEDIP + MULUT + GERAK KEPALA ------------
     let talking   = false;
     let talkPhase = 0;
     let blinkPhase= 0;
 
-    function setTalking(isTalking) {
-      talking = isTalking;
+    function setTalking(flag) {
+      talking = flag;
       led.classList.toggle('off', !talking);
     }
 
@@ -2512,35 +2495,28 @@ def render_sela_widget():
 
       if (morphMesh && morphMesh.morphTargetInfluences) {
         const infl = morphMesh.morphTargetInfluences;
+        for (let i = 0; i < infl.length; i++) infl[i] *= 0.6;
 
-        // decay agak pelan supaya efek kuat
-        for (let i = 0; i < infl.length; i++) {
-          infl[i] *= 0.6;
-        }
-
-        // MULUT bicara – buka tutup lebar saat SELA ngomong
+        // mulut
         if (talking && mouthTargets.length > 0) {
           talkPhase += 0.25;
-          const v = 0.6 + 0.4 * Math.abs(Math.sin(talkPhase)); // 0.6–1.0
-          mouthTargets.forEach(idx => {
-            infl[idx] = Math.max(infl[idx], v);
-          });
+          const v = 0.6 + 0.4 * Math.abs(Math.sin(talkPhase)); // 0.6–1
+          mouthTargets.forEach(idx => infl[idx] = Math.max(infl[idx], v));
         }
 
-        // KEDIP mata jelas tiap ~2 detik
-        if (blinkTargetsL.length > 0 || blinkTargetsR.length > 0) {
+        // kedip mata
+        if (blinkTargetsL.length || blinkTargetsR.length) {
           blinkPhase += 0.03;
           const t = blinkPhase % 2.0;
           let b = 0;
           if (t < 0.1)       b = t / 0.1;
           else if (t < 0.2)  b = 1 - (t - 0.1) / 0.1;
           else               b = 0;
-
-          blinkTargetsL.forEach(idx => { infl[idx] = Math.max(infl[idx], b); });
-          blinkTargetsR.forEach(idx => { infl[idx] = Math.max(infl[idx], b); });
+          blinkTargetsL.forEach(idx => infl[idx] = Math.max(infl[idx], b));
+          blinkTargetsR.forEach(idx => infl[idx] = Math.max(infl[idx], b));
         }
       } else {
-        // Fallback bola+silinder
+        // fallback: mulut kapsul
         if (talking) {
           talkPhase += 0.25;
           const scaleY = 0.8 + Math.abs(Math.sin(talkPhase)) * 0.5;
@@ -2551,11 +2527,23 @@ def render_sela_widget():
         }
       }
 
+      // gerak kepala/rahang pakai bone supaya pasti kelihatan
+      if (headBone || jawBone) {
+        if (talking) {
+          const jawOpen = 0.35 * Math.abs(Math.sin(talkPhase));
+          if (jawBone)  jawBone.rotation.x = -jawOpen;
+          if (headBone) headBone.rotation.x = 0.06 * Math.sin(talkPhase * 0.5);
+        } else {
+          if (jawBone)  jawBone.rotation.x *= 0.8;
+          if (headBone) headBone.rotation.x *= 0.8;
+        }
+      }
+
       renderer.render(scene, camera);
     }
     animate();
 
-    // ============= WEBLLM + MIC (disingkat, fokus kecepatan) =============
+    // ------------ WEBLLM + MIC (ringkas) ------------
     (async function initLLMAndMic() {
       let engine   = null;
       let messages = [
@@ -2575,10 +2563,8 @@ def render_sela_widget():
         const webllm = await import("https://esm.run/@mlc-ai/web-llm");
 
         engine = new webllm.MLCEngine();
-        engine.setInitProgressCallback((report) => {
-          if (report && report.text) {
-            statusEl.textContent = 'Status: ' + report.text;
-          }
+        engine.setInitProgressCallback(rep => {
+          if (rep && rep.text) statusEl.textContent = 'Status: ' + rep.text;
         });
 
         const modelId =
@@ -2593,20 +2579,16 @@ def render_sela_widget():
       } catch (e) {
         console.error('[SELA] Gagal memuat WebLLM:', e);
         statusEl.textContent =
-          'Gagal memuat model AI di browser. Untuk kecepatan setara ChatGPT/Gemini ' +
-          'perlu backend server yang memanggil API AI di cloud.';
+          'Gagal memuat model AI di browser. Untuk kecepatan setara ChatGPT/Gemini perlu backend server.';
         return;
       }
 
       async function askSELA(userText) {
-        if (!engine) {
-          return 'Maaf, otak SELA belum siap. Tunggu sebentar lalu coba lagi.';
-        }
-
+        if (!engine) return 'Maaf, otak SELA belum siap.';
         messages.push({ role: 'user', content: userText });
         if (messages.length > 1 + MAX_HISTORY) {
-          const systemMsg = messages[0];
-          messages = [systemMsg, ...messages.slice(-MAX_HISTORY)];
+          const sys = messages[0];
+          messages = [sys, ...messages.slice(-MAX_HISTORY)];
         }
 
         let cur = '';
@@ -2617,12 +2599,10 @@ def render_sela_widget():
           temperature: 0.5,
           top_p: 0.9,
         });
-
         for await (const chunk of completion) {
           const delta = chunk.choices[0].delta.content;
           if (delta) cur += delta;
         }
-
         messages.push({ role: 'assistant', content: cur });
         return cur;
       }
@@ -2650,8 +2630,7 @@ def render_sela_widget():
         recognizer.onerror = (e) => {
           recognizing = false;
           talkBtn.classList.remove('sela-listening');
-          statusEl.textContent = 'Error mic: ' + e.error +
-            '. Pastikan izin mikrofon sudah diaktifkan di browser.';
+          statusEl.textContent = 'Error mic: ' + e.error;
         };
         recognizer.onend = () => {
           recognizing = false;
@@ -2678,7 +2657,7 @@ def render_sela_widget():
             utt.volume = 1.0;
 
             utt.onstart = () => setTalking(true);
-            utt.onend = () => {
+            utt.onend   = () => {
               setTalking(false);
               window._sela_processing = false;
               statusEl.textContent = 'Status: siap bicara lagi dengan SELA.';
@@ -2692,11 +2671,8 @@ def render_sela_widget():
 
       talkBtn.addEventListener('click', () => {
         if (!recognizer) return;
-        if (!recognizing) {
-          recognizer.start();
-        } else {
-          recognizer.stop();
-        }
+        if (!recognizing) recognizer.start();
+        else recognizer.stop();
       });
     })();
   </script>
