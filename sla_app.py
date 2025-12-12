@@ -2415,19 +2415,19 @@ def render_sela_widget():
             selaModel.position.z -= center.z;
 
             // dorong sedikit ke atas supaya wajah tidak kepotong bawah
-            selaModel.position.y += height * 0.08;
+            selaModel.position.y += height * 0.22;
 
             hideFallback();
             scene.add(selaModel);
 
             // 4) atur kamera: fokus ke wajah, tampilin bahu+kepala
             const headY  = height / 2;                   // karena sudah di-center
-            const faceY  = headY - height * 0.25;        // kira-kira area wajah
-            const visibleHeight = height * 0.75;         // dari dada ke atas
+            const faceY  = headY - height * 0.18;        // kira-kira area wajah
+            const visibleHeight = height * 0.45;         // dari dada ke atas
 
             const fovRad = camera.fov * Math.PI / 180;
             const dist   = (visibleHeight / 2) / Math.tan(fovRad / 2);
-            const zPos   = dist * 1.05;
+            const zPos   = dist * 1.02;
 
             camera.position.set(0, faceY, zPos);
             camera.lookAt(0, faceY, 0);
