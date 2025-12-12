@@ -2022,12 +2022,45 @@ with tab_pdf:
 
 # ==========================================================
 #  VIRTUAL ASSISTANT: "Tanya SELA" (3D + Voice + LLM di browser)
+#  + akses data df_filtered dari Streamlit
 # ==========================================================
 import streamlit.components.v1 as components
+import json
 
-def render_sela_widget():
-    components.html(
-        """
+def render_sela_widget(df_filtered, periode_col):
+    """
+    Kirimkan ringkasan data df_filtered ke JavaScript,
+    sehingga SELA bisa menjawab pertanyaan berbasis data.
+    """
+    rows = []
+
+    if df_filtered is not None and not df_filtered.empty and periode_col in df_filtered.columns:
+        cols = df_filtered.columns
+
+        for _, r in df_filtered.iterrows():
+            rec = {
+                "periode": str(r[periode_col])
+            }
+
+            # Nama vendor / cabang
+            if "NAMA VENDOR" in cols:
+                rec["nama_vendor"] = str(r["NAMA VENDOR"])
+
+            # Kolom SLA (sudah dalam detik)
+            for col in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]:
+                if col in cols:
+                    val = r[col]
+                    if pd.notna(val):
+                        try:
+                            rec[col.lower().replace(" ", "_")] = float(val)
+                        except Exception:
+                            pass
+
+            rows.append(rec)
+
+    data_json = json.dumps(rows, ensure_ascii=False)
+
+    html = """
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -2251,6 +2284,86 @@ def render_sela_widget():
     import * as THREE from "https://esm.run/three@0.160.0";
     import { GLTFLoader } from "https://esm.run/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
+    // ----------------- DATA SLA DARI STREAMLIT -----------------
+    // Diisi oleh Python (JSON)
+    const selaDataRows = ___SELA_DATA___;
+
+    function secondsToPretty(sec) {
+      if (sec == null || isNaN(sec)) return "0 hari 0 jam 0 menit";
+      const s = Math.max(0, Number(sec));
+      const d = Math.floor(s / 86400);
+      const h = Math.floor((s % 86400) / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      return `${d} hari ${h} jam ${m} menit`;
+    }
+
+    function findPeriodeInData(userText) {
+      if (!selaDataRows || !selaDataRows.length) return null;
+      const txt = (userText || "").toLowerCase();
+      const uniques = [...new Set(selaDataRows.map(r => String(r.periode)))];
+      let found = null;
+      uniques.forEach(p => {
+        if (!p) return;
+        const pl = String(p).toLowerCase();
+        if (txt.includes(pl)) found = p;
+      });
+      return found;
+    }
+
+    // Jawab khusus berbasis data (tanpa LLM) jika pola cocok.
+    function answerWithData(userText) {
+      if (!selaDataRows || !selaDataRows.length) return null;
+      const t = (userText || "").toLowerCase();
+
+      const periode = findPeriodeInData(userText);
+      if (!periode) return null;
+
+      // Contoh 1: "SLA keuangan ... periode/bulan X"
+      if (t.includes("sla keuangan")) {
+        const vals = selaDataRows
+          .filter(r => String(r.periode) === String(periode) && typeof r.keuangan === "number")
+          .map(r => r.keuangan);
+        if (!vals.length) return `Maaf, data SLA Keuangan untuk periode ${periode} tidak ditemukan.`;
+        const avg = vals.reduce((a,b)=>a+b,0) / vals.length;
+        const txt = secondsToPretty(avg);
+        return `Rata-rata SLA Keuangan untuk periode ${periode} sekitar ${txt}.`;
+      }
+
+      // Contoh 2: "cabang mana yang terlama ... periode X"
+      if ((t.includes("cabang") || t.includes("gm cabang")) &&
+          (t.includes("terlama") || t.includes("paling lama") || t.includes("paling lambat"))) {
+
+        const rows = selaDataRows.filter(r =>
+          String(r.periode) === String(periode) &&
+          r.nama_vendor &&
+          String(r.nama_vendor).toUpperCase().includes("GM CABANG") &&
+          typeof r.total_waktu === "number"
+        );
+        if (!rows.length) {
+          return `Untuk periode ${periode}, tidak ditemukan data cabang dengan format GM CABANG.`;
+        }
+        const agg = {};
+        rows.forEach(r => {
+          const k = String(r.nama_vendor);
+          if (!agg[k]) agg[k] = [];
+          agg[k].push(r.total_waktu);
+        });
+        let bestName = null;
+        let bestVal  = -1;
+        Object.entries(agg).forEach(([name, arr]) => {
+          const avg = arr.reduce((a,b)=>a+b,0) / arr.length;
+          if (avg > bestVal) {
+            bestVal  = avg;
+            bestName = name;
+          }
+        });
+        const txt = secondsToPretty(bestVal);
+        return `Cabang dengan rata-rata SLA total waktu paling lama pada periode ${periode} adalah ${bestName}, sekitar ${txt}.`;
+      }
+
+      return null;
+    }
+
     // Avatar demo Ready Player Me (wanita kantoran)
     const AVATAR_URL = "https://raw.githubusercontent.com/met4citizen/TalkingHead/main/avatars/brunette.glb";
 
@@ -2403,7 +2516,6 @@ def render_sela_widget():
       root.traverse(obj => {
         const name = (obj.name || "").toLowerCase();
 
-        // bones utk idle anim
         if (obj.isBone) {
           if (!headBone && name.includes("head")) headBone = obj;
           if (!jawBone  && (name.includes("jaw") || name.includes("mouth"))) jawBone = obj;
@@ -2420,7 +2532,6 @@ def render_sela_widget():
           }
         }
 
-        // mesh dengan morph target
         if (obj.isMesh && obj.morphTargetDictionary) {
           if (Array.isArray(obj.material)) {
             obj.material.forEach(m => { if (m) m.morphTargets = true; });
@@ -2466,7 +2577,6 @@ def render_sela_widget():
           try {
             selaModel = gltf.scene;
 
-            // scale & center
             const box0  = new THREE.Box3().setFromObject(selaModel);
             const size0 = box0.getSize(new THREE.Vector3());
             const h0    = size0.y || 1;
@@ -2486,7 +2596,6 @@ def render_sela_widget():
             hideFallback();
             scene.add(selaModel);
 
-            // framing bahu–kepala
             const faceCenterY   = (headTopY + shouldersY) / 2;
             const visibleHeight = headTopY - shouldersY;
             const fovRad        = camera.fov * Math.PI / 180;
@@ -2529,14 +2638,14 @@ def render_sela_widget():
           const infl = face.mesh.morphTargetInfluences;
           if (!infl) return;
 
-          // decay
-          for (let i = 0; i < infl.length; i++) infl[i] *= 0.6;
+          // decay pelan
+          for (let i = 0; i < infl.length; i++) infl[i] *= 0.4;
 
           // mulut, hanya saat bicara
           if (talking && face.mouthIndices.length > 0) {
-            talkPhase += 0.25;
-            const v = 0.6 + 0.4 * Math.abs(Math.sin(talkPhase)); // 0.6–1
-            face.mouthIndices.forEach(idx => infl[idx] = Math.max(infl[idx], v));
+            talkPhase += 0.3;
+            const v = 0.8 + 0.6 * Math.abs(Math.sin(talkPhase)); // 0.8–1.4
+            face.mouthIndices.forEach(idx => infl[idx] = Math.max(infl[idx] || 0, v));
           }
 
           // kedip selalu jalan
@@ -2547,8 +2656,8 @@ def render_sela_widget():
             if (tb < 0.10)       b = tb / 0.10;
             else if (tb < 0.20)  b = 1 - (tb - 0.10)/0.10;
             else                 b = 0;
-            face.blinkL.forEach(idx => infl[idx] = Math.max(infl[idx], b));
-            face.blinkR.forEach(idx => infl[idx] = Math.max(infl[idx], b));
+            face.blinkL.forEach(idx => infl[idx] = Math.max(infl[idx] || 0, b));
+            face.blinkR.forEach(idx => infl[idx] = Math.max(infl[idx] || 0, b));
           }
         });
       } else {
@@ -2649,6 +2758,11 @@ def render_sela_widget():
       }
 
       async function askSELA(userText) {
+        // 1) Coba jawab pakai data SLA dulu
+        const dataAnswer = answerWithData(userText);
+        if (dataAnswer) return dataAnswer;
+
+        // 2) Jika tidak cocok pola, baru pakai LLM
         if (!engine) return 'Maaf, otak SELA belum siap.';
         messages.push({ role: 'user', content: userText });
         if (messages.length > 1 + MAX_HISTORY) {
@@ -2660,7 +2774,7 @@ def render_sela_widget():
         const completion = await engine.chat.completions.create({
           stream: true,
           messages,
-          max_tokens: 40,
+          max_tokens: 60,
           temperature: 0.5,
           top_p: 0.9,
         });
@@ -2725,7 +2839,7 @@ def render_sela_widget():
             utt.onend   = () => {
               setTalking(false);
               window._sela_processing = false;
-              statusEl.textContent = 'Status: siap bicara lagi dengan SELA.';
+              statusEl.textContent = 'Status: SELA siap bicara lagi.';
             };
             window.speechSynthesis.speak(utt);
           } else {
@@ -2743,12 +2857,15 @@ def render_sela_widget():
   </script>
 </body>
 </html>
-        """,
+    """
+
+    components.html(
+        html.replace("___SELA_DATA___", data_json),
         height=520,
         scrolling=False,
     )
 
 
-# PANGGIL SELA DI SEMUA HALAMAN
-render_sela_widget()
+# PANGGIL SELA DI SEMUA HALAMAN (dengan data hasil filter)
+render_sela_widget(df_filtered, periode_col)
 
