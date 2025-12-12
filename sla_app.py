@@ -2066,11 +2066,11 @@ def render_sela_widget():
     }
     .sela-panel {
       position: fixed;
-      bottom: 100px;
+      bottom: 50px;              /* diturunkan sedikit supaya bagian atas tidak kepotong */
       right: 24px;
       width: 360px;
       max-width: 90vw;
-      height: 520px;
+      height: 500px;             /* sedikit lebih pendek */
       background: rgba(15,23,42,0.96);
       border-radius: 20px;
       box-shadow: 0 18px 40px rgba(0,0,0,0.65);
@@ -2251,7 +2251,7 @@ def render_sela_widget():
     import * as THREE from "https://esm.run/three@0.160.0";
     import { GLTFLoader } from "https://esm.run/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
-    // Avatar wanita Ready Player Me (brunette.glb) – demo/non-komersial
+    // Avatar wanita Ready Player Me (demo/non-komersial)
     const AVATAR_URL = "https://raw.githubusercontent.com/met4citizen/TalkingHead/main/avatars/brunette.glb";
 
     const launcher = document.getElementById('sela-launcher');
@@ -2302,10 +2302,10 @@ def render_sela_widget():
       panel.style.display = 'none';
     });
 
-    // ============= THREE.JS AVATAR (CLOSE UP DADA–KEPALA) =============
+    // ============= THREE.JS AVATAR (CLOSE UP WAJAH) =============
     const canvas   = document.getElementById('sela-canvas');
     const scene    = new THREE.Scene();
-    scene.background = new THREE.Color(0xffffff);   // putih
+    scene.background = new THREE.Color(0xffffff);
 
     const camera = new THREE.PerspectiveCamera(
       40,
@@ -2377,24 +2377,37 @@ def render_sela_widget():
       mouth_fb.visible  = false;
     }
 
-    let selaModel  = null;
-    let morphMesh  = null;
+    let selaModel    = null;
+    let morphMesh    = null;
     let mouthTargets = [];
-    let blinkTargetsL = [];
-    let blinkTargetsR = [];
+    let blinkTargetsL= [];
+    let blinkTargetsR= [];
 
     function detectMorphTargets(root) {
+      morphMesh = null;
       root.traverse((obj) => {
         if (obj.isMesh && obj.morphTargetDictionary && !morphMesh) {
           morphMesh = obj;
+          // aktifkan morphTargets di material
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach((m) => { if (m) m.morphTargets = true; });
+          } else if (obj.material) {
+            obj.material.morphTargets = true;
+          }
         }
       });
+
       if (!morphMesh || !morphMesh.morphTargetDictionary) {
         console.log("[SELA] Tidak menemukan morph targets untuk wajah.");
         return;
       }
+
       const dict = morphMesh.morphTargetDictionary;
       console.log("[SELA] Morph targets:", Object.keys(dict));
+
+      mouthTargets = [];
+      blinkTargetsL = [];
+      blinkTargetsR = [];
 
       const mouthNames = [
         "mouthOpen","jawOpen","mouthSmile","mouthFunnel",
@@ -2437,28 +2450,26 @@ def render_sela_widget():
             const size0 = box0.getSize(new THREE.Vector3());
             const h0    = size0.y || 1;
 
-            const targetHeight = 2.2;   // tinggi total di world
+            const targetHeight = 2.2;      // tinggi total di world
             const s            = targetHeight / h0;
             selaModel.scale.setScalar(s);
 
-            // center ke origin
             const box1   = new THREE.Box3().setFromObject(selaModel);
             const center1= box1.getCenter(new THREE.Vector3());
             selaModel.position.sub(center1);
 
             const box    = new THREE.Box3().setFromObject(selaModel);
-            const height = box.getSize(new THREE.Vector3()).y;
-            const headY  = box.max.y;
+            const size   = box.getSize(new THREE.Vector3());
+            const height = size.y;
             const bottomY= box.min.y;
+            const headY  = box.max.y;
 
             hideFallback();
             scene.add(selaModel);
 
-            // CLOSE-UP: target view dada–kepala
-            const chestY = bottomY + height * 0.55;
-            const faceY  = bottomY + height * 0.80; // dekat kepala
-
-            const visibleHeight = height * 0.40;    // lebih kecil → lebih zoom
+            // CLOSE UP WAJAH: fokus ke area mata, hanya wajah yang terlihat
+            const faceY         = bottomY + height * 0.82;  // kira-kira posisi mata
+            const visibleHeight = height * 0.25;            // makin kecil → makin zoom
             const fovRad        = camera.fov * Math.PI / 180;
             const dist          = (visibleHeight / 2) / Math.tan(fovRad / 2);
             const zPos          = dist * 1.02;
@@ -2502,34 +2513,34 @@ def render_sela_widget():
       if (morphMesh && morphMesh.morphTargetInfluences) {
         const infl = morphMesh.morphTargetInfluences;
 
-        // decay ke 0
+        // decay agak pelan supaya efek kuat
         for (let i = 0; i < infl.length; i++) {
-          infl[i] *= 0.8;
+          infl[i] *= 0.6;
         }
 
-        // MULUT bicara
+        // MULUT bicara – buka tutup lebar saat SELA ngomong
         if (talking && mouthTargets.length > 0) {
-          talkPhase += 0.22;
-          const v = 0.3 + 0.7 * Math.abs(Math.sin(talkPhase)); // 0.3–1.0
+          talkPhase += 0.25;
+          const v = 0.6 + 0.4 * Math.abs(Math.sin(talkPhase)); // 0.6–1.0
           mouthTargets.forEach(idx => {
             infl[idx] = Math.max(infl[idx], v);
           });
         }
 
-        // KEDIP mata
+        // KEDIP mata jelas tiap ~2 detik
         if (blinkTargetsL.length > 0 || blinkTargetsR.length > 0) {
-          blinkPhase += 0.02;
-          const t = blinkPhase % 2.7; // kedip kira2 tiap 2.7 detik
+          blinkPhase += 0.03;
+          const t = blinkPhase % 2.0;
           let b = 0;
-          if (t < 0.09)       b = t / 0.09;
-          else if (t < 0.18)  b = 1 - (t - 0.09) / 0.09;
-          else                b = 0;
+          if (t < 0.1)       b = t / 0.1;
+          else if (t < 0.2)  b = 1 - (t - 0.1) / 0.1;
+          else               b = 0;
 
           blinkTargetsL.forEach(idx => { infl[idx] = Math.max(infl[idx], b); });
           blinkTargetsR.forEach(idx => { infl[idx] = Math.max(infl[idx], b); });
         }
       } else {
-        // fallback bola+silinder
+        // Fallback bola+silinder
         if (talking) {
           talkPhase += 0.25;
           const scaleY = 0.8 + Math.abs(Math.sin(talkPhase)) * 0.5;
@@ -2544,7 +2555,7 @@ def render_sela_widget():
     }
     animate();
 
-    // ============= WEBLLM + MIC =============
+    // ============= WEBLLM + MIC (disingkat, fokus kecepatan) =============
     (async function initLLMAndMic() {
       let engine   = null;
       let messages = [
@@ -2557,7 +2568,7 @@ def render_sela_widget():
             'langsung ke inti, seperti asisten profesional.'
         }
       ];
-      const MAX_HISTORY = 4; // dikurangi supaya konteks pendek → sedikit lebih cepat
+      const MAX_HISTORY = 4;
 
       try {
         statusEl.textContent = 'Status: mengunduh & memuat model AI ke browser...';
@@ -2599,11 +2610,10 @@ def render_sela_widget():
         }
 
         let cur = '';
-        // di sini tidak setTalking(true), supaya mulut gerak hanya saat suara diputar
         const completion = await engine.chat.completions.create({
           stream: true,
           messages,
-          max_tokens: 40,  // lebih pendek
+          max_tokens: 40,
           temperature: 0.5,
           top_p: 0.9,
         });
@@ -2693,7 +2703,7 @@ def render_sela_widget():
 </body>
 </html>
         """,
-        height=600,
+        height=520,
         scrolling=False,
     )
 
