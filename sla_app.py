@@ -2124,8 +2124,7 @@ def render_sela_widget():
 
     .sela-3d-container {
       flex: 1.6;
-      /* background putih seperti permintaan */
-      background: #ffffff;
+      background: #ffffff; /* background putih */
       position: relative;
     }
     #sela-canvas {
@@ -2265,6 +2264,20 @@ def render_sela_widget():
     let panelOpen = false;
     let greeted   = false;
 
+    function pickIndonesianVoice() {
+      if (!('speechSynthesis' in window)) return null;
+      const voices = window.speechSynthesis.getVoices();
+      if (!voices || !voices.length) return null;
+      let best = null;
+      for (const v of voices) {
+        if (v.lang && v.lang.toLowerCase().startsWith('id')) {
+          best = v;
+          break;
+        }
+      }
+      return best;
+    }
+
     function speakGreeting() {
       if (!('speechSynthesis' in window)) return;
       const text = 'Haloooo, saya Sela. Ada yang bisa saya bantu?';
@@ -2272,8 +2285,8 @@ def render_sela_widget():
       utt.lang   = 'id-ID';
       const voice = pickIndonesianVoice();
       if (voice) utt.voice = voice;
-      utt.rate   = 0.95;  // sedikit lebih pelan & natural
-      utt.pitch  = 1.05;  // agak hangat
+      utt.rate   = 0.95;
+      utt.pitch  = 1.05;
       window.speechSynthesis.speak(utt);
     }
 
@@ -2291,10 +2304,10 @@ def render_sela_widget():
       panel.style.display = 'none';
     });
 
-    // ============== 2. THREE.JS AVATAR (close-up, tidak berputar) ==============
+    // ============== 2. THREE.JS AVATAR (center + tidak berputar) ==============
     const canvas   = document.getElementById('sela-canvas');
     const scene    = new THREE.Scene();
-    scene.background = new THREE.Color(0xffffff);   // background putih
+    scene.background = new THREE.Color(0xffffff);   // putih
 
     const camera = new THREE.PerspectiveCamera(
       40,
@@ -2323,7 +2336,7 @@ def render_sela_widget():
     dir.position.set(2, 4, 3);
     scene.add(dir);
 
-    // fallback avatar (kalau GLB gagal)
+    // Fallback avatar
     const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
     const headMat = new THREE.MeshStandardMaterial({
       color: 0xf9a8d4,
@@ -2381,46 +2394,49 @@ def render_sela_widget():
           try {
             selaModel = gltf.scene;
 
-            // 1) bounding box awal & scale
+            // 1) bounding box & scale ke tinggi target
             const originalBox  = new THREE.Box3().setFromObject(selaModel);
             const originalSize = originalBox.getSize(new THREE.Vector3());
             const originalHeight = originalSize.y || 1;
 
-            const targetHeight = 3.0; // sudah pas di percobaan terakhir
+            const targetHeight = 3.0;  // sama seperti sebelumnya
             const scaleFactor  = targetHeight / originalHeight;
             selaModel.scale.setScalar(scaleFactor);
 
-            // 2) hitung ulang box
+            // 2) hitung ulang box sesudah scale
             const box   = new THREE.Box3().setFromObject(selaModel);
             const size  = box.getSize(new THREE.Vector3());
             const center= box.getCenter(new THREE.Vector3());
             const height= size.y || 1;
 
-            // 3) center X/Z, pinggang di sekitar y=0
-            const waistY = box.min.y + height * 0.45;
+            // 3) center-kan model di (0,0,0) lalu sedikit naik
             selaModel.position.x -= center.x;
+            selaModel.position.y -= center.y;
             selaModel.position.z -= center.z;
-            selaModel.position.y -= waistY;
+
+            // dorong sedikit ke atas supaya wajah tidak kepotong bawah
+            selaModel.position.y += height * 0.08;
 
             hideFallback();
             scene.add(selaModel);
 
-            // 4) kamera close-up (bahu + kepala) — tidak diputar
-            const fovRad = camera.fov * Math.PI / 180;
-            const visibleHeight = height * 0.55;
-            const dist = (visibleHeight / 2) / Math.tan(fovRad / 2);
-            const zPos = dist * 1.05;
+            // 4) atur kamera: fokus ke wajah, tampilin bahu+kepala
+            const headY  = height / 2;                   // karena sudah di-center
+            const faceY  = headY - height * 0.25;        // kira-kira area wajah
+            const visibleHeight = height * 0.75;         // dari dada ke atas
 
-            const headY = (box.max.y - waistY);
-            const faceY = headY - height * 0.2;
+            const fovRad = camera.fov * Math.PI / 180;
+            const dist   = (visibleHeight / 2) / Math.tan(fovRad / 2);
+            const zPos   = dist * 1.05;
+
             camera.position.set(0, faceY, zPos);
             camera.lookAt(0, faceY, 0);
 
-            // 5) coba cari bone untuk animasi halus
+            // 5) coba cari bone untuk animasi (kalau ada)
             selaModel.traverse((obj) => {
               const name = (obj.name || "").toLowerCase();
               if (!headNode && (name.includes("head") || name.includes("neck"))) headNode = obj;
-              if (!jawNode && (name.includes("jaw") || name.includes("mouth"))) jawNode = obj;
+              if (!jawNode && (name.includes("jaw") || name.includes("mouth")))  jawNode  = obj;
               if (!eyeLNode && name.includes("eye") && name.includes("l")) eyeLNode = obj;
               if (!eyeRNode && name.includes("eye") && name.includes("r")) eyeRNode = obj;
             });
@@ -2450,7 +2466,7 @@ def render_sela_widget():
 
     loadSelaAvatar();
 
-    // ============== 3. Animasi natural (tanpa muter-muter) ==============
+    // ============== 3. Animasi sederhana (tidak muter) ==============
     let talking   = false;
     let talkPhase = 0;
     let blinkPhase= 0;
@@ -2463,28 +2479,21 @@ def render_sela_widget():
     function animate() {
       requestAnimationFrame(animate);
 
-      // kedip mata halus (kalau node mata ditemukan)
+      // Kedip (kalau node mata tersedia – di model ini kemungkinan belum ada)
       blinkPhase += 0.02;
-      const tb = blinkPhase % 1.2; // tiap ~1.2 detik
+      const tb = blinkPhase % 1.2;
       let eyeScaleY = 1.0;
-      if (tb < 0.08) {
-        eyeScaleY = 1.0 - tb / 0.08;
-      } else if (tb < 0.16) {
-        eyeScaleY = (tb - 0.08) / 0.08;
-      } else {
-        eyeScaleY = 1.0;
-      }
+      if (tb < 0.08) eyeScaleY = 1.0 - tb / 0.08;
+      else if (tb < 0.16) eyeScaleY = (tb - 0.08) / 0.08;
+      else eyeScaleY = 1.0;
       if (eyeLNode && eyeRNode) {
         eyeLNode.scale.y = eyeScaleY;
         eyeRNode.scale.y = eyeScaleY;
       }
 
       if (selaModel) {
-        // tidak ada rotasi terus-menerus → statis
         if (talking) {
           talkPhase += 0.18;
-
-          // kalau ada jawNode, gerakkan mulut; kalau tidak, goyangkan kepala sedikit
           const mouthOpen = 0.08 + Math.abs(Math.sin(talkPhase)) * 0.20;
           if (jawNode) {
             jawNode.rotation.x = -mouthOpen;
@@ -2494,8 +2503,7 @@ def render_sela_widget():
             selaModel.position.y = Math.sin(talkPhase) * 0.03;
           }
         } else {
-          // kembali ke posisi netral perlahan
-          if (jawNode) jawNode.rotation.x *= 0.8;
+          if (jawNode)  jawNode.rotation.x *= 0.8;
           if (headNode) headNode.rotation.x *= 0.8;
           selaModel.position.y *= 0.8;
         }
@@ -2515,11 +2523,9 @@ def render_sela_widget():
     }
     animate();
 
-    // ============== 4. WebLLM + MIC (lebih responsif) ==============
+    // ============== 4. WebLLM + MIC (dibatasi supaya lebih responsif) ==============
     (async function initLLMAndMic() {
       let engine   = null;
-
-      // batasi riwayat percakapan → model berpikir lebih cepat
       let messages = [
         {
           role: 'system',
@@ -2527,11 +2533,10 @@ def render_sela_widget():
             'Kamu adalah SELA, asisten virtual perempuan yang ramah, ' +
             'berbahasa Indonesia, fokus membantu soal keuangan, SLA pembayaran, ' +
             'karier, dan pertanyaan umum. Jawab sangat singkat (1–2 kalimat), jelas, ' +
-            'dan langsung ke inti, seperti asisten profesional.'
+            'langsung ke inti, seperti asisten profesional.'
         }
       ];
-
-      const MAX_HISTORY = 6; // hanya simpan 3 tanya-jawab terakhir
+      const MAX_HISTORY = 6;
 
       try {
         statusEl.textContent = 'Status: mengunduh & memuat model AI ke browser...';
@@ -2551,13 +2556,12 @@ def render_sela_widget():
            webllm.prebuiltAppConfig.model_list[0].model_id) ||
           'TinyLlama-1.1B-Chat-v0.4-q4f32_1-MLC-1k';
 
-        // suhu agak rendah → jawaban lebih fokus
         await engine.reload(modelId, { temperature: 0.5, top_p: 0.9 });
         statusEl.textContent = 'Status: SELA siap. Klik 🎤 lalu bicara.';
       } catch (e) {
         console.error('[SELA] Gagal memuat WebLLM:', e);
         statusEl.textContent =
-          'Gagal memuat model AI di browser. Untuk kecerdasan setara ChatGPT/Gemini, ' +
+          'Gagal memuat model AI di browser. Untuk kecerdasan setara ChatGPT/Gemini ' +
           'perlu backend server yang memanggil API AI di cloud.';
         return;
       }
@@ -2568,8 +2572,6 @@ def render_sela_widget():
         }
 
         messages.push({ role: 'user', content: userText });
-
-        // potong riwayat kalau terlalu panjang
         if (messages.length > 1 + MAX_HISTORY) {
           const systemMsg = messages[0];
           messages = [systemMsg, ...messages.slice(-MAX_HISTORY)];
@@ -2581,7 +2583,7 @@ def render_sela_widget():
         const completion = await engine.chat.completions.create({
           stream: true,
           messages,
-          max_tokens: 64,    // makin pendek → makin cepat
+          max_tokens: 64,
           temperature: 0.5,
           top_p: 0.9,
         });
@@ -2642,8 +2644,8 @@ def render_sela_widget():
             utt.lang = 'id-ID';
             const voice = pickIndonesianVoice();
             if (voice) utt.voice = voice;
-            utt.rate   = 0.96;   // sedikit pelan, lebih natural
-            utt.pitch  = 1.02;   // intonasi halus
+            utt.rate   = 0.96;
+            utt.pitch  = 1.02;
             utt.volume = 1.0;
 
             utt.onstart = () => setTalking(true);
@@ -2668,26 +2670,6 @@ def render_sela_widget():
         }
       });
     })();
-
-    // pilih voice Indonesia yang paling natural kalau tersedia
-    function pickIndonesianVoice() {
-      if (!('speechSynthesis' in window)) return null;
-      const voices = window.speechSynthesis.getVoices();
-      if (!voices || !voices.length) {
-        // kadang list voice belum siap; panggil sekali untuk memicu load
-        window.speechSynthesis.onvoiceschanged = () => {};
-        return null;
-      }
-      // cari voice dengan lang "id-ID"
-      let best = null;
-      for (const v of voices) {
-        if (v.lang && v.lang.toLowerCase().startsWith('id')) {
-          best = v;
-          break;
-        }
-      }
-      return best;
-    }
   </script>
 </body>
 </html>
