@@ -2251,6 +2251,15 @@ def render_sela_widget():
     import * as THREE from "https://esm.run/three@0.160.0";
     import { GLTFLoader } from "https://esm.run/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
+    // >>> GANTI URL AVATAR DI SINI <<<
+    // 1) Avatar Sela buatan sendiri:
+    // const AVATAR_URL = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/Sela.glb";
+    //
+    // 2) CONTOH avatar wanita (brunette.glb) dari proyek TalkingHead (Ready Player Me),
+    //    GRATIS untuk penggunaan NON-KOMERSIAL (lisensi CC BY-NC 4.0).
+    //    Cocok untuk eksperimen / demo internal.
+    const AVATAR_URL = "https://raw.githubusercontent.com/met4citizen/TalkingHead/main/avatars/brunette.glb";
+
     const launcher = document.getElementById('sela-launcher');
     const panel    = document.getElementById('sela-panel');
     const closer   = document.getElementById('sela-close');
@@ -2258,7 +2267,6 @@ def render_sela_widget():
     const talkBtn  = document.getElementById('sela-talk-btn');
     const led      = document.getElementById('sela-led');
 
-    // ============== 1. UI PANEL ==============
     statusEl.textContent = 'Status: inisialisasi SELA di browser...';
 
     let panelOpen = false;
@@ -2304,7 +2312,7 @@ def render_sela_widget():
       panel.style.display = 'none';
     });
 
-    // ============== 2. THREE.JS AVATAR (close-up, putih, tidak berputar) ==============
+    // =================  THREE.JS AVATAR  =================
     const canvas   = document.getElementById('sela-canvas');
     const scene    = new THREE.Scene();
     scene.background = new THREE.Color(0xffffff);   // putih
@@ -2336,7 +2344,7 @@ def render_sela_widget():
     dir.position.set(2, 4, 3);
     scene.add(dir);
 
-    // Fallback avatar (kalau GLB gagal)
+    // Fallback avatar kalau GLB gagal
     const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
     const headMat = new THREE.MeshStandardMaterial({
       color: 0xf9a8d4,
@@ -2385,12 +2393,11 @@ def render_sela_widget():
       mouth_fb.visible  = false;
     }
 
-    // >>> BAGIAN PENTING: atur posisi & zoom SELA supaya wajah besar & naik <<<
     function loadSelaAvatar() {
       statusEl.textContent = 'Status: mengunduh avatar 3D SELA...';
       const loader = new GLTFLoader();
       loader.load(
-        "https://raw.githubusercontent.com/firmanaditya90/SLA/main/Sela.glb",
+        AVATAR_URL,
         (gltf) => {
           try {
             selaModel = gltf.scene;
@@ -2400,34 +2407,33 @@ def render_sela_widget():
             const originalSize = originalBox.getSize(new THREE.Vector3());
             const originalHeight = originalSize.y || 1;
 
-            const targetHeight = 3.0;      // tinggi total avatar di dunia 3D
+            // sedikit lebih pendek agar tidak kepotong atas
+            const targetHeight = 2.8;
             const scaleFactor  = targetHeight / originalHeight;
             selaModel.scale.setScalar(scaleFactor);
 
-            // 2) hitung ulang box sesudah scale
+            // 2) box sesudah scale
             const box   = new THREE.Box3().setFromObject(selaModel);
             const size  = box.getSize(new THREE.Vector3());
             const center= box.getCenter(new THREE.Vector3());
             const height= size.y || 1;
 
-            // 3) center di (0,0,0), lalu geser sedikit ke ATAS
+            // 3) center ke (0,0,0)
             selaModel.position.x -= center.x;
             selaModel.position.y -= center.y;
             selaModel.position.z -= center.z;
 
-            // naikkan model (nilai 0.22 bisa di-tune naik/turun)
-            selaModel.position.y += height * 0.22;
+            // geser sedikit ke atas (supaya wajah agak tinggi, tapi tidak mentok)
+            selaModel.position.y += height * 0.10;
 
             hideFallback();
             scene.add(selaModel);
 
-            // 4) Kamera: fokus ke wajah, zoom cukup besar
-            const headY = height / 2;            // puncak kepala
-            const faceY = headY - height * 0.18; // titik fokus kira-kira di mata
+            // 4) Kamera: medium close-up
+            const headY = height / 2;
+            const faceY = headY - height * 0.25;
 
-            // hanya mau lihat area dada-ke-atas → lebih kecil → lebih zoom
-            const visibleHeight = height * 0.45;
-
+            const visibleHeight = height * 0.75;   // makin besar → kamera makin mundur
             const fovRad = camera.fov * Math.PI / 180;
             const dist   = (visibleHeight / 2) / Math.tan(fovRad / 2);
             const zPos   = dist * 1.02;
@@ -2435,7 +2441,7 @@ def render_sela_widget():
             camera.position.set(0, faceY, zPos);
             camera.lookAt(0, faceY, 0);
 
-            // 5) optional: cari bone untuk animasi kalau nanti modelnya di-update
+            // 5) cari bone kalau ada (untuk animasi lanjut)
             selaModel.traverse((obj) => {
               const name = (obj.name || "").toLowerCase();
               if (!headNode && (name.includes("head") || name.includes("neck"))) headNode = obj;
@@ -2444,7 +2450,7 @@ def render_sela_widget():
               if (!eyeRNode && name.includes("eye")   && name.includes("r"))      eyeRNode = obj;
             });
 
-            console.log("[SELA] Sela.glb loaded, size=", size, "bones:", {
+            console.log("[SELA] Avatar loaded, size=", size, "bones:", {
               headNode: headNode?.name,
               jawNode: jawNode?.name,
               eyeLNode: eyeLNode?.name,
@@ -2453,14 +2459,14 @@ def render_sela_widget():
 
             statusEl.textContent = 'Status: SELA siap. Klik 🎤 lalu bicara.';
           } catch (e) {
-            console.error("[SELA] Error memproses Sela.glb:", e);
+            console.error("[SELA] Error memproses avatar:", e);
             statusEl.textContent =
               'Status: avatar 3D SELA statis (mata/mulut butuh pengaturan khusus di file 3D).';
           }
         },
         undefined,
         (error) => {
-          console.error("[SELA] Gagal memuat Sela.glb:", error);
+          console.error("[SELA] Gagal memuat avatar:", error);
           statusEl.textContent =
             'Status: gagal memuat avatar 3D SELA, pakai avatar sederhana dulu.';
         }
@@ -2469,7 +2475,7 @@ def render_sela_widget():
 
     loadSelaAvatar();
 
-    // ============== 3. Animasi sederhana (tidak muter) ==============
+    // =================  ANIMASI SEDERHANA  =================
     let talking   = false;
     let talkPhase = 0;
     let blinkPhase= 0;
@@ -2482,7 +2488,7 @@ def render_sela_widget():
     function animate() {
       requestAnimationFrame(animate);
 
-      // Kedip (kalau ada node mata – di model sekarang kemungkinan belum)
+      // kedip kalau node mata tersedia (di beberapa avatar Ready Player Me)
       blinkPhase += 0.02;
       const tb = blinkPhase % 1.2;
       let eyeScaleY = 1.0;
@@ -2526,7 +2532,7 @@ def render_sela_widget():
     }
     animate();
 
-    // ============== 4. WebLLM + MIC (jawaban singkat & agak cepat) ==============
+    // =================  WEBLLM + MIC  =================
     (async function initLLMAndMic() {
       let engine   = null;
       let messages = [
