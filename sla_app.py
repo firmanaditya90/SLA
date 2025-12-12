@@ -2025,11 +2025,11 @@ with tab_pdf:
 # ==========================================================
 import streamlit.components.v1 as components
 import json
-import pandas as pd  # aman kalau sudah di-import, kalau belum ya pakai ini
+import pandas as pd  # abaikan kalau sudah di-import di atas
 
 def render_sela_widget(df_filtered, periode_col):
     """
-    df_filtered : DataFrame yang sedang aktif di tab (terfilter oleh user)
+    df_filtered : DataFrame yang sedang aktif di tab (sudah terfilter sesuai pilihan user)
     periode_col : nama kolom periode, misalnya "PERIODE"
     """
     rows = []
@@ -2050,7 +2050,7 @@ def render_sela_widget(df_filtered, periode_col):
             if "JENIS TRANSAKSI" in cols:
                 rec["jenis_transaksi"] = str(r["JENIS TRANSAKSI"])
 
-            # Kolom SLA (dalam detik / numeric)
+            # Kolom SLA (numeric dalam detik)
             for col in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]:
                 if col in cols:
                     val = r[col]
@@ -2328,7 +2328,7 @@ def render_sela_widget(df_filtered, periode_col):
     // ---------- Parse periode string -> {year, month} ----------
     function parsePeriodeInfo(str) {
       const lower = String(str || "").toLowerCase();
-      const yearMatch = lower.match(/20\d{2}/);
+      const yearMatch = lower.match(/20\\d{2}/);
       if (!yearMatch) return null;
       const year = parseInt(yearMatch[0]);
       let month = null;
@@ -2391,7 +2391,7 @@ def render_sela_widget(df_filtered, periode_col):
     // ---------- Range kumulatif (tahun / Jan–Nov) ----------
     function parseRangeFromText(text) {
       const lower = (text || "").toLowerCase();
-      const yearMatch = lower.match(/20\d{2}/);
+      const yearMatch = lower.match(/20\\d{2}/);
       const year = yearMatch ? parseInt(yearMatch[0]) : null;
 
       const mentionYearOnly =
@@ -2592,7 +2592,7 @@ def render_sela_widget(df_filtered, periode_col):
       return result;
     }
 
-    // ================== Jawaban rule-based berbasis data ==================
+    // ================== Jawaban rule-based berbasis data (versi analitis) ==================
     function answerWithData(userText) {
       if (!selaDataRows || !selaDataRows.length) return null;
       const t = (userText || "").toLowerCase();
@@ -2629,7 +2629,67 @@ def render_sela_widget(df_filtered, periode_col):
         t.indexOf("perbedaan") >= 0 ||
         t.indexOf("difference") >= 0;
 
-      // ---------- Perbandingan / selisih dua periode ----------
+      // ========= 1. PERBANDINGAN JUMLAH TRANSAKSI ANTAR TAHUN (misal: 2025 vs 2024) =========
+      const yearMatchesRaw = t.match(/20\\d{2}/g);
+      const uniqueYears = [];
+      if (yearMatchesRaw) {
+        yearMatchesRaw.forEach(function(yy) {
+          if (uniqueYears.indexOf(yy) === -1) uniqueYears.push(yy);
+        });
+      }
+      const compareYearIntent =
+        uniqueYears.length >= 2 &&
+        (isCompareIntent || isDifferenceIntent) &&
+        t.indexOf("transaksi") >= 0 &&
+        (t.indexOf("tahun") >= 0 || t.indexOf("th") >= 0);
+
+      if (compareYearIntent) {
+        const y1 = parseInt(uniqueYears[0]);
+        const y2 = parseInt(uniqueYears[1]);
+
+        const range1 = { type: "year", year: y1 };
+        const range2 = { type: "year", year: y2 };
+
+        const n1 = countTransaksi(null, vendor || null, jenis || null, range1);
+        const n2 = countTransaksi(null, vendor || null, jenis || null, range2);
+
+        if (n1 === 0 && n2 === 0) {
+          return "Maaf, saya tidak menemukan transaksi untuk tahun " + y1 + " maupun " + y2 + " pada data ini.";
+        }
+
+        var konteksY = "";
+        if (vendor) konteksY += " untuk vendor " + vendor;
+        if (jenis)  konteksY += " dengan jenis transaksi " + jenis;
+
+        const diff = n1 - n2;
+        const absDiff = Math.abs(diff);
+
+        var arah = "perubahan";
+        if (diff > 0) arah = "peningkatan";
+        else if (diff < 0) arah = "penurunan";
+
+        const base = n2 > 0 ? n2 : (n1 > 0 ? n1 : 0);
+        var pct = 0;
+        if (base > 0) {
+          pct = Math.round(absDiff / base * 100);
+        }
+
+        var kal1 = "Jumlah transaksi pada tahun " + y1 + konteksY +
+                   " sekitar " + n1 + " transaksi, sedangkan tahun " +
+                   y2 + " sekitar " + n2 + " transaksi.";
+
+        var kal2;
+        if (absDiff === 0) {
+          kal2 = "Artinya, volume transaksi pada kedua tahun tersebut relatif sama besar pada data yang sedang ditampilkan.";
+        } else {
+          kal2 = "Artinya terdapat " + arah + " sekitar " + absDiff +
+                 " transaksi (kurang lebih " + pct + "%) jika dibandingkan dengan tahun " + y2 + ".";
+        }
+
+        return kal1 + " " + kal2;
+      }
+
+      // ========= 2. PERBANDINGAN / SELISIH DUA PERIODE SPESIFIK =========
       if (periodesInText.length >= 2 && (isCompareIntent || isDifferenceIntent)) {
         const p1 = periodesInText[0];
         const p2 = periodesInText[1];
@@ -2639,7 +2699,7 @@ def render_sela_widget(df_filtered, periode_col):
           t.indexOf("banyak transaksi") >= 0 ||
           (t.indexOf("transaksi") >= 0 && (isCompareIntent || isDifferenceIntent));
 
-        // 1) Selisih / banding jumlah transaksi
+        // -- 2a. Selisih / banding jumlah transaksi antar 2 periode --
         if (isTransaksiCompare) {
           const n1 = countTransaksi(p1, vendor || null, jenis || null, null);
           const n2 = countTransaksi(p2, vendor || null, jenis || null, null);
@@ -2655,16 +2715,30 @@ def render_sela_widget(df_filtered, periode_col):
           if (isDifferenceIntent) {
             const diff = Math.abs(n1 - n2);
             var siapa = "";
-            if (n1 > n2) {
-              siapa = "periode " + p1 + " lebih banyak " + (n1 - n2) + " transaksi dibanding " + p2;
-            } else if (n2 > n1) {
-              siapa = "periode " + p2 + " lebih banyak " + (n2 - n1) + " transaksi dibanding " + p1;
-            } else {
-              siapa = "jumlah transaksinya sama besar";
+            var pctText = "";
+
+            if (diff > 0) {
+              const baseCount = Math.min(n1, n2);
+              if (baseCount > 0) {
+                const pct = Math.round(diff / baseCount * 100);
+                pctText = " (sekitar " + pct + "% lebih banyak dibanding periode dengan transaksi lebih sedikit)";
+              }
             }
-            return "Selisih jumlah transaksi" + konteks + " antara periode " + p1 +
-                   " (" + n1 + ") dan " + p2 + " (" + n2 + ") adalah sekitar " + diff +
-                   " transaksi; " + siapa + ".";
+
+            if (n1 > n2) {
+              siapa = "periode " + p1 + " lebih banyak " + (n1 - n2) +
+                      " transaksi dibanding " + p2 + pctText;
+            } else if (n2 > n1) {
+              siapa = "periode " + p2 + " lebih banyak " + (n2 - n1) +
+                      " transaksi dibanding " + p1 + pctText;
+            } else {
+              siapa = "jumlah transaksinya sama besar pada kedua periode";
+            }
+
+            return "Selisih jumlah transaksi" + konteks +
+                   " antara periode " + p1 + " (" + n1 + ") dan " + p2 +
+                   " (" + n2 + ") adalah sekitar " + diff + " transaksi; " +
+                   siapa + ".";
           } else {
             var isi;
             if (n1 > n2) {
@@ -2681,15 +2755,15 @@ def render_sela_widget(df_filtered, periode_col):
           }
         }
 
-        // 2) Selisih / banding SLA proses / total
+        // -- 2b. Selisih / banding SLA proses / total antar 2 periode --
         var chosen = { key: "total_waktu", label: "SLA Total Waktu" };
-        for (var i = 0; i < prosesMap.length; i++) {
-          var p = prosesMap[i];
-          var hit = false;
-          for (var j = 0; j < p.triggers.length; j++) {
-            if (t.indexOf(p.triggers[j]) >= 0) { hit = true; break; }
+        for (var iPM = 0; iPM < prosesMap.length; iPM++) {
+          var pm = prosesMap[iPM];
+          var hitPM = false;
+          for (var jjPM = 0; jjPM < pm.triggers.length; jjPM++) {
+            if (t.indexOf(pm.triggers[jjPM]) >= 0) { hitPM = true; break; }
           }
-          if (hit) { chosen = p; break; }
+          if (hitPM) { chosen = pm; break; }
         }
 
         const agg1 = aggregateSLA(chosen.key, p1, vendor || null, jenis || null, null);
@@ -2721,6 +2795,7 @@ def render_sela_widget(df_filtered, periode_col):
         if (isDifferenceIntent) {
           const diffSec  = Math.abs(agg1.avg - agg2.avg);
           const diffText = secondsToPretty(diffSec);
+
           var siapa2 = "";
           if (agg1.avg < agg2.avg) {
             siapa2 = "periode " + p1 + " lebih cepat dari " + p2;
@@ -2729,10 +2804,19 @@ def render_sela_widget(df_filtered, periode_col):
           } else {
             siapa2 = "keduanya hampir sama cepat";
           }
+
+          var pctText2 = "";
+          const slowerAvg = agg1.avg > agg2.avg ? agg1.avg : agg2.avg;
+          if (slowerAvg > 0) {
+            const pctSla = Math.round(diffSec / slowerAvg * 100);
+            pctText2 = " (sekitar " + pctSla +
+                       "% perbedaan dibanding periode dengan SLA lebih lama)";
+          }
+
           return "Selisih " + chosen.label + segVendorJenis +
                  " antara periode " + p1 + " (" + d1 + ") dan " +
                  p2 + " (" + d2 + ") sekitar " + diffText +
-                 "; " + siapa2 + ".";
+                 pctText2 + "; " + siapa2 + ".";
         } else {
           if (Math.abs(agg1.avg - agg2.avg) < 1e-6) {
             return chosen.label + segVendorJenis +
@@ -2743,13 +2827,16 @@ def render_sela_widget(df_filtered, periode_col):
           var faster = (agg1.avg < agg2.avg)
             ? (p1 + " lebih cepat dari " + p2)
             : (p2 + " lebih cepat dari " + p1);
+
           return chosen.label + segVendorJenis + " periode " + p1 +
                  " sekitar " + d1 + ", sedangkan periode " + p2 +
                  " sekitar " + d2 + "; sehingga " + faster + ".";
         }
       }
 
-      // ---------- Logika biasa: satu periode / range ----------
+      // ========= 3. LOGIKA BIASA: SATU PERIODE / RANGE KUMULATIF =========
+
+      // 3a. SLA proses (keuangan, fungsional, dst.)
       for (var k = 0; k < prosesMap.length; k++) {
         var pp = prosesMap[k];
         var trigHit = false;
@@ -2783,6 +2870,7 @@ def render_sela_widget(df_filtered, periode_col):
         }
       }
 
+      // 3b. Jumlah transaksi (bisa range / periode / vendor / jenis)
       if (t.indexOf("jumlah transaksi") >= 0 || t.indexOf("berapa transaksi") >= 0) {
         const n = countTransaksi(
           range ? null : (periodeSingle || null),
@@ -2793,12 +2881,14 @@ def render_sela_widget(df_filtered, periode_col):
         var desc = timeDesc;
         if (vendor) desc += " untuk vendor " + vendor;
         if (jenis)  desc += " dengan jenis transaksi " + jenis;
-        return "Jumlah transaksi pada " + desc + " sekitar " + n + " transaksi.";
+        return "Jumlah transaksi pada " + desc +
+               " sekitar " + n + " transaksi berdasarkan data yang sedang ditampilkan.";
       }
 
       const mTercepat = t.indexOf("tercepat") >= 0 || t.indexOf("paling cepat") >= 0;
       const mTerlama  = t.indexOf("terlama") >= 0 || t.indexOf("paling lama") >= 0 || t.indexOf("paling lambat") >= 0;
 
+      // 3c. Proses paling cepat / paling lama
       if (t.indexOf("proses") >= 0 && (mTercepat || mTerlama) && !vendor && !jenis) {
         const res = prosesTercepatAtauTerlama(
           range ? null : (periodeSingle || null),
@@ -2812,6 +2902,7 @@ def render_sela_widget(df_filtered, periode_col):
                " dengan rata-rata sekitar " + res.avgText + ".";
       }
 
+      // 3d. Vendor tertentu (SLA total)
       if (vendor && (t.indexOf("sla") >= 0 || t.indexOf("total waktu") >= 0)) {
         const aggV = aggregateSLA(
           "total_waktu",
@@ -2825,9 +2916,11 @@ def render_sela_widget(df_filtered, periode_col):
                  vendor + " pada " + timeDesc + ".";
         }
         return "Rata-rata SLA total waktu untuk vendor " + vendor +
-               " pada " + timeDesc + " sekitar " + aggV.text + ".";
+               " pada " + timeDesc + " sekitar " + aggV.text +
+               ". Nilai ini menggambarkan kinerja vendor tersebut pada periode tersebut.";
       }
 
+      // 3e. Jenis transaksi tertentu (SLA total)
       if (jenis && (t.indexOf("sla") >= 0 || t.indexOf("total waktu") >= 0)) {
         const aggJ = aggregateSLA(
           "total_waktu",
@@ -2841,9 +2934,11 @@ def render_sela_widget(df_filtered, periode_col):
                  jenis + " pada " + timeDesc + ".";
         }
         return "Rata-rata SLA total waktu untuk jenis transaksi " + jenis +
-               " pada " + timeDesc + " sekitar " + aggJ.text + ".";
+               " pada " + timeDesc + " sekitar " + aggJ.text +
+               ". Nilai ini bisa dipakai sebagai acuan kecepatan proses untuk jenis transaksi tersebut.";
       }
 
+      // 3f. Cabang GM CABANG paling lama
       if ((t.indexOf("cabang") >= 0 || t.indexOf("gm cabang") >= 0) &&
           (mTerlama || t.indexOf("paling lama") >= 0 || t.indexOf("paling lambat") >= 0)) {
 
@@ -2878,9 +2973,12 @@ def render_sela_widget(df_filtered, periode_col):
         }
         const txtDur = secondsToPretty(worstVal);
         return "Cabang dengan rata-rata SLA total waktu paling lama pada " +
-               timeDesc + " adalah " + worstName + ", sekitar " + txtDur + ".";
+               timeDesc + " adalah " + worstName +
+               ", sekitar " + txtDur +
+               ". Titik ini bisa menjadi prioritas perbaikan SLA.";
       }
 
+      // 3g. Vendor tercepat / terlama
       if (t.indexOf("vendor") >= 0 && (mTercepat || mTerlama) && !vendor) {
         const fastest = mTercepat;
         const infoV = extremaByGroup(
@@ -2895,9 +2993,12 @@ def render_sela_widget(df_filtered, periode_col):
         const kata2 = fastest ? "paling cepat" : "paling lama";
         return "Vendor dengan SLA total waktu " + kata2 +
                " pada " + timeDesc + " adalah " + infoV.vendor +
-               ", sekitar " + infoV.avgText + ".";
+               ", sekitar " + infoV.avgText +
+               ". Hal ini menunjukkan vendor tersebut relatif " + kata2 +
+               " dibanding vendor lain pada periode tersebut.";
       }
 
+      // 3h. Jenis transaksi tercepat / terlama
       if ((t.indexOf("jenis transaksi") >= 0 || t.indexOf("transaksi") >= 0) &&
           (mTercepat || mTerlama) && !jenis) {
         const fastestJ = mTercepat;
@@ -2913,24 +3014,29 @@ def render_sela_widget(df_filtered, periode_col):
         const kata3 = fastestJ ? "paling cepat" : "paling lama";
         return "Jenis transaksi dengan SLA total waktu " + kata3 +
                " pada " + timeDesc + " adalah " + infoJ.jenis +
-               ", sekitar " + infoJ.avgText + ".";
+               ", sekitar " + infoJ.avgText +
+               ". Ini bisa jadi insight jenis transaksi mana yang paling menekan SLA.";
       }
 
+      // 3i. Periode paling cepat / paling lama secara agregat
       if (t.indexOf("periode mana") >= 0) {
         if (mTerlama) {
           const infoL = periodeExtremaTotalWaktu(true);
           if (!infoL) return null;
           return "Periode dengan SLA total waktu paling lama adalah " +
-                 infoL.periode + ", sekitar " + infoL.avgText + ".";
+                 infoL.periode + ", sekitar " + infoL.avgText +
+                 ". Periode ini patut dipantau karena kinerjanya paling lambat.";
         }
         if (mTercepat) {
           const infoC = periodeExtremaTotalWaktu(false);
           if (!infoC) return null;
           return "Periode dengan SLA total waktu paling cepat adalah " +
-                 infoC.periode + ", sekitar " + infoC.avgText + ".";
+                 infoC.periode + ", sekitar " + infoC.avgText +
+                 ". Ini bisa dijadikan benchmark untuk periode lainnya.";
         }
       }
 
+      // Tidak ada pola khusus → serahkan ke LLM
       return null;
     }
 
@@ -3286,7 +3392,7 @@ def render_sela_widget(df_filtered, periode_col):
             "Fokus membantu soal keuangan, SLA pembayaran, vendor, cabang, dan pertanyaan umum. " +
             "Jika pengguna menanyakan angka SLA, periode, vendor, jenis transaksi, atau jumlah transaksi, " +
             "gunakan data yang sudah diberikan (jangan mengarang angka). " +
-            "Jawab sangat singkat (1–2 kalimat), jelas, dan langsung ke inti."
+            "Jawab singkat (1–2 kalimat), jelas, dan langsung ke inti, boleh menambahkan sedikit analisis tren."
         }
       ];
       const MAX_HISTORY = 4;
