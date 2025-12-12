@@ -22,6 +22,10 @@ from io import BytesIO   # << tambahkan ini
 import base64
 import streamlit.components.v1 as components
 
+if "show_sela" not in st.session_state:
+    st.session_state["show_sela"] = False
+
+
 from datetime import datetime
 
 KPI_FILE = os.path.join("data", "kpi_target.json")
@@ -597,12 +601,12 @@ st.sidebar.markdown(
 )
 
 # Tombol "Tanya SELA" di sidebar
-if "show_sela" not in st.session_state:
-    st.session_state["show_sela"] = False
+with st.sidebar:
+    st.markdown("### 🤖 Tanya SELA")
+    if st.button("💬 Buka / Tutup SELA"):
+        st.session_state["show_sela"] = not st.session_state["show_sela"]
+    st.caption("SELA 3D + AI hanya di-load saat Anda membukanya, supaya dashboard tetap ringan.")
 
-if st.sidebar.button("💬 Tanya SELA"):
-    # klik = toggle on/off
-    st.session_state["show_sela"] = not st.session_state["show_sela"]
 
 # ==============================
 # Parsing SLA setelah filter (TIDAK DIUBAH)
@@ -2021,28 +2025,33 @@ with tab_pdf:
         traceback.print_exc()
 
 # ==========================================================
-#  VIRTUAL ASSISTANT: "Tanya SELA" (3D + Voice + LLM di browser)
+#  VIRTUAL ASSISTANT: "Tanya SELA"
+#  - 3D avatar (Three.js + GLTFLoader)
+#  - WebLLM (MLC) dengan lazy-load (baru download saat tombol 🎤 ditekan)
+#  - Jawaban lebih dulu berbasis data df_filtered (SLA & transaksi)
 # ==========================================================
 import streamlit.components.v1 as components
 import json
-import pandas as pd  # abaikan kalau sudah di-import di atas
+import pandas as pd
 
-def render_sela_widget(df_filtered, periode_col):
+
+def render_sela_widget(df_filtered, periode_col: str):
     """
-    df_filtered : DataFrame yang sedang aktif di tab (sudah terfilter sesuai pilihan user)
+    df_filtered : DataFrame yang sedang aktif di tab (sudah difilter oleh user)
     periode_col : nama kolom periode, misalnya "PERIODE"
     """
     rows = []
-
-    if df_filtered is not None and not df_filtered.empty and periode_col in df_filtered.columns:
+    if (
+        df_filtered is not None
+        and isinstance(df_filtered, pd.DataFrame)
+        and not df_filtered.empty
+        and periode_col in df_filtered.columns
+    ):
         cols = df_filtered.columns
-
         for _, r in df_filtered.iterrows():
-            rec = {
-                "periode": str(r[periode_col])
-            }
+            rec = {"periode": str(r[periode_col])}
 
-            # Nama vendor / cabang
+            # Vendor / Cabang
             if "NAMA VENDOR" in cols:
                 rec["nama_vendor"] = str(r["NAMA VENDOR"])
 
@@ -2050,7 +2059,7 @@ def render_sela_widget(df_filtered, periode_col):
             if "JENIS TRANSAKSI" in cols:
                 rec["jenis_transaksi"] = str(r["JENIS TRANSAKSI"])
 
-            # Kolom SLA (numeric dalam detik)
+            # Kolom SLA (detik)
             for col in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]:
                 if col in cols:
                     val = r[col]
@@ -2071,52 +2080,19 @@ def render_sela_widget(df_filtered, periode_col):
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
-    .sela-floating-btn {
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      width: 60px;
-      height: 60px;
-      border-radius: 999px;
-      border: none;
-      background: radial-gradient(circle at 30% 30%, #ffe4ff, #7f5af0);
-      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
-      color: #fff;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 26px;
-      cursor: pointer;
-      z-index: 9999;
-    }
-    .sela-floating-btn span {
-      position: absolute;
-      top: -22px;
-      right: 70px;
-      background: rgba(17,24,39,0.92);
-      color: #fff;
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 11px;
-      white-space: nowrap;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-    }
-    .sela-panel {
-      position: fixed;
-      bottom: 70px;
-      right: 24px;
-      width: 360px;
-      max-width: 90vw;
-      height: 500px;
+    .sela-panel-root {
+      width: 100%;
+      max-width: 420px;
+      height: 480px;
+      margin: 0 auto;
       background: rgba(15,23,42,0.96);
       border-radius: 20px;
       box-shadow: 0 18px 40px rgba(0,0,0,0.65);
       border: 1px solid rgba(148,163,184,0.7);
       backdrop-filter: blur(16px);
-      display: none;
+      display: flex;
       flex-direction: column;
       overflow: hidden;
-      z-index: 9998;
       color: #e5e7eb;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
@@ -2152,11 +2128,6 @@ def render_sela_widget(df_filtered, periode_col):
     .sela-subtitle {
       font-size: 11px;
       opacity: 0.75;
-    }
-    .sela-close {
-      cursor: pointer;
-      font-size: 18px;
-      opacity: 0.8;
     }
 
     .sela-3d-container {
@@ -2239,47 +2210,47 @@ def render_sela_widget(df_filtered, periode_col):
   </style>
 </head>
 <body>
-  <div id="sela-root">
-    <button id="sela-launcher" class="sela-floating-btn" title="Tanya SELA">
-      💬
-      <span>Tanya SELA</span>
-    </button>
-
-    <div id="sela-panel" class="sela-panel">
-      <div class="sela-panel-header">
-        <div class="sela-panel-header-left">
-          <div class="sela-avatar-circle">S</div>
-          <div>
-            <div class="sela-title">SELA • Virtual Assistant</div>
-            <div class="sela-subtitle">“Haloooo, Saya Sela. Ada yang bisa saya bantu?”</div>
+  <div class="sela-panel-root">
+    <div class="sela-panel-header">
+      <div class="sela-panel-header-left">
+        <div class="sela-avatar-circle">S</div>
+        <div>
+          <div class="sela-title">SELA • Virtual Assistant</div>
+          <div class="sela-subtitle">
+            “Saya bantu bacakan data SLA & transaksi, sekaligus jawab pertanyaan umum.”
           </div>
         </div>
-        <div id="sela-close" class="sela-close">&times;</div>
       </div>
+    </div>
 
-      <div class="sela-3d-container">
-        <canvas id="sela-canvas"></canvas>
+    <div class="sela-3d-container">
+      <canvas id="sela-canvas"></canvas>
+    </div>
+
+    <div id="sela-status" class="sela-status">
+      Status: menyiapkan SELA (3D + AI) dalam mode hemat sumber daya...
+    </div>
+
+    <div class="sela-bottom">
+      <div class="sela-tip">
+        Contoh pertanyaan:
+        <ul style="margin:4px 0 0 14px;padding:0;font-size:11px;">
+          <li>“Berapa jumlah transaksi tahun 2025?”</li>
+          <li>“Bandingkan transaksi 2025 dengan 2024.”</li>
+          <li>“Berapa SLA total periode Juni 2024?”</li>
+          <li>“Berapa transaksi dari Januari 2025 sampai November 2025?”</li>
+        </ul>
       </div>
-
-      <div id="sela-status" class="sela-status">
-        Status: menyiapkan otak SELA (model AI) di browser...
+      <div class="sela-controls">
+        <button id="sela-talk-btn" class="sela-talk-btn">
+          🎤 Bicara dengan SELA
+        </button>
+        <div>
+          <div id="sela-led" class="sela-mini-led off"></div>
+        </div>
       </div>
-
-      <div class="sela-bottom">
-        <div class="sela-tip">
-          Klik tombol <b>🎤 Bicara</b>, sampaikan pertanyaan Anda, lalu tunggu SELA menjawab dengan suara.
-        </div>
-        <div class="sela-controls">
-          <button id="sela-talk-btn" class="sela-talk-btn">
-            🎤 Bicara dengan SELA
-          </button>
-          <div>
-            <div id="sela-led" class="sela-mini-led off"></div>
-          </div>
-        </div>
-        <div class="sela-note">
-          *Semua proses AI dijalankan di browser Anda (tanpa server & tanpa biaya).
-        </div>
+      <div class="sela-note">
+        *Model AI baru diunduh saat tombol 🎤 pertama kali ditekan, supaya dashboard tetap ringan.
       </div>
     </div>
   </div>
@@ -2288,10 +2259,15 @@ def render_sela_widget(df_filtered, periode_col):
     import * as THREE from "https://esm.run/three@0.160.0";
     import { GLTFLoader } from "https://esm.run/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
-    // ================= DATA SLA DARI STREAMLIT =================
+    // ========= DATA DARI STREAMLIT =========
     const selaDataRows = ___SELA_DATA___;
 
-    // ---------- Helper detik -> teks ----------
+    const statusEl = document.getElementById("sela-status");
+    const talkBtn  = document.getElementById("sela-talk-btn");
+    const led      = document.getElementById("sela-led");
+    window._sela_processing = false;
+
+    // ========= HELPER WAKTU & PERIODE =========
     function secondsToPretty(sec) {
       if (sec == null || isNaN(sec)) return "0 hari 0 jam 0 menit";
       const s = Math.max(0, Number(sec));
@@ -2301,7 +2277,6 @@ def render_sela_widget(df_filtered, periode_col):
       return d + " hari " + h + " jam " + m + " menit";
     }
 
-    // ---------- Bulan Indonesia ----------
     const MONTH_DEFS = [
       { num: 1,  labels: ["januari","jan"] },
       { num: 2,  labels: ["februari","feb"] },
@@ -2325,16 +2300,15 @@ def render_sela_widget(df_filtered, periode_col):
       return MONTH_LABEL_ID[n - 1];
     }
 
-    // ---------- Parse periode string -> {year, month} ----------
     function parsePeriodeInfo(str) {
       const lower = String(str || "").toLowerCase();
       const yearMatch = lower.match(/20\\d{2}/);
       if (!yearMatch) return null;
-      const year = parseInt(yearMatch[0]);
+      const year = parseInt(yearMatch[0], 10);
       let month = null;
-      for (var i = 0; i < MONTH_DEFS.length; i++) {
+      for (let i = 0; i < MONTH_DEFS.length; i++) {
         const m = MONTH_DEFS[i];
-        for (var j = 0; j < m.labels.length; j++) {
+        for (let j = 0; j < m.labels.length; j++) {
           const label = m.labels[j];
           if (lower.indexOf(label) >= 0) {
             month = m.num;
@@ -2343,93 +2317,37 @@ def render_sela_widget(df_filtered, periode_col):
         }
         if (month) break;
       }
-      return { year: year, month: month };
+      return { year, month };
     }
 
-    // ---------- Cari satu periode dari teks ----------
-    function findPeriodeInData(userText) {
-      if (!selaDataRows || !selaDataRows.length) return null;
-      const txt = (userText || "").toLowerCase();
-      const uniques = [];
-      for (var i = 0; i < selaDataRows.length; i++) {
-        const p = String(selaDataRows[i].periode);
-        if (uniques.indexOf(p) === -1) uniques.push(p);
-      }
-      var found = null;
-      uniques.forEach(function(p) {
-        if (!p) return;
-        const pl = p.toLowerCase();
-        if (txt.indexOf(pl) >= 0) found = p;
-      });
-      return found;
-    }
-
-    // ---------- Cari banyak periode untuk perbandingan ----------
-    function findAllPeriodesInText(userText) {
-      if (!selaDataRows || !selaDataRows.length) return [];
-      const txt = (userText || "").toLowerCase();
-      const uniques = [];
-      for (var i = 0; i < selaDataRows.length; i++) {
-        const p = String(selaDataRows[i].periode);
-        if (uniques.indexOf(p) === -1) uniques.push(p);
-      }
-      const seen = {};
-      const matches = [];
-      uniques.forEach(function(p) {
-        if (!p) return;
-        const label = p.toLowerCase();
-        const idx = txt.indexOf(label);
-        if (idx >= 0 && !seen[label]) {
-          seen[label] = true;
-          matches.push({ periode: p, idx: idx });
-        }
-      });
-      matches.sort(function(a,b){ return a.idx - b.idx; });
-      return matches.map(function(m){ return m.periode; });
-    }
-
-    // ---------- Range kumulatif (tahun / Jan–Nov) ----------
     function parseRangeFromText(text) {
       const lower = (text || "").toLowerCase();
       const yearMatch = lower.match(/20\\d{2}/);
-      const year = yearMatch ? parseInt(yearMatch[0]) : null;
+      const year = yearMatch ? parseInt(yearMatch[0], 10) : null;
 
       const mentionYearOnly =
-        year && (lower.indexOf("tahun") >= 0 || lower.indexOf("selama") >= 0 || lower.indexOf("sepanjang") >= 0);
+        year && (lower.includes("tahun") || lower.includes("selama") || lower.includes("sepanjang"));
 
       const monthHits = [];
-      MONTH_DEFS.forEach(function(m) {
-        var bestPos = null;
-        m.labels.forEach(function(label) {
+      MONTH_DEFS.forEach((m) => {
+        let bestPos = null;
+        m.labels.forEach((label) => {
           const pos = lower.indexOf(label);
-          if (pos >= 0 && (bestPos === null || pos < bestPos)) {
-            bestPos = pos;
-          }
+          if (pos >= 0 && (bestPos === null || pos < bestPos)) bestPos = pos;
         });
-        if (bestPos !== null) {
-          monthHits.push({ month: m.num, pos: bestPos });
-        }
+        if (bestPos !== null) monthHits.push({ month: m.num, pos: bestPos });
       });
-      monthHits.sort(function(a,b){ return a.pos - b.pos; });
+      monthHits.sort((a,b) => a.pos - b.pos);
 
       if (year && monthHits.length >= 2) {
         const startM = monthHits[0].month;
         const endM   = monthHits[monthHits.length - 1].month;
         if (startM <= endM) {
-          return {
-            type: "month-range",
-            year: year,
-            startMonth: startM,
-            endMonth: endM
-          };
+          return { type: "month-range", year, startMonth: startM, endMonth: endM };
         }
       }
-
       if (mentionYearOnly && year) {
-        return {
-          type: "year",
-          year: year
-        };
+        return { type: "year", year };
       }
       return null;
     }
@@ -2446,40 +2364,6 @@ def render_sela_widget(df_filtered, periode_col):
       return null;
     }
 
-    // ---------- Deteksi vendor / jenis transaksi ----------
-    function findVendorInText(userText) {
-      if (!selaDataRows || !selaDataRows.length) return null;
-      const txt = (userText || "").toLowerCase();
-      const vendors = [];
-      selaDataRows.forEach(function(r) {
-        const v = r.nama_vendor ? String(r.nama_vendor) : "";
-        if (v && vendors.indexOf(v) === -1) vendors.push(v);
-      });
-      var found = null;
-      vendors.forEach(function(v) {
-        const lv = v.toLowerCase();
-        if (lv && txt.indexOf(lv) >= 0) found = v;
-      });
-      return found;
-    }
-
-    function findJenisTransaksiInText(userText) {
-      if (!selaDataRows || !selaDataRows.length) return null;
-      const txt = (userText || "").toLowerCase();
-      const jenisList = [];
-      selaDataRows.forEach(function(r) {
-        const v = r.jenis_transaksi ? String(r.jenis_transaksi) : "";
-        if (v && jenisList.indexOf(v) === -1) jenisList.push(v);
-      });
-      var found = null;
-      jenisList.forEach(function(v) {
-        const lv = v.toLowerCase();
-        if (lv && txt.indexOf(lv) >= 0) found = v;
-      });
-      return found;
-    }
-
-    // ---------- Cek apakah periode row masuk ke range ----------
     function rowInRange(periodeStr, range) {
       if (!range) return true;
       const info = parsePeriodeInfo(periodeStr);
@@ -2495,25 +2379,79 @@ def render_sela_widget(df_filtered, periode_col):
       return true;
     }
 
-    // ---------- Aggregator numerik ----------
-    function aggregateSLA(colKey, periode, vendor, jenis, range) {
+    function findPeriodeInData(userText) {
       if (!selaDataRows || !selaDataRows.length) return null;
-      const rows = selaDataRows.filter(function(r) {
-        if (range && !rowInRange(r.periode, range)) return false;
-        if (!range && periode && String(r.periode) !== String(periode)) return false;
-        if (vendor && String(r.nama_vendor || "").toLowerCase() !== vendor.toLowerCase()) return false;
-        if (jenis && String(r.jenis_transaksi || "").toLowerCase() !== jenis.toLowerCase()) return false;
-        return typeof r[colKey] === "number";
+      const txt = (userText || "").toLowerCase();
+      const uniques = [];
+      selaDataRows.forEach((r) => {
+        const p = String(r.periode || "");
+        if (p && !uniques.includes(p)) uniques.push(p);
       });
-      if (!rows.length) return null;
-      const sum = rows.reduce(function(a,b){ return a + b[colKey]; }, 0);
-      const avg = sum / rows.length;
-      return { avg: avg, text: secondsToPretty(avg), count: rows.length };
+      let found = null;
+      uniques.forEach((p) => {
+        const pl = p.toLowerCase();
+        if (pl && txt.indexOf(pl) >= 0) found = p;
+      });
+      return found;
+    }
+
+    function findAllPeriodesInText(userText) {
+      if (!selaDataRows || !selaDataRows.length) return [];
+      const txt = (userText || "").toLowerCase();
+      const uniques = [];
+      selaDataRows.forEach((r) => {
+        const p = String(r.periode || "");
+        if (p && !uniques.includes(p)) uniques.push(p);
+      });
+      const matches = [];
+      const seen = {};
+      uniques.forEach((p) => {
+        const label = p.toLowerCase();
+        const pos = txt.indexOf(label);
+        if (pos >= 0 && !seen[label]) {
+          seen[label] = true;
+          matches.push({ periode: p, pos });
+        }
+      });
+      matches.sort((a,b) => a.pos - b.pos);
+      return matches.map((m) => m.periode);
+    }
+
+    function findVendorInText(userText) {
+      if (!selaDataRows || !selaDataRows.length) return null;
+      const txt = (userText || "").toLowerCase();
+      const vendors = [];
+      selaDataRows.forEach((r) => {
+        const v = r.nama_vendor ? String(r.nama_vendor) : "";
+        if (v && !vendors.includes(v)) vendors.push(v);
+      });
+      let found = null;
+      vendors.forEach((v) => {
+        const lv = v.toLowerCase();
+        if (lv && txt.indexOf(lv) >= 0) found = v;
+      });
+      return found;
+    }
+
+    function findJenisTransaksiInText(userText) {
+      if (!selaDataRows || !selaDataRows.length) return null;
+      const txt = (userText || "").toLowerCase();
+      const jenisList = [];
+      selaDataRows.forEach((r) => {
+        const v = r.jenis_transaksi ? String(r.jenis_transaksi) : "";
+        if (v && !jenisList.includes(v)) jenisList.push(v);
+      });
+      let found = null;
+      jenisList.forEach((v) => {
+        const lv = v.toLowerCase();
+        if (lv && txt.indexOf(lv) >= 0) found = v;
+      });
+      return found;
     }
 
     function countTransaksi(periode, vendor, jenis, range) {
       if (!selaDataRows || !selaDataRows.length) return 0;
-      return selaDataRows.filter(function(r) {
+      return selaDataRows.filter((r) => {
         if (range && !rowInRange(r.periode, range)) return false;
         if (!range && periode && String(r.periode) !== String(periode)) return false;
         if (vendor && String(r.nama_vendor || "").toLowerCase() !== vendor.toLowerCase()) return false;
@@ -2522,130 +2460,65 @@ def render_sela_widget(df_filtered, periode_col):
       }).length;
     }
 
-    function prosesTercepatAtauTerlama(periode, fastest, range) {
-      const prosesKeys = [
-        { key: "fungsional", label: "Fungsional" },
-        { key: "vendor", label: "Vendor" },
-        { key: "keuangan", label: "Keuangan" },
-        { key: "perbendaharaan", label: "Perbendaharaan" }
-      ];
-      const hasil = [];
-      prosesKeys.forEach(function(p) {
-        const agg = aggregateSLA(p.key, periode, null, null, range);
-        if (agg) hasil.push({ label: p.label, avg: agg.avg });
-      });
-      if (!hasil.length) return null;
-      hasil.sort(function(a,b){ return fastest ? a.avg - b.avg : b.avg - a.avg; });
-      return {
-        proses: hasil[0].label,
-        avgText: secondsToPretty(hasil[0].avg)
-      };
-    }
-
-    function periodeExtremaTotalWaktu(palingLama) {
+    function aggregateSLA(colKey, periode, vendor, jenis, range) {
       if (!selaDataRows || !selaDataRows.length) return null;
-      const map = {};
-      selaDataRows.forEach(function(r) {
-        if (typeof r.total_waktu !== "number") return;
-        const p = String(r.periode);
-        if (!map[p]) map[p] = [];
-        map[p].push(r.total_waktu);
+      const rows = selaDataRows.filter((r) => {
+        if (range && !rowInRange(r.periode, range)) return false;
+        if (!range && periode && String(r.periode) !== String(periode)) return false;
+        if (vendor && String(r.nama_vendor || "").toLowerCase() !== vendor.toLowerCase()) return false;
+        if (jenis && String(r.jenis_transaksi || "").toLowerCase() !== jenis.toLowerCase()) return false;
+        return typeof r[colKey] === "number";
       });
-      const arr = [];
-      for (var p in map) {
-        const vals = map[p];
-        const avg = vals.reduce(function(a,b){ return a + b; }, 0) / vals.length;
-        arr.push({ periode: p, avg: avg });
-      }
-      if (!arr.length) return null;
-      arr.sort(function(a,b){ return palingLama ? b.avg - a.avg : a.avg - b.avg; });
-      return {
-        periode: arr[0].periode,
-        avgText: secondsToPretty(arr[0].avg)
-      };
+      if (!rows.length) return null;
+      const sum = rows.reduce((a,b) => a + b[colKey], 0);
+      const avg = sum / rows.length;
+      return { avg, text: secondsToPretty(avg), count: rows.length };
     }
 
-    function extremaByGroup(groupKey, labelName, colKey, fastest, periode, range) {
-      if (!selaDataRows || !selaDataRows.length) return null;
-      const groups = {};
-      selaDataRows.forEach(function(r) {
-        if (range && !rowInRange(r.periode, range)) return;
-        if (!range && periode && String(r.periode) !== String(periode)) return;
-        const label = String(r[groupKey] || "");
-        if (!label) return;
-        const val = r[colKey];
-        if (typeof val !== "number") return;
-        if (!groups[label]) groups[label] = [];
-        groups[label].push(val);
-      });
-      const arr = [];
-      for (var label in groups) {
-        const vals = groups[label];
-        const avg = vals.reduce(function(a,b){ return a + b; }, 0) / vals.length;
-        arr.push({ label: label, avg: avg });
-      }
-      if (!arr.length) return null;
-      arr.sort(function(a,b){ return fastest ? a.avg - b.avg : b.avg - a.avg; });
-      var result = {};
-      result[labelName] = arr[0].label;
-      result.avgText = secondsToPretty(arr[0].avg);
-      return result;
-    }
-
-    // ================== Jawaban rule-based berbasis data (versi analitis) ==================
+    // ========= JAWABAN DATA-FIRST (ANALITIS) =========
     function answerWithData(userText) {
       if (!selaDataRows || !selaDataRows.length) return null;
+
       const t = (userText || "").toLowerCase();
-
       const periodeSingle = findPeriodeInData(userText);
-      const range   = parseRangeFromText(userText);
-      const vendor  = findVendorInText(userText);
-      const jenis   = findJenisTransaksiInText(userText);
-      const periodesInText = findAllPeriodesInText(userText);
+      const range         = parseRangeFromText(userText);
+      const vendor        = findVendorInText(userText);
+      const jenis         = findJenisTransaksiInText(userText);
+      const periodesText  = findAllPeriodesInText(userText);
 
-      const timeDesc = range ? describeRange(range)
-                             : (periodeSingle ? "periode " + periodeSingle : "periode yang sedang ditampilkan");
-
-      const prosesMap = [
-        { triggers: ["sla keuangan","keuangan"], key: "keuangan", label: "SLA Keuangan" },
-        { triggers: ["sla fungsional","fungsional"], key: "fungsional", label: "SLA Fungsional" },
-        { triggers: ["sla vendor"], key: "vendor", label: "SLA Vendor" },
-        { triggers: ["sla perbendaharaan","perbendaharaan"], key: "perbendaharaan", label: "SLA Perbendaharaan" },
-        { triggers: ["sla total","total sla","total waktu","sla keseluruhan"], key: "total_waktu", label: "SLA Total Waktu" }
-      ];
+      const timeDesc = range
+        ? describeRange(range)
+        : (periodeSingle ? "periode " + periodeSingle : "periode yang sedang ditampilkan");
 
       const isCompareIntent =
-        t.indexOf("banding") >= 0 ||
-        t.indexOf("dibanding") >= 0 ||
-        t.indexOf("versus") >= 0 ||
-        t.indexOf(" vs ") >= 0 ||
-        t.indexOf("lebih cepat") >= 0 ||
-        t.indexOf("lebih lama") >= 0 ||
-        t.indexOf("lebih lambat") >= 0;
+        t.includes("banding") ||
+        t.includes("dibanding") ||
+        t.includes("versus") ||
+        t.includes(" vs ");
 
       const isDifferenceIntent =
-        t.indexOf("selisih") >= 0 ||
-        t.indexOf("beda") >= 0 ||
-        t.indexOf("perbedaan") >= 0 ||
-        t.indexOf("difference") >= 0;
+        t.includes("selisih") ||
+        t.includes("beda") ||
+        t.includes("perbedaan");
 
-      // ========= 1. PERBANDINGAN JUMLAH TRANSAKSI ANTAR TAHUN (misal: 2025 vs 2024) =========
+      // ---- deteksi 2 tahun untuk bandingkan transaksi ----
       const yearMatchesRaw = t.match(/20\\d{2}/g);
       const uniqueYears = [];
       if (yearMatchesRaw) {
-        yearMatchesRaw.forEach(function(yy) {
-          if (uniqueYears.indexOf(yy) === -1) uniqueYears.push(yy);
+        yearMatchesRaw.forEach((yy) => {
+          if (!uniqueYears.includes(yy)) uniqueYears.push(yy);
         });
       }
+
       const compareYearIntent =
         uniqueYears.length >= 2 &&
-        (isCompareIntent || isDifferenceIntent) &&
-        t.indexOf("transaksi") >= 0 &&
-        (t.indexOf("tahun") >= 0 || t.indexOf("th") >= 0);
+        (isCompareIntent || isDifferenceIntent || t.includes("bandingkan")) &&
+        t.includes("transaksi") &&
+        (t.includes("tahun") || t.includes("th"));
 
       if (compareYearIntent) {
-        const y1 = parseInt(uniqueYears[0]);
-        const y2 = parseInt(uniqueYears[1]);
+        const y1 = parseInt(uniqueYears[0], 10);
+        const y2 = parseInt(uniqueYears[1], 10);
 
         const range1 = { type: "year", year: y1 };
         const range2 = { type: "year", year: y2 };
@@ -2654,99 +2527,101 @@ def render_sela_widget(df_filtered, periode_col):
         const n2 = countTransaksi(null, vendor || null, jenis || null, range2);
 
         if (n1 === 0 && n2 === 0) {
-          return "Maaf, saya tidak menemukan transaksi untuk tahun " + y1 + " maupun " + y2 + " pada data ini.";
+          return "Maaf, saya tidak menemukan transaksi untuk tahun " + y1 +
+                 " maupun " + y2 + " pada data yang sedang ditampilkan.";
         }
 
-        var konteksY = "";
+        let konteksY = "";
         if (vendor) konteksY += " untuk vendor " + vendor;
         if (jenis)  konteksY += " dengan jenis transaksi " + jenis;
 
-        const diff = n1 - n2;
+        const diff    = n1 - n2;
         const absDiff = Math.abs(diff);
 
-        var arah = "perubahan";
+        let arah = "perubahan";
         if (diff > 0) arah = "peningkatan";
         else if (diff < 0) arah = "penurunan";
 
-        const base = n2 > 0 ? n2 : (n1 > 0 ? n1 : 0);
-        var pct = 0;
-        if (base > 0) {
-          pct = Math.round(absDiff / base * 100);
+        const base = Math.min(n1, n2);
+        let pct = 0;
+        if (base > 0 && absDiff > 0) {
+          pct = Math.round((absDiff / base) * 100);
         }
 
-        var kal1 = "Jumlah transaksi pada tahun " + y1 + konteksY +
-                   " sekitar " + n1 + " transaksi, sedangkan tahun " +
-                   y2 + " sekitar " + n2 + " transaksi.";
+        const kal1 =
+          "Jumlah transaksi tahun " + y1 + konteksY +
+          " sekitar " + n1 + " transaksi, sedangkan tahun " +
+          y2 + " sekitar " + n2 + " transaksi.";
 
-        var kal2;
+        let kal2 = "";
         if (absDiff === 0) {
-          kal2 = "Artinya, volume transaksi pada kedua tahun tersebut relatif sama besar pada data yang sedang ditampilkan.";
+          kal2 = " Artinya, volume transaksi di kedua tahun tersebut relatif sama besar dalam data ini.";
         } else {
-          kal2 = "Artinya terdapat " + arah + " sekitar " + absDiff +
-                 " transaksi (kurang lebih " + pct + "%) jika dibandingkan dengan tahun " + y2 + ".";
+          kal2 = " Artinya terdapat " + arah + " sekitar " + absDiff +
+                 " transaksi (sekitar " + pct +
+                 "%) jika dibandingkan tahun dengan volume transaksi yang lebih kecil.";
         }
 
-        return kal1 + " " + kal2;
+        return kal1 + kal2;
       }
 
-      // ========= 2. PERBANDINGAN / SELISIH DUA PERIODE SPESIFIK =========
-      if (periodesInText.length >= 2 && (isCompareIntent || isDifferenceIntent)) {
-        const p1 = periodesInText[0];
-        const p2 = periodesInText[1];
+      // ---- bandingkan jumlah transaksi dua periode ----
+      if (periodesText.length >= 2 && (isCompareIntent || isDifferenceIntent)) {
+        const p1 = periodesText[0];
+        const p2 = periodesText[1];
 
         const isTransaksiCompare =
-          t.indexOf("jumlah transaksi") >= 0 ||
-          t.indexOf("banyak transaksi") >= 0 ||
-          (t.indexOf("transaksi") >= 0 && (isCompareIntent || isDifferenceIntent));
+          t.includes("jumlah transaksi") ||
+          t.includes("banyak transaksi") ||
+          (t.includes("transaksi") && (isCompareIntent || isDifferenceIntent));
 
-        // -- 2a. Selisih / banding jumlah transaksi antar 2 periode --
         if (isTransaksiCompare) {
           const n1 = countTransaksi(p1, vendor || null, jenis || null, null);
           const n2 = countTransaksi(p2, vendor || null, jenis || null, null);
 
           if (n1 === 0 && n2 === 0) {
-            return "Maaf, saya tidak menemukan transaksi untuk periode " + p1 + " maupun " + p2 + ".";
+            return "Maaf, saya tidak menemukan transaksi untuk periode " + p1 +
+                   " maupun " + p2 + " pada data ini.";
           }
 
-          var konteks = "";
+          let konteks = "";
           if (vendor) konteks += " untuk vendor " + vendor;
           if (jenis)  konteks += " dengan jenis transaksi " + jenis;
 
           if (isDifferenceIntent) {
-            const diff = Math.abs(n1 - n2);
-            var siapa = "";
-            var pctText = "";
-
-            if (diff > 0) {
-              const baseCount = Math.min(n1, n2);
-              if (baseCount > 0) {
-                const pct = Math.round(diff / baseCount * 100);
-                pctText = " (sekitar " + pct + "% lebih banyak dibanding periode dengan transaksi lebih sedikit)";
-              }
+            const diff    = Math.abs(n1 - n2);
+            const base    = Math.min(n1, n2);
+            let pctText   = "";
+            if (base > 0 && diff > 0) {
+              const pct = Math.round((diff / base) * 100);
+              pctText   = " (sekitar " + pct +
+                          "% dibanding periode dengan transaksi lebih sedikit)";
             }
 
+            let siapa;
             if (n1 > n2) {
-              siapa = "periode " + p1 + " lebih banyak " + (n1 - n2) +
-                      " transaksi dibanding " + p2 + pctText;
+              siapa = "periode " + p1 + " memiliki sekitar " + (n1 - n2) +
+                      " transaksi lebih banyak daripada " + p2 + pctText;
             } else if (n2 > n1) {
-              siapa = "periode " + p2 + " lebih banyak " + (n2 - n1) +
-                      " transaksi dibanding " + p1 + pctText;
+              siapa = "periode " + p2 + " memiliki sekitar " + (n2 - n1) +
+                      " transaksi lebih banyak daripada " + p1 + pctText;
             } else {
               siapa = "jumlah transaksinya sama besar pada kedua periode";
             }
 
             return "Selisih jumlah transaksi" + konteks +
-                   " antara periode " + p1 + " (" + n1 + ") dan " + p2 +
-                   " (" + n2 + ") adalah sekitar " + diff + " transaksi; " +
-                   siapa + ".";
+                   " antara periode " + p1 + " (" + n1 +
+                   ") dan " + p2 + " (" + n2 +
+                   ") sekitar " + diff +
+                   " transaksi; " + siapa + ".";
           } else {
-            var isi;
+            let isi;
             if (n1 > n2) {
-              isi = "periode " + p1 + " memiliki transaksi lebih banyak (" + n1 +
-                    ") dibanding periode " + p2 + " (" + n2 + ").";
+              isi = "periode " + p1 + " memiliki transaksi lebih banyak (" +
+                    n1 + ") dibanding periode " + p2 + " (" + n2 + ").";
             } else if (n2 > n1) {
-              isi = "periode " + p2 + " memiliki transaksi lebih banyak (" + n2 +
-                    ") dibanding periode " + p1 + " (" + n1 + ").";
+              isi = "periode " + p2 + " memiliki transaksi lebih banyak (" +
+                    n2 + ") dibanding periode " + p1 + " (" + n1 + ").";
             } else {
               isi = "jumlah transaksi pada periode " + p1 + " dan " + p2 +
                     " sama, yaitu " + n1 + " transaksi.";
@@ -2754,345 +2629,90 @@ def render_sela_widget(df_filtered, periode_col):
             return "Untuk transaksi" + konteks + ", " + isi;
           }
         }
-
-        // -- 2b. Selisih / banding SLA proses / total antar 2 periode --
-        var chosen = { key: "total_waktu", label: "SLA Total Waktu" };
-        for (var iPM = 0; iPM < prosesMap.length; iPM++) {
-          var pm = prosesMap[iPM];
-          var hitPM = false;
-          for (var jjPM = 0; jjPM < pm.triggers.length; jjPM++) {
-            if (t.indexOf(pm.triggers[jjPM]) >= 0) { hitPM = true; break; }
-          }
-          if (hitPM) { chosen = pm; break; }
-        }
-
-        const agg1 = aggregateSLA(chosen.key, p1, vendor || null, jenis || null, null);
-        const agg2 = aggregateSLA(chosen.key, p2, vendor || null, jenis || null, null);
-
-        if (!agg1 && !agg2) {
-          return "Maaf, saya tidak menemukan data " + chosen.label +
-                 " untuk periode " + p1 + " maupun " + p2 + ".";
-        }
-
-        const d1 = agg1 ? secondsToPretty(agg1.avg) : "tidak ada data";
-        const d2 = agg2 ? secondsToPretty(agg2.avg) : "tidak ada data";
-
-        var segVendorJenis = "";
-        if (vendor) segVendorJenis += " untuk vendor " + vendor;
-        if (jenis)  segVendorJenis += " untuk jenis transaksi " + jenis;
-
-        if (!agg1 || !agg2) {
-          if (!agg1) {
-            return chosen.label + segVendorJenis + " periode " + p1 +
-                   " tidak tersedia, sedangkan periode " + p2 +
-                   " sekitar " + d2 + ".";
-          }
-          return chosen.label + segVendorJenis + " periode " + p2 +
-                 " tidak tersedia, sedangkan periode " + p1 +
-                 " sekitar " + d1 + ".";
-        }
-
-        if (isDifferenceIntent) {
-          const diffSec  = Math.abs(agg1.avg - agg2.avg);
-          const diffText = secondsToPretty(diffSec);
-
-          var siapa2 = "";
-          if (agg1.avg < agg2.avg) {
-            siapa2 = "periode " + p1 + " lebih cepat dari " + p2;
-          } else if (agg2.avg < agg1.avg) {
-            siapa2 = "periode " + p2 + " lebih cepat dari " + p1;
-          } else {
-            siapa2 = "keduanya hampir sama cepat";
-          }
-
-          var pctText2 = "";
-          const slowerAvg = agg1.avg > agg2.avg ? agg1.avg : agg2.avg;
-          if (slowerAvg > 0) {
-            const pctSla = Math.round(diffSec / slowerAvg * 100);
-            pctText2 = " (sekitar " + pctSla +
-                       "% perbedaan dibanding periode dengan SLA lebih lama)";
-          }
-
-          return "Selisih " + chosen.label + segVendorJenis +
-                 " antara periode " + p1 + " (" + d1 + ") dan " +
-                 p2 + " (" + d2 + ") sekitar " + diffText +
-                 pctText2 + "; " + siapa2 + ".";
-        } else {
-          if (Math.abs(agg1.avg - agg2.avg) < 1e-6) {
-            return chosen.label + segVendorJenis +
-                   " periode " + p1 + " dan " + p2 +
-                   " hampir sama, masing-masing sekitar " + d1 +
-                   " dan " + d2 + ".";
-          }
-          var faster = (agg1.avg < agg2.avg)
-            ? (p1 + " lebih cepat dari " + p2)
-            : (p2 + " lebih cepat dari " + p1);
-
-          return chosen.label + segVendorJenis + " periode " + p1 +
-                 " sekitar " + d1 + ", sedangkan periode " + p2 +
-                 " sekitar " + d2 + "; sehingga " + faster + ".";
-        }
       }
 
-      // ========= 3. LOGIKA BIASA: SATU PERIODE / RANGE KUMULATIF =========
-
-      // 3a. SLA proses (keuangan, fungsional, dst.)
-      for (var k = 0; k < prosesMap.length; k++) {
-        var pp = prosesMap[k];
-        var trigHit = false;
-        for (var jj = 0; jj < pp.triggers.length; jj++) {
-          if (t.indexOf(pp.triggers[jj]) >= 0) { trigHit = true; break; }
-        }
-        if (trigHit) {
-          const agg = aggregateSLA(
-            pp.key,
-            range ? null : (periodeSingle || null),
-            vendor || null,
-            jenis || null,
-            range || null
-          );
-          if (!agg) {
-            if (vendor) {
-              return "Maaf, saya tidak menemukan " + pp.label +
-                     " untuk vendor " + vendor + " pada " + timeDesc + ".";
-            }
-            if (jenis) {
-              return "Maaf, saya tidak menemukan " + pp.label +
-                     " untuk jenis transaksi " + jenis + " pada " + timeDesc + ".";
-            }
-            return "Maaf, data " + pp.label + " tidak tersedia pada " + timeDesc + ".";
-          }
-          var base = pp.label + " rata-rata sekitar " + agg.text;
-          var seg = " pada " + timeDesc;
-          if (vendor) seg += " untuk vendor " + vendor;
-          if (jenis)  seg += " untuk jenis transaksi " + jenis;
-          return base + seg + ".";
-        }
-      }
-
-      // 3b. Jumlah transaksi (bisa range / periode / vendor / jenis)
-      if (t.indexOf("jumlah transaksi") >= 0 || t.indexOf("berapa transaksi") >= 0) {
+      // ---- jumlah transaksi tahun / range bulan / satu periode ----
+      if (t.includes("jumlah transaksi") || t.includes("berapa transaksi")) {
         const n = countTransaksi(
           range ? null : (periodeSingle || null),
           vendor || null,
           jenis || null,
           range || null
         );
-        var desc = timeDesc;
+        let desc = range ? describeRange(range) : (periodeSingle || "periode yang sedang ditampilkan");
         if (vendor) desc += " untuk vendor " + vendor;
         if (jenis)  desc += " dengan jenis transaksi " + jenis;
-        return "Jumlah transaksi pada " + desc +
-               " sekitar " + n + " transaksi berdasarkan data yang sedang ditampilkan.";
-      }
-
-      const mTercepat = t.indexOf("tercepat") >= 0 || t.indexOf("paling cepat") >= 0;
-      const mTerlama  = t.indexOf("terlama") >= 0 || t.indexOf("paling lama") >= 0 || t.indexOf("paling lambat") >= 0;
-
-      // 3c. Proses paling cepat / paling lama
-      if (t.indexOf("proses") >= 0 && (mTercepat || mTerlama) && !vendor && !jenis) {
-        const res = prosesTercepatAtauTerlama(
-          range ? null : (periodeSingle || null),
-          mTercepat,
-          range || null
+        return (
+          "Jumlah transaksi pada " +
+          desc +
+          " sekitar " +
+          n +
+          " transaksi berdasarkan data yang sedang ditampilkan."
         );
-        if (!res) return null;
-        const kata = mTercepat ? "paling cepat" : "paling lama";
-        return "Proses yang " + kata + " pada " + timeDesc +
-               " adalah proses " + res.proses +
-               " dengan rata-rata sekitar " + res.avgText + ".";
       }
 
-      // 3d. Vendor tertentu (SLA total)
-      if (vendor && (t.indexOf("sla") >= 0 || t.indexOf("total waktu") >= 0)) {
-        const aggV = aggregateSLA(
-          "total_waktu",
+      // ---- rata-rata SLA total / per proses ----
+      const prosesMap = [
+        { triggers: ["sla keuangan"],            key: "keuangan",       label: "SLA Keuangan" },
+        { triggers: ["sla fungsional"],          key: "fungsional",     label: "SLA Fungsional" },
+        { triggers: ["sla vendor"],              key: "vendor",         label: "SLA Vendor" },
+        { triggers: ["sla perbendaharaan"],      key: "perbendaharaan", label: "SLA Perbendaharaan" },
+        { triggers: ["sla total","total waktu"], key: "total_waktu",    label: "SLA Total Waktu" }
+      ];
+
+      for (let i = 0; i < prosesMap.length; i++) {
+        const pp = prosesMap[i];
+        const match = pp.triggers.some((tr) => t.includes(tr));
+        if (!match) continue;
+
+        const agg = aggregateSLA(
+          pp.key,
           range ? null : (periodeSingle || null),
-          vendor,
+          vendor || null,
           jenis || null,
           range || null
         );
-        if (!aggV) {
-          return "Saya tidak menemukan SLA total waktu untuk vendor " +
-                 vendor + " pada " + timeDesc + ".";
+        if (!agg) {
+          return (
+            "Maaf, saya belum menemukan data " +
+            pp.label +
+            " pada " +
+            timeDesc +
+            " untuk kombinasi filter yang sedang dipakai."
+          );
         }
-        return "Rata-rata SLA total waktu untuk vendor " + vendor +
-               " pada " + timeDesc + " sekitar " + aggV.text +
-               ". Nilai ini menggambarkan kinerja vendor tersebut pada periode tersebut.";
-      }
 
-      // 3e. Jenis transaksi tertentu (SLA total)
-      if (jenis && (t.indexOf("sla") >= 0 || t.indexOf("total waktu") >= 0)) {
-        const aggJ = aggregateSLA(
-          "total_waktu",
-          range ? null : (periodeSingle || null),
-          vendor || null,
-          jenis,
-          range || null
+        let konteks = " pada " + timeDesc;
+        if (vendor) konteks += " untuk vendor " + vendor;
+        if (jenis)  konteks += " dengan jenis transaksi " + jenis;
+
+        return (
+          pp.label +
+          " rata-rata sekitar " +
+          agg.text +
+          konteks +
+          ". Nilai ini bisa dipakai sebagai gambaran seberapa cepat proses tersebut berjalan."
         );
-        if (!aggJ) {
-          return "Saya tidak menemukan SLA total waktu untuk jenis transaksi " +
-                 jenis + " pada " + timeDesc + ".";
-        }
-        return "Rata-rata SLA total waktu untuk jenis transaksi " + jenis +
-               " pada " + timeDesc + " sekitar " + aggJ.text +
-               ". Nilai ini bisa dipakai sebagai acuan kecepatan proses untuk jenis transaksi tersebut.";
       }
 
-      // 3f. Cabang GM CABANG paling lama
-      if ((t.indexOf("cabang") >= 0 || t.indexOf("gm cabang") >= 0) &&
-          (mTerlama || t.indexOf("paling lama") >= 0 || t.indexOf("paling lambat") >= 0)) {
-
-        const rows = selaDataRows.filter(function(r) {
-          if (range && !rowInRange(r.periode, range)) return false;
-          if (!range && periodeSingle && String(r.periode) !== String(periodeSingle)) return false;
-          if (!r.nama_vendor) return false;
-          if (String(r.nama_vendor).toUpperCase().indexOf("GM CABANG") === -1) return false;
-          return typeof r.total_waktu === "number";
-        });
-
-        if (!rows.length) {
-          return "Saya tidak menemukan data cabang GM CABANG pada " + timeDesc + ".";
-        }
-
-        const aggC = {};
-        rows.forEach(function(r) {
-          const k = String(r.nama_vendor);
-          if (!aggC[k]) aggC[k] = [];
-          aggC[k].push(r.total_waktu);
-        });
-
-        var worstName = null;
-        var worstVal  = -1;
-        for (var nama in aggC) {
-          const arr = aggC[nama];
-          const avg = arr.reduce(function(a,b){ return a + b; }, 0) / arr.length;
-          if (avg > worstVal) {
-            worstVal  = avg;
-            worstName = nama;
-          }
-        }
-        const txtDur = secondsToPretty(worstVal);
-        return "Cabang dengan rata-rata SLA total waktu paling lama pada " +
-               timeDesc + " adalah " + worstName +
-               ", sekitar " + txtDur +
-               ". Titik ini bisa menjadi prioritas perbaikan SLA.";
-      }
-
-      // 3g. Vendor tercepat / terlama
-      if (t.indexOf("vendor") >= 0 && (mTercepat || mTerlama) && !vendor) {
-        const fastest = mTercepat;
-        const infoV = extremaByGroup(
-          "nama_vendor",
-          "vendor",
-          "total_waktu",
-          fastest,
-          range ? null : (periodeSingle || null),
-          range || null
-        );
-        if (!infoV) return null;
-        const kata2 = fastest ? "paling cepat" : "paling lama";
-        return "Vendor dengan SLA total waktu " + kata2 +
-               " pada " + timeDesc + " adalah " + infoV.vendor +
-               ", sekitar " + infoV.avgText +
-               ". Hal ini menunjukkan vendor tersebut relatif " + kata2 +
-               " dibanding vendor lain pada periode tersebut.";
-      }
-
-      // 3h. Jenis transaksi tercepat / terlama
-      if ((t.indexOf("jenis transaksi") >= 0 || t.indexOf("transaksi") >= 0) &&
-          (mTercepat || mTerlama) && !jenis) {
-        const fastestJ = mTercepat;
-        const infoJ = extremaByGroup(
-          "jenis_transaksi",
-          "jenis",
-          "total_waktu",
-          fastestJ,
-          range ? null : (periodeSingle || null),
-          range || null
-        );
-        if (!infoJ) return null;
-        const kata3 = fastestJ ? "paling cepat" : "paling lama";
-        return "Jenis transaksi dengan SLA total waktu " + kata3 +
-               " pada " + timeDesc + " adalah " + infoJ.jenis +
-               ", sekitar " + infoJ.avgText +
-               ". Ini bisa jadi insight jenis transaksi mana yang paling menekan SLA.";
-      }
-
-      // 3i. Periode paling cepat / paling lama secara agregat
-      if (t.indexOf("periode mana") >= 0) {
-        if (mTerlama) {
-          const infoL = periodeExtremaTotalWaktu(true);
-          if (!infoL) return null;
-          return "Periode dengan SLA total waktu paling lama adalah " +
-                 infoL.periode + ", sekitar " + infoL.avgText +
-                 ". Periode ini patut dipantau karena kinerjanya paling lambat.";
-        }
-        if (mTercepat) {
-          const infoC = periodeExtremaTotalWaktu(false);
-          if (!infoC) return null;
-          return "Periode dengan SLA total waktu paling cepat adalah " +
-                 infoC.periode + ", sekitar " + infoC.avgText +
-                 ". Ini bisa dijadikan benchmark untuk periode lainnya.";
-        }
-      }
-
-      // Tidak ada pola khusus → serahkan ke LLM
       return null;
     }
 
-    // ================== AVATAR 3D SELA ==================
+    // ========= 3D AVATAR SELA =========
     const AVATAR_URL = "https://raw.githubusercontent.com/met4citizen/TalkingHead/main/avatars/brunette.glb";
-
-    const launcher = document.getElementById("sela-launcher");
-    const panel    = document.getElementById("sela-panel");
-    const closer   = document.getElementById("sela-close");
-    const statusEl = document.getElementById("sela-status");
-    const talkBtn  = document.getElementById("sela-talk-btn");
-    const led      = document.getElementById("sela-led");
-
-    statusEl.textContent = "Status: inisialisasi SELA di browser...";
-
-    let panelOpen = false;
-    let greeted   = false;
 
     function pickIndonesianVoice() {
       if (!("speechSynthesis" in window)) return null;
       const voices = window.speechSynthesis.getVoices() || [];
-      for (var i = 0; i < voices.length; i++) {
+      for (let i = 0; i < voices.length; i++) {
         const v = voices[i];
         if (v.lang && v.lang.toLowerCase().indexOf("id") === 0) return v;
       }
       return null;
     }
 
-    function speakGreeting() {
-      if (!("speechSynthesis" in window)) return;
-      const text = "Haloooo, saya Sela. Ada yang bisa saya bantu?";
-      const utt  = new SpeechSynthesisUtterance(text);
-      utt.lang   = "id-ID";
-      const voice = pickIndonesianVoice();
-      if (voice) utt.voice = voice;
-      utt.rate   = 0.95;
-      utt.pitch  = 1.05;
-      window.speechSynthesis.speak(utt);
-    }
-
-    launcher.addEventListener("click", function() {
-      panelOpen = !panelOpen;
-      panel.style.display = panelOpen ? "flex" : "none";
-      if (panelOpen && !greeted) {
-        greeted = true;
-        setTimeout(speakGreeting, 600);
-      }
-    });
-
-    closer.addEventListener("click", function() {
-      panelOpen = false;
-      panel.style.display = "none";
-    });
-
-    const canvas   = document.getElementById("sela-canvas");
-    const scene    = new THREE.Scene();
+    const canvas = document.getElementById("sela-canvas");
+    const scene  = new THREE.Scene();
     scene.background = new THREE.Color(0xffffff);
 
     const camera = new THREE.PerspectiveCamera(
@@ -3104,7 +2724,7 @@ def render_sela_widget(df_filtered, periode_col):
     camera.position.set(0, 1.4, 5);
     camera.lookAt(0, 1.4, 0);
 
-    const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     function resizeRenderer() {
       const width  = canvas.clientWidth || 360;
       const height = canvas.clientHeight || 260;
@@ -3121,6 +2741,7 @@ def render_sela_widget(df_filtered, periode_col):
     dir.position.set(2, 4, 3);
     scene.add(dir);
 
+    // fallback bola+silinder sederhana
     const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
     const headMat = new THREE.MeshStandardMaterial({ color: 0xf9a8d4, metalness: 0.1, roughness: 0.3 });
     const head = new THREE.Mesh(headGeo, headMat);
@@ -3133,14 +2754,6 @@ def render_sela_widget(df_filtered, periode_col):
     body.position.y = -0.4;
     scene.add(body);
 
-    const eyeGeo = new THREE.SphereGeometry(0.09, 16, 16);
-    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
-    const eyeL_fb = new THREE.Mesh(eyeGeo, eyeMat);
-    const eyeR_fb = new THREE.Mesh(eyeGeo, eyeMat);
-    eyeL_fb.position.set(-0.28, 0.82, 0.65);
-    eyeR_fb.position.set(0.28, 0.82, 0.65);
-    scene.add(eyeL_fb, eyeR_fb);
-
     const mouthGeo = new THREE.CapsuleGeometry(0.18, 0.06, 4, 12);
     const mouthMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
     const mouth_fb = new THREE.Mesh(mouthGeo, mouthMat);
@@ -3150,8 +2763,6 @@ def render_sela_widget(df_filtered, periode_col):
     function hideFallback() {
       head.visible = false;
       body.visible = false;
-      eyeL_fb.visible = false;
-      eyeR_fb.visible = false;
       mouth_fb.visible = false;
     }
 
@@ -3159,83 +2770,63 @@ def render_sela_widget(df_filtered, periode_col):
     let headBone  = null;
     let jawBone   = null;
     let eyeBones  = [];
-    let armBonesL = [];
-    let armBonesR = [];
-    let spineBones= [];
-
     let faceMeshes = [];
-
     let talking   = false;
     let talkPhase = 0;
     let blinkPhase= 0;
     const clock   = new THREE.Clock();
 
+    function setTalking(flag) {
+      talking = flag;
+      if (flag) led.classList.remove("off");
+      else led.classList.add("off");
+    }
+
     function detectMorphTargets(root) {
       faceMeshes = [];
-      headBone = null;
-      jawBone  = null;
-      eyeBones = [];
-      armBonesL = [];
-      armBonesR = [];
-      spineBones= [];
+      headBone   = null;
+      jawBone    = null;
+      eyeBones   = [];
 
-      const mouthNames = [
-        "mouthOpen","jawOpen","mouthSmile","mouthFunnel",
-        "viseme_aa","viseme_ih","viseme_e","viseme_E","viseme_O","viseme_U",
-        "viseme_sil","viseme_PP","viseme_FF","viseme_CH",
-        "viseme_RR","viseme_nn","viseme_dd","viseme_kk"
-      ];
-      const blinkLeftNames  = ["eyeBlinkLeft","eyesClosedLeft","eyeSquintLeft","eyeBlink_L"];
-      const blinkRightNames = ["eyeBlinkRight","eyesClosedRight","eyeSquintRight","eyeBlink_R"];
+      const mouthNames = ["mouthOpen","jawOpen","mouthSmile","viseme_aa","viseme_E","viseme_O","viseme_U"];
+      const blinkLeftNames  = ["eyeBlinkLeft","eyesClosedLeft","eyeSquintLeft"];
+      const blinkRightNames = ["eyeBlinkRight","eyesClosedRight","eyeSquintRight"];
 
-      root.traverse(function(obj) {
+      root.traverse((obj) => {
         const name = (obj.name || "").toLowerCase();
 
         if (obj.isBone) {
-          if (!headBone && name.indexOf("head") >= 0) headBone = obj;
-          if (!jawBone  && (name.indexOf("jaw") >= 0 || name.indexOf("mouth") >= 0)) jawBone = obj;
-
-          if (name.indexOf("eye") >= 0 && name.indexOf("brow") === -1) {
+          if (!headBone && name.includes("head")) headBone = obj;
+          if (!jawBone  && name.includes("jaw"))  jawBone  = obj;
+          if (name.includes("eye") && !name.includes("brow")) {
             eyeBones.push(obj);
-          }
-          if (name.indexOf("upperarm") >= 0 || name.indexOf("shoulder") >= 0) {
-            if (name.indexOf("left") >= 0 || name.indexOf("_l") >= 0)  armBonesL.push(obj);
-            if (name.indexOf("right") >= 0|| name.indexOf("_r") >= 0)  armBonesR.push(obj);
-          }
-          if (name.indexOf("spine") >= 0 || name.indexOf("chest") >= 0) {
-            spineBones.push(obj);
           }
         }
 
         if (obj.isMesh && obj.morphTargetDictionary) {
           if (Array.isArray(obj.material)) {
-            obj.material.forEach(function(m) { if (m) m.morphTargets = true; });
+            obj.material.forEach((m) => { if (m) m.morphTargets = true; });
           } else if (obj.material) {
             obj.material.morphTargets = true;
           }
           if (obj.updateMorphTargets) obj.updateMorphTargets();
 
-          const dict = obj.morphTargetDictionary;
-          const mouthIndices = [];
+          const dict  = obj.morphTargetDictionary;
+          const mouth = [];
           const blinkL = [];
           const blinkR = [];
 
-          mouthNames.forEach(function(n) { if (dict[n] !== undefined) mouthIndices.push(dict[n]); });
-          blinkLeftNames.forEach(function(n)  { if (dict[n] !== undefined) blinkL.push(dict[n]); });
-          blinkRightNames.forEach(function(n) { if (dict[n] !== undefined) blinkR.push(dict[n]); });
+          mouthNames.forEach((n) => { if (dict[n] !== undefined) mouth.push(dict[n]); });
+          blinkLeftNames.forEach((n)  => { if (dict[n] !== undefined) blinkL.push(dict[n]); });
+          blinkRightNames.forEach((n) => { if (dict[n] !== undefined) blinkR.push(dict[n]); });
 
-          if (mouthIndices.length || blinkL.length || blinkR.length) {
-            faceMeshes.push({
-              mesh: obj,
-              mouthIndices: mouthIndices,
-              blinkL: blinkL,
-              blinkR: blinkR
-            });
+          if (mouth.length || blinkL.length || blinkR.length) {
+            faceMeshes.push({ mesh: obj, mouthIndices: mouth, blinkL, blinkR });
           }
         }
       });
 
-      console.log("[SELA] Morph ready. faceMeshes:", faceMeshes.length);
+      console.log("[SELA] faceMeshes:", faceMeshes.length);
     }
 
     function loadSelaAvatar() {
@@ -3243,7 +2834,7 @@ def render_sela_widget(df_filtered, periode_col):
       const loader = new GLTFLoader();
       loader.load(
         AVATAR_URL,
-        function(gltf) {
+        (gltf) => {
           try {
             selaModel = gltf.scene;
 
@@ -3257,32 +2848,30 @@ def render_sela_widget(df_filtered, periode_col):
             const center1= box1.getCenter(new THREE.Vector3());
             selaModel.position.sub(center1);
 
-            const box      = new THREE.Box3().setFromObject(selaModel);
-            const height   = box.getSize(new THREE.Vector3()).y;
-            const headTopY = box.min.y + height * 0.98;
-            const chestY   = box.min.y + height * 0.82;
+            const box    = new THREE.Box3().setFromObject(selaModel);
+            const size   = box.getSize(new THREE.Vector3());
+            const headTopY = box.min.y + size.y * 0.98;
+            const chestY   = box.min.y + size.y * 0.80;
+            const faceCenterY = (headTopY + chestY) / 2;
+            const visHeight   = headTopY - chestY;
+            const fovRad      = camera.fov * Math.PI / 180;
+            const dist        = (visHeight / 2) / Math.tan(fovRad / 2);
 
             hideFallback();
             scene.add(selaModel);
 
-            const faceCenterY   = (headTopY + chestY) / 2;
-            const visibleHeight = headTopY - chestY;
-            const fovRad        = camera.fov * Math.PI / 180;
-            const dist          = (visibleHeight / 2) / Math.tan(fovRad / 2);
-            const zPos          = dist * 1.08;
-
-            camera.position.set(0, faceCenterY + 0.02, zPos);
-            camera.lookAt(0, faceCenterY + 0.02, 0);
+            camera.position.set(0, faceCenterY + 0.05, dist * 1.08);
+            camera.lookAt(0, faceCenterY, 0);
 
             detectMorphTargets(selaModel);
-            statusEl.textContent = "Status: SELA siap. Klik 🎤 lalu bicara.";
+            statusEl.textContent = "Status: SELA siap membaca data dan menjawab pertanyaan.";
           } catch (e) {
-            console.error("[SELA] Error memproses avatar:", e);
-            statusEl.textContent = "Status: avatar 3D SELA statis.";
+            console.error("[SELA] Error avatar:", e);
+            statusEl.textContent = "Status: avatar 3D sederhana (fallback).";
           }
         },
         undefined,
-        function(err) {
+        (err) => {
           console.error("[SELA] Gagal memuat avatar:", err);
           statusEl.textContent = "Status: gagal memuat avatar 3D SELA, pakai avatar sederhana.";
         }
@@ -3291,41 +2880,32 @@ def render_sela_widget(df_filtered, periode_col):
 
     loadSelaAvatar();
 
-    function setTalking(flag) {
-      talking = flag;
-      if (flag) led.classList.remove("off");
-      else led.classList.add("off");
-    }
-
     function animate() {
       requestAnimationFrame(animate);
       const t = clock.getElapsedTime();
 
       if (faceMeshes.length > 0) {
-        faceMeshes.forEach(function(face) {
+        faceMeshes.forEach((face) => {
           const infl = face.mesh.morphTargetInfluences;
           if (!infl) return;
 
-          for (var i = 0; i < infl.length; i++) {
-            infl[i] *= 0.8;
-          }
+          for (let i = 0; i < infl.length; i++) infl[i] *= 0.8;
 
           if (talking && face.mouthIndices.length > 0) {
             talkPhase += 0.25;
             const v = 0.3 + 0.7 * Math.abs(Math.sin(talkPhase));
-            const main = face.mouthIndices.slice(0, 2);
-            main.forEach(function(idx) { infl[idx] = v; });
+            face.mouthIndices.slice(0, 2).forEach((idx) => { infl[idx] = v; });
           }
 
           if (face.blinkL.length || face.blinkR.length) {
             blinkPhase += 0.03;
             const tb = blinkPhase % 2.4;
-            var b = 0;
+            let b = 0;
             if (tb < 0.12)       b = tb / 0.12;
             else if (tb < 0.24)  b = 1 - (tb - 0.12)/0.12;
             else                 b = 0;
-            face.blinkL.forEach(function(idx){ infl[idx] = Math.max(infl[idx] || 0, b); });
-            face.blinkR.forEach(function(idx){ infl[idx] = Math.max(infl[idx] || 0, b); });
+            face.blinkL.forEach((idx)=>{ infl[idx] = Math.max(infl[idx] || 0, b); });
+            face.blinkR.forEach((idx)=>{ infl[idx] = Math.max(infl[idx] || 0, b); });
           }
         });
       } else {
@@ -3340,12 +2920,12 @@ def render_sela_widget(df_filtered, periode_col):
       }
 
       if (headBone) {
+        headBone.rotation.z = 0.04 * Math.sin(t * 0.4);
+        headBone.rotation.y = 0.03 * Math.sin(t * 0.6);
+      } else {
         if (!talking) {
-          headBone.rotation.z = 0.04 * Math.sin(t * 0.4);
-          headBone.rotation.y = 0.03 * Math.sin(t * 0.6);
-        } else {
-          headBone.rotation.z = 0.02 * Math.sin(t * 0.6);
-          headBone.rotation.y = 0.02 * Math.sin(t * 0.8);
+          head.rotation.y += 0.002;
+          body.rotation.y += 0.002;
         }
       }
 
@@ -3358,44 +2938,33 @@ def render_sela_widget(df_filtered, periode_col):
         }
       }
 
-      if (eyeBones.length > 0) {
-        eyeBones.forEach(function(eye, i) {
-          eye.rotation.y = 0.08 * Math.sin(t * 0.7 + i);
-          eye.rotation.x = 0.04 * Math.sin(t * 0.5 + i * 0.5);
-        });
-      }
-
-      if (!talking) {
-        armBonesL.forEach(function(b, i) {
-          b.rotation.z = 0.10 * Math.sin(t * 0.7 + i);
-        });
-        armBonesR.forEach(function(b, i) {
-          b.rotation.z = -0.10 * Math.sin(t * 0.7 + i);
-        });
-        spineBones.forEach(function(b, i) {
-          b.rotation.x = 0.03 * Math.sin(t * 0.5 + i);
-        });
-      }
-
       renderer.render(scene, camera);
     }
     animate();
 
-    // ================== WEBLLM + MIC ==================
-    (async function initLLMAndMic() {
-      let engine   = null;
-      let messages = [
-        {
-          role: "system",
-          content:
-            "Kamu adalah SELA, asisten virtual perempuan yang ramah. " +
-            "Fokus membantu soal keuangan, SLA pembayaran, vendor, cabang, dan pertanyaan umum. " +
-            "Jika pengguna menanyakan angka SLA, periode, vendor, jenis transaksi, atau jumlah transaksi, " +
-            "gunakan data yang sudah diberikan (jangan mengarang angka). " +
-            "Jawab singkat (1–2 kalimat), jelas, dan langsung ke inti, boleh menambahkan sedikit analisis tren."
-        }
-      ];
-      const MAX_HISTORY = 4;
+    // ========= WEBLLM + MIC (LAZY LOAD) =========
+    let engine   = null;
+    let messages = [
+      {
+        role: "system",
+        content:
+          "Kamu adalah SELA, asisten virtual perempuan yang ramah. " +
+          "Fokus membantu soal SLA pembayaran, vendor, cabang, transaksi, dan pertanyaan keuangan ringan. " +
+          "Jika pengguna menanyakan angka SLA, periode, vendor, jenis transaksi, atau jumlah transaksi, " +
+          "gunakan data yang sudah diberikan (jangan mengarang angka). " +
+          "Jawab singkat (1–3 kalimat), jelas, dan boleh tambahkan sedikit analisis tren."
+      }
+    ];
+    const MAX_HISTORY = 4;
+
+    let recognizer   = null;
+    let recognizing  = false;
+    let micReady     = false;
+    let initializing = false;
+
+    async function ensureLLMAndMic() {
+      if (engine || initializing) return;
+      initializing = true;
 
       try {
         statusEl.textContent = "Status: mengunduh & memuat model AI di browser...";
@@ -3411,50 +2980,16 @@ def render_sela_widget(df_filtered, periode_col):
                         "TinyLlama-1.1B-Chat-v0.4-q4f32_1-MLC-1k";
 
         await engine.reload(modelId, { temperature: 0.5, top_p: 0.9 });
-        statusEl.textContent = "Status: SELA siap. Klik 🎤 lalu bicara.";
-      } catch (e) {
-        console.error("[SELA] Gagal memuat WebLLM:", e);
-        statusEl.textContent =
-          "Gagal memuat model AI di browser. Untuk kecepatan setara ChatGPT/Gemini perlu backend server.";
-        return;
-      }
 
-      async function askSELA(userText) {
-        const dataAnswer = answerWithData(userText);
-        if (dataAnswer) return dataAnswer;
+        const SpeechRecognition =
+          window.SpeechRecognition || window.webkitSpeechRecognition;
 
-        if (!engine) return "Maaf, otak SELA belum siap.";
-        messages.push({ role: "user", content: userText });
-        if (messages.length > 1 + MAX_HISTORY) {
-          const sys = messages[0];
-          messages = [sys].concat(messages.slice(-MAX_HISTORY));
+        if (!SpeechRecognition) {
+          statusEl.textContent =
+            "Browser ini tidak mendukung pengenalan suara. Coba Chrome (desktop/Android).";
+          return;
         }
 
-        let cur = "";
-        const completion = await engine.chat.completions.create({
-          stream: true,
-          messages: messages,
-          max_tokens: 60,
-          temperature: 0.5,
-          top_p: 0.9
-        });
-        for await (const chunk of completion) {
-          const delta = chunk.choices[0].delta.content;
-          if (delta) cur += delta;
-        }
-        messages.push({ role: "assistant", content: cur });
-        return cur;
-      }
-
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      let recognizer = null;
-      let recognizing = false;
-      window._sela_processing = false;
-
-      if (!SpeechRecognition) {
-        statusEl.textContent =
-          "Browser ini tidak mendukung pengenalan suara. Coba Chrome (desktop/Android).";
-      } else {
         recognizer = new SpeechRecognition();
         recognizer.lang = "id-ID";
         recognizer.interimResults = false;
@@ -3474,7 +3009,8 @@ def render_sela_widget(df_filtered, periode_col):
           recognizing = false;
           talkBtn.classList.remove("sela-listening");
           if (!window._sela_processing) {
-            statusEl.textContent = "Status: selesai mendengar, memproses atau menunggu.";
+            statusEl.textContent =
+              "Status: selesai mendengar, siap menunggu pertanyaan berikutnya.";
           }
         };
         recognizer.onresult = async function(event) {
@@ -3482,12 +3018,12 @@ def render_sela_widget(df_filtered, periode_col):
           statusEl.textContent = 'Kamu: "' + text + '". SELA sedang berpikir...';
           window._sela_processing = true;
 
-          const reply = await askSELA(text);
+          const reply = await answerUser(text);
           statusEl.textContent = "SELA: " + reply;
 
           if ("speechSynthesis" in window) {
             const utt = new SpeechSynthesisUtterance(reply);
-            utt.lang = "id-ID";
+            utt.lang   = "id-ID";
             const voice = pickIndonesianVoice();
             if (voice) utt.voice = voice;
             utt.rate   = 0.96;
@@ -3505,14 +3041,82 @@ def render_sela_widget(df_filtered, periode_col):
             window._sela_processing = false;
           }
         };
+
+        micReady = true;
+        statusEl.textContent = "Status: SELA siap. Klik 🎤 lalu bicara.";
+      } catch (e) {
+        console.error("[SELA] Gagal memuat WebLLM:", e);
+        statusEl.textContent =
+          "Gagal memuat model AI di browser. Koneksi lambat atau perangkat tidak mendukung.";
+      } finally {
+        initializing = false;
+      }
+    }
+
+    async function askSELA(userText) {
+      const dataAnswer = answerWithData(userText);
+      if (dataAnswer) return dataAnswer;
+
+      if (!engine) {
+        return "Maaf, otak SELA belum sepenuhnya siap. Coba klik tombol lagi setelah beberapa detik.";
       }
 
-      talkBtn.addEventListener("click", function() {
-        if (!recognizer) return;
-        if (!recognizing) recognizer.start();
-        else recognizer.stop();
+      messages.push({ role: "user", content: userText });
+      if (messages.length > 1 + MAX_HISTORY) {
+        const sys = messages[0];
+        messages = [sys].concat(messages.slice(-MAX_HISTORY));
+      }
+
+      let cur = "";
+      const completion = await engine.chat.completions.create({
+        stream: true,
+        messages: messages,
+        max_tokens: 80,
+        temperature: 0.5,
+        top_p: 0.9
       });
-    })();
+      for await (const chunk of completion) {
+        const delta = chunk.choices[0].delta.content;
+        if (delta) cur += delta;
+      }
+      messages.push({ role: "assistant", content: cur });
+      return cur;
+    }
+
+    async function answerUser(text) {
+      try {
+        const ans = await askSELA(text);
+        return ans;
+      } catch (e) {
+        console.error("[SELA] Error saat menjawab:", e);
+        return "Maaf, SELA mengalami kendala saat memproses jawaban.";
+      }
+    }
+
+    function pickGreeting() {
+      if (!("speechSynthesis" in window)) return;
+      const text = "Halooo, saya Sela. Saya akan bantu bacakan data SLA dan transaksi dari dashboard ini ya.";
+      const utt  = new SpeechSynthesisUtterance(text);
+      utt.lang   = "id-ID";
+      const v = pickIndonesianVoice();
+      if (v) utt.voice = v;
+      utt.rate = 0.96;
+      utt.pitch= 1.04;
+      window.speechSynthesis.speak(utt);
+    }
+
+    pickGreeting();
+    statusEl.textContent = "Status: SELA siap secara visual. Klik 🎤 untuk mulai mengaktifkan otak AI.";
+
+    talkBtn.addEventListener("click", async function() {
+      if (!engine || !micReady || !recognizer) {
+        await ensureLLMAndMic();
+      }
+      if (!recognizer) return;
+
+      if (!recognizing) recognizer.start();
+      else recognizer.stop();
+    });
   </script>
 </body>
 </html>
@@ -3525,7 +3129,9 @@ def render_sela_widget(df_filtered, periode_col):
     )
 
 
-# PANGGIL SELA DI SEMUA HALAMAN (dengan data hasil filter)
-render_sela_widget(df_filtered, periode_col)
+# PANGGIL SELA HANYA JIKA USER MINTA (lebih ringan untuk halaman awal)
+if st.session_state.get("show_sela", False):
+    render_sela_widget(df_filtered, periode_col)
+
 
 
