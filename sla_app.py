@@ -2023,7 +2023,7 @@ with tab_pdf:
 # ==========================================================
 #  VIRTUAL ASSISTANT: "Tanya SELA" (3D + Voice + LLM di browser)
 # ==========================================================
-import streamlit.components.v1 as components
+import streamlit.components.v1 as components  # aman kalau sudah ada
 
 def render_sela_widget():
     components.html(
@@ -2304,7 +2304,7 @@ def render_sela_widget():
       panel.style.display = 'none';
     });
 
-    // ============== 2. THREE.JS AVATAR (center + tidak berputar) ==============
+    // ============== 2. THREE.JS AVATAR (close-up, putih, tidak berputar) ==============
     const canvas   = document.getElementById('sela-canvas');
     const scene    = new THREE.Scene();
     scene.background = new THREE.Color(0xffffff);   // putih
@@ -2336,7 +2336,7 @@ def render_sela_widget():
     dir.position.set(2, 4, 3);
     scene.add(dir);
 
-    // Fallback avatar
+    // Fallback avatar (kalau GLB gagal)
     const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
     const headMat = new THREE.MeshStandardMaterial({
       color: 0xf9a8d4,
@@ -2385,6 +2385,7 @@ def render_sela_widget():
       mouth_fb.visible  = false;
     }
 
+    // >>> BAGIAN PENTING: atur posisi & zoom SELA supaya wajah besar & naik <<<
     function loadSelaAvatar() {
       statusEl.textContent = 'Status: mengunduh avatar 3D SELA...';
       const loader = new GLTFLoader();
@@ -2394,12 +2395,12 @@ def render_sela_widget():
           try {
             selaModel = gltf.scene;
 
-            // 1) bounding box & scale ke tinggi target
+            // 1) bounding box & scale
             const originalBox  = new THREE.Box3().setFromObject(selaModel);
             const originalSize = originalBox.getSize(new THREE.Vector3());
             const originalHeight = originalSize.y || 1;
 
-            const targetHeight = 3.0;  // sama seperti sebelumnya
+            const targetHeight = 3.0;      // tinggi total avatar di dunia 3D
             const scaleFactor  = targetHeight / originalHeight;
             selaModel.scale.setScalar(scaleFactor);
 
@@ -2409,21 +2410,23 @@ def render_sela_widget():
             const center= box.getCenter(new THREE.Vector3());
             const height= size.y || 1;
 
-            // 3) center-kan model di (0,0,0) lalu sedikit naik
+            // 3) center di (0,0,0), lalu geser sedikit ke ATAS
             selaModel.position.x -= center.x;
             selaModel.position.y -= center.y;
             selaModel.position.z -= center.z;
 
-            // dorong sedikit ke atas supaya wajah tidak kepotong bawah
+            // naikkan model (nilai 0.22 bisa di-tune naik/turun)
             selaModel.position.y += height * 0.22;
 
             hideFallback();
             scene.add(selaModel);
 
-            // 4) atur kamera: fokus ke wajah, tampilin bahu+kepala
-            const headY  = height / 2;                   // karena sudah di-center
-            const faceY  = headY - height * 0.18;        // kira-kira area wajah
-            const visibleHeight = height * 0.45;         // dari dada ke atas
+            // 4) Kamera: fokus ke wajah, zoom cukup besar
+            const headY = height / 2;            // puncak kepala
+            const faceY = headY - height * 0.18; // titik fokus kira-kira di mata
+
+            // hanya mau lihat area dada-ke-atas → lebih kecil → lebih zoom
+            const visibleHeight = height * 0.45;
 
             const fovRad = camera.fov * Math.PI / 180;
             const dist   = (visibleHeight / 2) / Math.tan(fovRad / 2);
@@ -2432,13 +2435,13 @@ def render_sela_widget():
             camera.position.set(0, faceY, zPos);
             camera.lookAt(0, faceY, 0);
 
-            // 5) coba cari bone untuk animasi (kalau ada)
+            // 5) optional: cari bone untuk animasi kalau nanti modelnya di-update
             selaModel.traverse((obj) => {
               const name = (obj.name || "").toLowerCase();
               if (!headNode && (name.includes("head") || name.includes("neck"))) headNode = obj;
-              if (!jawNode && (name.includes("jaw") || name.includes("mouth")))  jawNode  = obj;
-              if (!eyeLNode && name.includes("eye") && name.includes("l")) eyeLNode = obj;
-              if (!eyeRNode && name.includes("eye") && name.includes("r")) eyeRNode = obj;
+              if (!jawNode  && (name.includes("jaw")  || name.includes("mouth"))) jawNode  = obj;
+              if (!eyeLNode && name.includes("eye")   && name.includes("l"))      eyeLNode = obj;
+              if (!eyeRNode && name.includes("eye")   && name.includes("r"))      eyeRNode = obj;
             });
 
             console.log("[SELA] Sela.glb loaded, size=", size, "bones:", {
@@ -2479,7 +2482,7 @@ def render_sela_widget():
     function animate() {
       requestAnimationFrame(animate);
 
-      // Kedip (kalau node mata tersedia – di model ini kemungkinan belum ada)
+      // Kedip (kalau ada node mata – di model sekarang kemungkinan belum)
       blinkPhase += 0.02;
       const tb = blinkPhase % 1.2;
       let eyeScaleY = 1.0;
@@ -2523,7 +2526,7 @@ def render_sela_widget():
     }
     animate();
 
-    // ============== 4. WebLLM + MIC (dibatasi supaya lebih responsif) ==============
+    // ============== 4. WebLLM + MIC (jawaban singkat & agak cepat) ==============
     (async function initLLMAndMic() {
       let engine   = null;
       let messages = [
