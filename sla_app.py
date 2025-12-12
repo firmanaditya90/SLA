@@ -2066,7 +2066,7 @@ def render_sela_widget():
     }
     .sela-panel {
       position: fixed;
-      bottom: 70px;              /* sedikit naik, supaya bagian atas tidak kepotong */
+      bottom: 70px;
       right: 24px;
       width: 360px;
       max-width: 90vw;
@@ -2251,6 +2251,7 @@ def render_sela_widget():
     import * as THREE from "https://esm.run/three@0.160.0";
     import { GLTFLoader } from "https://esm.run/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
+    // Avatar demo Ready Player Me (wanita kantoran)
     const AVATAR_URL = "https://raw.githubusercontent.com/met4citizen/TalkingHead/main/avatars/brunette.glb";
 
     const launcher = document.getElementById('sela-launcher');
@@ -2300,7 +2301,7 @@ def render_sela_widget():
       panel.style.display = 'none';
     });
 
-    // ------------ THREE.JS AVATAR (CLOSE UP WAJAH) ------------
+    // ---------- THREE.JS: SCENE + CAMERA ----------
     const canvas   = document.getElementById('sela-canvas');
     const scene    = new THREE.Scene();
     scene.background = new THREE.Color(0xffffff);
@@ -2331,7 +2332,7 @@ def render_sela_widget():
     dir.position.set(2, 4, 3);
     scene.add(dir);
 
-    // Fallback avatar
+    // ---------- Fallback avatar sederhana ----------
     const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
     const headMat = new THREE.MeshStandardMaterial({ color: 0xf9a8d4, metalness: 0.1, roughness: 0.3 });
     const head = new THREE.Mesh(headGeo, headMat);
@@ -2362,49 +2363,33 @@ def render_sela_widget():
       head.visible = body.visible = eyeL_fb.visible = eyeR_fb.visible = mouth_fb.visible = false;
     }
 
-    let selaModel    = null;
-    let morphMesh    = null;
-    let mouthTargets = [];
-    let blinkTargetsL= [];
-    let blinkTargetsR= [];
-    let headBone     = null;
-    let jawBone      = null;
+    // ---------- Avatar + anim state ----------
+    let selaModel = null;
+
+    // bones & morph helpers
+    let headBone  = null;
+    let jawBone   = null;
+    let eyeBones  = [];
+    let armBonesL = [];
+    let armBonesR = [];
+    let spineBones= [];
+
+    // mesh wajah yg punya morph
+    let faceMeshes = [];  // { mesh, mouthIndices, blinkL, blinkR }
+
+    // anim state
+    let talking   = false;
+    let talkPhase = 0;
+    let blinkPhase= 0;
+    const clock   = new THREE.Clock();
 
     function detectMorphTargets(root) {
-      morphMesh = null;
+      faceMeshes = [];
       headBone = jawBone = null;
-
-      root.traverse(obj => {
-        const name = (obj.name || "").toLowerCase();
-
-        // bone untuk gerak kepala / rahang
-        if (obj.isBone) {
-          if (!headBone && name.includes("head")) headBone = obj;
-          if (!jawBone  && (name.includes("jaw") || name.includes("mouth"))) jawBone = obj;
-        }
-
-        // mesh dengan morph
-        if (obj.isMesh && obj.morphTargetDictionary && !morphMesh) {
-          morphMesh = obj;
-          if (Array.isArray(obj.material)) {
-            obj.material.forEach(m => { if (m) m.morphTargets = true; });
-          } else if (obj.material) {
-            obj.material.morphTargets = true;
-          }
-        }
-      });
-
-      if (!morphMesh || !morphMesh.morphTargetDictionary) {
-        console.log("[SELA] Tidak menemukan morph targets, hanya pakai bone.");
-        return;
-      }
-
-      const dict = morphMesh.morphTargetDictionary;
-      console.log("[SELA] Morph targets:", Object.keys(dict));
-
-      mouthTargets = [];
-      blinkTargetsL = [];
-      blinkTargetsR = [];
+      eyeBones = [];
+      armBonesL = [];
+      armBonesR = [];
+      spineBones = [];
 
       const mouthNames = [
         "mouthOpen","jawOpen","mouthSmile","mouthFunnel",
@@ -2412,14 +2397,64 @@ def render_sela_widget():
         "viseme_sil","viseme_PP","viseme_FF","viseme_CH",
         "viseme_RR","viseme_nn","viseme_dd","viseme_kk"
       ];
-      mouthNames.forEach(n => { if (dict[n] !== undefined) mouthTargets.push(dict[n]); });
-
       const blinkLeftNames  = ["eyeBlinkLeft","eyesClosedLeft","eyeSquintLeft","eyeBlink_L"];
       const blinkRightNames = ["eyeBlinkRight","eyesClosedRight","eyeSquintRight","eyeBlink_R"];
-      blinkLeftNames.forEach(n  => { if (dict[n] !== undefined) blinkTargetsL.push(dict[n]); });
-      blinkRightNames.forEach(n => { if (dict[n] !== undefined) blinkTargetsR.push(dict[n]); });
 
-      console.log("[SELA] mouthTargets:", mouthTargets, "blinkL:", blinkTargetsL, "blinkR:", blinkTargetsR);
+      root.traverse(obj => {
+        const name = (obj.name || "").toLowerCase();
+
+        // bones utk idle anim
+        if (obj.isBone) {
+          if (!headBone && name.includes("head")) headBone = obj;
+          if (!jawBone  && (name.includes("jaw") || name.includes("mouth"))) jawBone = obj;
+
+          if (name.includes("eye") && !name.includes("brow")) {
+            eyeBones.push(obj);
+          }
+          if (name.includes("upperarm") || name.includes("shoulder")) {
+            if (name.includes("left") || name.includes("_l"))  armBonesL.push(obj);
+            if (name.includes("right")|| name.includes("_r"))  armBonesR.push(obj);
+          }
+          if (name.includes("spine") || name.includes("chest")) {
+            spineBones.push(obj);
+          }
+        }
+
+        // mesh dengan morph target
+        if (obj.isMesh && obj.morphTargetDictionary) {
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach(m => { if (m) m.morphTargets = true; });
+          } else if (obj.material) {
+            obj.material.morphTargets = true;
+          }
+          if (obj.updateMorphTargets) obj.updateMorphTargets();
+
+          const dict = obj.morphTargetDictionary;
+          const mouthIndices = [];
+          const blinkL = [];
+          const blinkR = [];
+
+          mouthNames.forEach(n => { if (dict[n] !== undefined) mouthIndices.push(dict[n]); });
+          blinkLeftNames.forEach(n  => { if (dict[n] !== undefined) blinkL.push(dict[n]); });
+          blinkRightNames.forEach(n => { if (dict[n] !== undefined) blinkR.push(dict[n]); });
+
+          if (mouthIndices.length || blinkL.length || blinkR.length) {
+            faceMeshes.push({ mesh: obj, mouthIndices, blinkL, blinkR });
+          }
+        }
+      });
+
+      console.log("[SELA] faceMeshes:",
+        faceMeshes.map(f => ({
+          name   : f.mesh.name,
+          mouth  : f.mouthIndices,
+          blinkL : f.blinkL,
+          blinkR : f.blinkR
+        })),
+        "headBone:", headBone?.name,
+        "jawBone:", jawBone?.name,
+        "eyeBones:", eyeBones.map(b => b.name)
+      );
     }
 
     function loadSelaAvatar() {
@@ -2431,30 +2466,29 @@ def render_sela_widget():
           try {
             selaModel = gltf.scene;
 
+            // scale & center
             const box0  = new THREE.Box3().setFromObject(selaModel);
             const size0 = box0.getSize(new THREE.Vector3());
             const h0    = size0.y || 1;
-
-            const targetHeight = 2.2;
-            const s            = targetHeight / h0;
+            const s     = 2.2 / h0;
             selaModel.scale.setScalar(s);
 
             const box1   = new THREE.Box3().setFromObject(selaModel);
             const center1= box1.getCenter(new THREE.Vector3());
             selaModel.position.sub(center1);
 
-            const box    = new THREE.Box3().setFromObject(selaModel);
-            const height = box.getSize(new THREE.Vector3()).y;
-            const bottomY= box.min.y;
-            const headY  = box.max.y;
+            const box      = new THREE.Box3().setFromObject(selaModel);
+            const height   = box.getSize(new THREE.Vector3()).y;
+            const bottomY  = box.min.y;
+            const headTopY = box.min.y + height * 0.98;
+            const shouldersY = box.min.y + height * 0.78;
 
             hideFallback();
             scene.add(selaModel);
 
-            // close up: dari pundak ke atas
-            const shouldersY    = bottomY + height * 0.65;
-            const faceCenterY   = (headY + shouldersY) / 2;
-            const visibleHeight = headY - shouldersY;   // area pundak–kepala
+            // framing bahu–kepala
+            const faceCenterY   = (headTopY + shouldersY) / 2;
+            const visibleHeight = headTopY - shouldersY;
             const fovRad        = camera.fov * Math.PI / 180;
             const dist          = (visibleHeight / 2) / Math.tan(fovRad / 2);
             const zPos          = dist * 1.05;
@@ -2463,7 +2497,6 @@ def render_sela_widget():
             camera.lookAt(0, faceCenterY, 0);
 
             detectMorphTargets(selaModel);
-
             statusEl.textContent = 'Status: SELA siap. Klik 🎤 lalu bicara.';
           } catch (e) {
             console.error("[SELA] Error memproses avatar:", e);
@@ -2480,11 +2513,6 @@ def render_sela_widget():
 
     loadSelaAvatar();
 
-    // ------------ ANIMASI: KEDIP + MULUT + GERAK KEPALA ------------
-    let talking   = false;
-    let talkPhase = 0;
-    let blinkPhase= 0;
-
     function setTalking(flag) {
       talking = flag;
       led.classList.toggle('off', !talking);
@@ -2493,30 +2521,38 @@ def render_sela_widget():
     function animate() {
       requestAnimationFrame(animate);
 
-      if (morphMesh && morphMesh.morphTargetInfluences) {
-        const infl = morphMesh.morphTargetInfluences;
-        for (let i = 0; i < infl.length; i++) infl[i] *= 0.6;
+      const t = clock.getElapsedTime();
 
-        // mulut
-        if (talking && mouthTargets.length > 0) {
-          talkPhase += 0.25;
-          const v = 0.6 + 0.4 * Math.abs(Math.sin(talkPhase)); // 0.6–1
-          mouthTargets.forEach(idx => infl[idx] = Math.max(infl[idx], v));
-        }
+      // ---------- morph: mulut & kedip ----------
+      if (faceMeshes.length > 0) {
+        faceMeshes.forEach(face => {
+          const infl = face.mesh.morphTargetInfluences;
+          if (!infl) return;
 
-        // kedip mata
-        if (blinkTargetsL.length || blinkTargetsR.length) {
-          blinkPhase += 0.03;
-          const t = blinkPhase % 2.0;
-          let b = 0;
-          if (t < 0.1)       b = t / 0.1;
-          else if (t < 0.2)  b = 1 - (t - 0.1) / 0.1;
-          else               b = 0;
-          blinkTargetsL.forEach(idx => infl[idx] = Math.max(infl[idx], b));
-          blinkTargetsR.forEach(idx => infl[idx] = Math.max(infl[idx], b));
-        }
+          // decay
+          for (let i = 0; i < infl.length; i++) infl[i] *= 0.6;
+
+          // mulut, hanya saat bicara
+          if (talking && face.mouthIndices.length > 0) {
+            talkPhase += 0.25;
+            const v = 0.6 + 0.4 * Math.abs(Math.sin(talkPhase)); // 0.6–1
+            face.mouthIndices.forEach(idx => infl[idx] = Math.max(infl[idx], v));
+          }
+
+          // kedip selalu jalan
+          if (face.blinkL.length || face.blinkR.length) {
+            blinkPhase += 0.03;
+            const tb = blinkPhase % 2.2;
+            let b = 0;
+            if (tb < 0.10)       b = tb / 0.10;
+            else if (tb < 0.20)  b = 1 - (tb - 0.10)/0.10;
+            else                 b = 0;
+            face.blinkL.forEach(idx => infl[idx] = Math.max(infl[idx], b));
+            face.blinkR.forEach(idx => infl[idx] = Math.max(infl[idx], b));
+          }
+        });
       } else {
-        // fallback: mulut kapsul
+        // fallback bola
         if (talking) {
           talkPhase += 0.25;
           const scaleY = 0.8 + Math.abs(Math.sin(talkPhase)) * 0.5;
@@ -2527,23 +2563,52 @@ def render_sela_widget():
         }
       }
 
-      // gerak kepala/rahang pakai bone supaya pasti kelihatan
-      if (headBone || jawBone) {
-        if (talking) {
-          const jawOpen = 0.35 * Math.abs(Math.sin(talkPhase));
-          if (jawBone)  jawBone.rotation.x = -jawOpen;
-          if (headBone) headBone.rotation.x = 0.06 * Math.sin(talkPhase * 0.5);
+      // ---------- bone anim: idle + bicara ----------
+      if (headBone) {
+        if (!talking) {
+          headBone.rotation.z = 0.04 * Math.sin(t * 0.4);
+          headBone.rotation.y = 0.03 * Math.sin(t * 0.6);
         } else {
-          if (jawBone)  jawBone.rotation.x *= 0.8;
-          if (headBone) headBone.rotation.x *= 0.8;
+          headBone.rotation.z = 0.02 * Math.sin(t * 0.6);
+          headBone.rotation.y = 0.02 * Math.sin(t * 0.8);
         }
+      }
+
+      if (jawBone) {
+        if (talking) {
+          const jawOpen = 0.6 * Math.abs(Math.sin(talkPhase));
+          jawBone.rotation.x = -jawOpen;
+        } else {
+          jawBone.rotation.x *= 0.8;
+        }
+      }
+
+      // lirikan mata
+      if (eyeBones.length > 0) {
+        eyeBones.forEach((eye, i) => {
+          eye.rotation.y = 0.08 * Math.sin(t * 0.7 + i);
+          eye.rotation.x = 0.04 * Math.sin(t * 0.5 + i * 0.5);
+        });
+      }
+
+      // gerak lembut tangan & badan saat idle
+      if (!talking) {
+        armBonesL.forEach((b, i) => {
+          b.rotation.z = 0.12 * Math.sin(t * 0.7 + i);
+        });
+        armBonesR.forEach((b, i) => {
+          b.rotation.z = -0.12 * Math.sin(t * 0.7 + i);
+        });
+        spineBones.forEach((b, i) => {
+          b.rotation.x = 0.03 * Math.sin(t * 0.5 + i);
+        });
       }
 
       renderer.render(scene, camera);
     }
     animate();
 
-    // ------------ WEBLLM + MIC (ringkas) ------------
+    // ---------- WEBLLM + MIC ----------
     (async function initLLMAndMic() {
       let engine   = null;
       let messages = [
