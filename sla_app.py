@@ -2251,13 +2251,7 @@ def render_sela_widget():
     import * as THREE from "https://esm.run/three@0.160.0";
     import { GLTFLoader } from "https://esm.run/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 
-    // >>> GANTI URL AVATAR DI SINI <<<
-    // 1) Avatar Sela buatan sendiri:
-    // const AVATAR_URL = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/Sela.glb";
-    //
-    // 2) CONTOH avatar wanita (brunette.glb) dari proyek TalkingHead (Ready Player Me),
-    //    GRATIS untuk penggunaan NON-KOMERSIAL (lisensi CC BY-NC 4.0).
-    //    Cocok untuk eksperimen / demo internal.
+    // Avatar wanita Ready Player Me (brunette.glb), non-komersial / demo
     const AVATAR_URL = "https://raw.githubusercontent.com/met4citizen/TalkingHead/main/avatars/brunette.glb";
 
     const launcher = document.getElementById('sela-launcher');
@@ -2276,14 +2270,12 @@ def render_sela_widget():
       if (!('speechSynthesis' in window)) return null;
       const voices = window.speechSynthesis.getVoices();
       if (!voices || !voices.length) return null;
-      let best = null;
       for (const v of voices) {
         if (v.lang && v.lang.toLowerCase().startsWith('id')) {
-          best = v;
-          break;
+          return v;
         }
       }
-      return best;
+      return null;
     }
 
     function speakGreeting() {
@@ -2312,7 +2304,7 @@ def render_sela_widget():
       panel.style.display = 'none';
     });
 
-    // =================  THREE.JS AVATAR  =================
+    // ============= THREE.JS AVATAR (CLOSE-UP) =============
     const canvas   = document.getElementById('sela-canvas');
     const scene    = new THREE.Scene();
     scene.background = new THREE.Color(0xffffff);   // putih
@@ -2344,7 +2336,7 @@ def render_sela_widget():
     dir.position.set(2, 4, 3);
     scene.add(dir);
 
-    // Fallback avatar kalau GLB gagal
+    // Fallback avatar sederhana
     const headGeo = new THREE.SphereGeometry(0.8, 40, 32);
     const headMat = new THREE.MeshStandardMaterial({
       color: 0xf9a8d4,
@@ -2379,12 +2371,6 @@ def render_sela_widget():
     mouth_fb.position.set(0, 0.48, 0.72);
     scene.add(mouth_fb);
 
-    let selaModel = null;
-    let jawNode   = null;
-    let headNode  = null;
-    let eyeLNode  = null;
-    let eyeRNode  = null;
-
     function hideFallback() {
       head.visible      = false;
       body.visible      = false;
@@ -2393,8 +2379,55 @@ def render_sela_widget():
       mouth_fb.visible  = false;
     }
 
+    let selaModel = null;
+
+    // morph targets (untuk mata & mulut) – jika tersedia di model
+    let morphMesh = null;
+    let mouthTargets = [];  // index-index morph untuk mulut
+    let blinkTargetsL = []; // index morph eye left
+    let blinkTargetsR = []; // index morph eye right
+
+    function detectMorphTargets(root) {
+      root.traverse((obj) => {
+        if (!morphMesh && obj.isMesh && obj.morphTargetDictionary) {
+          morphMesh = obj;
+        }
+      });
+      if (!morphMesh || !morphMesh.morphTargetDictionary) {
+        console.log("[SELA] Tidak menemukan morph targets di avatar (mulut/mata static).");
+        return;
+      }
+      const dict = morphMesh.morphTargetDictionary;
+      console.log("[SELA] Morph targets:", Object.keys(dict));
+
+      // kandidat nama morph untuk MULUT (Ready Player Me: viseme_* + jawOpen/mouthSmile)
+      const mouthNames = [
+        "viseme_aa","viseme_E","viseme_I","viseme_O","viseme_U",
+        "viseme_oh","viseme_ih","jawOpen","mouthOpen","mouthSmile","mouthFunnel"
+      ];
+      mouthNames.forEach(name => {
+        if (dict[name] !== undefined) mouthTargets.push(dict[name]);
+      });
+
+      // kandidat kedip mata
+      const blinkLeftNames  = ["eyeBlinkLeft","eyesClosedLeft","eyeSquintLeft","eyeBlink_L"];
+      const blinkRightNames = ["eyeBlinkRight","eyesClosedRight","eyeSquintRight","eyeBlink_R"];
+
+      blinkLeftNames.forEach(name => {
+        if (dict[name] !== undefined) blinkTargetsL.push(dict[name]);
+      });
+      blinkRightNames.forEach(name => {
+        if (dict[name] !== undefined) blinkTargetsR.push(dict[name]);
+      });
+
+      console.log("[SELA] mouthTargets:", mouthTargets,
+                  "blinkL:", blinkTargetsL,
+                  "blinkR:", blinkTargetsR);
+    }
+
     function loadSelaAvatar() {
       statusEl.textContent = 'Status: mengunduh avatar 3D SELA...';
+      console.log("[SELA] Loading avatar from", AVATAR_URL);
       const loader = new GLTFLoader();
       loader.load(
         AVATAR_URL,
@@ -2402,60 +2435,40 @@ def render_sela_widget():
           try {
             selaModel = gltf.scene;
 
-            // 1) bounding box & scale
-            const originalBox  = new THREE.Box3().setFromObject(selaModel);
-            const originalSize = originalBox.getSize(new THREE.Vector3());
-            const originalHeight = originalSize.y || 1;
+            // Scale & center
+            const box0   = new THREE.Box3().setFromObject(selaModel);
+            const size0  = box0.getSize(new THREE.Vector3());
+            const h0     = size0.y || 1;
 
-            // sedikit lebih pendek agar tidak kepotong atas
-            const targetHeight = 2.8;
-            const scaleFactor  = targetHeight / originalHeight;
-            selaModel.scale.setScalar(scaleFactor);
+            const targetHeight = 2.2;   // tinggi total avatar di dunia 3D
+            const s            = targetHeight / h0;
+            selaModel.scale.setScalar(s);
 
-            // 2) box sesudah scale
-            const box   = new THREE.Box3().setFromObject(selaModel);
-            const size  = box.getSize(new THREE.Vector3());
-            const center= box.getCenter(new THREE.Vector3());
-            const height= size.y || 1;
+            // hitung ulang setelah scale & center ke origin
+            const box1   = new THREE.Box3().setFromObject(selaModel);
+            const center1= box1.getCenter(new THREE.Vector3());
+            selaModel.position.sub(center1);
 
-            // 3) center ke (0,0,0)
-            selaModel.position.x -= center.x;
-            selaModel.position.y -= center.y;
-            selaModel.position.z -= center.z;
-
-            // geser sedikit ke atas (supaya wajah agak tinggi, tapi tidak mentok)
-            selaModel.position.y += height * 0.10;
+            const box    = new THREE.Box3().setFromObject(selaModel);
+            const size   = box.getSize(new THREE.Vector3());
+            const height = size.y;
+            const headY  = box.max.y;
 
             hideFallback();
             scene.add(selaModel);
 
-            // 4) Kamera: medium close-up
-            const headY = height / 2;
-            const faceY = headY - height * 0.25;
-
-            const visibleHeight = height * 0.75;   // makin besar → kamera makin mundur
-            const fovRad = camera.fov * Math.PI / 180;
-            const dist   = (visibleHeight / 2) / Math.tan(fovRad / 2);
-            const zPos   = dist * 1.02;
+            // Kamera: fokus ke wajah (headY - 0.12H), tampilan ~setengah badan atas
+            const faceY         = headY - height * 0.12;
+            const visibleHeight = height * 0.55;
+            const fovRad        = camera.fov * Math.PI / 180;
+            const dist          = (visibleHeight / 2) / Math.tan(fovRad / 2);
+            const zPos          = dist * 1.02;
 
             camera.position.set(0, faceY, zPos);
             camera.lookAt(0, faceY, 0);
 
-            // 5) cari bone kalau ada (untuk animasi lanjut)
-            selaModel.traverse((obj) => {
-              const name = (obj.name || "").toLowerCase();
-              if (!headNode && (name.includes("head") || name.includes("neck"))) headNode = obj;
-              if (!jawNode  && (name.includes("jaw")  || name.includes("mouth"))) jawNode  = obj;
-              if (!eyeLNode && name.includes("eye")   && name.includes("l"))      eyeLNode = obj;
-              if (!eyeRNode && name.includes("eye")   && name.includes("r"))      eyeRNode = obj;
-            });
-
-            console.log("[SELA] Avatar loaded, size=", size, "bones:", {
-              headNode: headNode?.name,
-              jawNode: jawNode?.name,
-              eyeLNode: eyeLNode?.name,
-              eyeRNode: eyeRNode?.name,
-            });
+            // deteksi morph targets utk mata & mulut
+            detectMorphTargets(selaModel);
 
             statusEl.textContent = 'Status: SELA siap. Klik 🎤 lalu bicara.';
           } catch (e) {
@@ -2475,7 +2488,7 @@ def render_sela_widget():
 
     loadSelaAvatar();
 
-    // =================  ANIMASI SEDERHANA  =================
+    // ============= ANIMASI (MATA KEDIP + MULUT BICARA) =============
     let talking   = false;
     let talkPhase = 0;
     let blinkPhase= 0;
@@ -2488,36 +2501,42 @@ def render_sela_widget():
     function animate() {
       requestAnimationFrame(animate);
 
-      // kedip kalau node mata tersedia (di beberapa avatar Ready Player Me)
-      blinkPhase += 0.02;
-      const tb = blinkPhase % 1.2;
-      let eyeScaleY = 1.0;
-      if (tb < 0.08) eyeScaleY = 1.0 - tb / 0.08;
-      else if (tb < 0.16) eyeScaleY = (tb - 0.08) / 0.08;
-      else eyeScaleY = 1.0;
-      if (eyeLNode && eyeRNode) {
-        eyeLNode.scale.y = eyeScaleY;
-        eyeRNode.scale.y = eyeScaleY;
-      }
+      // Kalau punya morph mesh, animasi pakai morphTargetInfluences
+      if (morphMesh && morphMesh.morphTargetInfluences) {
+        const infl = morphMesh.morphTargetInfluences;
 
-      if (selaModel) {
-        if (talking) {
-          talkPhase += 0.18;
-          const mouthOpen = 0.08 + Math.abs(Math.sin(talkPhase)) * 0.20;
-          if (jawNode) {
-            jawNode.rotation.x = -mouthOpen;
-          } else if (headNode) {
-            headNode.rotation.x = Math.sin(talkPhase) * 0.05;
-          } else {
-            selaModel.position.y = Math.sin(talkPhase) * 0.03;
-          }
-        } else {
-          if (jawNode)  jawNode.rotation.x *= 0.8;
-          if (headNode) headNode.rotation.x *= 0.8;
-          selaModel.position.y *= 0.8;
+        // decay ke 0 pelan-pelan
+        for (let i = 0; i < infl.length; i++) {
+          infl[i] *= 0.85;
+        }
+
+        // MULUT bicara
+        if (talking && mouthTargets.length > 0) {
+          talkPhase += 0.22;
+          const v = 0.5 + 0.5 * Math.abs(Math.sin(talkPhase)); // 0.5…1.0
+          mouthTargets.forEach(idx => {
+            infl[idx] = Math.max(infl[idx], v * 0.7);
+          });
+        }
+
+        // KEDIP mata
+        if (blinkTargetsL.length > 0 || blinkTargetsR.length > 0) {
+          blinkPhase += 0.02;
+          const t = blinkPhase % 2.5; // kedip tiap 2.5 detik
+          let b = 0;
+          if (t < 0.08)       b = t / 0.08;          // tutup
+          else if (t < 0.16)  b = 1 - (t - 0.08) / 0.08; // buka
+          else                b = 0;
+
+          blinkTargetsL.forEach(idx => {
+            infl[idx] = Math.max(infl[idx], b);
+          });
+          blinkTargetsR.forEach(idx => {
+            infl[idx] = Math.max(infl[idx], b);
+          });
         }
       } else {
-        // fallback avatar
+        // fallback bola+silinder (mulut doang yang gerak)
         if (talking) {
           talkPhase += 0.25;
           const scaleY = 0.8 + Math.abs(Math.sin(talkPhase)) * 0.5;
@@ -2532,7 +2551,7 @@ def render_sela_widget():
     }
     animate();
 
-    // =================  WEBLLM + MIC  =================
+    // ============= WEBLLM + MIC =============
     (async function initLLMAndMic() {
       let engine   = null;
       let messages = [
