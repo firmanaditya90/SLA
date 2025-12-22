@@ -1969,7 +1969,7 @@ def make_exec_poster_png_v3(
     axHL.add_patch(plt.Rectangle((0,0),1,1, facecolor=(1,1,1,0.86), edgecolor=(0,0,0,0.10)))
     htxt = headline if headline else "-"
     htxt = "\n".join(textwrap.wrap(htxt, width=64))
-    axHL.text(0.02, 0.50, htxt, va="center", fontsize=8, fontweight="bold", color=(0.05,0.10,0.20,0.98))
+    axHL.text(0.02, 0.50, htxt, va="center", fontsize=14, fontweight="bold", color=(0.05,0.10,0.20,0.98))
 
     # =======================
     # CARD HELPER (fixed internal layout)
