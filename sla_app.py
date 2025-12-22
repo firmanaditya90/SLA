@@ -1773,7 +1773,8 @@ def render_tab_analisis_data_v1(df_source: pd.DataFrame, periode_col="PERIODE_DA
 # TAB ANALISIS DATA — FAST + EXECUTIVE DASHBOARD (Direksi)
 # Mode: Tahun vs Tahun | Bulan vs Bulan | Rentang vs Rentang
 # Chart: overlay (A vs B) beda warna
-# Bonus: KPI Compliance, Waterfall Driver, Top Bottleneck, Insight
+# KPI SLA target: mengikuti tab_overview (load_kpi)
+# Insight: tabel bulanan kolom = Tahun/Label A, Tahun/Label B, Selisih, Growth%
 # =========================
 with tab_analisis:
     import numpy as np
@@ -1787,7 +1788,7 @@ with tab_analisis:
     # -------------------------
     st.markdown("## 📊 Analisis Data — Executive Dashboard")
     st.caption(
-        "Dashboard perbandingan **A vs B** untuk Direksi: cepat, ringkas, dan fokus pada **Volume, SLA, Compliance, serta Driver**."
+        "Dashboard perbandingan **A vs B** untuk Direksi: cepat, ringkas, fokus pada **Volume, SLA, Compliance, Driver, Bottleneck**."
     )
 
     # -------------------------
@@ -1804,7 +1805,7 @@ with tab_analisis:
     # -------------------------
     # Toggle data scope (ikut filter sidebar atau full)
     # -------------------------
-    use_sidebar_filter = st.toggle("Gunakan filter sidebar (df_filtered)", value=True, key="ana_exec_usefilter")
+    use_sidebar_filter = st.toggle("Gunakan filter sidebar (df_filtered)", value=True, key="ana_exec_usefilter_v2")
     df_base = df_filtered.copy() if (use_sidebar_filter and "df_filtered" in locals()) else df_raw.copy()
     if df_base is None or df_base.empty:
         st.warning("Data kosong (setelah filter).")
@@ -1896,14 +1897,14 @@ with tab_analisis:
         "Pilih mode",
         ["By Tahun (kumulatif)", "By Bulan (1 bulan)", "By Rentang (range bulan)"],
         horizontal=True,
-        key="ana_exec_mode"
+        key="ana_exec_mode_v2"
     )
 
     colA, colB, colS = st.columns([1, 1, 1])
     with colS:
         st.markdown("**Metrik SLA**")
         if default_sla:
-            sla_pick = st.selectbox("Pilih SLA", sla_options, index=sla_options.index(default_sla), key="ana_exec_sla")
+            sla_pick = st.selectbox("Pilih SLA", sla_options, index=sla_options.index(default_sla), key="ana_exec_sla_v2")
         else:
             sla_pick = None
             st.info("Kolom SLA tidak terdeteksi.")
@@ -1914,9 +1915,9 @@ with tab_analisis:
 
     if mode == "By Tahun (kumulatif)":
         with colA:
-            yearA = st.selectbox("Tahun A", years, index=0, key="ana_exec_yearA")
+            yearA = st.selectbox("Tahun A", years, index=0, key="ana_exec_yearA_v2")
         with colB:
-            yearB = st.selectbox("Tahun B", years, index=min(1, len(years)-1), key="ana_exec_yearB")
+            yearB = st.selectbox("Tahun B", years, index=min(1, len(years) - 1), key="ana_exec_yearB_v2")
 
         selA = [p for p in periods if int(p.year) == int(yearA)]
         selB = [p for p in periods if int(p.year) == int(yearB)]
@@ -1924,9 +1925,9 @@ with tab_analisis:
 
     elif mode == "By Bulan (1 bulan)":
         with colA:
-            mA = st.selectbox("Bulan A", period_labels, index=0, key="ana_exec_monthA")
+            mA = st.selectbox("Bulan A", period_labels, index=0, key="ana_exec_monthA_v2")
         with colB:
-            mB = st.selectbox("Bulan B", period_labels, index=min(1, len(period_labels)-1), key="ana_exec_monthB")
+            mB = st.selectbox("Bulan B", period_labels, index=min(1, len(period_labels) - 1), key="ana_exec_monthB_v2")
 
         selA = [label_to_period[mA]]
         selB = [label_to_period[mB]]
@@ -1934,11 +1935,11 @@ with tab_analisis:
 
     else:  # range
         with colA:
-            sA = st.selectbox("Mulai A", period_labels, index=0, key="ana_exec_startA")
-            eA = st.selectbox("Sampai A", period_labels, index=len(period_labels)-1, key="ana_exec_endA")
+            sA = st.selectbox("Mulai A", period_labels, index=0, key="ana_exec_startA_v2")
+            eA = st.selectbox("Sampai A", period_labels, index=len(period_labels) - 1, key="ana_exec_endA_v2")
         with colB:
-            sB = st.selectbox("Mulai B", period_labels, index=0, key="ana_exec_startB")
-            eB = st.selectbox("Sampai B", period_labels, index=len(period_labels)-1, key="ana_exec_endB")
+            sB = st.selectbox("Mulai B", period_labels, index=0, key="ana_exec_startB_v2")
+            eB = st.selectbox("Sampai B", period_labels, index=len(period_labels) - 1, key="ana_exec_endB_v2")
 
         pA1, pA2 = label_to_period[sA], label_to_period[eA]
         pB1, pB2 = label_to_period[sB], label_to_period[eB]
@@ -2014,16 +2015,17 @@ with tab_analisis:
         spotlight.append(f"• SLA **{sla_dir}**: {seconds_to_sla_format(meanA)} → {seconds_to_sla_format(meanB)} (Δ {seconds_to_sla_format(d_mean)}).")
     if not has_sla:
         spotlight.append("• Catatan: kolom SLA tidak tersedia untuk dibandingkan pada mode/filternya saat ini.")
-
     st.success("\n".join(spotlight))
 
     # -------------------------
-    # (7) EXEC SCORE BAR: KPI compliance + coverage (kualitas data)
+    # (7) EXEC SCORE BAR: KPI compliance + coverage (mengikuti tab_overview: load_kpi)
     # -------------------------
     st.markdown("### 🏁 Executive Score")
 
-    kpi_days = st.number_input("Target KPI SLA (hari)", min_value=0.0, value=2.0, step=0.5, key="ana_exec_kpi_days")
+    saved_kpi = load_kpi() if "load_kpi" in globals() else None
+    kpi_days = float(saved_kpi) if saved_kpi is not None else 1.5
     kpi_sec = kpi_days * 86400.0
+    st.caption(f"Target KPI SLA (mengikuti Overview): **{kpi_days:.2f} hari**")
 
     complianceA = complianceB = d_comp = np.nan
     coverageA = coverageB = np.nan
@@ -2042,7 +2044,6 @@ with tab_analisis:
         d_comp = complianceB - complianceA if np.isfinite(complianceA) and np.isfinite(complianceB) else np.nan
 
     s1, s2, s3, s4 = st.columns(4)
-
     s1.metric("Growth Volume", "-" if np.isnan(p_total) else f"{p_total:+.1f}%", delta=f"{d_total:+,} trx")
 
     if has_sla and np.isfinite(d_mean):
@@ -2052,9 +2053,9 @@ with tab_analisis:
         s2.metric("Perubahan SLA", "-", delta="-")
 
     if has_sla and np.isfinite(complianceA) and np.isfinite(complianceB):
-        s3.metric(f"KPI Compliance ≤ {kpi_days:g} hari", f"{complianceB:.1f}%", delta=f"{d_comp:+.1f} poin")
+        s3.metric(f"KPI Compliance ≤ {kpi_days:.2f} hari", f"{complianceB:.1f}%", delta=f"{d_comp:+.1f} poin")
     else:
-        s3.metric(f"KPI Compliance ≤ {kpi_days:g} hari", "-", delta="-")
+        s3.metric(f"KPI Compliance ≤ {kpi_days:.2f} hari", "-", delta="-")
 
     if has_sla and np.isfinite(coverageA) and np.isfinite(coverageB):
         s4.metric("Coverage SLA", f"{coverageB:.1f}%", delta=f"{(coverageB-coverageA):+.1f} poin")
@@ -2071,7 +2072,7 @@ with tab_analisis:
     chart_periods = pd.period_range(pmin, pmax, freq="M").tolist()
     chart_labels = [month_label_from_period(p) for p in chart_periods]
 
-    # Volume (agregasi cepat)
+    # Volume agregasi
     volA = dfA.groupby("PERIOD_M").size().reindex(chart_periods, fill_value=0).reset_index(name="trx_A")
     volB = dfB.groupby("PERIOD_M").size().reindex(chart_periods, fill_value=0).reset_index(name="trx_B")
     vol = pd.merge(volA, volB, on="PERIOD_M", how="outer").fillna(0)
@@ -2093,6 +2094,7 @@ with tab_analisis:
     st.plotly_chart(fig_vol, use_container_width=True)
 
     # SLA overlay
+    sla = None
     if has_sla:
         dfA_s = dfA.copy()
         dfB_s = dfB.copy()
@@ -2130,20 +2132,17 @@ with tab_analisis:
 
     dim_candidates = [c for c in ["NAMA VENDOR", "JENIS TRANSAKSI"] if c in df_base_local.columns]
     if dim_candidates:
-        dim_wf = st.selectbox("Driver berdasarkan", dim_candidates, key="ana_exec_wf_dim")
-        top_n_wf = st.slider("Top driver ditampilkan", 5, 30, 12, 1, key="ana_exec_wf_topn")
+        dim_wf = st.selectbox("Driver berdasarkan", dim_candidates, key="ana_exec_wf_dim_v2")
+        top_n_wf = st.slider("Top driver ditampilkan", 5, 30, 12, 1, key="ana_exec_wf_topn_v2")
 
         a = dfA.groupby(dim_wf).size().reset_index(name="trx_A")
         b = dfB.groupby(dim_wf).size().reset_index(name="trx_B")
         w = pd.merge(a, b, on=dim_wf, how="outer").fillna(0)
         w["delta"] = w["trx_B"] - w["trx_A"]
 
-        # ambil driver paling berpengaruh (absolute) supaya “dramatis”
         w = w.sort_values("delta", key=lambda s: s.abs(), ascending=False).head(top_n_wf)
 
-        bridge_rows = [
-            {"driver": f"Total ({labelA})", "delta": totalA, "measure": "absolute"},
-        ]
+        bridge_rows = [{"driver": f"Total ({labelA})", "delta": totalA, "measure": "absolute"}]
         for _, r in w.iterrows():
             bridge_rows.append({"driver": str(r[dim_wf]), "delta": float(r["delta"]), "measure": "relative"})
         bridge_rows.append({"driver": f"Total ({labelB})", "delta": totalB, "measure": "absolute"})
@@ -2176,8 +2175,8 @@ with tab_analisis:
 
     dim_candidates2 = [c for c in ["NAMA VENDOR", "JENIS TRANSAKSI"] if c in df_base_local.columns]
     if has_sla and dim_candidates2:
-        dim_bb = st.selectbox("Bottleneck berdasarkan", dim_candidates2, key="ana_exec_bb_dim")
-        top_n_bb = st.slider("Top bottleneck", 5, 30, 10, 1, key="ana_exec_bb_topn")
+        dim_bb = st.selectbox("Bottleneck berdasarkan", dim_candidates2, key="ana_exec_bb_dim_v2")
+        top_n_bb = st.slider("Top bottleneck", 5, 30, 10, 1, key="ana_exec_bb_topn_v2")
 
         def agg_sla_dim(df, dim_col):
             x = df[[dim_col, sla_pick]].copy()
@@ -2202,44 +2201,78 @@ with tab_analisis:
         st.info("Bottleneck butuh kolom SLA + (NAMA VENDOR/JENIS TRANSAKSI).")
 
     # -------------------------
-    # (11) INSIGHT OTOMATIS (narasi)
+    # (11) INSIGHT OTOMATIS — TABEL BULANAN (kolom = Tahun/Label A & B)
     # -------------------------
-    st.markdown("### 🧠 Insight Otomatis")
+    st.markdown("### 🧠 Insight Otomatis (Tabel Perbandingan Bulanan)")
 
-    insights = []
-    if totalA == 0 and totalB == 0:
-        insights.append("• Tidak ada transaksi pada kedua periode.")
-    else:
-        insights.append(f"• Volume transaksi {vol_dir}: {totalA:,} → {totalB:,} (Δ {d_total:+,}{'' if np.isnan(p_total) else f', {p_total:+.1f}%'}).")
+    def col_name_from_sel(sel_periods, fallback_label):
+        yrs = sorted({int(p.year) for p in sel_periods}) if sel_periods else []
+        if len(yrs) == 1:
+            return str(yrs[0])
+        return fallback_label
 
+    colA_name = col_name_from_sel(selA, labelA)
+    colB_name = col_name_from_sel(selB, labelB)
+
+    # Volume table
+    tbl_vol = vol[["bulan_label", "trx_A", "trx_B"]].copy()
+    tbl_vol.rename(columns={"trx_A": colA_name, "trx_B": colB_name}, inplace=True)
+    tbl_vol["Selisih"] = tbl_vol[colB_name] - tbl_vol[colA_name]
+    tbl_vol["Growth %"] = np.where(
+        tbl_vol[colA_name] == 0,
+        np.nan,
+        (tbl_vol[colB_name] - tbl_vol[colA_name]) / tbl_vol[colA_name] * 100
+    )
+
+    st.markdown("**📌 Volume Transaksi (Bulanan)**")
+    st.dataframe(
+        tbl_vol.set_index("bulan_label").style
+            .format({colA_name: "{:,.0f}", colB_name: "{:,.0f}", "Selisih": "{:+,.0f}", "Growth %": "{:+.1f}%"})
+            .highlight_null(color="lightgray"),
+        use_container_width=True
+    )
+
+    # SLA table
+    if has_sla and isinstance(sla, pd.DataFrame):
+        tbl_sla = sla[["bulan_label", "SLA_A(hari)", "SLA_B(hari)"]].copy()
+        tbl_sla.rename(columns={"SLA_A(hari)": colA_name, "SLA_B(hari)": colB_name}, inplace=True)
+        tbl_sla["Selisih"] = tbl_sla[colB_name] - tbl_sla[colA_name]
+        tbl_sla["Growth %"] = np.where(
+            tbl_sla[colA_name] == 0,
+            np.nan,
+            (tbl_sla[colB_name] - tbl_sla[colA_name]) / tbl_sla[colA_name] * 100
+        )
+
+        st.markdown(f"**⏱️ SLA Rata-rata (hari) — {sla_pick}**")
+        st.dataframe(
+            tbl_sla.set_index("bulan_label").style
+                .format({colA_name: "{:.2f}", colB_name: "{:.2f}", "Selisih": "{:+.2f}", "Growth %": "{:+.1f}%"})
+                .highlight_null(color="lightgray"),
+            use_container_width=True
+        )
+
+    # Ringkas narasi
+    exec_notes = []
+    exec_notes.append(f"• Total transaksi {colA_name}: **{int(tbl_vol[colA_name].sum()):,}** | {colB_name}: **{int(tbl_vol[colB_name].sum()):,}**")
+    if np.isfinite(p_total):
+        exec_notes.append(f"• Growth total: **{p_total:+.1f}%** (Δ {d_total:+,} trx)")
     if has_sla and np.isfinite(d_mean):
-        sla_word = "membaik" if d_mean < 0 else ("memburuk" if d_mean > 0 else "stabil")
-        insights.append(f"• SLA {sla_word}: {seconds_to_sla_format(meanA)} → {seconds_to_sla_format(meanB)} (Δ {seconds_to_sla_format(d_mean)}).")
-
+        exec_notes.append(f"• Perubahan SLA rata-rata: **{seconds_to_sla_format(d_mean)}**")
     if has_sla and np.isfinite(d_comp):
-        insights.append(f"• KPI compliance ≤ {kpi_days:g} hari berubah {d_comp:+.1f} poin (B: {complianceB:.1f}%).")
+        exec_notes.append(f"• KPI compliance ≤ {kpi_days:.2f} hari: **{complianceB:.1f}%** (Δ {d_comp:+.1f} poin)")
 
-    if d_total > 0 and has_sla and np.isfinite(d_mean) and d_mean > 0:
-        insights.append("• Rekomendasi: volume naik namun SLA memburuk → fokus bottleneck pada driver terbesar (waterfall) dan top bottleneck di atas.")
-    elif d_total > 0 and has_sla and np.isfinite(d_mean) and d_mean < 0:
-        insights.append("• Rekomendasi: volume naik dan SLA membaik → pertahankan pola proses; lanjutkan perbaikan pada area yang masih memburuk.")
-    elif d_total < 0 and has_sla and np.isfinite(d_mean) and d_mean > 0:
-        insights.append("• Rekomendasi: volume turun namun SLA memburuk → indikasi isu proses (bukan beban); audit tahapan yang paling lambat.")
-
-    if insights:
-        st.write("\n".join(insights))
-    else:
-        st.info("Belum cukup data untuk menghasilkan insight otomatis.")
+    st.info("\n".join(exec_notes))
 
     # -------------------------
-    # (12) DETAIL (opsional) — disembunyikan agar halaman tetap clean
+    # (12) DETAIL (opsional) — agar halaman tetap clean
     # -------------------------
     with st.expander("📋 Detail perhitungan (opsional)"):
         st.write(f"**Periode A:** {labelA}")
         st.write(f"**Periode B:** {labelB}")
         st.dataframe(vol[["bulan_label", "trx_A", "trx_B"]], use_container_width=True)
-        if has_sla:
+        if has_sla and isinstance(sla, pd.DataFrame):
             st.dataframe(sla[["bulan_label", "SLA_A(hari)", "SLA_B(hari)"]], use_container_width=True)
+
 
 # =====================[ HELPERS PDF ]=====================
 # ====================== IMPORTS ======================
