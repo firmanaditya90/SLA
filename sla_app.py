@@ -1907,7 +1907,7 @@ def make_exec_poster_png_v3(
     import textwrap
 
     dpi = 200
-    W, H = 1800, 1100  # landscape tajam
+    W, H = int(11.69 * dpi), int(8.27 * dpi)   # A4 landscape @200dpi ≈ 2338x1654
     fig = plt.figure(figsize=(W/dpi, H/dpi), dpi=dpi)
     fig.patch.set_facecolor("white")
 
@@ -1965,11 +1965,11 @@ def make_exec_poster_png_v3(
     # =======================
     # HEADLINE STRIP (wrap to avoid overflow)
     # =======================
-    axHL = fig.add_axes([0.03, 0.83, 0.94, 0.045]); axHL.axis("off")
+    axHL = fig.add_axes([0.03, 0.83, 0.94, 0.006]); axHL.axis("off")
     axHL.add_patch(plt.Rectangle((0,0),1,1, facecolor=(1,1,1,0.86), edgecolor=(0,0,0,0.10)))
     htxt = headline if headline else "-"
     htxt = "\n".join(textwrap.wrap(htxt, width=64))
-    axHL.text(0.02, 0.50, htxt, va="center", fontsize=14, fontweight="bold", color=(0.05,0.10,0.20,0.98))
+    axHL.text(0.02, 0.50, htxt, va="center", fontsize=12, fontweight="bold", color=(0.05,0.10,0.20,0.98))
 
     # =======================
     # CARD HELPER (fixed internal layout)
@@ -1978,7 +1978,7 @@ def make_exec_poster_png_v3(
         ax = fig.add_axes(axpos); ax.axis("off")
         ax.add_patch(plt.Rectangle((0,0),1,1, facecolor=(1,1,1,0.94), edgecolor=(0,0,0,0.13), linewidth=1.0))
         ax.text(0.05, 0.80, title, fontsize=11, fontweight="bold", color=(0.08,0.12,0.20,0.92))
-        ax.text(0.05, 0.42, value, fontsize=28, fontweight="bold", color=(0.02,0.08,0.16,0.98))
+        ax.text(0.05, 0.42, value, fontsize=20, fontweight="bold", color=(0.02,0.08,0.16,0.98))
         ax.text(0.05, 0.14, sub, fontsize=11, color=(0.08,0.12,0.20,0.72), fontweight="bold")
 
         if badge:
@@ -2008,7 +2008,7 @@ def make_exec_poster_png_v3(
     # =======================
     # Row 1 (Ringkasan Utama)
     y1 = 0.69
-    h1 = 0.11
+    h1 = 0.12
     w = 0.225
     gap = 0.015
     xs = [0.03, 0.03+w+gap, 0.03+2*(w+gap), 0.03+3*(w+gap)]
@@ -2024,7 +2024,7 @@ def make_exec_poster_png_v3(
 
     # Row 2 (Executive Score cards)
     y2 = 0.52
-    h2 = 0.11
+    h2 = 0.12
     card([xs[0], y2, w, h2], "Growth Volume", _id_num(p_total,2,"%") if np.isfinite(p_total) else "-", "Δ transaksi vs A", f"{_id_int(d_total)} trx", good=(d_total>=0))
     card([xs[1], y2, w, h2], "Perubahan SLA", sla_word, "Ringkas (hari)", d_sla_badge, good=good_sla)
     card([xs[2], y2, w, h2], f"KPI Compliance ≤ {_id_num(kpi_days,2,' hari')}", comp_val, "Δ poin vs A", comp_badge, good=(d_comp>=0 if np.isfinite(d_comp) else True))
@@ -2041,7 +2041,7 @@ def make_exec_poster_png_v3(
         axV.plot(x, vol_month_df[seriesA].values, marker="o", linewidth=2.8, label=str(seriesA))
         axV.plot(x, vol_month_df[seriesB].values, marker="o", linewidth=2.8, label=str(seriesB))
         axV.set_xticks(x)
-        axV.set_xticklabels(vol_month_df["Bulan"].tolist(), fontsize=10, rotation=25, ha="right")
+        axV.set_xticklabels(vol_month_df["Bulan"].tolist(), fontsize=9, rotation=35, ha="right")
         axV.grid(True, alpha=0.22)
         axV.legend(frameon=True, fontsize=11, loc="upper left")
     else:
@@ -2067,10 +2067,10 @@ def make_exec_poster_png_v3(
     # FOOTER (safe zone)
     # =======================
     axF = fig.add_axes([0.03, 0.02, 0.94, 0.05]); axF.axis("off")
-    axF.text(0.00, 0.50, "Catatan: Coverage SLA = % transaksi yang memiliki nilai SLA valid (tidak kosong).",
-             fontsize=12, alpha=0.80, color=(0.02,0.08,0.16,0.80), fontweight="bold")
+    axF.text(0.00, 0.50, "",
+             fontsize=10, alpha=0.80, color=(0.02,0.08,0.16,0.80), fontweight="bold")
     axF.text(1.00, 0.50, "Sumber: Tab Analisis (hasil filter aktif)",
-             fontsize=12, alpha=0.80, ha="right", color=(0.02,0.08,0.16,0.80), fontweight="bold")
+             fontsize=10, alpha=0.80, ha="right", color=(0.02,0.08,0.16,0.80), fontweight="bold")
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", pad_inches=0.10)
