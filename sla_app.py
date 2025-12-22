@@ -1771,13 +1771,256 @@ def render_tab_analisis_data_v1(df_source: pd.DataFrame, periode_col="PERIODE_DA
 
 
 with tab_analisis:
-    # Pakai df_filtered kalau ada (mengikuti filter sidebar tab lain), kalau tidak ada pakai df_raw
-    df_for_analysis = df_filtered if "df_filtered" in locals() else df_raw
-    render_tab_analisis_data_v1(
-        df_for_analysis,
-        periode_col="PERIODE_DATETIME",  # kalau berbeda, ganti di sini saja
-        sla_col="SLA"                    # kalau berbeda, ganti di sini saja
+    import numpy as np
+    import pandas as pd
+    import plotly.express as px
+
+    st.markdown("## 📊 Analisis Data (Perbandingan 2 Periode)")
+    st.caption("Bandingkan volume transaksi & SLA antar dua rentang periode, lengkap dengan perubahan nominal & persentase.")
+
+    # ===== ambil df yang aman (mengikuti filter sidebar) =====
+    df_base = df_filtered.copy() if "df_filtered" in locals() else df_raw.copy()
+
+    if df_base is None or df_base.empty:
+        st.warning("Data kosong.")
+        st.stop()
+
+    if "PERIODE_DATETIME" not in df_base.columns:
+        st.error("Kolom PERIODE_DATETIME tidak ditemukan. Pastikan parsing periode berhasil.")
+        st.stop()
+
+    # ===== daftar periode bulanan yang tersedia =====
+    df_base = df_base.dropna(subset=["PERIODE_DATETIME"]).copy()
+    df_base["PERIODE_LABEL"] = df_base["PERIODE_DATETIME"].dt.to_period("M").astype(str)
+    labels = sorted(df_base["PERIODE_LABEL"].unique().tolist())
+    if not labels:
+        st.warning("Tidak ada periode yang bisa dipilih.")
+        st.stop()
+
+    # ===== pilih metrik SLA (AUTO dari available_sla_cols) =====
+    sla_options = available_sla_cols if "available_sla_cols" in locals() else []
+    default_sla = "TOTAL WAKTU" if "TOTAL WAKTU" in sla_options else (sla_options[0] if sla_options else None)
+
+    top = st.container()
+    with top:
+        c1, c2, c3 = st.columns([1, 1, 1])
+        with c1:
+            st.markdown("**Periode A (Baseline)**")
+            startA = st.selectbox("Mulai A", labels, index=0, key="ana_startA_v2")
+            endA   = st.selectbox("Sampai A", labels, index=len(labels)-1, key="ana_endA_v2")
+        with c2:
+            st.markdown("**Periode B (Pembanding)**")
+            startB = st.selectbox("Mulai B", labels, index=0, key="ana_startB_v2")
+            endB   = st.selectbox("Sampai B", labels, index=len(labels)-1, key="ana_endB_v2")
+        with c3:
+            st.markdown("**Metrik SLA yang dibandingkan**")
+            if default_sla:
+                sla_pick = st.selectbox("Pilih SLA", sla_options, index=sla_options.index(default_sla), key="ana_sla_pick")
+            else:
+                sla_pick = None
+                st.info("Tidak ada kolom SLA terdeteksi.")
+
+    def _range_to_dt(a, b):
+        a_dt = pd.Period(a).to_timestamp()
+        b_dt = pd.Period(b).to_timestamp() + pd.offsets.MonthEnd(0)
+        return a_dt, b_dt
+
+    startA_dt, endA_dt = _range_to_dt(startA, endA)
+    startB_dt, endB_dt = _range_to_dt(startB, endB)
+
+    if startA_dt > endA_dt or startB_dt > endB_dt:
+        st.error("Rentang periode tidak valid.")
+        st.stop()
+
+    dfA = df_base[(df_base["PERIODE_DATETIME"] >= startA_dt) & (df_base["PERIODE_DATETIME"] <= endA_dt)].copy()
+    dfB = df_base[(df_base["PERIODE_DATETIME"] >= startB_dt) & (df_base["PERIODE_DATETIME"] <= endB_dt)].copy()
+
+    # ===== helper delta =====
+    def pct_change(a, b):
+        if a is None or pd.isna(a) or a == 0:
+            return np.nan
+        return (b - a) / a * 100
+
+    # ===== KPI cards =====
+    totalA, totalB = len(dfA), len(dfB)
+    d_total = totalB - totalA
+    p_total = pct_change(totalA, totalB)
+
+    # SLA stats
+    meanA = meanB = d_mean = p_mean = np.nan
+    if sla_pick and sla_pick in df_base.columns:
+        # kolom SLA di app kamu sudah diparse ke detik setelah filter (di blok parsing SLA)
+        # jadi cukup numeric coercion untuk aman
+        sA = pd.to_numeric(dfA[sla_pick], errors="coerce").dropna()
+        sB = pd.to_numeric(dfB[sla_pick], errors="coerce").dropna()
+        meanA = float(sA.mean()) if len(sA) else np.nan
+        meanB = float(sB.mean()) if len(sB) else np.nan
+        d_mean = meanB - meanA if np.isfinite(meanA) and np.isfinite(meanB) else np.nan
+        p_mean = pct_change(meanA, meanB) if np.isfinite(meanA) and np.isfinite(meanB) else np.nan
+
+    st.markdown("---")
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Total Transaksi (A)", f"{totalA:,}")
+    k2.metric("Total Transaksi (B)", f"{totalB:,}",
+              delta=f"{d_total:+,}" + ("" if np.isnan(p_total) else f" ({p_total:+.1f}%)"))
+    if sla_pick:
+        k3.metric(f"Rata-rata SLA {sla_pick} (A)", "-" if np.isnan(meanA) else seconds_to_sla_format(meanA))
+        k4.metric(f"Rata-rata SLA {sla_pick} (B)", "-" if np.isnan(meanB) else seconds_to_sla_format(meanB),
+                  delta="-" if np.isnan(d_mean) else f"{seconds_to_sla_format(d_mean)}" + ("" if np.isnan(p_mean) else f" ({p_mean:+.1f}%)"))
+    else:
+        k3.metric("Rata-rata SLA (A)", "-")
+        k4.metric("Rata-rata SLA (B)", "-")
+
+    # ===== Grafik: volume per bulan (side-by-side) =====
+    st.markdown("### 📈 Tren Bulanan (Volume)")
+    def monthly_count(df):
+        if df.empty:
+            return pd.DataFrame(columns=["bulan", "trx"])
+        x = df.copy()
+        x["bulan"] = x["PERIODE_DATETIME"].dt.to_period("M").astype(str)
+        return x.groupby("bulan").size().reset_index(name="trx")
+
+    ma = monthly_count(dfA).rename(columns={"trx": "trx_A"})
+    mb = monthly_count(dfB).rename(columns={"trx": "trx_B"})
+    m = pd.merge(ma, mb, on="bulan", how="outer").fillna(0).sort_values("bulan")
+    m["Δ_trx"] = m["trx_B"] - m["trx_A"]
+
+    fig_vol = px.bar(m, x="bulan", y=["trx_A", "trx_B"], barmode="group")
+    st.plotly_chart(fig_vol, use_container_width=True)
+    st.dataframe(m, use_container_width=True)
+
+    # ===== Grafik: SLA per bulan =====
+    st.markdown("### ⏱️ Tren Bulanan (SLA)")
+    if sla_pick and sla_pick in df_base.columns:
+        def monthly_mean(df, col):
+            if df.empty:
+                return pd.DataFrame(columns=["bulan", "mean_sla"])
+            x = df.copy()
+            x["bulan"] = x["PERIODE_DATETIME"].dt.to_period("M").astype(str)
+            x[col] = pd.to_numeric(x[col], errors="coerce")
+            out = x.groupby("bulan")[col].mean().reset_index(name="mean_sla")
+            out["mean_sla_hari"] = (out["mean_sla"] / 86400.0).round(2)
+            return out
+
+        sa = monthly_mean(dfA, sla_pick).rename(columns={"mean_sla_hari": "SLA_A(hari)"})
+        sb = monthly_mean(dfB, sla_pick).rename(columns={"mean_sla_hari": "SLA_B(hari)"})
+        sm = pd.merge(sa[["bulan","SLA_A(hari)"]], sb[["bulan","SLA_B(hari)"]], on="bulan", how="outer").sort_values("bulan")
+
+        fig_sla = px.line(sm, x="bulan", y=["SLA_A(hari)", "SLA_B(hari)"], markers=True)
+        st.plotly_chart(fig_sla, use_container_width=True)
+        st.dataframe(sm, use_container_width=True)
+    else:
+        st.info("Kolom SLA tidak tersedia untuk dibandingkan.")
+
+    # ===== Breakdown “beneran analisis”: Jenis transaksi / Vendor =====
+    st.markdown("### 🔍 Breakdown Perubahan (Top Movers)")
+    dim_candidates = [c for c in ["JENIS TRANSAKSI", "NAMA VENDOR"] if c in df_base.columns]
+    if dim_candidates and sla_pick and sla_pick in df_base.columns:
+        dim = st.selectbox("Lihat berdasarkan", dim_candidates, key="ana_dim_pick")
+
+        def agg_dim(df, dim_col, sla_col):
+            if df.empty:
+                return pd.DataFrame(columns=[dim_col, "trx", "sla_mean"])
+            x = df.copy()
+            x[sla_col] = pd.to_numeric(x[sla_col], errors="coerce")
+            g = x.groupby(dim_col).agg(
+                trx=(dim_col, "size"),
+                sla_mean=(sla_col, "mean")
+            ).reset_index()
+            g["sla_hari"] = g["sla_mean"] / 86400.0
+            return g
+
+        gA = agg_dim(dfA, dim, sla_pick).rename(columns={"trx":"trx_A","sla_hari":"sla_A(hari)"})
+        gB = agg_dim(dfB, dim, sla_pick).rename(columns={"trx":"trx_B","sla_hari":"sla_B(hari)"})
+        g  = pd.merge(gA[[dim,"trx_A","sla_A(hari)"]], gB[[dim,"trx_B","sla_B(hari)"]], on=dim, how="outer").fillna(0)
+
+        g["Δ_trx"] = g["trx_B"] - g["trx_A"]
+        g["Δ_trx_%"] = g.apply(lambda r: pct_change(r["trx_A"], r["trx_B"]), axis=1)
+        g["Δ_sla(hari)"] = g["sla_B(hari)"] - g["sla_A(hari)"]
+        g["Δ_sla_%"] = g.apply(lambda r: pct_change(r["sla_A(hari)"], r["sla_B(hari)"]), axis=1)
+
+        st.caption("Tip: Δ_sla(hari) negatif = SLA membaik (lebih cepat).")
+        st.dataframe(g.sort_values("Δ_trx", ascending=False), use_container_width=True)
+    else:
+        st.info("Breakdown butuh kolom dimensi (JENIS TRANSAKSI / NAMA VENDOR) dan kolom SLA yang valid.")
+st.markdown("### 🧠 Insight Otomatis")
+
+ins = []
+
+# 1) Volume overall
+if totalA == 0 and totalB == 0:
+    ins.append("• Tidak ada transaksi pada kedua periode (A dan B).")
+else:
+    arah_vol = "naik" if d_total > 0 else ("turun" if d_total < 0 else "tetap")
+    pct_txt = "" if np.isnan(p_total) else f" ({p_total:+.1f}%)"
+    ins.append(f"• Volume transaksi {arah_vol}: **{totalA:,} → {totalB:,}** (Δ **{d_total:+,}**{pct_txt}).")
+
+# 2) SLA overall
+if sla_pick and sla_pick in df_base.columns and np.isfinite(meanA) and np.isfinite(meanB):
+    arah_sla = "memburuk (lebih lama)" if d_mean > 0 else ("membaik (lebih cepat)" if d_mean < 0 else "tetap")
+    pct_sla_txt = "" if np.isnan(p_mean) else f" ({p_mean:+.1f}%)"
+    ins.append(
+        f"• Rata-rata SLA **{sla_pick}** {arah_sla}: "
+        f"**{seconds_to_sla_format(meanA)} → {seconds_to_sla_format(meanB)}** "
+        f"(Δ **{seconds_to_sla_format(d_mean)}**{pct_sla_txt})."
     )
+elif sla_pick:
+    ins.append("• Data SLA tidak cukup untuk dihitung (banyak nilai kosong / tidak valid).")
+
+# 3) Top mover volume (kalau ada tabel g hasil breakdown)
+# g adalah dataframe hasil merge breakdown (lihat kode sebelumnya).
+try:
+    if 'g' in locals() and not g.empty and dim:
+        # Top kenaikan volume
+        g_vol = g.sort_values("Δ_trx", ascending=False).copy()
+        top_up = g_vol.iloc[0]
+        if top_up["Δ_trx"] != 0:
+            pct_up = "" if pd.isna(top_up["Δ_trx_%"]) else f" ({top_up['Δ_trx_%']:+.1f}%)"
+            ins.append(f"• Kontributor perubahan volume terbesar: **{top_up[dim]}** (Δ trx **{int(top_up['Δ_trx']):+,}**{pct_up}).")
+
+        # Top penurunan volume
+        g_down = g.sort_values("Δ_trx", ascending=True).copy()
+        top_dn = g_down.iloc[0]
+        if top_dn["Δ_trx"] != 0:
+            pct_dn = "" if pd.isna(top_dn["Δ_trx_%"]) else f" ({top_dn['Δ_trx_%']:+.1f}%)"
+            ins.append(f"• Penurunan volume terbesar: **{top_dn[dim]}** (Δ trx **{int(top_dn['Δ_trx']):+,}**{pct_dn}).")
+except Exception:
+    pass
+
+# 4) Top perubahan SLA (membaik / memburuk) bila breakdown ada & SLA valid
+try:
+    if 'g' in locals() and not g.empty and "Δ_sla(hari)" in g.columns:
+        g_sla = g.replace([np.inf, -np.inf], np.nan).dropna(subset=["Δ_sla(hari)"]).copy()
+        if not g_sla.empty:
+            # Memburuk = Δ_sla positif terbesar
+            worst = g_sla.sort_values("Δ_sla(hari)", ascending=False).iloc[0]
+            if worst["Δ_sla(hari)"] != 0:
+                pct_w = "" if pd.isna(worst.get("Δ_sla_%", np.nan)) else f" ({worst['Δ_sla_%']:+.1f}%)"
+                ins.append(f"• SLA paling memburuk: **{worst[dim]}** (Δ SLA **{worst['Δ_sla(hari)']:+.2f} hari**{pct_w}).")
+
+            # Membaik = Δ_sla negatif terbesar (paling cepat)
+            best = g_sla.sort_values("Δ_sla(hari)", ascending=True).iloc[0]
+            if best["Δ_sla(hari)"] != 0:
+                pct_b = "" if pd.isna(best.get("Δ_sla_%", np.nan)) else f" ({best['Δ_sla_%']:+.1f}%)"
+                ins.append(f"• SLA paling membaik: **{best[dim]}** (Δ SLA **{best['Δ_sla(hari)']:+.2f} hari**{pct_b}).")
+except Exception:
+    pass
+
+# 5) Rekomendasi singkat (rule-of-thumb)
+if d_total > 0 and np.isfinite(d_mean) and d_mean > 0:
+    ins.append("• Rekomendasi: volume naik tapi SLA memburuk → cek bottleneck (vendor/proses/unit) pada top mover di atas.")
+elif d_total > 0 and np.isfinite(d_mean) and d_mean < 0:
+    ins.append("• Rekomendasi: volume naik tapi SLA membaik → pertahankan pola proses saat ini, fokus ke area yang masih memburuk.")
+elif d_total < 0 and np.isfinite(d_mean) and d_mean > 0:
+    ins.append("• Rekomendasi: volume turun tapi SLA memburuk → indikasi isu proses (bukan beban). Audit step yang paling lambat.")
+elif d_total < 0 and np.isfinite(d_mean) and d_mean < 0:
+    ins.append("• Rekomendasi: volume turun dan SLA membaik → bisa karena beban berkurang; cek apakah improvement bersifat struktural.")
+
+# tampilkan
+if ins:
+    st.write("\n".join(ins))
+else:
+    st.info("Belum cukup data untuk menghasilkan insight otomatis.")
 
 
 
