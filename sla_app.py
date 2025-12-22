@@ -2325,7 +2325,7 @@ with tab_analisis:
     # =========================
     # (10) TOP BOTTLENECK
     # =========================
-    st.markdown("### 🚦 Top Bottleneck (SLA Memburuk)")
+    st.markdown("### 🚦 Top Bottleneck")
     dim_candidates2 = [c for c in ["NAMA VENDOR", "JENIS TRANSAKSI"] if c in df_base_local.columns]
 
     if has_sla and dim_candidates2:
