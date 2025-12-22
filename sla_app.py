@@ -1965,10 +1965,10 @@ def make_exec_poster_png_v3(
     # =======================
     # HEADLINE STRIP (wrap to avoid overflow)
     # =======================
-    axHL = fig.add_axes([0.03, 0.83, 0.94, 0.006]); axHL.axis("off")
+    axHL = fig.add_axes([0.03, 0.83, 0.94, 0.055]); axHL.axis("off")
     axHL.add_patch(plt.Rectangle((0,0),1,1, facecolor=(1,1,1,0.86), edgecolor=(0,0,0,0.10)))
     htxt = headline if headline else "-"
-    htxt = "\n".join(textwrap.wrap(htxt, width=64))
+    htxt = "\n".join(textwrap.wrap(htxt, width=70))
     axHL.text(0.02, 0.50, htxt, va="center", fontsize=14, fontweight="bold", color=(0.05,0.10,0.20,0.98))
 
     # =======================
