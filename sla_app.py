@@ -1788,7 +1788,7 @@ with tab_analisis:
     # -------------------------
     st.markdown("## 📊 Analisis Data — Executive Dashboard")
     st.caption(
-        "Perbandingan **A vs B** untuk Direksi: cepat, ringkas, fokus pada **Volume, SLA, KPI Compliance, Driver, Bottleneck**."
+        "Perbandingan **A vs B**: cepat, ringkas, fokus pada **Volume, SLA, KPI Compliance, Driver, Bottleneck**."
     )
 
     # -------------------------
@@ -2080,10 +2080,10 @@ with tab_analisis:
         p_mean = pct_change(meanA, meanB) if np.isfinite(meanA) and np.isfinite(meanB) else np.nan
 
     # =========================
-    # (6) RINGKASAN UTAMA (Direksi) — CARD
+    # (6) RINGKASAN UTAMA — CARD
     # =========================
     st.markdown("---")
-    st.markdown("### 🧾 Ringkasan Utama (Direksi)")
+    st.markdown("### 🧾 Ringkasan Utama")
 
     slaA_short = slaA_long = slaB_short = slaB_long = "-"
     d_sla_short = "-"
