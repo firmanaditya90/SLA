@@ -1772,9 +1772,9 @@ def render_tab_analisis_data_v1(df_source: pd.DataFrame, periode_col="PERIODE_DA
 # =========================
 # TAB ANALISIS DATA — FAST + EXECUTIVE DASHBOARD (Direksi)
 # Mode: Tahun vs Tahun | Bulan vs Bulan | Rentang vs Rentang
-# Chart: overlay (A vs B) beda warna
+# Tren chart: X = bulan (Jan..Des), warna = Tahun/Label A vs B
 # KPI SLA target: mengikuti tab_overview (load_kpi)
-# Insight: tabel ringkas (baris = Januari..Desember, kolom = Tahun A vs Tahun B)
+# Insight: tabel ringkas (baris = bulan saja), kolom = Tahun A vs Tahun B, Selisih, Growth%
 # =========================
 with tab_analisis:
     import numpy as np
@@ -1805,7 +1805,7 @@ with tab_analisis:
     # -------------------------
     # Toggle data scope (ikut filter sidebar atau full)
     # -------------------------
-    use_sidebar_filter = st.toggle("Gunakan filter sidebar (df_filtered)", value=True, key="ana_exec_usefilter_v3")
+    use_sidebar_filter = st.toggle("Gunakan filter sidebar (df_filtered)", value=True, key="ana_exec_usefilter_full")
     df_base = df_filtered.copy() if (use_sidebar_filter and "df_filtered" in locals()) else df_raw.copy()
     if df_base is None or df_base.empty:
         st.warning("Data kosong (setelah filter).")
@@ -1820,13 +1820,14 @@ with tab_analisis:
     }
     id_month = {v.lower(): k for k, v in month_id.items()}
 
-    def month_label_from_period(p: pd.Period) -> str:
-        return f"{month_id[int(p.month)]} {int(p.year)}"
-
     def pct_change(a, b):
         if a is None or pd.isna(a) or a == 0:
             return np.nan
         return (b - a) / a * 100
+
+    def year_or_label(sel_periods, fallback):
+        yrs = sorted({int(p.year) for p in sel_periods}) if sel_periods else []
+        return str(yrs[0]) if len(yrs) == 1 else fallback
 
     # -------------------------
     # (1) PRECOMPUTE & CACHE lookup periode: parse nilai unik -> Period('YYYY-MM')
@@ -1867,6 +1868,10 @@ with tab_analisis:
             raw_to_period[raw] = parse_to_period_m(raw)
 
         periods_sorted = sorted({p for p in raw_to_period.values() if pd.notna(p)})
+        # label bulan Indonesia: "Januari 2024"
+        def month_label_from_period(p):
+            return f"{month_id[int(p.month)]} {int(p.year)}"
+
         period_to_label = {p: month_label_from_period(p) for p in periods_sorted}
         labels_sorted = [period_to_label[p] for p in periods_sorted]
         years_sorted = sorted({int(p.year) for p in periods_sorted})
@@ -1896,14 +1901,14 @@ with tab_analisis:
         "Pilih mode",
         ["By Tahun (kumulatif)", "By Bulan (1 bulan)", "By Rentang (range bulan)"],
         horizontal=True,
-        key="ana_exec_mode_v3"
+        key="ana_exec_mode_full"
     )
 
     colA, colB, colS = st.columns([1, 1, 1])
     with colS:
         st.markdown("**Metrik SLA**")
         if default_sla:
-            sla_pick = st.selectbox("Pilih SLA", sla_options, index=sla_options.index(default_sla), key="ana_exec_sla_v3")
+            sla_pick = st.selectbox("Pilih SLA", sla_options, index=sla_options.index(default_sla), key="ana_exec_sla_full")
         else:
             sla_pick = None
             st.info("Kolom SLA tidak terdeteksi.")
@@ -1914,9 +1919,9 @@ with tab_analisis:
 
     if mode == "By Tahun (kumulatif)":
         with colA:
-            yearA = st.selectbox("Tahun A", years, index=0, key="ana_exec_yearA_v3")
+            yearA = st.selectbox("Tahun A", years, index=0, key="ana_exec_yearA_full")
         with colB:
-            yearB = st.selectbox("Tahun B", years, index=min(1, len(years) - 1), key="ana_exec_yearB_v3")
+            yearB = st.selectbox("Tahun B", years, index=min(1, len(years) - 1), key="ana_exec_yearB_full")
 
         selA = [p for p in periods if int(p.year) == int(yearA)]
         selB = [p for p in periods if int(p.year) == int(yearB)]
@@ -1924,9 +1929,9 @@ with tab_analisis:
 
     elif mode == "By Bulan (1 bulan)":
         with colA:
-            mA = st.selectbox("Bulan A", period_labels, index=0, key="ana_exec_monthA_v3")
+            mA = st.selectbox("Bulan A", period_labels, index=0, key="ana_exec_monthA_full")
         with colB:
-            mB = st.selectbox("Bulan B", period_labels, index=min(1, len(period_labels) - 1), key="ana_exec_monthB_v3")
+            mB = st.selectbox("Bulan B", period_labels, index=min(1, len(period_labels) - 1), key="ana_exec_monthB_full")
 
         selA = [label_to_period[mA]]
         selB = [label_to_period[mB]]
@@ -1934,11 +1939,11 @@ with tab_analisis:
 
     else:  # range
         with colA:
-            sA = st.selectbox("Mulai A", period_labels, index=0, key="ana_exec_startA_v3")
-            eA = st.selectbox("Sampai A", period_labels, index=len(period_labels) - 1, key="ana_exec_endA_v3")
+            sA = st.selectbox("Mulai A", period_labels, index=0, key="ana_exec_startA_full")
+            eA = st.selectbox("Sampai A", period_labels, index=len(period_labels) - 1, key="ana_exec_endA_full")
         with colB:
-            sB = st.selectbox("Mulai B", period_labels, index=0, key="ana_exec_startB_v3")
-            eB = st.selectbox("Sampai B", period_labels, index=len(period_labels) - 1, key="ana_exec_endB_v3")
+            sB = st.selectbox("Mulai B", period_labels, index=0, key="ana_exec_startB_full")
+            eB = st.selectbox("Sampai B", period_labels, index=len(period_labels) - 1, key="ana_exec_endB_full")
 
         pA1, pA2 = label_to_period[sA], label_to_period[eA]
         pB1, pB2 = label_to_period[sB], label_to_period[eB]
@@ -2062,62 +2067,75 @@ with tab_analisis:
         s4.metric("Coverage SLA", "-", delta="-")
 
     # -------------------------
-    # (8) TREN OVERLAY (A vs B) — 1 grafik per metrik
+    # (8) TREN — X = bulan saja, warna = Tahun/Label A vs B
     # -------------------------
-    st.markdown("### 📈 Tren (Overlay A vs B)")
+    st.markdown("### 📈 Tren (Per Bulan — Overlay A vs B)")
 
-    pmin = min(min(selA), min(selB))
-    pmax = max(max(selA), max(selB))
-    chart_periods = pd.period_range(pmin, pmax, freq="M").tolist()
-    chart_labels = [month_label_from_period(p) for p in chart_periods]
+    seriesA = year_or_label(selA, "A")
+    seriesB = year_or_label(selB, "B")
 
-    # Volume agregasi
-    volA = dfA.groupby("PERIOD_M").size().reindex(chart_periods, fill_value=0).reset_index(name="trx_A")
-    volB = dfB.groupby("PERIOD_M").size().reindex(chart_periods, fill_value=0).reset_index(name="trx_B")
-    vol = pd.merge(volA, volB, on="PERIOD_M", how="outer").fillna(0)
-    vol["bulan_label"] = chart_labels
+    months_union = sorted({int(p.month) for p in selA} | {int(p.month) for p in selB})
+    if not months_union:
+        months_union = list(range(1, 13))
+    month_order = [month_id[m] for m in months_union]
 
-    vol_long = vol.melt(
-        id_vars=["bulan_label"],
-        value_vars=["trx_A", "trx_B"],
-        var_name="seri",
-        value_name="trx"
-    )
-    vol_long["seri"] = vol_long["seri"].map({"trx_A": f"Volume {labelA}", "trx_B": f"Volume {labelB}"})
+    def trx_by_monthnum(df):
+        if df.empty:
+            return {}
+        g = df.groupby("PERIOD_M").size().reset_index(name="trx")
+        g["m"] = g["PERIOD_M"].apply(lambda p: int(p.month))
+        return g.groupby("m")["trx"].sum().to_dict()
+
+    A_trx = trx_by_monthnum(dfA)
+    B_trx = trx_by_monthnum(dfB)
+
+    vol_month = pd.DataFrame({
+        "Bulan": month_order,
+        seriesA: [float(A_trx.get(m, 0)) for m in months_union],
+        seriesB: [float(B_trx.get(m, 0)) for m in months_union],
+    })
+    vol_long = vol_month.melt(id_vars=["Bulan"], var_name="Seri", value_name="Transaksi")
 
     fig_vol = px.line(
-        vol_long, x="bulan_label", y="trx", color="seri", markers=True,
-        title="Volume Transaksi — A vs B (overlay)"
+        vol_long,
+        x="Bulan",
+        y="Transaksi",
+        color="Seri",
+        markers=True,
+        category_orders={"Bulan": month_order},
+        title=f"Volume Transaksi — {seriesA} vs {seriesB} (X = Bulan)"
     )
     fig_vol.update_layout(xaxis_title=None, yaxis_title="Jumlah Transaksi", legend_title=None)
     st.plotly_chart(fig_vol, use_container_width=True)
 
-    # SLA overlay
-    sla = None
     if has_sla:
-        dfA_s = dfA.copy()
-        dfB_s = dfB.copy()
-        dfA_s[sla_pick] = pd.to_numeric(dfA_s[sla_pick], errors="coerce")
-        dfB_s[sla_pick] = pd.to_numeric(dfB_s[sla_pick], errors="coerce")
+        def sla_by_monthnum(df):
+            if df.empty:
+                return {}
+            x = df.copy()
+            x[sla_pick] = pd.to_numeric(x[sla_pick], errors="coerce")
+            g = x.groupby("PERIOD_M")[sla_pick].mean().reset_index(name="sla_sec")
+            g["m"] = g["PERIOD_M"].apply(lambda p: int(p.month))
+            return g.groupby("m")["sla_sec"].mean().to_dict()
 
-        slaA = dfA_s.groupby("PERIOD_M")[sla_pick].mean().reindex(chart_periods).reset_index(name="SLA_A_sec")
-        slaB = dfB_s.groupby("PERIOD_M")[sla_pick].mean().reindex(chart_periods).reset_index(name="SLA_B_sec")
-        sla = pd.merge(slaA, slaB, on="PERIOD_M", how="outer")
-        sla["bulan_label"] = chart_labels
-        sla["SLA_A(hari)"] = (sla["SLA_A_sec"] / 86400.0).round(2)
-        sla["SLA_B(hari)"] = (sla["SLA_B_sec"] / 86400.0).round(2)
+        A_sla = sla_by_monthnum(dfA)
+        B_sla = sla_by_monthnum(dfB)
 
-        sla_long = sla.melt(
-            id_vars=["bulan_label"],
-            value_vars=["SLA_A(hari)", "SLA_B(hari)"],
-            var_name="seri",
-            value_name="sla_hari"
-        )
-        sla_long["seri"] = sla_long["seri"].map({"SLA_A(hari)": f"SLA {labelA}", "SLA_B(hari)": f"SLA {labelB}"})
+        sla_month = pd.DataFrame({
+            "Bulan": month_order,
+            seriesA: [float(A_sla.get(m, np.nan)) / 86400.0 for m in months_union],
+            seriesB: [float(B_sla.get(m, np.nan)) / 86400.0 for m in months_union],
+        })
+        sla_long = sla_month.melt(id_vars=["Bulan"], var_name="Seri", value_name="SLA (hari)")
 
         fig_sla = px.line(
-            sla_long, x="bulan_label", y="sla_hari", color="seri", markers=True,
-            title=f"SLA (hari) — {sla_pick} | A vs B (overlay)"
+            sla_long,
+            x="Bulan",
+            y="SLA (hari)",
+            color="Seri",
+            markers=True,
+            category_orders={"Bulan": month_order},
+            title=f"SLA Rata-rata (hari) — {sla_pick} | {seriesA} vs {seriesB} (X = Bulan)"
         )
         fig_sla.update_layout(xaxis_title=None, yaxis_title="Rata-rata SLA (hari)", legend_title=None)
         st.plotly_chart(fig_sla, use_container_width=True)
@@ -2131,8 +2149,8 @@ with tab_analisis:
 
     dim_candidates = [c for c in ["NAMA VENDOR", "JENIS TRANSAKSI"] if c in df_base_local.columns]
     if dim_candidates:
-        dim_wf = st.selectbox("Driver berdasarkan", dim_candidates, key="ana_exec_wf_dim_v3")
-        top_n_wf = st.slider("Top driver ditampilkan", 5, 30, 12, 1, key="ana_exec_wf_topn_v3")
+        dim_wf = st.selectbox("Driver berdasarkan", dim_candidates, key="ana_exec_wf_dim_full")
+        top_n_wf = st.slider("Top driver ditampilkan", 5, 30, 12, 1, key="ana_exec_wf_topn_full")
 
         a = dfA.groupby(dim_wf).size().reset_index(name="trx_A")
         b = dfB.groupby(dim_wf).size().reset_index(name="trx_B")
@@ -2173,8 +2191,8 @@ with tab_analisis:
 
     dim_candidates2 = [c for c in ["NAMA VENDOR", "JENIS TRANSAKSI"] if c in df_base_local.columns]
     if has_sla and dim_candidates2:
-        dim_bb = st.selectbox("Bottleneck berdasarkan", dim_candidates2, key="ana_exec_bb_dim_v3")
-        top_n_bb = st.slider("Top bottleneck", 5, 30, 10, 1, key="ana_exec_bb_topn_v3")
+        dim_bb = st.selectbox("Bottleneck berdasarkan", dim_candidates2, key="ana_exec_bb_dim_full")
+        top_n_bb = st.slider("Top bottleneck", 5, 30, 10, 1, key="ana_exec_bb_topn_full")
 
         def agg_sla_dim(df, dim_col):
             x = df[[dim_col, sla_pick]].copy()
@@ -2199,33 +2217,25 @@ with tab_analisis:
         st.info("Bottleneck butuh kolom SLA + (NAMA VENDOR/JENIS TRANSAKSI).")
 
     # -------------------------
-    # (11) INSIGHT OTOMATIS — TABEL RINGKAS (baris = bulan saja)
-    #     Kolom = Tahun A, Tahun B, Selisih, Growth%
+    # (11) INSIGHT OTOMATIS — tabel ringkas (baris = bulan saja)
     # -------------------------
     st.markdown("### 🧠 Insight Otomatis (Ringkas per Bulan)")
-
-    # Ambil tahun A/B jika masing-masing selection hanya 1 tahun, else fallback ke label
-    def year_or_label(sel_periods, fallback):
-        yrs = sorted({int(p.year) for p in sel_periods}) if sel_periods else []
-        return str(yrs[0]) if len(yrs) == 1 else fallback
 
     colA_name = year_or_label(selA, "A")
     colB_name = year_or_label(selB, "B")
 
-    # Baris bulan: ambil bulan yang memang muncul di range pilihan (union A & B)
+    # Baris bulan = union bulan dari pilihan A & B
     months_union = sorted({int(p.month) for p in selA} | {int(p.month) for p in selB})
     if not months_union:
         months_union = list(range(1, 13))
-
     month_rows = [month_id[m] for m in months_union]
 
-    # Helper ambil trx per month number dari df (berdasarkan PERIOD_M)
     def trx_by_monthnum(df):
         if df.empty:
             return {}
         g = df.groupby("PERIOD_M").size().reset_index(name="trx")
         g["m"] = g["PERIOD_M"].apply(lambda p: int(p.month))
-        return g.groupby("m")["trx"].sum().to_dict()  # sum jika ada beberapa bulan sama (range multi-year)
+        return g.groupby("m")["trx"].sum().to_dict()
 
     A_trx = trx_by_monthnum(dfA)
     B_trx = trx_by_monthnum(dfB)
@@ -2244,8 +2254,7 @@ with tab_analisis:
         use_container_width=True
     )
 
-    # SLA ringkas per bulan (optional)
-    if has_sla and isinstance(sla, pd.DataFrame):
+    if has_sla:
         def sla_by_monthnum(df):
             if df.empty:
                 return {}
@@ -2253,7 +2262,6 @@ with tab_analisis:
             x[sla_pick] = pd.to_numeric(x[sla_pick], errors="coerce")
             g = x.groupby("PERIOD_M")[sla_pick].mean().reset_index(name="sla_sec")
             g["m"] = g["PERIOD_M"].apply(lambda p: int(p.month))
-            # rata-rata per month number (kalau multi-year, ambil mean antar bulan tsb)
             return g.groupby("m")["sla_sec"].mean().to_dict()
 
         A_sla = sla_by_monthnum(dfA)
@@ -2290,10 +2298,8 @@ with tab_analisis:
     with st.expander("📋 Detail perhitungan (opsional)"):
         st.write(f"**Periode A:** {labelA}")
         st.write(f"**Periode B:** {labelB}")
-        st.dataframe(vol[["bulan_label", "trx_A", "trx_B"]], use_container_width=True)
-        if has_sla and isinstance(sla, pd.DataFrame):
-            st.dataframe(sla[["bulan_label", "SLA_A(hari)", "SLA_B(hari)"]], use_container_width=True)
-
+        st.dataframe(dfA.head(50), use_container_width=True)
+        st.dataframe(dfB.head(50), use_container_width=True)
 
 
 # =====================[ HELPERS PDF ]=====================
