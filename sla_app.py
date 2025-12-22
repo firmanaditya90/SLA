@@ -733,7 +733,7 @@ components.html(html_code, height=350)
 # ==============================
 # Tabs untuk konten (TIDAK DIUBAH)
 # ==============================
-tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_report = st.tabs(
+tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_report, tab_analisis = st.tabs(
     ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi", "📥 Download Report","🧠 Analisis Data"]
 )
 
