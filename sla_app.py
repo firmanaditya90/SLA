@@ -1778,8 +1778,19 @@ def render_tab_analisis_data_v1(df_source: pd.DataFrame, periode_col="PERIODE_DA
 # =========================
 
 # ============================================================
-# HELPER FUNCTIONS (TEMPel di atas: with tab_analisis:)
+# FULL COPY-PASTE PACKAGE
+# 1) HELPER FUNCTIONS (tempel di atas: with tab_analisis:)
+# 2) TAB_ANALISIS (full)
+# 3) BLOK POSTER EXECUTIVE SUMMARY (sudah include di tab_analisis)
+#
+# FIX UTAMA:
+# - Layout poster dirapikan agar TIDAK TIMPANG TINDIH
+# - Logo kiri/kanan aman (auto-fit)
+# - Judul/subjudul/period/timestamp diposisikan ulang
+# - Badge delta dipindah ke area yang aman
+# - Chart diberi ruang lebih, label bulan diputar & diperkecil
 # ============================================================
+
 import io, os, re
 import numpy as np
 import pandas as pd
@@ -1869,7 +1880,7 @@ def build_auto_headline(totalA, totalB, meanA, meanB, p_total, d_total):
 
     return f"{sla_part} • {vol_part}"
 
-def make_exec_poster_png_v2(
+def make_exec_poster_png_v3(
     *,
     labelA, labelB,
     seriesA, seriesB,
@@ -1886,93 +1897,105 @@ def make_exec_poster_png_v2(
     subtitle="Analisis SLA & Transaksi",
 ):
     """
-    Poster PNG (static) 'eyes catching':
-    - gradient + accent shapes
-    - logo Danantara kiri atas, ASDP kanan atas
-    - KPI cards + tren overlay (volume & SLA)
+    POSTER FIXED LAYOUT (NO OVERLAP):
+    - Header 3 baris: title/subtitle + timestamp/period
+    - Logo kiri & kanan auto-fit dan tidak menimpa teks
+    - Card grid rapi (4 + 4)
+    - Chart grid rapi (2) dengan label bulan rotate supaya tidak bertabrakan
     """
     import matplotlib.pyplot as plt
     from PIL import Image
+    import textwrap
 
     dpi = 200
-    W, H = 1800, 1100  # landscape, tajam untuk WA
+    W, H = 1800, 1100  # landscape tajam
     fig = plt.figure(figsize=(W/dpi, H/dpi), dpi=dpi)
     fig.patch.set_facecolor("white")
 
-    # Background gradient
-    ax_bg = fig.add_axes([0, 0, 1, 1]); ax_bg.axis("off")
+    # =======================
+    # BACKGROUND (gradient + accent)
+    # =======================
+    ax_bg = fig.add_axes([0, 0, 1, 1])
+    ax_bg.axis("off")
     grad = np.linspace(0, 1, H).reshape(H, 1)
-    top = np.array([14, 42, 92]) / 255.0
-    bottom = np.array([255, 255, 255]) / 255.0
+    top = np.array([18, 34, 84]) / 255.0        # navy
+    bottom = np.array([255, 255, 255]) / 255.0  # white
     bg = bottom + (top - bottom) * (1 - grad)
     bg = np.repeat(bg, W, axis=1)
     ax_bg.imshow(bg, aspect="auto", extent=[0, 1, 0, 1])
 
-    # Accent shapes
-    ax_bg.add_patch(plt.Rectangle((0.00, 0.92), 1.0, 0.08, color=(0.06,0.56,0.80,0.22), ec=(0,0,0,0)))
-    ax_bg.add_patch(plt.Rectangle((0.00, 0.00), 1.0, 0.06, color=(0.00,0.65,0.50,0.18), ec=(0,0,0,0)))
-    ax_bg.add_patch(plt.Circle((0.10, 0.58), 0.18, color=(1.0,0.55,0.0,0.08), ec=(0,0,0,0)))
-    ax_bg.add_patch(plt.Circle((0.93, 0.48), 0.22, color=(0.00,0.65,0.50,0.10), ec=(0,0,0,0)))
+    # Accent bars
+    ax_bg.add_patch(plt.Rectangle((0.00, 0.92), 1.0, 0.08, color=(0.10,0.55,0.85,0.26), ec=(0,0,0,0)))
+    ax_bg.add_patch(plt.Rectangle((0.00, 0.00), 1.0, 0.06, color=(0.00,0.70,0.55,0.18), ec=(0,0,0,0)))
+    ax_bg.add_patch(plt.Circle((0.12, 0.52), 0.20, color=(1.0,0.55,0.0,0.07), ec=(0,0,0,0)))
+    ax_bg.add_patch(plt.Circle((0.92, 0.46), 0.25, color=(0.00,0.70,0.55,0.10), ec=(0,0,0,0)))
 
-    # Header
-    axH = fig.add_axes([0.03, 0.86, 0.94, 0.12]); axH.axis("off")
-    axH.text(0.00, 0.62, title, fontsize=22, fontweight="bold", color=(1,1,1,0.95))
-    axH.text(0.00, 0.18, subtitle, fontsize=13, fontweight="bold", color=(1,1,1,0.88))
-    axH.text(1.00, 0.62, datetime.now().strftime("%d %b %Y %H:%M"),
-             ha="right", fontsize=10, color=(1,1,1,0.85))
-    axH.text(1.00, 0.18, f"Periode: {labelA} vs {labelB}",
-             ha="right", fontsize=11, fontweight="bold", color=(1,1,1,0.90))
-
-    # Logos helper
-    def _imshow_logo(bytes_, axpos):
+    # =======================
+    # LOGOS (dedicated safe zone)
+    # =======================
+    def _logo_ax(bytes_, x, y, w, h):
         if not bytes_:
             return
         try:
             im = Image.open(io.BytesIO(bytes_)).convert("RGBA")
-            axL = fig.add_axes(axpos); axL.axis("off")
-            axL.imshow(im)
+            ax = fig.add_axes([x, y, w, h])
+            ax.axis("off")
+            ax.imshow(im)
         except Exception:
             pass
 
-    # Logo Danantara kiri, ASDP kanan
-    _imshow_logo(logo_left_bytes,  [0.03, 0.885, 0.09, 0.085])
-    _imshow_logo(logo_right_bytes, [0.88, 0.885, 0.09, 0.085])
+    # Left logo (Danantara) and right logo (ASDP)
+    _logo_ax(logo_left_bytes,  0.02, 0.915, 0.10, 0.07)
+    _logo_ax(logo_right_bytes, 0.88, 0.915, 0.10, 0.07)
 
-    # Headline strip
-    axHL = fig.add_axes([0.03, 0.80, 0.94, 0.05]); axHL.axis("off")
-    axHL.add_patch(plt.Rectangle((0,0),1,1, facecolor=(1,1,1,0.80), edgecolor=(0,0,0,0.10)))
-    axHL.text(0.02, 0.50, headline if headline else "-",
-              va="center", fontsize=12.5, fontweight="bold", color=(0.05,0.10,0.20,0.98))
+    # =======================
+    # HEADER TEXT (safe zone middle, no overlap with logos)
+    # =======================
+    axH = fig.add_axes([0.14, 0.915, 0.72, 0.07])
+    axH.axis("off")
+    axH.text(0.00, 0.72, title, fontsize=24, fontweight="bold", color=(1,1,1,0.96), va="center")
+    axH.text(0.00, 0.22, subtitle, fontsize=14, fontweight="bold", color=(1,1,1,0.90), va="center")
 
-    # Card helper
+    axHP = fig.add_axes([0.14, 0.875, 0.84, 0.04])
+    axHP.axis("off")
+    axHP.text(1.00, 0.50, datetime.now().strftime("%d %b %Y %H:%M"),
+              ha="right", fontsize=12, color=(1,1,1,0.88), fontweight="bold")
+    axHP.text(0.00, 0.50, f"Periode: {labelA} vs {labelB}",
+              ha="left", fontsize=14, color=(1,1,1,0.92), fontweight="bold")
+
+    # =======================
+    # HEADLINE STRIP (wrap to avoid overflow)
+    # =======================
+    axHL = fig.add_axes([0.03, 0.83, 0.94, 0.045]); axHL.axis("off")
+    axHL.add_patch(plt.Rectangle((0,0),1,1, facecolor=(1,1,1,0.86), edgecolor=(0,0,0,0.10)))
+    htxt = headline if headline else "-"
+    htxt = "\n".join(textwrap.wrap(htxt, width=64))
+    axHL.text(0.02, 0.50, htxt, va="center", fontsize=14, fontweight="bold", color=(0.05,0.10,0.20,0.98))
+
+    # =======================
+    # CARD HELPER (fixed internal layout)
+    # =======================
     def card(axpos, title, value, sub, badge=None, good=True):
         ax = fig.add_axes(axpos); ax.axis("off")
-        ax.add_patch(plt.Rectangle((0,0),1,1, facecolor=(1,1,1,0.93), edgecolor=(0,0,0,0.12), linewidth=1))
-        ax.text(0.05, 0.78, title, fontsize=9.5, fontweight="bold", color=(0.08,0.12,0.20,0.92))
-        ax.text(0.05, 0.42, value, fontsize=20, fontweight="bold", color=(0.02,0.08,0.16,0.98))
-        ax.text(0.05, 0.14, sub, fontsize=8.7, color=(0.08,0.12,0.20,0.72), fontweight="bold")
+        ax.add_patch(plt.Rectangle((0,0),1,1, facecolor=(1,1,1,0.94), edgecolor=(0,0,0,0.13), linewidth=1.0))
+        ax.text(0.05, 0.80, title, fontsize=11, fontweight="bold", color=(0.08,0.12,0.20,0.92))
+        ax.text(0.05, 0.42, value, fontsize=28, fontweight="bold", color=(0.02,0.08,0.16,0.98))
+        ax.text(0.05, 0.14, sub, fontsize=11, color=(0.08,0.12,0.20,0.72), fontweight="bold")
+
         if badge:
             fc = (0.05, 0.65, 0.50, 0.18) if good else (0.85, 0.20, 0.20, 0.16)
             tc = (0.02, 0.45, 0.34, 0.95) if good else (0.55, 0.10, 0.10, 0.95)
-            ax.add_patch(plt.Rectangle((0.62, 0.62), 0.33, 0.26, facecolor=fc, edgecolor=(0,0,0,0.10)))
-            ax.text(0.785, 0.75, badge, ha="center", va="center", fontsize=9, fontweight="bold", color=tc)
+            # badge always top-right inside card
+            ax.add_patch(plt.Rectangle((0.67, 0.70), 0.30, 0.22, facecolor=fc, edgecolor=(0,0,0,0.10)))
+            ax.text(0.82, 0.81, badge, ha="center", va="center", fontsize=12, fontweight="bold", color=tc)
 
-    # KPI values
+    # =======================
+    # KPI VALUES
+    # =======================
     vol_badge = f"{_id_int(d_total)} ({_id_num(p_total,2,'%')})" if np.isfinite(p_total) else _id_int(d_total)
     d_sla = (meanB - meanA) if (np.isfinite(meanA) and np.isfinite(meanB)) else np.nan
     d_sla_badge = (("−" if d_sla < 0 else "+") + _sla_short_days(abs(d_sla),2)) if np.isfinite(d_sla) else "-"
     good_sla = True if (not np.isfinite(d_sla)) else (d_sla < 0)
-
-    # Ringkasan utama cards
-    card([0.03, 0.65, 0.23, 0.12], f"Total Transaksi ({seriesA})", _id_int(totalA), "Baseline")
-    card([0.27, 0.65, 0.23, 0.12], f"Total Transaksi ({seriesB})", _id_int(totalB), "Perubahan vs A", vol_badge, good=(d_total>=0))
-    card([0.51, 0.65, 0.23, 0.12], f"Avg SLA ({seriesA})", _sla_short_days(meanA,2), _sla_long_id(meanA))
-    card([0.75, 0.65, 0.22, 0.12], f"Avg SLA ({seriesB})", _sla_short_days(meanB,2), _sla_long_id(meanB), d_sla_badge, good=good_sla)
-
-    # Executive Score header
-    axES = fig.add_axes([0.03, 0.58, 0.94, 0.05]); axES.axis("off")
-    axES.text(0.00, 0.55, "Executive Score", fontsize=13, fontweight="bold", color=(0.02,0.08,0.16,0.95))
-    axES.text(0.00, 0.10, f"Target KPI SLA: {_id_num(kpi_days,2,' hari')}", fontsize=9.5, color=(0.02,0.08,0.16,0.70))
 
     comp_val = _id_num(complianceB,2,"%") if np.isfinite(complianceB) else "-"
     cov_val  = _id_num(coverageB,2,"%") if np.isfinite(coverageB) else "-"
@@ -1981,49 +2004,77 @@ def make_exec_poster_png_v2(
 
     sla_word = "membaik" if (np.isfinite(d_sla) and d_sla < 0) else ("memburuk" if (np.isfinite(d_sla) and d_sla > 0) else "stabil")
 
-    card([0.03, 0.44, 0.23, 0.12], "Growth Volume", _id_num(p_total,2,"%") if np.isfinite(p_total) else "-", "Δ transaksi vs A", f"{_id_int(d_total)} trx", good=(d_total>=0))
-    card([0.27, 0.44, 0.23, 0.12], "Perubahan SLA", sla_word, "Ringkas (hari)", d_sla_badge, good=good_sla)
-    card([0.51, 0.44, 0.23, 0.12], f"KPI Compliance ≤ {_id_num(kpi_days,2,' hari')}", comp_val, "Δ poin vs A", comp_badge, good=(d_comp>=0 if np.isfinite(d_comp) else True))
-    card([0.75, 0.44, 0.22, 0.12], "Coverage SLA", cov_val, "Kualitas data SLA", cov_badge, good=(d_cov>=0 if np.isfinite(d_cov) else True))
+    # =======================
+    # CARD GRID POSITIONS (NO OVERLAP)
+    # =======================
+    # Row 1 (Ringkasan Utama)
+    y1 = 0.69
+    h1 = 0.11
+    w = 0.225
+    gap = 0.015
+    xs = [0.03, 0.03+w+gap, 0.03+2*(w+gap), 0.03+3*(w+gap)]
+    card([xs[0], y1, w, h1], f"Total Transaksi ({seriesA})", _id_int(totalA), "Baseline")
+    card([xs[1], y1, w, h1], f"Total Transaksi ({seriesB})", _id_int(totalB), "Perubahan vs A", vol_badge, good=(d_total>=0))
+    card([xs[2], y1, w, h1], f"Avg SLA ({seriesA})", _sla_short_days(meanA,2), _sla_long_id(meanA))
+    card([xs[3], y1, w, h1], f"Avg SLA ({seriesB})", _sla_short_days(meanB,2), _sla_long_id(meanB), d_sla_badge, good=good_sla)
 
-    # Trend charts
-    axV = fig.add_axes([0.05, 0.08, 0.44, 0.30])
-    axV.set_title("Tren Volume (bulan)", fontsize=12, fontweight="bold", loc="left", color=(0.02,0.08,0.16,0.95))
-    if isinstance(vol_month_df, pd.DataFrame) and "Bulan" in vol_month_df.columns:
+    # Executive Score label (separate line)
+    axES = fig.add_axes([0.03, 0.63, 0.94, 0.05]); axES.axis("off")
+    axES.text(0.00, 0.60, "Executive Score", fontsize=18, fontweight="bold", color=(0.02,0.08,0.16,0.95))
+    axES.text(0.00, 0.10, f"Target KPI SLA: {_id_num(kpi_days,2,' hari')}", fontsize=13, color=(0.02,0.08,0.16,0.70), fontweight="bold")
+
+    # Row 2 (Executive Score cards)
+    y2 = 0.52
+    h2 = 0.11
+    card([xs[0], y2, w, h2], "Growth Volume", _id_num(p_total,2,"%") if np.isfinite(p_total) else "-", "Δ transaksi vs A", f"{_id_int(d_total)} trx", good=(d_total>=0))
+    card([xs[1], y2, w, h2], "Perubahan SLA", sla_word, "Ringkas (hari)", d_sla_badge, good=good_sla)
+    card([xs[2], y2, w, h2], f"KPI Compliance ≤ {_id_num(kpi_days,2,' hari')}", comp_val, "Δ poin vs A", comp_badge, good=(d_comp>=0 if np.isfinite(d_comp) else True))
+    card([xs[3], y2, w, h2], "Coverage SLA", cov_val, "Kualitas data SLA", cov_badge, good=(d_cov>=0 if np.isfinite(d_cov) else True))
+
+    # =======================
+    # CHARTS (bigger bottom margin, rotated labels)
+    # =======================
+    # Volume chart
+    axV = fig.add_axes([0.05, 0.10, 0.44, 0.36])
+    axV.set_title("Tren Volume (bulan)", fontsize=16, fontweight="bold", loc="left", color=(0.02,0.08,0.16,0.95))
+    if isinstance(vol_month_df, pd.DataFrame) and "Bulan" in vol_month_df.columns and seriesA in vol_month_df.columns and seriesB in vol_month_df.columns:
         x = list(range(len(vol_month_df["Bulan"])))
-        axV.plot(x, vol_month_df[seriesA].values, marker="o", linewidth=2.3, label=str(seriesA))
-        axV.plot(x, vol_month_df[seriesB].values, marker="o", linewidth=2.3, label=str(seriesB))
+        axV.plot(x, vol_month_df[seriesA].values, marker="o", linewidth=2.8, label=str(seriesA))
+        axV.plot(x, vol_month_df[seriesB].values, marker="o", linewidth=2.8, label=str(seriesB))
         axV.set_xticks(x)
-        axV.set_xticklabels(vol_month_df["Bulan"].tolist(), fontsize=8)
+        axV.set_xticklabels(vol_month_df["Bulan"].tolist(), fontsize=10, rotation=25, ha="right")
         axV.grid(True, alpha=0.22)
-        axV.legend(frameon=False, fontsize=9)
+        axV.legend(frameon=True, fontsize=11, loc="upper left")
     else:
         axV.text(0.5, 0.5, "Data tren volume tidak tersedia", ha="center", va="center", alpha=0.7)
         axV.axis("off")
 
-    axT = fig.add_axes([0.53, 0.08, 0.44, 0.30])
-    axT.set_title("Tren SLA (hari, bulan)", fontsize=12, fontweight="bold", loc="left", color=(0.02,0.08,0.16,0.95))
-    if isinstance(sla_month_df, pd.DataFrame) and "Bulan" in sla_month_df.columns:
+    # SLA chart
+    axT = fig.add_axes([0.53, 0.10, 0.44, 0.36])
+    axT.set_title("Tren SLA (hari, bulan)", fontsize=16, fontweight="bold", loc="left", color=(0.02,0.08,0.16,0.95))
+    if isinstance(sla_month_df, pd.DataFrame) and "Bulan" in sla_month_df.columns and seriesA in sla_month_df.columns and seriesB in sla_month_df.columns:
         x = list(range(len(sla_month_df["Bulan"])))
-        axT.plot(x, sla_month_df[seriesA].values, marker="o", linewidth=2.3, label=str(seriesA))
-        axT.plot(x, sla_month_df[seriesB].values, marker="o", linewidth=2.3, label=str(seriesB))
+        axT.plot(x, sla_month_df[seriesA].values, marker="o", linewidth=2.8, label=str(seriesA))
+        axT.plot(x, sla_month_df[seriesB].values, marker="o", linewidth=2.8, label=str(seriesB))
         axT.set_xticks(x)
-        axT.set_xticklabels(sla_month_df["Bulan"].tolist(), fontsize=8)
+        axT.set_xticklabels(sla_month_df["Bulan"].tolist(), fontsize=10, rotation=25, ha="right")
         axT.grid(True, alpha=0.22)
-        axT.legend(frameon=False, fontsize=9)
+        axT.legend(frameon=True, fontsize=11, loc="upper right")
     else:
         axT.text(0.5, 0.5, "Data tren SLA tidak tersedia", ha="center", va="center", alpha=0.7)
         axT.axis("off")
 
-    # Footer
-    axF = fig.add_axes([0.03, 0.02, 0.94, 0.04]); axF.axis("off")
+    # =======================
+    # FOOTER (safe zone)
+    # =======================
+    axF = fig.add_axes([0.03, 0.02, 0.94, 0.05]); axF.axis("off")
     axF.text(0.00, 0.50, "Catatan: Coverage SLA = % transaksi yang memiliki nilai SLA valid (tidak kosong).",
-             fontsize=9, alpha=0.78, color=(0.02,0.08,0.16,0.78))
+             fontsize=12, alpha=0.80, color=(0.02,0.08,0.16,0.80), fontweight="bold")
     axF.text(1.00, 0.50, "Sumber: Tab Analisis (hasil filter aktif)",
-             fontsize=9, alpha=0.78, ha="right", color=(0.02,0.08,0.16,0.78))
+             fontsize=12, alpha=0.80, ha="right", color=(0.02,0.08,0.16,0.80), fontweight="bold")
 
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight")
+    fig.savefig(buf, format="png", bbox_inches="tight", pad_inches=0.10)
     plt.close(fig)
     return buf.getvalue()
 
@@ -2036,7 +2087,7 @@ def make_exec_poster_pdf_from_png(png_bytes):
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=landscape(A4))
     W, H = landscape(A4)
-    margin = 20
+    margin = 18
     img = ImageReader(io.BytesIO(png_bytes))
     c.drawImage(img, margin, margin, width=W-2*margin, height=H-2*margin, preserveAspectRatio=True, anchor="c")
     c.showPage()
@@ -2045,11 +2096,10 @@ def make_exec_poster_pdf_from_png(png_bytes):
 
 
 # ============================================================
-# TAB ANALISIS — FULL (tempel di bagian tabs: with tab_analisis:)
+# TAB ANALISIS — FULL (tempel di: with tab_analisis:)
 # ============================================================
 with tab_analisis:
     import plotly.express as px
-    import plotly.graph_objects as go
 
     st.markdown("## 📊 Analisis Data — Executive Dashboard")
     st.caption("Bandingkan **A vs B** (Tahun vs Tahun, Bulan vs Bulan, atau Rentang vs Rentang). Angka di sini mengikuti filter tab_analisis.")
@@ -2063,7 +2113,7 @@ with tab_analisis:
         st.stop()
 
     # Toggle filter scope
-    use_sidebar_filter = st.toggle("Gunakan filter sidebar (df_filtered)", value=True, key="ana_usefilter_all")
+    use_sidebar_filter = st.toggle("Gunakan filter sidebar (df_filtered)", value=True, key="ana_usefilter_all_v3")
     df_base = df_filtered.copy() if (use_sidebar_filter and "df_filtered" in locals()) else df_raw.copy()
     if df_base is None or df_base.empty:
         st.warning("Data kosong (setelah filter).")
@@ -2186,14 +2236,14 @@ with tab_analisis:
         "Pilih mode",
         ["By Tahun (kumulatif)", "By Bulan (1 bulan)", "By Rentang (range bulan)"],
         horizontal=True,
-        key="ana_mode_all"
+        key="ana_mode_all_v3"
     )
 
     colA, colB, colS = st.columns([1, 1, 1])
     with colS:
         st.markdown("**Metrik SLA**")
         if default_sla:
-            sla_pick = st.selectbox("Pilih SLA", sla_options, index=sla_options.index(default_sla), key="ana_sla_all")
+            sla_pick = st.selectbox("Pilih SLA", sla_options, index=sla_options.index(default_sla), key="ana_sla_all_v3")
         else:
             sla_pick = None
             st.info("Kolom SLA tidak terdeteksi.")
@@ -2204,9 +2254,9 @@ with tab_analisis:
 
     if mode == "By Tahun (kumulatif)":
         with colA:
-            yearA = st.selectbox("Tahun A", years, index=0, key="ana_yearA_all")
+            yearA = st.selectbox("Tahun A", years, index=0, key="ana_yearA_all_v3")
         with colB:
-            yearB = st.selectbox("Tahun B", years, index=min(1, len(years) - 1), key="ana_yearB_all")
+            yearB = st.selectbox("Tahun B", years, index=min(1, len(years) - 1), key="ana_yearB_all_v3")
 
         selA = [p for p in periods if int(p.year) == int(yearA)]
         selB = [p for p in periods if int(p.year) == int(yearB)]
@@ -2214,9 +2264,9 @@ with tab_analisis:
 
     elif mode == "By Bulan (1 bulan)":
         with colA:
-            mA = st.selectbox("Bulan A", period_labels, index=0, key="ana_monthA_all")
+            mA = st.selectbox("Bulan A", period_labels, index=0, key="ana_monthA_all_v3")
         with colB:
-            mB = st.selectbox("Bulan B", period_labels, index=min(1, len(period_labels) - 1), key="ana_monthB_all")
+            mB = st.selectbox("Bulan B", period_labels, index=min(1, len(period_labels) - 1), key="ana_monthB_all_v3")
 
         selA = [label_to_period[mA]]
         selB = [label_to_period[mB]]
@@ -2224,11 +2274,11 @@ with tab_analisis:
 
     else:  # range
         with colA:
-            sA = st.selectbox("Mulai A", period_labels, index=0, key="ana_startA_all")
-            eA = st.selectbox("Sampai A", period_labels, index=len(period_labels) - 1, key="ana_endA_all")
+            sA = st.selectbox("Mulai A", period_labels, index=0, key="ana_startA_all_v3")
+            eA = st.selectbox("Sampai A", period_labels, index=len(period_labels) - 1, key="ana_endA_all_v3")
         with colB:
-            sB = st.selectbox("Mulai B", period_labels, index=0, key="ana_startB_all")
-            eB = st.selectbox("Sampai B", period_labels, index=len(period_labels) - 1, key="ana_endB_all")
+            sB = st.selectbox("Mulai B", period_labels, index=0, key="ana_startB_all_v3")
+            eB = st.selectbox("Sampai B", period_labels, index=len(period_labels) - 1, key="ana_endB_all_v3")
 
         pA1, pA2 = label_to_period[sA], label_to_period[eA]
         pB1, pB2 = label_to_period[sB], label_to_period[eB]
@@ -2273,7 +2323,6 @@ with tab_analisis:
 
     d_sla = (meanB - meanA) if (has_sla and np.isfinite(meanA) and np.isfinite(meanB)) else np.nan
     badge_sla = (("−" if d_sla < 0 else "+") + _sla_short_days(abs(d_sla), 2)) if np.isfinite(d_sla) else "-"
-
     badge_vol = f"{_id_int(d_total)} ({_id_num(p_total,2,'%')})" if np.isfinite(p_total) else _id_int(d_total)
 
     html_cards = f"""
@@ -2325,7 +2374,6 @@ with tab_analisis:
     kpi_sec = kpi_days * 86400.0
     st.markdown(f'<div class="small-cap">Target KPI SLA (mengikuti Overview): <b>{_id_num(kpi_days,2," hari")}</b></div>', unsafe_allow_html=True)
 
-    # Coverage & Compliance
     complianceA = complianceB = np.nan
     coverageA = coverageB = np.nan
     d_comp = d_cov = np.nan
@@ -2343,43 +2391,6 @@ with tab_analisis:
         complianceA = float((validA <= kpi_sec).mean() * 100) if len(validA) else np.nan
         complianceB = float((validB <= kpi_sec).mean() * 100) if len(validB) else np.nan
         d_comp = complianceB - complianceA if (np.isfinite(complianceA) and np.isfinite(complianceB)) else np.nan
-
-    sla_word = "membaik" if (np.isfinite(d_sla) and d_sla<0) else ("memburuk" if (np.isfinite(d_sla) and d_sla>0) else "stabil")
-    badge_comp = _id_num(d_comp,2," poin") if np.isfinite(d_comp) else "-"
-    badge_cov  = _id_num(d_cov,2," poin") if np.isfinite(d_cov) else "-"
-
-    html_score = f"""
-    <div class="kpi-wrap">
-      <div class="kpi-card">
-        <p class="kpi-title">Growth Volume</p>
-        <p class="kpi-value">{_id_num(p_total,2,"%") if np.isfinite(p_total) else "-"}</p>
-        <span class="badge {badge_class(d_total)}">{_id_int(d_total)} trx</span>
-        <div class="kpi-sub">Δ transaksi vs A</div>
-      </div>
-
-      <div class="kpi-card">
-        <p class="kpi-title">Perubahan SLA</p>
-        <p class="kpi-value">{sla_word}</p>
-        <span class="badge {badge_class(-1 if (np.isfinite(d_sla) and d_sla<0) else (1 if (np.isfinite(d_sla) and d_sla>0) else 0))}">{badge_sla}</span>
-        <div class="kpi-sub">Ringkas (hari)</div>
-      </div>
-
-      <div class="kpi-card">
-        <p class="kpi-title">KPI Compliance ≤ {_id_num(kpi_days,2," hari")}</p>
-        <p class="kpi-value">{_id_num(complianceB,2,"%") if np.isfinite(complianceB) else "-"}</p>
-        <span class="badge {badge_class(d_comp)}">{badge_comp}</span>
-        <div class="kpi-sub">Δ poin vs A</div>
-      </div>
-
-      <div class="kpi-card">
-        <p class="kpi-title">Coverage SLA</p>
-        <p class="kpi-value">{_id_num(coverageB,2,"%") if np.isfinite(coverageB) else "-"}</p>
-        <span class="badge {badge_class(d_cov)}">{badge_cov}</span>
-        <div class="kpi-sub">Kualitas data SLA</div>
-      </div>
-    </div>
-    """
-    st.markdown(html_score, unsafe_allow_html=True)
 
     # -------------------------
     # Tren overlay (A vs B, sumbu x = bulan)
@@ -2412,8 +2423,7 @@ with tab_analisis:
     vol_long = vol_month.melt(id_vars=["Bulan"], var_name="Seri", value_name="Transaksi")
 
     fig_vol = px.line(
-        vol_long,
-        x="Bulan", y="Transaksi", color="Seri",
+        vol_long, x="Bulan", y="Transaksi", color="Seri",
         markers=True, category_orders={"Bulan": month_order},
         title=f"Volume Transaksi — {seriesA} vs {seriesB}"
     )
@@ -2442,8 +2452,7 @@ with tab_analisis:
         sla_long = sla_month.melt(id_vars=["Bulan"], var_name="Seri", value_name="SLA (hari)")
 
         fig_sla = px.line(
-            sla_long,
-            x="Bulan", y="SLA (hari)", color="Seri",
+            sla_long, x="Bulan", y="SLA (hari)", color="Seri",
             markers=True, category_orders={"Bulan": month_order},
             title=f"SLA Rata-rata (hari) — {sla_pick} | {seriesA} vs {seriesB}"
         )
@@ -2488,34 +2497,32 @@ with tab_analisis:
     )
 
     # ============================================================
-    # BLOK POSTER EXECUTIVE SUMMARY — HANYA DI TAB ANALISIS
+    # BLOK POSTER EXECUTIVE SUMMARY — FIXED LAYOUT (NO OVERLAP)
     # ============================================================
     st.markdown("---")
     st.markdown("### 🖼️ Poster Executive Summary (Analisis)")
 
-    # Animasi di UI (opsional; tidak masuk poster)
+    # (opsional) animasi di UI saja (bukan di poster)
     gif_url = "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif"
     gif_bytes = _fetch_image_bytes(gif_url)
     if gif_bytes:
-        st.image(gif_bytes, width=240)
+        st.image(gif_bytes, width=220)
 
-    # Ambil logo dari URL (Danantara kiri, ASDP kanan)
+    # Logo Danantara (kiri), ASDP (kanan)
     logo_left_bytes = _fetch_image_bytes(LOGO_LEFT_URL)
     logo_right_bytes = _fetch_image_bytes(LOGO_RIGHT_URL)
 
-    # Title/subtitle poster (editable)
     c1, c2 = st.columns([1, 1])
     with c1:
-        poster_title = st.text_input("Judul Poster", value="EXECUTIVE SUMMARY", key="ana_poster_title_all")
+        poster_title = st.text_input("Judul Poster", value="EXECUTIVE SUMMARY", key="ana_poster_title_v3")
     with c2:
-        poster_subtitle = st.text_input("Sub Judul", value="Analisis SLA & Transaksi", key="ana_poster_subtitle_all")
+        poster_subtitle = st.text_input("Sub Judul", value="Analisis SLA & Transaksi", key="ana_poster_subtitle_v3")
 
     headline = build_auto_headline(totalA, totalB, meanA, meanB, p_total, d_total)
 
-    # Cache poster agar cepat
     @st.cache_data(show_spinner=False)
     def _gen_exec_poster_cached(payload: dict):
-        png = make_exec_poster_png_v2(**payload)
+        png = make_exec_poster_png_v3(**payload)
         pdf = make_exec_poster_pdf_from_png(png)
         return png, pdf
 
@@ -2537,7 +2544,7 @@ with tab_analisis:
 
     png_bytes, pdf_bytes = _gen_exec_poster_cached(payload)
 
-    st.image(png_bytes, caption="Preview Poster Executive Summary (mengikuti filter tab_analisis)", use_container_width=True)
+    st.image(png_bytes, caption="Preview Poster Executive Summary (layout sudah rapih & tidak overlap)", use_container_width=True)
 
     d1, d2 = st.columns(2)
     with d1:
@@ -2556,7 +2563,6 @@ with tab_analisis:
             mime="application/pdf",
             use_container_width=True
         )
-
 
 
 # =====================[ HELPERS PDF ]=====================
