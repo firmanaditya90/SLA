@@ -1769,16 +1769,21 @@ def render_tab_analisis_data_v1(df_source: pd.DataFrame, periode_col="PERIODE_DA
 
     st.dataframe(summary, use_container_width=True)
 
+# =========================
+# TAB ANALISIS DATA — FAST + EXECUTIVE DASHBOARD
+# =========================
 with tab_analisis:
     import numpy as np
     import pandas as pd
     import plotly.express as px
     import re
 
-    st.markdown("## 📊 Analisis Data")
-    st.caption("Bandingkan volume transaksi & SLA dengan mode: Tahun vs Tahun, Bulan vs Bulan, atau Rentang vs Rentang.")
+    st.markdown("## 📊 Analisis Data (Executive Dashboard)")
+    st.caption("Perbandingan performa transaksi & SLA untuk kebutuhan Direksi: cepat, ringkas, dan berbasis data.")
 
-    # ========= Guard =========
+    # =========================
+    # Guard
+    # =========================
     if "df_raw" not in locals() or df_raw is None or df_raw.empty:
         st.warning("Data kosong.")
         st.stop()
@@ -1787,15 +1792,17 @@ with tab_analisis:
         st.error("Kolom periode (periode_col) tidak ditemukan.")
         st.stop()
 
-    # Toggle: pakai filter sidebar (df_filtered) atau full df_raw
-    use_sidebar_filter = st.toggle("Gunakan filter sidebar (df_filtered)", value=True, key="ana_use_sidebar_v2")
+    # Toggle: ikut filter sidebar atau tidak
+    use_sidebar_filter = st.toggle("Gunakan filter sidebar (df_filtered)", value=True, key="ana_fast_usefilter")
     df_base = df_filtered.copy() if (use_sidebar_filter and "df_filtered" in locals()) else df_raw.copy()
-
     if df_base is None or df_base.empty:
         st.warning("Data kosong (setelah filter).")
         st.stop()
 
-    # ========= Helper: label bulan Indonesia =========
+    # =========================
+    # (1) PRECOMPUTE & CACHE: periode parsing + mapping raw->Period(M)
+    #     Kunci: HANYA menghitung dari nilai unik periode, bukan per baris
+    # =========================
     month_id = {
         1: "Januari", 2: "Februari", 3: "Maret", 4: "April", 5: "Mei", 6: "Juni",
         7: "Juli", 8: "Agustus", 9: "September", 10: "Oktober", 11: "November", 12: "Desember"
@@ -1805,169 +1812,156 @@ with tab_analisis:
     def month_label_from_period(p: pd.Period) -> str:
         return f"{month_id[int(p.month)]} {int(p.year)}"
 
-    # ========= Normalisasi PERIODE ke Period(M) secara robust =========
-    # Tujuan: punya "PERIOD_M" yang konsisten walaupun format string periode beragam
-    def parse_to_period_m(x):
-        if pd.isna(x):
-            return pd.NaT
+    @st.cache_data(show_spinner=False)
+    def build_period_lookup(unique_period_values: tuple):
+        """Return:
+        - raw_to_period: dict(raw_str -> Period('YYYY-MM', 'M')) or NaT
+        - periods_sorted: list[Period]
+        - period_labels: list[str] in Indonesian
+        - period_to_label: dict
+        - years_sorted: list[int]
+        """
+        def parse_to_period_m(s):
+            if s is None:
+                return pd.NaT
+            s = str(s).strip()
 
-        s = str(x).strip()
+            # try datetime parse
+            dt = pd.to_datetime(s, errors="coerce")
+            if pd.notna(dt):
+                return dt.to_period("M")
 
-        # 1) Coba to_datetime langsung
-        dt = pd.to_datetime(s, errors="coerce")
-        if pd.notna(dt):
-            return dt.to_period("M")
-
-        # 2) Tangkap format "YYYY-MM" atau "YYYY/MM"
-        m = re.search(r"(\d{4})[-/](\d{1,2})", s)
-        if m:
-            y = int(m.group(1)); mo = int(m.group(2))
-            if 1 <= mo <= 12:
-                return pd.Period(f"{y}-{mo:02d}", freq="M")
-
-        # 3) Tangkap format Indonesia "Desember 2025"
-        s_low = s.lower()
-        for nama, mo in id_month.items():
-            if nama in s_low:
-                y_m = re.search(r"(\d{4})", s_low)
-                if y_m:
-                    y = int(y_m.group(1))
+            # YYYY-MM / YYYY/MM
+            m = re.search(r"(\d{4})[-/](\d{1,2})", s)
+            if m:
+                y = int(m.group(1)); mo = int(m.group(2))
+                if 1 <= mo <= 12:
                     return pd.Period(f"{y}-{mo:02d}", freq="M")
 
-        return pd.NaT
+            # "Desember 2025" / "desember-2025"
+            s_low = s.lower()
+            for nama, mo in id_month.items():
+                if nama in s_low:
+                    y_m = re.search(r"(\d{4})", s_low)
+                    if y_m:
+                        y = int(y_m.group(1))
+                        return pd.Period(f"{y}-{mo:02d}", freq="M")
 
-    # Buat kolom bantu untuk analisis (di df_raw supaya daftar periode lengkap)
-    df_period_src = df_raw.copy()
-    df_period_src["PERIOD_M"] = df_period_src[periode_col].apply(parse_to_period_m)
+            return pd.NaT
 
-    # list periode valid dari data (bukan dari PERIODE_DATETIME)
-    periods = sorted(df_period_src["PERIOD_M"].dropna().unique().tolist())
+        raw_to_period = {}
+        for v in unique_period_values:
+            raw = "" if v is None else str(v)
+            raw_to_period[raw] = parse_to_period_m(raw)
+
+        periods_sorted = sorted({p for p in raw_to_period.values() if pd.notna(p)})
+        period_labels = [month_label_from_period(p) for p in periods_sorted]
+        period_to_label = {p: month_label_from_period(p) for p in periods_sorted}
+        years_sorted = sorted({int(p.year) for p in periods_sorted})
+
+        return raw_to_period, periods_sorted, period_labels, period_to_label, years_sorted
+
+    # gunakan nilai unik dari df_raw (agar daftar periode lengkap walau filter menyempit)
+    unique_period_values = tuple(pd.Series(df_raw[periode_col].astype(str).unique()).tolist())
+    raw_to_period, periods, period_labels, period_to_label, years = build_period_lookup(unique_period_values)
+
     if not periods:
-        st.warning("Tidak ada periode yang bisa diparse. Cek format kolom periode.")
+        st.warning("Tidak ada periode yang berhasil diparse. Cek format data periode.")
         st.stop()
 
-    # buat mapping label <-> period
-    period_labels = [month_label_from_period(p) for p in periods]
-    label_to_period = dict(zip(period_labels, periods))
-    period_to_label = dict(zip(periods, period_labels))
-
-    years = sorted({int(p.year) for p in periods})
-    if not years:
-        st.warning("Tidak ada tahun yang valid.")
-        st.stop()
-
-    # ========= SLA pick (ambil dari app) =========
+    # =========================
+    # (2) SLA pick (langsung dari available_sla_cols kalau ada)
+    # =========================
     sla_options = available_sla_cols if "available_sla_cols" in locals() else []
     default_sla = "TOTAL WAKTU" if "TOTAL WAKTU" in sla_options else (sla_options[0] if sla_options else None)
 
-    # ========= Mode selector =========
+    # =========================
+    # (3) MODE: Tahun/Bulan/Rentang — UI rapi
+    # =========================
     st.markdown("### ⚙️ Mode Perbandingan")
     mode = st.radio(
         "Pilih mode",
         ["By Tahun (kumulatif)", "By Bulan (1 bulan)", "By Rentang (range bulan)"],
         horizontal=True,
-        key="ana_mode_v2"
+        key="ana_fast_mode"
     )
 
     colA, colB, colS = st.columns([1, 1, 1])
     with colS:
         st.markdown("**Metrik SLA**")
         if default_sla:
-            sla_pick = st.selectbox("Pilih SLA", sla_options, index=sla_options.index(default_sla), key="ana_sla_v2")
+            sla_pick = st.selectbox("Pilih SLA", sla_options, index=sla_options.index(default_sla), key="ana_fast_sla")
         else:
             sla_pick = None
-            st.info("Tidak ada kolom SLA terdeteksi.")
+            st.info("Kolom SLA tidak terdeteksi.")
 
-    # ========= Tentukan period selection A & B =========
+    # helper: pilih list Period untuk A dan B
     labelA = labelB = ""
-    selA_periods = []
-    selB_periods = []
+    selA = []
+    selB = []
 
     if mode == "By Tahun (kumulatif)":
         with colA:
-            st.markdown("**Tahun A (Baseline)**")
-            yearA = st.selectbox("Pilih Tahun A", years, index=0, key="ana_yearA_v2")
+            yearA = st.selectbox("Tahun A", years, index=0, key="ana_fast_yearA")
         with colB:
-            st.markdown("**Tahun B (Pembanding)**")
-            yearB = st.selectbox("Pilih Tahun B", years, index=min(1, len(years)-1), key="ana_yearB_v2")
-
-        selA_periods = [p for p in periods if int(p.year) == int(yearA)]
-        selB_periods = [p for p in periods if int(p.year) == int(yearB)]
-        labelA = f"Tahun {yearA}"
-        labelB = f"Tahun {yearB}"
+            yearB = st.selectbox("Tahun B", years, index=min(1, len(years)-1), key="ana_fast_yearB")
+        selA = [p for p in periods if int(p.year) == int(yearA)]
+        selB = [p for p in periods if int(p.year) == int(yearB)]
+        labelA, labelB = f"Tahun {yearA}", f"Tahun {yearB}"
 
     elif mode == "By Bulan (1 bulan)":
         with colA:
-            st.markdown("**Bulan A (Baseline)**")
-            mA = st.selectbox("Pilih Bulan A", period_labels, index=0, key="ana_monthA_v2")
+            mA = st.selectbox("Bulan A", period_labels, index=0, key="ana_fast_monthA")
         with colB:
-            st.markdown("**Bulan B (Pembanding)**")
-            mB = st.selectbox("Pilih Bulan B", period_labels, index=min(1, len(period_labels)-1), key="ana_monthB_v2")
+            mB = st.selectbox("Bulan B", period_labels, index=min(1, len(period_labels)-1), key="ana_fast_monthB")
+        # map label->Period via reverse lookup
+        label_to_period = {period_to_label[p]: p for p in periods}
+        selA = [label_to_period[mA]]
+        selB = [label_to_period[mB]]
+        labelA, labelB = mA, mB
 
-        pA = label_to_period[mA]
-        pB = label_to_period[mB]
-        selA_periods = [pA]
-        selB_periods = [pB]
-        labelA = mA
-        labelB = mB
-
-    else:  # range
+    else:
+        label_to_period = {period_to_label[p]: p for p in periods}
         with colA:
-            st.markdown("**Rentang A (Baseline)**")
-            startA = st.selectbox("Mulai A", period_labels, index=0, key="ana_startA_v2")
-            endA   = st.selectbox("Sampai A", period_labels, index=len(period_labels)-1, key="ana_endA_v2")
+            sA = st.selectbox("Mulai A", period_labels, index=0, key="ana_fast_startA")
+            eA = st.selectbox("Sampai A", period_labels, index=len(period_labels)-1, key="ana_fast_endA")
         with colB:
-            st.markdown("**Rentang B (Pembanding)**")
-            startB = st.selectbox("Mulai B", period_labels, index=0, key="ana_startB_v2")
-            endB   = st.selectbox("Sampai B", period_labels, index=len(period_labels)-1, key="ana_endB_v2")
-
-        pA1, pA2 = label_to_period[startA], label_to_period[endA]
-        pB1, pB2 = label_to_period[startB], label_to_period[endB]
-
+            sB = st.selectbox("Mulai B", period_labels, index=0, key="ana_fast_startB")
+            eB = st.selectbox("Sampai B", period_labels, index=len(period_labels)-1, key="ana_fast_endB")
+        pA1, pA2 = label_to_period[sA], label_to_period[eA]
+        pB1, pB2 = label_to_period[sB], label_to_period[eB]
         if pA1 > pA2 or pB1 > pB2:
-            st.error("Rentang periode tidak valid (Mulai > Sampai).")
+            st.error("Rentang tidak valid (Mulai > Sampai).")
             st.stop()
+        selA = [p for p in periods if pA1 <= p <= pA2]
+        selB = [p for p in periods if pB1 <= p <= pB2]
+        labelA, labelB = f"{sA} – {eA}", f"{sB} – {eB}"
 
-        selA_periods = [p for p in periods if (p >= pA1 and p <= pA2)]
-        selB_periods = [p for p in periods if (p >= pB1 and p <= pB2)]
-        labelA = f"{startA} – {endA}"
-        labelB = f"{startB} – {endB}"
+    # =========================
+    # (4) FAST FILTER: tambahkan PERIOD_M tanpa apply per baris:
+    #     gunakan map raw->Period untuk seluruh df_base
+    # =========================
+    # buat string sekali, map via dict (cepat)
+    period_raw = df_base[periode_col].astype(str)
+    df_base_local = df_base.copy()
+    df_base_local["PERIOD_M"] = period_raw.map(raw_to_period)
 
-    # ========= Filter A/B menggunakan periode_col (string matching), konsisten dengan df_filtered =========
-    # bikin mapping period -> list string periode_col yang termasuk di period tsb
-    # supaya match dengan cara sidebar membentuk df_filtered (isin selected_periode) :contentReference[oaicite:5]{index=5}
-    df_period_src["PERIODE_STR"] = df_period_src[periode_col].astype(str)
-    period_to_rawstrings = (
-        df_period_src.dropna(subset=["PERIOD_M"])
-        .groupby("PERIOD_M")["PERIODE_STR"]
-        .apply(lambda s: sorted(set(s.tolist())))
-        .to_dict()
-    )
+    dfA = df_base_local[df_base_local["PERIOD_M"].isin(selA)].copy()
+    dfB = df_base_local[df_base_local["PERIOD_M"].isin(selB)].copy()
 
-    rawA = []
-    for p in selA_periods:
-        rawA.extend(period_to_rawstrings.get(p, []))
-    rawB = []
-    for p in selB_periods:
-        rawB.extend(period_to_rawstrings.get(p, []))
-
-    rawA = sorted(set(rawA))
-    rawB = sorted(set(rawB))
-
-    dfA = df_base[df_base[periode_col].astype(str).isin(rawA)].copy()
-    dfB = df_base[df_base[periode_col].astype(str).isin(rawB)].copy()
-
+    # =========================
+    # (5) METRICS cepat (executive)
+    # =========================
     def pct_change(a, b):
         if a is None or pd.isna(a) or a == 0:
             return np.nan
         return (b - a) / a * 100
 
-    # ========= KPI =========
     totalA, totalB = len(dfA), len(dfB)
     d_total = totalB - totalA
     p_total = pct_change(totalA, totalB)
 
-    has_sla = bool(sla_pick and sla_pick in df_base.columns)
+    has_sla = bool(sla_pick and (sla_pick in df_base_local.columns))
     meanA = meanB = d_mean = p_mean = np.nan
     if has_sla:
         sA = pd.to_numeric(dfA[sla_pick], errors="coerce").dropna()
@@ -1977,12 +1971,15 @@ with tab_analisis:
         d_mean = meanB - meanA if np.isfinite(meanA) and np.isfinite(meanB) else np.nan
         p_mean = pct_change(meanA, meanB) if np.isfinite(meanA) and np.isfinite(meanB) else np.nan
 
+    # =========================
+    # (6) WOW SECTION: KPI + Spotlight insight
+    # =========================
     st.markdown("---")
-    st.markdown("### 🧾 Ringkasan Utama")
+    st.markdown("### 🧾 Ringkasan Utama (Direksi)")
 
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric(f"Transaksi ({labelA})", f"{totalA:,}")
-    k2.metric(f"Transaksi ({labelB})", f"{totalB:,}",
+    k1.metric(f"Total Transaksi ({labelA})", f"{totalA:,}")
+    k2.metric(f"Total Transaksi ({labelB})", f"{totalB:,}",
               delta=f"{d_total:+,}" + ("" if np.isnan(p_total) else f" ({p_total:+.1f}%)"))
 
     if has_sla:
@@ -1994,65 +1991,105 @@ with tab_analisis:
         k4.metric("Avg SLA (B)", "-")
         st.info("Kolom SLA tidak tersedia untuk dibandingkan.")
 
-    # ========= Grafik bulanan (berdasarkan PERIOD_M, tetap konsisten) =========
-    st.markdown("### 📈 Grafik Analisis")
+    # Spotlight insight (ringkas, “wah”)
+    spotlight = []
+    arah_vol = "naik" if d_total > 0 else ("turun" if d_total < 0 else "stabil")
+    spotlight.append(f"• Volume transaksi **{arah_vol}**: {totalA:,} → {totalB:,} (Δ {d_total:+,}{'' if np.isnan(p_total) else f', {p_total:+.1f}%'})")
+    if has_sla and np.isfinite(d_mean):
+        arah_sla = "membaik" if d_mean < 0 else ("memburuk" if d_mean > 0 else "stabil")
+        spotlight.append(f"• SLA **{arah_sla}**: {seconds_to_sla_format(meanA)} → {seconds_to_sla_format(meanB)} (Δ {seconds_to_sla_format(d_mean)})")
 
-    # range bulan gabungan A+B
-    if selA_periods and selB_periods:
-        pmin = min(min(selA_periods), min(selB_periods))
-        pmax = max(max(selA_periods), max(selB_periods))
-    elif selA_periods:
-        pmin, pmax = min(selA_periods), max(selA_periods)
-    else:
-        pmin, pmax = min(selB_periods), max(selB_periods)
+    st.success("\n".join(spotlight))
 
+    # =========================
+    # (7) FAST CHARTS: agregasi 1x saja
+    # =========================
+    st.markdown("### 📈 Tren Bulanan (Cepat & Ringkas)")
+
+    # chart periods gabungan min-max A&B
+    pmin = min(min(selA), min(selB)) if (selA and selB) else (min(selA) if selA else min(selB))
+    pmax = max(max(selA), max(selB)) if (selA and selB) else (max(selA) if selA else max(selB))
     chart_periods = pd.period_range(pmin, pmax, freq="M").tolist()
     chart_labels = [month_label_from_period(p) for p in chart_periods]
 
-    def add_period_m(df):
-        x = df.copy()
-        x["PERIOD_M"] = x[periode_col].apply(parse_to_period_m)
-        return x
-
-    A2 = add_period_m(dfA)
-    B2 = add_period_m(dfB)
-
-    volA = A2.groupby("PERIOD_M").size().reindex(chart_periods, fill_value=0).reset_index(name="trx_A")
-    volB = B2.groupby("PERIOD_M").size().reindex(chart_periods, fill_value=0).reset_index(name="trx_B")
-
+    volA = dfA.groupby("PERIOD_M").size().reindex(chart_periods, fill_value=0).reset_index(name="trx_A")
+    volB = dfB.groupby("PERIOD_M").size().reindex(chart_periods, fill_value=0).reset_index(name="trx_B")
     vol = pd.merge(volA, volB, on="PERIOD_M", how="outer").fillna(0)
     vol["bulan_label"] = chart_labels
-    vol["Δ_trx"] = vol["trx_B"] - vol["trx_A"]
 
-    fig_vol = px.bar(vol, x="bulan_label", y=["trx_A", "trx_B"], barmode="group", title="Perbandingan Volume (bulanan)")
-    fig_vol.update_layout(xaxis_title=None, yaxis_title="Jumlah Transaksi")
+    fig_vol = px.bar(vol, x="bulan_label", y=["trx_A", "trx_B"], barmode="group",
+                     title="Perbandingan Volume (bulanan)")
+    fig_vol.update_layout(xaxis_title=None, yaxis_title="Jumlah Transaksi", legend_title=None)
     st.plotly_chart(fig_vol, use_container_width=True)
 
     if has_sla:
-        A2[sla_pick] = pd.to_numeric(A2[sla_pick], errors="coerce")
-        B2[sla_pick] = pd.to_numeric(B2[sla_pick], errors="coerce")
-        slaA = A2.groupby("PERIOD_M")[sla_pick].mean().reindex(chart_periods).reset_index(name="SLA_A")
-        slaB = B2.groupby("PERIOD_M")[sla_pick].mean().reindex(chart_periods).reset_index(name="SLA_B")
+        dfA_s = dfA.copy()
+        dfB_s = dfB.copy()
+        dfA_s[sla_pick] = pd.to_numeric(dfA_s[sla_pick], errors="coerce")
+        dfB_s[sla_pick] = pd.to_numeric(dfB_s[sla_pick], errors="coerce")
 
+        slaA = dfA_s.groupby("PERIOD_M")[sla_pick].mean().reindex(chart_periods).reset_index(name="SLA_A_sec")
+        slaB = dfB_s.groupby("PERIOD_M")[sla_pick].mean().reindex(chart_periods).reset_index(name="SLA_B_sec")
         sla = pd.merge(slaA, slaB, on="PERIOD_M", how="outer")
         sla["bulan_label"] = chart_labels
-        sla["SLA_A(hari)"] = (sla["SLA_A"] / 86400.0).round(2)
-        sla["SLA_B(hari)"] = (sla["SLA_B"] / 86400.0).round(2)
+        sla["SLA_A(hari)"] = (sla["SLA_A_sec"] / 86400.0).round(2)
+        sla["SLA_B(hari)"] = (sla["SLA_B_sec"] / 86400.0).round(2)
 
         fig_sla = px.line(sla, x="bulan_label", y=["SLA_A(hari)", "SLA_B(hari)"], markers=True,
                           title=f"Perbandingan SLA (avg bulanan) — {sla_pick}")
-        fig_sla.update_layout(xaxis_title=None, yaxis_title="Rata-rata SLA (hari)")
+        fig_sla.update_layout(xaxis_title=None, yaxis_title="Rata-rata SLA (hari)", legend_title=None)
         st.plotly_chart(fig_sla, use_container_width=True)
 
-    with st.expander("📋 Lihat tabel detail"):
-        st.dataframe(vol[["bulan_label", "trx_A", "trx_B", "Δ_trx"]], use_container_width=True)
+    # =========================
+    # (8) DRIVER ANALYSIS: Top movers (opsional, tapi “wah”)
+    # =========================
+    st.markdown("### 🔎 Driver Perubahan (Top Movers)")
+
+    dim_candidates = [c for c in ["JENIS TRANSAKSI", "NAMA VENDOR"] if c in df_base_local.columns]
+    if dim_candidates and has_sla:
+        dim = st.selectbox("Breakdown berdasarkan", dim_candidates, key="ana_fast_dim")
+        top_n = st.slider("Top N", min_value=5, max_value=20, value=10, step=1, key="ana_fast_topn")
+
+        def agg_dim(df, dim_col, sla_col):
+            x = df[[dim_col, sla_col]].copy()
+            x[sla_col] = pd.to_numeric(x[sla_col], errors="coerce")
+            g = x.groupby(dim_col).agg(
+                trx=(dim_col, "size"),
+                sla_mean=(sla_col, "mean")
+            ).reset_index()
+            g["sla_hari"] = g["sla_mean"] / 86400.0
+            return g
+
+        gA = agg_dim(dfA, dim, sla_pick).rename(columns={"trx": "trx_A", "sla_hari": "sla_A(hari)"})
+        gB = agg_dim(dfB, dim, sla_pick).rename(columns={"trx": "trx_B", "sla_hari": "sla_B(hari)"})
+        g = pd.merge(gA[[dim, "trx_A", "sla_A(hari)"]],
+                     gB[[dim, "trx_B", "sla_B(hari)"]],
+                     on=dim, how="outer").fillna(0)
+
+        g["Δ_trx"] = g["trx_B"] - g["trx_A"]
+        g["Δ_sla(hari)"] = g["sla_B(hari)"] - g["sla_A(hari)"]
+
+        # tampilkan top volume driver + top SLA worsened
+        left, right = st.columns(2)
+        with left:
+            st.markdown("**Top Kenaikan Volume**")
+            st.dataframe(g.sort_values("Δ_trx", ascending=False).head(top_n), use_container_width=True)
+        with right:
+            st.markdown("**Top SLA Memburuk (Δ SLA positif)**")
+            st.dataframe(g.sort_values("Δ_sla(hari)", ascending=False).head(top_n), use_container_width=True)
+    else:
+        st.info("Driver analysis butuh kolom dimensi (JENIS TRANSAKSI / NAMA VENDOR) dan kolom SLA.")
+
+    # =========================
+    # (9) Detail (folded) biar clean untuk Direksi
+    # =========================
+    with st.expander("📋 Detail perhitungan (opsional)"):
+        st.write(f"Periode A: {labelA} | Periode B: {labelB}")
+        st.dataframe(vol[["bulan_label", "trx_A", "trx_B"]], use_container_width=True)
         if has_sla:
             st.dataframe(sla[["bulan_label", "SLA_A(hari)", "SLA_B(hari)"]], use_container_width=True)
 
 
-# =========================
-# TAB ANALISIS DATA (FULL) — Mode Tahun / Bulan / Rentang + Dashboard
-# =========================
 
 # =====================[ HELPERS PDF ]=====================
 # ====================== IMPORTS ======================
