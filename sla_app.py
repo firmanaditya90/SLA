@@ -1770,7 +1770,7 @@ def render_tab_analisis_data_v1(df_source: pd.DataFrame, periode_col="PERIODE_DA
     st.dataframe(summary, use_container_width=True)
 
 # =========================
-# TAB ANALISIS DATA — FAST + EXECUTIVE DASHBOARD (Direksi)
+# TAB ANALISIS DATA — FAST + EXECUTIVE DASHBOARD 
 # Mode: Tahun vs Tahun | Bulan vs Bulan | Rentang vs Rentang
 # Tren chart: X = bulan (Jan..Des), warna = Tahun/Label A vs B
 # KPI SLA target: mengikuti tab_overview (load_kpi)
@@ -1788,7 +1788,7 @@ with tab_analisis:
     # -------------------------
     st.markdown("## 📊 Analisis Data — Executive Dashboard")
     st.caption(
-        "Dashboard perbandingan **A vs B** untuk Direksi: cepat, ringkas, fokus pada **Volume, SLA, Compliance, Driver, Bottleneck**."
+        "Dashboard perbandingan **A vs B**: cepat, ringkas, fokus pada **Volume, SLA, Compliance, Driver, Bottleneck**."
     )
 
     # -------------------------
@@ -1990,7 +1990,7 @@ with tab_analisis:
     # (6) EXEC SUMMARY TOP (KPI + Spotlight)
     # -------------------------
     st.markdown("---")
-    st.markdown("### 🧾 Ringkasan Utama (Direksi)")
+    st.markdown("### 🧾 Ringkasan Utama")
 
     k1, k2, k3, k4 = st.columns(4)
     k1.metric(f"Total Transaksi ({labelA})", f"{totalA:,}")
