@@ -2069,7 +2069,7 @@ def make_exec_poster_png_v3(
     axF = fig.add_axes([0.03, 0.02, 0.94, 0.05]); axF.axis("off")
     axF.text(0.00, 0.50, "",
              fontsize=8, alpha=0.80, color=(0.02,0.08,0.16,0.80), fontweight="bold")
-    axF.text(1.00, 0.50, "Sumber: Tab Analisis (hasil filter aktif)",
+    axF.text(1.00, 0.20, "Sumber: Tab Analisis (hasil filter aktif)",
              fontsize=10, alpha=0.80, ha="right", color=(0.02,0.08,0.16,0.80), fontweight="bold")
 
     buf = io.BytesIO()
