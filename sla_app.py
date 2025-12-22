@@ -2100,468 +2100,709 @@ def make_exec_poster_pdf_from_png(png_bytes):
 with tab_analisis:
     import plotly.express as px
 
-    st.markdown("## 📊 Analisis Data — Executive Dashboard")
-    st.caption("Bandingkan **A vs B** (Tahun vs Tahun, Bulan vs Bulan, atau Rentang vs Rentang). Angka di sini mengikuti filter tab_analisis.")
+    st.subheader("📌 Tab Analisis")
+    st.caption("Bandingkan **A vs B** (Tahun vs Tahun, Bulan... vs Rentang). Angka di sini mengikuti filter tab_analisis.")
 
-    # Guard
-    if "df_raw" not in locals() or df_raw is None or df_raw.empty:
-        st.warning("Data kosong.")
-        st.stop()
-    if "periode_col" not in locals() or periode_col is None or periode_col not in df_raw.columns:
-        st.error("Kolom periode (periode_col) tidak ditemukan.")
-        st.stop()
+    # ------------------------------
+    # Utility kecil: safe number formatting
+    # ------------------------------
+    def _id_num(x, nd=2, suffix=""):
+        try:
+            return f"{float(x):,.{nd}f}".replace(",", "X").replace(".", ",").replace("X", ".") + suffix
+        except Exception:
+            return "-"
 
-    # Toggle filter scope
-    use_sidebar_filter = st.toggle("Gunakan filter sidebar (df_filtered)", value=True, key="ana_usefilter_all_v3")
-    df_base = df_filtered.copy() if (use_sidebar_filter and "df_filtered" in locals()) else df_raw.copy()
-    if df_base is None or df_base.empty:
-        st.warning("Data kosong (setelah filter).")
-        st.stop()
+    def _id_int(x):
+        try:
+            return f"{int(round(float(x))):,}".replace(",", ".")
+        except Exception:
+            return "-"
 
-    # Month names
-    month_id = {
-        1: "Januari", 2: "Februari", 3: "Maret", 4: "April", 5: "Mei", 6: "Juni",
-        7: "Juli", 8: "Agustus", 9: "September", 10: "Oktober", 11: "November", 12: "Desember"
-    }
-    id_month = {v.lower(): k for k, v in month_id.items()}
+    def _fmt_hari_jam_menit(days_float):
+        """Convert float days into 'X hari Y jam Z menit'."""
+        try:
+            total_minutes = int(round(float(days_float) * 24 * 60))
+            d = total_minutes // (24 * 60)
+            rem = total_minutes % (24 * 60)
+            h = rem // 60
+            m = rem % 60
+            parts = []
+            if d > 0: parts.append(f"{d} hari")
+            if h > 0: parts.append(f"{h} jam")
+            if m > 0: parts.append(f"{m} menit")
+            return " ".join(parts) if parts else "0 menit"
+        except Exception:
+            return "-"
 
-    # CSS cards (kontras)
-    st.markdown("""
-<style>
-.kpi-wrap{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:10px}
-.kpi-card{
-  border:1px solid rgba(49,51,63,.15);
-  border-radius:16px;
-  padding:14px 14px 12px;
-  background:white;
-  box-shadow:0 10px 22px rgba(0,0,0,.08);
-}
-.kpi-title{font-size:13px;color:rgba(15,23,42,.78);margin:0 0 6px 0;font-weight:700;text-align:center}
-.kpi-value{font-size:40px;font-weight:900;line-height:1.1;margin:0;color:rgb(15,23,42);text-align:center}
-.kpi-sub{font-size:12px;color:rgba(15,23,42,.70);margin-top:6px;font-weight:700;text-align:center}
-.badge{
-  display:inline-block;padding:5px 11px;border-radius:999px;
-  font-size:12px;font-weight:900;margin-top:10px
-}
-.badge-up{background:rgba(16,185,129,.15);color:rgb(4,120,87)}
-.badge-down{background:rgba(239,68,68,.15);color:rgb(153,27,27)}
-.badge-flat{background:rgba(100,116,139,.16);color:rgb(30,41,59)}
-.hero{
-  border-radius:16px;padding:14px 16px;
-  background:rgba(34,197,94,.10);
-  border:1px solid rgba(34,197,94,.28);
-  margin-top:12px;
-  color:rgb(15,23,42);
-  font-weight:750;
-}
-.hero b{font-weight:950}
-.small-cap{color:rgba(15,23,42,.72);font-weight:750}
-</style>
-""", unsafe_allow_html=True)
+    def _wrap_text(s, width=60):
+        try:
+            import textwrap
+            return "\n".join(textwrap.wrap(str(s), width=width))
+        except Exception:
+            return str(s)
 
-    def badge_class(delta):
-        if delta is None or (isinstance(delta, float) and np.isnan(delta)):
-            return "badge-flat"
-        if delta > 0:
-            return "badge-up"
-        if delta < 0:
-            return "badge-down"
-        return "badge-flat"
+    # ------------------------------
+    # Extract PERIODE Datetime
+    # ------------------------------
+    def _ensure_periode_datetime(df_raw, periode_col="PERIODE"):
+        df = df_raw.copy()
+        if periode_col not in df.columns:
+            return df, None
+        df["PERIODE_DATETIME"] = pd.to_datetime(df[periode_col], errors="coerce")
+        return df, "PERIODE_DATETIME"
 
-    # -------------------------
-    # Period lookup (FAST)
-    # -------------------------
-    @st.cache_data(show_spinner=False)
-    def build_period_lookup(unique_period_values: tuple):
-        def parse_to_period_m(s):
-            if s is None:
-                return pd.NaT
-            s = str(s).strip()
+    # ==========================
+    # 1) HELPER FUNCTIONS (tempel di atas: with tab_analisis:)
+    # ==========================
+    def _compute_exec_metrics(dfA, dfB, sla_colA="SLA", sla_colB="SLA"):
+        """
+        Return dict metrics A vs B:
+          total trx A/B, avg sla A/B, growth %, delta SLA, KPI points estimate, coverage %, etc.
+        """
+        # safe sizes
+        nA = len(dfA)
+        nB = len(dfB)
 
-            dt = pd.to_datetime(s, errors="coerce")
-            if pd.notna(dt):
-                return dt.to_period("M")
+        # avg SLA
+        a_sla = dfA[sla_colA].mean() if (nA and sla_colA in dfA.columns) else np.nan
+        b_sla = dfB[sla_colB].mean() if (nB and sla_colB in dfB.columns) else np.nan
 
-            m = re.search(r"(\d{4})[-/](\d{1,2})", s)
-            if m:
-                y = int(m.group(1)); mo = int(m.group(2))
-                if 1 <= mo <= 12:
-                    return pd.Period(f"{y}-{mo:02d}", freq="M")
+        # total trx
+        totA = nA
+        totB = nB
 
-            s_low = s.lower()
-            for nama, mo in id_month.items():
-                if nama in s_low:
-                    y_m = re.search(r"(\d{4})", s_low)
-                    if y_m:
-                        y = int(y_m.group(1))
-                        return pd.Period(f"{y}-{mo:02d}", freq="M")
+        # growth
+        growth = (totB / totA - 1.0) * 100.0 if totA else np.nan
+        d_total = (totB - totA) if (totA is not None and totB is not None) else np.nan
 
-            return pd.NaT
+        # delta SLA (hari)
+        d_sla = (b_sla - a_sla) if (pd.notna(a_sla) and pd.notna(b_sla)) else np.nan
 
-        raw_to_period = {}
-        for v in unique_period_values:
-            raw = "" if v is None else str(v)
-            raw_to_period[raw] = parse_to_period_m(raw)
+        # KPI points (simple proxy): target=15 days => score = (target/avg)*100 capped 100
+        target = 15.0
+        def kpi_score(avg_sla):
+            if pd.isna(avg_sla) or avg_sla <= 0:
+                return np.nan
+            return min(100.0, (target / avg_sla) * 100.0)
 
-        periods_sorted = sorted({p for p in raw_to_period.values() if pd.notna(p)})
+        kA = kpi_score(a_sla)
+        kB = kpi_score(b_sla)
+        d_k = (kB - kA) if (pd.notna(kA) and pd.notna(kB)) else np.nan
 
-        def month_label_from_period(p):
-            return f"{month_id[int(p.month)]} {int(p.year)}"
+        # coverage SLA (non-null SLA / total)
+        covA = dfA[sla_colA].notna().mean() * 100.0 if (nA and sla_colA in dfA.columns) else np.nan
+        covB = dfB[sla_colB].notna().mean() * 100.0 if (nB and sla_colB in dfB.columns) else np.nan
+        d_cov = (covB - covA) if (pd.notna(covA) and pd.notna(covB)) else np.nan
 
-        period_to_label = {p: month_label_from_period(p) for p in periods_sorted}
-        labels_sorted = [period_to_label[p] for p in periods_sorted]
-        years_sorted = sorted({int(p.year) for p in periods_sorted})
-
-        return raw_to_period, periods_sorted, labels_sorted, period_to_label, years_sorted
-
-    unique_period_values = tuple(pd.Series(df_raw[periode_col].astype(str).unique()).tolist())
-    raw_to_period, periods, period_labels, period_to_label, years = build_period_lookup(unique_period_values)
-
-    if not periods:
-        st.warning("Tidak ada periode yang berhasil diparse. Periksa format kolom periode.")
-        st.stop()
-
-    label_to_period = {period_to_label[p]: p for p in periods}
-
-    # SLA pick
-    sla_options = available_sla_cols if "available_sla_cols" in locals() else []
-    default_sla = "TOTAL WAKTU" if "TOTAL WAKTU" in sla_options else (sla_options[0] if sla_options else None)
-
-    # -------------------------
-    # Mode & Input
-    # -------------------------
-    st.markdown("### ⚙️ Mode Perbandingan")
-    mode = st.radio(
-        "Pilih mode",
-        ["By Tahun (kumulatif)", "By Bulan (1 bulan)", "By Rentang (range bulan)"],
-        horizontal=True,
-        key="ana_mode_all_v3"
-    )
-
-    colA, colB, colS = st.columns([1, 1, 1])
-    with colS:
-        st.markdown("**Metrik SLA**")
-        if default_sla:
-            sla_pick = st.selectbox("Pilih SLA", sla_options, index=sla_options.index(default_sla), key="ana_sla_all_v3")
+        # trend label for SLA
+        if pd.isna(d_sla):
+            sla_trend = "tidak ada data"
+        elif d_sla > 0.01:
+            sla_trend = "memburuk"
+        elif d_sla < -0.01:
+            sla_trend = "membaik"
         else:
-            sla_pick = None
-            st.info("Kolom SLA tidak terdeteksi.")
+            sla_trend = "stabil"
 
-    labelA = labelB = ""
-    selA = []
-    selB = []
-
-    if mode == "By Tahun (kumulatif)":
-        with colA:
-            yearA = st.selectbox("Tahun A", years, index=0, key="ana_yearA_all_v3")
-        with colB:
-            yearB = st.selectbox("Tahun B", years, index=min(1, len(years) - 1), key="ana_yearB_all_v3")
-
-        selA = [p for p in periods if int(p.year) == int(yearA)]
-        selB = [p for p in periods if int(p.year) == int(yearB)]
-        labelA, labelB = f"Tahun {yearA}", f"Tahun {yearB}"
-
-    elif mode == "By Bulan (1 bulan)":
-        with colA:
-            mA = st.selectbox("Bulan A", period_labels, index=0, key="ana_monthA_all_v3")
-        with colB:
-            mB = st.selectbox("Bulan B", period_labels, index=min(1, len(period_labels) - 1), key="ana_monthB_all_v3")
-
-        selA = [label_to_period[mA]]
-        selB = [label_to_period[mB]]
-        labelA, labelB = mA, mB
-
-    else:  # range
-        with colA:
-            sA = st.selectbox("Mulai A", period_labels, index=0, key="ana_startA_all_v3")
-            eA = st.selectbox("Sampai A", period_labels, index=len(period_labels) - 1, key="ana_endA_all_v3")
-        with colB:
-            sB = st.selectbox("Mulai B", period_labels, index=0, key="ana_startB_all_v3")
-            eB = st.selectbox("Sampai B", period_labels, index=len(period_labels) - 1, key="ana_endB_all_v3")
-
-        pA1, pA2 = label_to_period[sA], label_to_period[eA]
-        pB1, pB2 = label_to_period[sB], label_to_period[eB]
-        if pA1 > pA2 or pB1 > pB2:
-            st.error("Rentang tidak valid (Mulai > Sampai).")
-            st.stop()
-
-        selA = [p for p in periods if pA1 <= p <= pA2]
-        selB = [p for p in periods if pB1 <= p <= pB2]
-        labelA, labelB = f"{sA} – {eA}", f"{sB} – {eB}"
-
-    if not selA or not selB:
-        st.warning("Periode A/B tidak memiliki data (hasil parse kosong).")
-        st.stop()
-
-    # Filter A/B
-    df_base_local = df_base.copy()
-    df_base_local["PERIOD_M"] = df_base_local[periode_col].astype(str).map(raw_to_period)
-
-    dfA = df_base_local[df_base_local["PERIOD_M"].isin(selA)].copy()
-    dfB = df_base_local[df_base_local["PERIOD_M"].isin(selB)].copy()
-
-    # Core metrics
-    totalA, totalB = len(dfA), len(dfB)
-    d_total = totalB - totalA
-    p_total = pct_change(totalA, totalB)
-
-    has_sla = bool(sla_pick and sla_pick in df_base_local.columns)
-    meanA = meanB = np.nan
-
-    if has_sla:
-        sA = pd.to_numeric(dfA[sla_pick], errors="coerce").dropna()
-        sB = pd.to_numeric(dfB[sla_pick], errors="coerce").dropna()
-        meanA = float(sA.mean()) if len(sA) else np.nan
-        meanB = float(sB.mean()) if len(sB) else np.nan
-
-    # -------------------------
-    # Ringkasan Utama (Direksi)
-    # -------------------------
-    st.markdown("---")
-    st.markdown("### 🧾 Ringkasan Utama (Direksi)")
-
-    d_sla = (meanB - meanA) if (has_sla and np.isfinite(meanA) and np.isfinite(meanB)) else np.nan
-    badge_sla = (("−" if d_sla < 0 else "+") + _sla_short_days(abs(d_sla), 2)) if np.isfinite(d_sla) else "-"
-    badge_vol = f"{_id_int(d_total)} ({_id_num(p_total,2,'%')})" if np.isfinite(p_total) else _id_int(d_total)
-
-    html_cards = f"""
-    <div class="kpi-wrap">
-      <div class="kpi-card">
-        <p class="kpi-title">Total Transaksi ({labelA})</p>
-        <p class="kpi-value">{_id_int(totalA)}</p>
-        <div class="kpi-sub">Baseline periode A</div>
-      </div>
-
-      <div class="kpi-card">
-        <p class="kpi-title">Total Transaksi ({labelB})</p>
-        <p class="kpi-value">{_id_int(totalB)}</p>
-        <span class="badge {badge_class(d_total)}">{badge_vol}</span>
-        <div class="kpi-sub">Perubahan vs A</div>
-      </div>
-
-      <div class="kpi-card">
-        <p class="kpi-title">Avg SLA ({labelA})</p>
-        <p class="kpi-value">{_sla_short_days(meanA,2)}</p>
-        <div class="kpi-sub">{_sla_long_id(meanA)}</div>
-      </div>
-
-      <div class="kpi-card">
-        <p class="kpi-title">Avg SLA ({labelB})</p>
-        <p class="kpi-value">{_sla_short_days(meanB,2)}</p>
-        <span class="badge {badge_class(-1 if (np.isfinite(d_sla) and d_sla<0) else (1 if (np.isfinite(d_sla) and d_sla>0) else 0))}">{badge_sla}</span>
-        <div class="kpi-sub">{_sla_long_id(meanB)}</div>
-      </div>
-    </div>
-    """
-    st.markdown(html_cards, unsafe_allow_html=True)
-
-    vol_dir = "naik" if d_total > 0 else ("turun" if d_total < 0 else "stabil")
-    spot = f"• Volume transaksi <b>{vol_dir}</b>: {_id_int(totalA)} → {_id_int(totalB)} (Δ {badge_vol})."
-    if has_sla and np.isfinite(d_sla):
-        sla_dir = "membaik" if d_sla < 0 else ("memburuk" if d_sla > 0 else "stabil")
-        spot += f" • SLA <b>{sla_dir}</b>: <b>{_sla_short_days(meanA,2)}</b> → <b>{_sla_short_days(meanB,2)}</b> (Δ {badge_sla})."
-    else:
-        spot += " • SLA: <b>tidak tersedia</b>."
-    st.markdown(f'<div class="hero">{spot}</div>', unsafe_allow_html=True)
-
-    # -------------------------
-    # Executive Score
-    # -------------------------
-    st.markdown("### 🏁 Executive Score")
-    saved_kpi = load_kpi() if "load_kpi" in globals() else None
-    kpi_days = float(saved_kpi) if saved_kpi is not None else 1.5
-    kpi_sec = kpi_days * 86400.0
-    st.markdown(f'<div class="small-cap">Target KPI SLA (mengikuti Overview): <b>{_id_num(kpi_days,2," hari")}</b></div>', unsafe_allow_html=True)
-
-    complianceA = complianceB = np.nan
-    coverageA = coverageB = np.nan
-    d_comp = d_cov = np.nan
-
-    if has_sla:
-        sA_all = pd.to_numeric(dfA[sla_pick], errors="coerce")
-        sB_all = pd.to_numeric(dfB[sla_pick], errors="coerce")
-
-        coverageA = float(sA_all.notna().mean() * 100) if len(dfA) else np.nan
-        coverageB = float(sB_all.notna().mean() * 100) if len(dfB) else np.nan
-        d_cov = coverageB - coverageA if (np.isfinite(coverageA) and np.isfinite(coverageB)) else np.nan
-
-        validA = sA_all.dropna()
-        validB = sB_all.dropna()
-        complianceA = float((validA <= kpi_sec).mean() * 100) if len(validA) else np.nan
-        complianceB = float((validB <= kpi_sec).mean() * 100) if len(validB) else np.nan
-        d_comp = complianceB - complianceA if (np.isfinite(complianceA) and np.isfinite(complianceB)) else np.nan
-
-    # -------------------------
-    # Tren overlay (A vs B, sumbu x = bulan)
-    # -------------------------
-    st.markdown("### 📈 Tren (Per Bulan — Overlay A vs B)")
-
-    seriesA = year_or_label(selA, "A")
-    seriesB = year_or_label(selB, "B")
-
-    months_union = sorted({int(p.month) for p in selA} | {int(p.month) for p in selB})
-    if not months_union:
-        months_union = list(range(1, 13))
-    month_order = [month_id[m] for m in months_union]
-
-    def trx_by_monthnum(df):
-        if df.empty:
-            return {}
-        g = df.groupby("PERIOD_M").size().reset_index(name="trx")
-        g["m"] = g["PERIOD_M"].apply(lambda p: int(p.month))
-        return g.groupby("m")["trx"].sum().to_dict()
-
-    A_trx = trx_by_monthnum(dfA)
-    B_trx = trx_by_monthnum(dfB)
-
-    vol_month = pd.DataFrame({
-        "Bulan": month_order,
-        seriesA: [float(A_trx.get(m, 0)) for m in months_union],
-        seriesB: [float(B_trx.get(m, 0)) for m in months_union],
-    })
-    vol_long = vol_month.melt(id_vars=["Bulan"], var_name="Seri", value_name="Transaksi")
-
-    fig_vol = px.line(
-        vol_long, x="Bulan", y="Transaksi", color="Seri",
-        markers=True, category_orders={"Bulan": month_order},
-        title=f"Volume Transaksi — {seriesA} vs {seriesB}"
-    )
-    fig_vol.update_layout(xaxis_title=None, yaxis_title="Jumlah Transaksi", legend_title=None)
-    st.plotly_chart(fig_vol, use_container_width=True)
-
-    sla_month = None
-    if has_sla:
-        def sla_by_monthnum(df):
-            if df.empty:
-                return {}
-            x = df.copy()
-            x[sla_pick] = pd.to_numeric(x[sla_pick], errors="coerce")
-            g = x.groupby("PERIOD_M")[sla_pick].mean().reset_index(name="sla_sec")
-            g["m"] = g["PERIOD_M"].apply(lambda p: int(p.month))
-            return g.groupby("m")["sla_sec"].mean().to_dict()
-
-        A_sla = sla_by_monthnum(dfA)
-        B_sla = sla_by_monthnum(dfB)
-
-        sla_month = pd.DataFrame({
-            "Bulan": month_order,
-            seriesA: [float(A_sla.get(m, np.nan)) / 86400.0 for m in months_union],
-            seriesB: [float(B_sla.get(m, np.nan)) / 86400.0 for m in months_union],
-        })
-        sla_long = sla_month.melt(id_vars=["Bulan"], var_name="Seri", value_name="SLA (hari)")
-
-        fig_sla = px.line(
-            sla_long, x="Bulan", y="SLA (hari)", color="Seri",
-            markers=True, category_orders={"Bulan": month_order},
-            title=f"SLA Rata-rata (hari) — {sla_pick} | {seriesA} vs {seriesB}"
+        return dict(
+            totA=totA, totB=totB,
+            a_sla=a_sla, b_sla=b_sla,
+            growth=growth, d_total=d_total,
+            d_sla=d_sla, sla_trend=sla_trend,
+            kA=kA, kB=kB, d_k=d_k,
+            covA=covA, covB=covB, d_cov=d_cov,
+            target=target
         )
-        fig_sla.update_layout(xaxis_title=None, yaxis_title="Rata-rata SLA (hari)", legend_title=None)
-        st.plotly_chart(fig_sla, use_container_width=True)
-    else:
-        st.info("Grafik SLA tidak ditampilkan karena kolom SLA tidak tersedia/valid.")
 
-    # -------------------------
-    # Insight Otomatis (tabel ringkas per bulan)
-    # -------------------------
-    st.markdown("### 🧠 Insight Otomatis (Ringkas per Bulan)")
-    colA_name = year_or_label(selA, "A")
-    colB_name = year_or_label(selB, "B")
+    def _monthly_trend(df, periode_dt_col="PERIODE_DATETIME", sla_col="SLA"):
+        """Return monthly aggregates: count trx and avg sla by month."""
+        if periode_dt_col not in df.columns:
+            return pd.DataFrame()
+        d = df.copy()
+        d["MONTH"] = d[periode_dt_col].dt.to_period("M").astype(str)
+        g = d.groupby("MONTH", dropna=True).agg(
+            trx=("MONTH", "size"),
+            avg_sla=(sla_col, "mean")
+        ).reset_index()
+        return g
 
-    months_union2 = sorted({int(p.month) for p in selA} | {int(p.month) for p in selB})
-    if not months_union2:
-        months_union2 = list(range(1, 13))
-    month_rows2 = [month_id[m] for m in months_union2]
+    def _plot_trend_two_years(gA, gB, title_left="Tren Volume (bulan)", title_right="Tren SLA (hari, bulan)"):
+        """Return matplotlib fig with 2 subplots: volume and SLA trend."""
+        fig = plt.figure(figsize=(12, 5), dpi=160)
+        # left
+        ax1 = fig.add_subplot(1,2,1)
+        if len(gA):
+            ax1.plot(gA["MONTH"], gA["trx"], marker="o", label="A")
+        if len(gB):
+            ax1.plot(gB["MONTH"], gB["trx"], marker="o", label="B")
+        ax1.set_title(title_left, fontweight="bold")
+        ax1.grid(True, alpha=0.3)
+        ax1.legend()
 
-    A_trx2 = trx_by_monthnum(dfA)
-    B_trx2 = trx_by_monthnum(dfB)
+        ax2 = fig.add_subplot(1,2,2)
+        if len(gA):
+            ax2.plot(gA["MONTH"], gA["avg_sla"], marker="o", label="A")
+        if len(gB):
+            ax2.plot(gB["MONTH"], gB["avg_sla"], marker="o", label="B")
+        ax2.set_title(title_right, fontweight="bold")
+        ax2.grid(True, alpha=0.3)
+        ax2.legend()
 
-    tbl = pd.DataFrame({"Bulan": month_rows2})
-    tbl[colA_name] = [float(A_trx2.get(m, 0)) for m in months_union2]
-    tbl[colB_name] = [float(B_trx2.get(m, 0)) for m in months_union2]
-    tbl["Selisih"] = tbl[colB_name] - tbl[colA_name]
-    tbl["Growth %"] = np.where(tbl[colA_name] == 0, np.nan, (tbl[colB_name] - tbl[colA_name]) / tbl[colA_name] * 100)
+        for ax in [ax1, ax2]:
+            for label in ax.get_xticklabels():
+                label.set_rotation(25)
+                label.set_horizontalalignment("right")
 
-    st.dataframe(
-        tbl.set_index("Bulan").style
-            .format({colA_name: "{:,.0f}", colB_name: "{:,.0f}", "Selisih": "{:+,.0f}", "Growth %": "{:+.2f}%"})
-            .highlight_null(color="lightgray"),
-        use_container_width=True
-    )
+        fig.tight_layout()
+        return fig
 
-    st.info(
-        f"• Total transaksi {colA_name}: **{_id_int(tbl[colA_name].sum())}** | {colB_name}: **{_id_int(tbl[colB_name].sum())}**\n"
-        f"• Growth total: **{_id_num(p_total,2,'%') if np.isfinite(p_total) else '-'}** (Δ **{_id_int(d_total)} trx**)\n"
-        f"• KPI Compliance ≤ {_id_num(kpi_days,2,' hari')}: **{_id_num(complianceB,2,'%') if np.isfinite(complianceB) else '-'}**\n"
-        f"• Coverage SLA: **{_id_num(coverageB,2,'%') if np.isfinite(coverageB) else '-'}**"
-    )
+    def make_exec_poster_png_v3(
+        meta_title,
+        subtitle,
+        periode_text,
+        as_of_text,
+        metrics,
+        trend_fig=None,
+        logo_left=None,
+        logo_right=None
+    ):
+        """
+        Generate executive summary poster as PNG bytes using Matplotlib.
+        Designed for A4 Landscape-ish.
+        """
+        # Canvas
+        W, H = 1800, 1100
+        fig = plt.figure(figsize=(W/200, H/200), dpi=200)
+        ax_bg = fig.add_axes([0,0,1,1])
+        ax_bg.axis("off")
 
-    # ============================================================
-    # BLOK POSTER EXECUTIVE SUMMARY — FIXED LAYOUT (NO OVERLAP)
-    # ============================================================
-    st.markdown("---")
-    st.markdown("### 🖼️ Poster Executive Summary (Analisis)")
+        # Background gradient
+        grad = np.linspace(0, 1, H).reshape(H, 1)
+        ax_bg.imshow(np.hstack([grad]*W), cmap="viridis", extent=[0,1,0,1], alpha=0.85, origin="lower")
 
-    # (opsional) animasi di UI saja (bukan di poster)
-    gif_url = "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif"
-    gif_bytes = _fetch_image_bytes(gif_url)
-    if gif_bytes:
-        st.image(gif_bytes, width=220)
+        # Header strip
+        ax_bg.add_patch(plt.Rectangle((0, 0.885), 1, 0.115, color=(0.08,0.12,0.35,0.88), transform=ax_bg.transAxes))
+        ax_bg.text(0.15, 0.955, meta_title, fontsize=22, fontweight="bold", color="white", va="center")
+        ax_bg.text(0.15, 0.915, subtitle, fontsize=13, fontweight="bold", color="white", va="center")
+        ax_bg.text(0.15, 0.895, f"Periode: {periode_text}", fontsize=12, fontweight="bold", color="white", va="center")
+        ax_bg.text(0.98, 0.915, as_of_text, fontsize=11, fontweight="bold", color="white", va="center", ha="right")
 
-    # Logo Danantara (kiri), ASDP (kanan)
-    logo_left_bytes = _fetch_image_bytes(LOGO_LEFT_URL)
-    logo_right_bytes = _fetch_image_bytes(LOGO_RIGHT_URL)
+        # Logos
+        if logo_left is not None:
+            ax_logoL = fig.add_axes([0.01, 0.905, 0.12, 0.09])
+            ax_logoL.axis("off")
+            ax_logoL.imshow(logo_left)
 
-    c1, c2 = st.columns([1, 1])
-    with c1:
-        poster_title = st.text_input("Judul Poster", value="EXECUTIVE SUMMARY", key="ana_poster_title_v3")
-    with c2:
-        poster_subtitle = st.text_input("Sub Judul", value="Analisis SLA & Transaksi", key="ana_poster_subtitle_v3")
+        if logo_right is not None:
+            ax_logoR = fig.add_axes([0.87, 0.905, 0.12, 0.09])
+            ax_logoR.axis("off")
+            ax_logoR.imshow(logo_right)
 
-    headline = build_auto_headline(totalA, totalB, meanA, meanB, p_total, d_total)
+        # HEADLINE strip
+        headline = f"SLA {metrics['sla_trend']} {abs(metrics['d_sla']):.2f}% • Volume naik {metrics['growth']:.2f}%"
+        ax_bg.add_patch(plt.Rectangle((0.02, 0.82), 0.96, 0.045, color=(1,1,1,0.78), transform=ax_bg.transAxes))
+        ax_bg.text(0.04, 0.842, headline, fontsize=14, fontweight="bold", color=(0.05,0.1,0.2,0.95), va="center")
+
+        # Card helper
+        def card(axpos, title, value, sub, badge=None, good=True):
+            ax = fig.add_axes(axpos)
+            ax.axis("off")
+            ax.add_patch(plt.Rectangle((0,0),1,1, facecolor=(1,1,1,0.94), edgecolor=(0,0,0,0.13), linewidth=1.0))
+            ax.text(0.05, 0.82, title, fontsize=11, fontweight="bold", color=(0.08,0.12,0.20,0.92))
+            ax.text(0.05, 0.40, value, fontsize=28, fontweight="bold", color=(0.02,0.08,0.16,0.98))
+            ax.text(0.05, 0.10, sub, fontsize=11, color=(0.08,0.12,0.20,0.72), fontweight="bold")
+
+            if badge is not None:
+                col = (0.05,0.65,0.30,0.95) if good else (0.80,0.15,0.15,0.95)
+                ax.add_patch(plt.Rectangle((0.67,0.70),0.30,0.24, facecolor=col, edgecolor=(0,0,0,0.15)))
+                ax.text(0.82, 0.81, badge, ha="center", va="center", fontsize=12, fontweight="bold", color="white")
+
+        # CARD GRID POSITIONS
+        left = 0.03
+        gap = 0.015
+        w = (1 - left*2 - gap*3) / 4
+        h1 = 0.11
+        y1 = 0.67
+
+        # Row 1
+        card([left + 0*(w+gap), y1, w, h1],
+             "Total Transaksi (2022)", _id_int(metrics["totA"]),
+             "Baseline",
+             badge=None, good=True)
+
+        vol_badge = f"{_id_int(metrics['d_total'])} ({_id_num(metrics['growth'],2,'%')})"
+        card([left + 1*(w+gap), y1, w, h1],
+             "Total Transaksi (2023)", _id_int(metrics["totB"]),
+             "Perubahan vs A",
+             badge=vol_badge, good=True)
+
+        card([left + 2*(w+gap), y1, w, h1],
+             "Avg SLA (2022)", _id_num(metrics["a_sla"],2," hari"),
+             _fmt_hari_jam_menit(metrics["a_sla"]),
+             badge=None, good=True)
+
+        card([left + 3*(w+gap), y1, w, h1],
+             "Avg SLA (2023)", _id_num(metrics["b_sla"],2," hari"),
+             _fmt_hari_jam_menit(metrics["b_sla"]),
+             badge=f"{_id_num(metrics['d_sla'],2,' hari')}", good=(metrics["d_sla"]<0))
+
+        # Row 2
+        y2 = 0.53
+        h2 = 0.11
+
+        card([left + 0*(w+gap), y2, w, h2],
+             "Executive Score", _id_num(metrics["growth"],2,"%"),
+             "Δ transaksi vs A",
+             badge=f"{_id_int(metrics['d_total'])} trx", good=True)
+
+        card([left + 1*(w+gap), y2, w, h2],
+             "Perubahan SLA", metrics["sla_trend"],
+             "Ringkas (hari)",
+             badge=f"{_id_num(metrics['d_sla'],2,' hari')}", good=(metrics["d_sla"]<0))
+
+        card([left + 2*(w+gap), y2, w, h2],
+             "KPI Compliance", _id_num(metrics["kB"],2,"%"),
+             "Δ poin vs A",
+             badge=f"{_id_num(metrics['d_k'],2,' poin')}", good=(metrics["d_k"]>0))
+
+        card([left + 3*(w+gap), y2, w, h2],
+             "Coverage SLA", _id_num(metrics["covB"],2,"%"),
+             "Kualitas data SLA",
+             badge=f"{_id_num(metrics['d_cov'],2,' poin')}", good=(metrics["d_cov"]>0))
+
+        # Trend charts
+        if trend_fig is not None:
+            # render trend_fig into image and place
+            buf = BytesIO()
+            trend_fig.savefig(buf, format="png", dpi=200, bbox_inches="tight")
+            buf.seek(0)
+            im = Image.open(buf)
+
+            ax_tr = fig.add_axes([0.03, 0.13, 0.94, 0.36])
+            ax_tr.axis("off")
+            ax_tr.imshow(im)
+            buf.close()
+
+        # Footer
+        ax_bg.add_patch(plt.Rectangle((0, 0.02), 1, 0.08, color=(0,0,0,0.25), transform=ax_bg.transAxes))
+        ax_bg.text(0.03, 0.06, "Catatan: Target KPI SLA: 15,00 hari", fontsize=12, fontweight="bold", color="white", va="center")
+        ax_bg.text(0.98, 0.06, "SLA Dashboard • Executive Summary", fontsize=12, fontweight="bold", color="white", va="center", ha="right")
+
+        # Output
+        out = BytesIO()
+        fig.savefig(out, format="png", dpi=200, bbox_inches="tight")
+        plt.close(fig)
+        out.seek(0)
+        return out.getvalue()
 
     @st.cache_data(show_spinner=False)
     def _gen_exec_poster_cached(payload: dict):
-        png = make_exec_poster_png_v3(**payload)
-        pdf = make_exec_poster_pdf_from_png(png)
-        return png, pdf
+        return make_exec_poster_png_v3(**payload)
 
+    # ==========================
+    # 2) STREAMLIT TAB: ANALISIS (A vs B)
+    # ==========================
+    # 2.1 siapkan df khusus tab_analisis
+    dfA_raw = df_filtered.copy()
+
+    # ambil periode datetime
+    dfA_raw, periode_col = _ensure_periode_datetime(dfA_raw, "PERIODE")
+    if periode_col is None or periode_col not in dfA_raw.columns:
+        st.error("Kolom PERIODE tidak ditemukan atau formatnya tidak bisa di-parse.")
+        st.stop()
+
+    # filter: pilih mode banding A vs B
+    c1, c2, c3 = st.columns([1.2, 1.2, 1])
+    with c1:
+        mode = st.selectbox("Mode Perbandingan", ["Tahun vs Tahun", "Bulan vs Bulan", "Rentang vs Rentang"])
+    with c2:
+        sla_col = st.selectbox("Kolom SLA untuk Analisis", ["SLA", "SLA TRANSAKSI (NTPN)", "SLA TRANSAKSI (NON NTPN)"], index=0)
+    with c3:
+        min_trx = st.number_input("Min transaksi per periode", value=0, min_value=0, step=10)
+
+    dfA_raw = dfA_raw[dfA_raw[sla_col].notna()] if sla_col in dfA_raw.columns else dfA_raw.copy()
+
+    # pilih A dan B
+    # helper - list tahun dan bulan
+    dfA_raw["YEAR"] = dfA_raw[periode_col].dt.year
+    dfA_raw["MONTH"] = dfA_raw[periode_col].dt.month
+    years = sorted([y for y in dfA_raw["YEAR"].dropna().unique().tolist() if y is not None])
+    months = list(range(1,13))
+
+    if mode == "Tahun vs Tahun":
+        a_year = st.selectbox("Tahun A", years, index=0 if years else 0)
+        b_year = st.selectbox("Tahun B", years, index=1 if len(years)>1 else 0)
+        dfA = dfA_raw[dfA_raw["YEAR"] == a_year].copy()
+        dfB = dfA_raw[dfA_raw["YEAR"] == b_year].copy()
+        periode_text = f"Tahun {a_year} vs Tahun {b_year}"
+    elif mode == "Bulan vs Bulan":
+        # tahun tetap satu / dua?
+        a_year = st.selectbox("Tahun A", years, index=0 if years else 0)
+        a_month = st.selectbox("Bulan A", months, index=0)
+        b_year = st.selectbox("Tahun B", years, index=0 if years else 0)
+        b_month = st.selectbox("Bulan B", months, index=1 if len(months)>1 else 0)
+        dfA = dfA_raw[(dfA_raw["YEAR"] == a_year) & (dfA_raw["MONTH"] == a_month)].copy()
+        dfB = dfA_raw[(dfA_raw["YEAR"] == b_year) & (dfA_raw["MONTH"] == b_month)].copy()
+        periode_text = f"{a_year}-{a_month:02d} vs {b_year}-{b_month:02d}"
+    else:
+        # rentang manual
+        min_dt = dfA_raw[periode_col].min()
+        max_dt = dfA_raw[periode_col].max()
+        a_start, a_end = st.date_input("Rentang A", value=(min_dt.date(), max_dt.date()))
+        b_start, b_end = st.date_input("Rentang B", value=(min_dt.date(), max_dt.date()))
+        dfA = dfA_raw[(dfA_raw[periode_col].dt.date >= a_start) & (dfA_raw[periode_col].dt.date <= a_end)].copy()
+        dfB = dfA_raw[(dfA_raw[periode_col].dt.date >= b_start) & (dfA_raw[periode_col].dt.date <= b_end)].copy()
+        periode_text = f"{a_start}–{a_end} vs {b_start}–{b_end}"
+
+    # apply min trx
+    if min_trx > 0:
+        if len(dfA) < min_trx:
+            st.warning(f"Transaksi A ({len(dfA)}) < min_trx ({min_trx}).")
+        if len(dfB) < min_trx:
+            st.warning(f"Transaksi B ({len(dfB)}) < min_trx ({min_trx}).")
+
+    # 2.2 metrics + trend
+    metrics = _compute_exec_metrics(dfA, dfB, sla_colA=sla_col, sla_colB=sla_col)
+
+    gA = _monthly_trend(dfA, periode_dt_col=periode_col, sla_col=sla_col)
+    gB = _monthly_trend(dfB, periode_dt_col=periode_col, sla_col=sla_col)
+
+    trend_fig = _plot_trend_two_years(gA, gB, title_left="Tren Volume (bulan)", title_right="Tren SLA (hari, bulan)")
+    st.pyplot(trend_fig)
+
+    # 2.3 tampilkan summary cards di streamlit
+    st.markdown("### Ringkasan A vs B")
+    cc1, cc2, cc3, cc4 = st.columns(4)
+    cc1.metric("Total A", metrics["totA"])
+    cc2.metric("Total B", metrics["totB"], delta=metrics["d_total"])
+    cc3.metric("Avg SLA A", _id_num(metrics["a_sla"],2))
+    cc4.metric("Avg SLA B", _id_num(metrics["b_sla"],2), delta=_id_num(metrics["d_sla"],2))
+
+    # ==========================
+    # 3) BLOK POSTER EXECUTIVE SUMMARY (sudah include di tab_analisis)
+    # ==========================
+    st.markdown("---")
+    st.subheader("🖼️ Poster Executive Summary (A4 Landscape)")
+    st.caption("Poster otomatis untuk kebutuhan presentasi. Gunakan download untuk PNG/PDF.")
+
+    # logo load (optional)
+    logoL = None
+    logoR = None
+    try:
+        # contoh logo path (sesuaikan)
+        if os.path.exists("assets/logo_left.png"):
+            logoL = np.array(Image.open("assets/logo_left.png").convert("RGBA"))
+        if os.path.exists("assets/logo_right.png"):
+            logoR = np.array(Image.open("assets/logo_right.png").convert("RGBA"))
+    except Exception:
+        pass
+
+    # payload poster
     payload = dict(
-        labelA=labelA, labelB=labelB,
-        seriesA=seriesA, seriesB=seriesB,
-        totalA=totalA, totalB=totalB, p_total=p_total, d_total=d_total,
-        meanA=meanA, meanB=meanB,
-        kpi_days=kpi_days, complianceB=complianceB, coverageB=coverageB,
-        d_comp=d_comp, d_cov=d_cov,
-        vol_month_df=vol_month,
-        sla_month_df=sla_month,
-        headline=headline,
-        logo_left_bytes=logo_left_bytes,
-        logo_right_bytes=logo_right_bytes,
-        title=poster_title,
-        subtitle=poster_subtitle,
+        meta_title="EXECUTIVE SUMMARY",
+        subtitle="Analisis SLA & Transaksi",
+        periode_text=periode_text,
+        as_of_text=datetime.now().strftime("%d %b %Y %H:%M"),
+        metrics=metrics,
+        trend_fig=trend_fig,
+        logo_left=logoL,
+        logo_right=logoR
     )
 
-    png_bytes, pdf_bytes = _gen_exec_poster_cached(payload)
+    png_bytes = _gen_exec_poster_cached(payload)
+    st.image(png_bytes, use_container_width=True)
 
-    st.image(png_bytes, caption="Preview Poster Executive Summary (layout sudah rapih & tidak overlap)", use_container_width=True)
+    st.download_button(
+        "⬇️ Download Poster (PNG)",
+        data=png_bytes,
+        file_name="exec_summary_poster.png",
+        mime="image/png"
+    )
 
-    d1, d2 = st.columns(2)
-    with d1:
+    # --- Export PDF from poster image
+    def _poster_png_to_pdf(png_bytes):
+        img = Image.open(BytesIO(png_bytes)).convert("RGB")
+        buf = BytesIO()
+        img.save(buf, format="PDF")
+        buf.seek(0)
+        return buf.getvalue()
+
+    pdf_bytes = _poster_png_to_pdf(png_bytes)
+    st.download_button(
+        "⬇️ Download Poster (PDF)",
+        data=pdf_bytes,
+        file_name="exec_summary_poster.pdf",
+        mime="application/pdf"
+    )
+
+    # ==========================
+    # 4) DETAIL ANALISIS: DISTRIBUSI & OUTLIER
+    # ==========================
+    st.markdown("---")
+    st.subheader("🔎 Detail Analisis (Distribusi SLA dan Outlier)")
+
+    # Histogram SLA A & B
+    if sla_col in dfA.columns and sla_col in dfB.columns:
+        fig_hist = plt.figure(figsize=(10,4), dpi=140)
+        axh = fig_hist.add_subplot(1,1,1)
+        axh.hist(dfA[sla_col].dropna(), bins=20, alpha=0.6, label="A")
+        axh.hist(dfB[sla_col].dropna(), bins=20, alpha=0.6, label="B")
+        axh.set_title("Distribusi SLA (hari) — A vs B", fontweight="bold")
+        axh.set_xlabel("SLA (hari)")
+        axh.set_ylabel("Frekuensi")
+        axh.grid(True, alpha=0.2)
+        axh.legend()
+        st.pyplot(fig_hist)
+
+    # Outlier Top 10 (B)
+    if sla_col in dfB.columns:
+        st.markdown("**Top 10 SLA terlama (periode B)**")
+        outB = dfB[[periode_col, sla_col]].dropna().sort_values(sla_col, ascending=False).head(10)
+        outB = outB.rename(columns={periode_col:"PERIODE", sla_col:"SLA"})
+        st.dataframe(outB, use_container_width=True)
+
+    # ==========================
+    # 5) EXPORT PDF REPORT (Versi Ringkas)
+    # ==========================
+    st.markdown("---")
+    st.subheader("📄 Export Laporan Ringkas (PDF)")
+    st.caption("Laporan ringkas A vs B (cover + ringkasan + tren).")
+
+    from reportlab.lib.pagesizes import landscape, A4
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+
+    _styles = getSampleStyleSheet()
+
+    def _nice_table(data, col_widths=None, header_bg="#0ea5e9", align="CENTER"):
+        tbl = Table(data, colWidths=col_widths)
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor(header_bg)),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+            ("ALIGN", (0,0), (-1,-1), align),
+            ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
+            ("FONTSIZE", (0,0), (-1,-1), 9),
+            ("BOTTOMPADDING", (0,0), (-1,0), 8),
+            ("TOPPADDING", (0,0), (-1,0), 6),
+        ]))
+        return tbl
+
+    def build_pdf_report_exec_v6(dfA, dfB, metrics, gA, gB, poster_png=None, periode_text="A vs B"):
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), leftMargin=1.0*cm, rightMargin=1.0*cm, topMargin=1.0*cm, bottomMargin=1.0*cm)
+        story = []
+
+        story.append(Paragraph("LAPORAN SLA — EXECUTIVE SUMMARY", _styles["Title"]))
+        story.append(Paragraph(f"Periode: {periode_text}", _styles["Normal"]))
+        story.append(Paragraph(f"As of: {datetime.now().strftime('%d %b %Y %H:%M')}", _styles["Normal"]))
+        story.append(Spacer(1, 0.6*cm))
+
+        # ringkasan
+        ring = [
+            ["METRIK", "A", "B", "Δ"],
+            ["Total transaksi", _id_int(metrics["totA"]), _id_int(metrics["totB"]), _id_int(metrics["d_total"])],
+            ["Avg SLA (hari)", _id_num(metrics["a_sla"],2), _id_num(metrics["b_sla"],2), _id_num(metrics["d_sla"],2)],
+            ["KPI score (%)", _id_num(metrics["kA"],2), _id_num(metrics["kB"],2), _id_num(metrics["d_k"],2)],
+            ["Coverage SLA (%)", _id_num(metrics["covA"],2), _id_num(metrics["covB"],2), _id_num(metrics["d_cov"],2)],
+        ]
+        story.append(_nice_table(ring, col_widths=[7*cm, 5*cm, 5*cm, 4*cm]))
+        story.append(Spacer(1, 0.6*cm))
+
+        # embed poster image (optional)
+        if poster_png is not None:
+            try:
+                from reportlab.platypus import Image as RLImage
+                tmp = BytesIO(poster_png)
+                # width to fit page
+                story.append(Paragraph("Poster Executive Summary", _styles["Heading2"]))
+                story.append(Spacer(1, 0.3*cm))
+                story.append(RLImage(tmp, width=26*cm, height=14*cm))
+                story.append(PageBreak())
+            except Exception:
+                pass
+
+        # tren chart
+        # render trend fig
+        try:
+            buf = BytesIO()
+            trend_fig = _plot_trend_two_years(gA, gB)
+            trend_fig.savefig(buf, format="png", dpi=200, bbox_inches="tight")
+            buf.seek(0)
+
+            from reportlab.platypus import Image as RLImage
+            story.append(Paragraph("Tren Bulanan", _styles["Heading2"]))
+            story.append(Spacer(1, 0.3*cm))
+            story.append(RLImage(buf, width=26*cm, height=12*cm))
+            story.append(Spacer(1, 0.6*cm))
+        except Exception:
+            pass
+
+        # rekomendasi
+        story.append(Paragraph("Kesimpulan & Rekomendasi", _styles["Heading2"]))
+        if metrics["sla_trend"] == "memburuk":
+            concl = f"SLA memburuk sebesar {_id_num(metrics['d_sla'],2)} hari. Volume berubah {_id_num(metrics['growth'],2,'%')}."
+        elif metrics["sla_trend"] == "membaik":
+            concl = f"SLA membaik sebesar {_id_num(abs(metrics['d_sla']),2)} hari. Volume berubah {_id_num(metrics['growth'],2,'%')}."
+        else:
+            concl = f"SLA relatif stabil. Volume berubah {_id_num(metrics['growth'],2,'%')}."
+
+        story.append(Paragraph(concl, _styles["Normal"]))
+        story.append(Spacer(1, 0.3*cm))
+
+        recs = [
+            "Validasi proses transaksi paling lambat pada periode B.",
+            "Lakukan quality check pada data SLA (missing/format).",
+            "Susun action plan untuk memperbaiki SLA jika tren memburuk."
+        ]
+        for r in recs:
+            story.append(Paragraph(f"• {r}", _styles["Normal"]))
+
+        # footer
+        story.append(Spacer(1, 0.6*cm))
+        story.append(Paragraph("Laporan ini dihasilkan otomatis oleh SLA Dashboard.", _styles["Normal"]))
+
+        doc.build(story)
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+        return pdf_bytes
+
+    if st.button("📄 Generate PDF Ringkas"):
+        pdf_report = build_pdf_report_exec_v6(dfA, dfB, metrics, gA, gB, poster_png=png_bytes, periode_text=periode_text)
         st.download_button(
-            "⬇️ Download Poster PNG (WA)",
-            data=png_bytes,
-            file_name="Poster_Executive_Summary_Analisis.png",
-            mime="image/png",
-            use_container_width=True
+            "⬇️ Download PDF Ringkas",
+            data=pdf_report,
+            file_name="laporan_exec_summary.pdf",
+            mime="application/pdf"
         )
-    with d2:
-        st.download_button(
-            "⬇️ Download Poster PDF (Email/Arsip)",
-            data=pdf_bytes,
-            file_name="Poster_Executive_Summary_Analisis.pdf",
-            mime="application/pdf",
-            use_container_width=True
+
+    # ==========================
+    # 6) SHOW TABLES
+    # ==========================
+    st.markdown("---")
+    st.subheader("📋 Data A dan B (Preview)")
+    cA, cB = st.columns(2)
+    with cA:
+        st.caption("Sample data A")
+        st.dataframe(dfA.head(50), use_container_width=True)
+    with cB:
+        st.caption("Sample data B")
+        st.dataframe(dfB.head(50), use_container_width=True)
+
+    # ==========================
+    # 7) PDF Report v6 (penuh) — helper function (dipakai tab lain juga)
+    # ==========================
+    def build_pdf_report_v6(
+        df_ord: pd.DataFrame,
+        metrics: dict,
+        periode_text: str,
+        headline: str,
+        trend_fig_png: bytes | None = None,
+        logo_left=None,
+        logo_right=None
+    ) -> bytes:
+        """
+        PDF full report (multi-page) untuk SLA Dashboard.
+        """
+        from reportlab.platypus import (
+            SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+            PageBreak, Image as RLImage
         )
+        from reportlab.lib.pagesizes import landscape, A4
+        from reportlab.lib.units import cm
+        from reportlab.lib import colors
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=landscape(A4),
+            leftMargin=1.0*cm, rightMargin=1.0*cm,
+            topMargin=0.9*cm, bottomMargin=0.9*cm
+        )
+
+        _styles = getSampleStyleSheet()
+        _styles.add(ParagraphStyle(name="SmallRight", parent=_styles["Normal"], fontSize=8, alignment=2))
+        _styles.add(ParagraphStyle(name="Small", parent=_styles["Normal"], fontSize=9))
+
+        def _first_page(canvas, doc):
+            canvas.saveState()
+            canvas.setFont("Helvetica-Bold", 14)
+            canvas.drawString(1.2*cm, 19.5*cm, "SLA PAYMENT REPORT")
+            canvas.setFont("Helvetica", 10)
+            canvas.drawString(1.2*cm, 18.8*cm, f"Periode: {periode_text}")
+            canvas.drawString(1.2*cm, 18.2*cm, f"As of: {datetime.now().strftime('%d %b %Y %H:%M')}")
+            canvas.restoreState()
+
+        def _later_pages(canvas, doc):
+            canvas.saveState()
+            canvas.setFont("Helvetica", 8)
+            canvas.drawRightString(28.5*cm, 1.0*cm, f"Halaman {doc.page}")
+            canvas.restoreState()
+
+        story = []
+        story.append(Paragraph("LAPORAN SLA PAYMENT", _styles["Title"]))
+        story.append(Paragraph(f"Periode: {periode_text}", _styles["Normal"]))
+        story.append(Paragraph(f"As of: {datetime.now().strftime('%d %b %Y %H:%M')}", _styles["Normal"]))
+        story.append(Spacer(1, 0.4*cm))
+
+        # Ringkasan table
+        ring = [
+            ["METRIK", "NILAI"],
+            ["Headline", headline],
+            ["Total transaksi (A)", _id_int(metrics.get("totA", 0))],
+            ["Total transaksi (B)", _id_int(metrics.get("totB", 0))],
+            ["Avg SLA (A)", _id_num(metrics.get("a_sla", np.nan), 2, " hari")],
+            ["Avg SLA (B)", _id_num(metrics.get("b_sla", np.nan), 2, " hari")],
+            ["Δ SLA", _id_num(metrics.get("d_sla", np.nan), 2, " hari")],
+            ["Growth", _id_num(metrics.get("growth", np.nan), 2, "%")],
+            ["KPI score (B)", _id_num(metrics.get("kB", np.nan), 2, "%")],
+            ["Coverage SLA (B)", _id_num(metrics.get("covB", np.nan), 2, "%")],
+        ]
+        tbl = _nice_table(
+            ring,
+            col_widths=[7*cm, 20*cm],
+            header_bg="#0ea5e9",
+            align="LEFT"
+        )
+        story.append(tbl)
+        story.append(PageBreak())
+
+        # Trend image
+        if trend_fig_png is not None:
+            story.append(Paragraph("Tren Bulanan", _styles["Heading2"]))
+            story.append(Spacer(1, 0.3*cm))
+            story.append(RLImage(BytesIO(trend_fig_png), width=26*cm, height=12*cm))
+            story.append(PageBreak())
+
+        # Data summary (contoh)
+        story.append(Paragraph("Data Ringkas", _styles["Heading2"]))
+        story.append(Spacer(1, 0.3*cm))
+        story.append(Paragraph(f"Total baris data terfilter: {_id_int(len(df_ord))}", _styles["Normal"]))
+        story.append(Spacer(1, 0.3*cm))
+
+        # Rekomendasi (placeholder)
+        story.append(Paragraph("Rekomendasi Prioritas", _styles["Heading2"]))
+        story.append(Spacer(1, 0.3*cm))
+
+        rec_tbl = _nice_table(
+            [["REKOMENDASI PRIORITAS"]],
+            col_widths=[27*cm],
+            header_bg="#0ea5e9",
+            align="CENTER"
+        )
+        story.append(rec_tbl)
+
+        story.append(Spacer(1, 0.6*cm))
+        story.append(Paragraph("Laporan ini dihasilkan otomatis oleh SLA Dashboard.", _styles["SmallRight"]))
+
+        # Build PDF
+        doc.build(story, onFirstPage=_first_page, onLaterPages=_later_pages)
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+        return pdf_bytes
 
 
 # =====================[ HELPERS PDF ]=====================
