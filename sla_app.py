@@ -734,7 +734,7 @@ components.html(html_code, height=350)
 # Tabs untuk konten (TIDAK DIUBAH)
 # ==============================
 tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_report = st.tabs(
-    ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi", "📥 Download Report"]
+    ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi", "📥 Download Report","🧠 Analisis Data"]
 )
 
 with tab_overview:
@@ -1658,6 +1658,126 @@ with tab_poster:
             file_name="Poster_SLA_A4.png",
             mime="image/png"
         )
+
+# =========================
+# TAB ANALISIS DATA (BARU)
+# =========================
+def render_tab_analisis_data_v1(df_source: pd.DataFrame, periode_col="PERIODE_DATETIME", sla_col="SLA"):
+    import numpy as np
+    import pandas as pd
+    import streamlit as st
+
+    def safe_pct(a, b):
+        if a is None or pd.isna(a) or a == 0:
+            return np.nan
+        return (b - a) / a * 100
+
+    def filter_range(df, start_dt, end_dt):
+        m = (df[periode_col] >= start_dt) & (df[periode_col] <= end_dt)
+        return df.loc[m].copy()
+
+    def ensure_sla_seconds_local(df):
+        # kolom aman: tidak bentrok dengan tab lain
+        col = "__SLA_SECONDS_ANALYSIS__"
+        if col not in df.columns:
+            df[col] = df[sla_col].apply(parse_sla)
+        return df, col
+
+    st.subheader("📊 Analisis Data (Perbandingan 2 Periode)")
+
+    if df_source is None or df_source.empty:
+        st.warning("Data kosong.")
+        return
+
+    if periode_col not in df_source.columns:
+        st.error(f"Kolom {periode_col} tidak ditemukan.")
+        return
+
+    df_base = df_source.dropna(subset=[periode_col]).copy()
+    if df_base.empty:
+        st.warning("Data periode kosong.")
+        return
+
+    labels = sorted(df_base[periode_col].dt.to_period("M").astype(str).unique().tolist())
+    if not labels:
+        st.warning("Tidak ada periode yang bisa dipilih.")
+        return
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**Periode A (Baseline)**")
+        startA = st.selectbox("Mulai A", labels, index=0, key="ana_startA")
+        endA   = st.selectbox("Sampai A", labels, index=len(labels)-1, key="ana_endA")
+    with c2:
+        st.markdown("**Periode B (Pembanding)**")
+        startB = st.selectbox("Mulai B", labels, index=0, key="ana_startB")
+        endB   = st.selectbox("Sampai B", labels, index=len(labels)-1, key="ana_endB")
+
+    startA_dt = pd.Period(startA).to_timestamp()
+    endA_dt   = pd.Period(endA).to_timestamp() + pd.offsets.MonthEnd(0)
+    startB_dt = pd.Period(startB).to_timestamp()
+    endB_dt   = pd.Period(endB).to_timestamp() + pd.offsets.MonthEnd(0)
+
+    if startA_dt > endA_dt or startB_dt > endB_dt:
+        st.error("Rentang periode tidak valid.")
+        return
+
+    dfA = filter_range(df_base, startA_dt, endA_dt)
+    dfB = filter_range(df_base, startB_dt, endB_dt)
+
+    # ===== VOLUME TRANSAKSI =====
+    totalA, totalB = len(dfA), len(dfB)
+    d_total = totalB - totalA
+    p_total = safe_pct(totalA, totalB)
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Total Transaksi (A)", f"{totalA:,}")
+    m2.metric(
+        "Total Transaksi (B)",
+        f"{totalB:,}",
+        delta=f"{d_total:+,}" + ("" if np.isnan(p_total) else f" ({p_total:+.1f}%)")
+    )
+
+    # ===== SLA COMPARISON =====
+    if sla_col not in df_base.columns:
+        st.info(f"Kolom SLA '{sla_col}' tidak ada → analisis SLA tidak ditampilkan (hanya volume transaksi).")
+        return
+
+    dfA, sla_sec_col = ensure_sla_seconds_local(dfA)
+    dfB, _ = ensure_sla_seconds_local(dfB)
+
+    sA = dfA[sla_sec_col].dropna()
+    sB = dfB[sla_sec_col].dropna()
+
+    meanA = float(sA.mean()) if len(sA) else np.nan
+    meanB = float(sB.mean()) if len(sB) else np.nan
+    d_mean = meanB - meanA if np.isfinite(meanA) and np.isfinite(meanB) else np.nan
+    p_mean = safe_pct(meanA, meanB) if np.isfinite(meanA) and np.isfinite(meanB) else np.nan
+
+    m3.metric("Rata-rata SLA (A)", "-" if np.isnan(meanA) else seconds_to_sla_format(meanA))
+    m4.metric(
+        "Rata-rata SLA (B)",
+        "-" if np.isnan(meanB) else seconds_to_sla_format(meanB),
+        delta="-" if np.isnan(d_mean) else f"{seconds_to_sla_format(d_mean)}" + ("" if np.isnan(p_mean) else f" ({p_mean:+.1f}%)")
+    )
+
+    st.markdown("### Ringkasan (Nominal & %)")
+    summary = pd.DataFrame([
+        ["Transaksi", totalA, totalB, d_total, p_total],
+        ["Mean SLA (detik)", meanA, meanB, d_mean, p_mean],
+    ], columns=["Metrik", "A", "B", "Δ (B-A)", "Δ %"])
+
+    st.dataframe(summary, use_container_width=True)
+
+
+with tab_analisis:
+    # Pakai df_filtered kalau ada (mengikuti filter sidebar tab lain), kalau tidak ada pakai df_raw
+    df_for_analysis = df_filtered if "df_filtered" in locals() else df_raw
+    render_tab_analisis_data_v1(
+        df_for_analysis,
+        periode_col="PERIODE_DATETIME",  # kalau berbeda, ganti di sini saja
+        sla_col="SLA"                    # kalau berbeda, ganti di sini saja
+    )
 
 
 
