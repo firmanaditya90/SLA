@@ -1953,14 +1953,14 @@ def make_exec_poster_png_v3(
     axH = fig.add_axes([0.14, 0.915, 0.72, 0.07])
     axH.axis("off")
     axH.text(0.00, 0.72, title, fontsize=24, fontweight="bold", color=(1,1,1,0.96), va="center")
-    axH.text(0.00, 0.22, subtitle, fontsize=14, fontweight="bold", color=(1,1,1,0.90), va="center")
+    axH.text(0.00, 0.22, subtitle, fontsize=10, fontweight="bold", color=(1,1,1,0.90), va="center")
 
     axHP = fig.add_axes([0.14, 0.875, 0.84, 0.04])
     axHP.axis("off")
     axHP.text(1.00, 0.50, datetime.now().strftime("%d %b %Y %H:%M"),
-              ha="right", fontsize=12, color=(1,1,1,0.88), fontweight="bold")
+              ha="right", fontsize=8, color=(1,1,1,0.88), fontweight="bold")
     axHP.text(0.00, 0.50, f"Periode: {labelA} vs {labelB}",
-              ha="left", fontsize=14, color=(1,1,1,0.92), fontweight="bold")
+              ha="left", fontsize=10, color=(1,1,1,0.92), fontweight="bold")
 
     # =======================
     # HEADLINE STRIP (wrap to avoid overflow)
@@ -1969,7 +1969,7 @@ def make_exec_poster_png_v3(
     axHL.add_patch(plt.Rectangle((0,0),1,1, facecolor=(1,1,1,0.86), edgecolor=(0,0,0,0.10)))
     htxt = headline if headline else "-"
     htxt = "\n".join(textwrap.wrap(htxt, width=64))
-    axHL.text(0.02, 0.50, htxt, va="center", fontsize=12, fontweight="bold", color=(0.05,0.10,0.20,0.98))
+    axHL.text(0.02, 0.50, htxt, va="center", fontsize=8, fontweight="bold", color=(0.05,0.10,0.20,0.98))
 
     # =======================
     # CARD HELPER (fixed internal layout)
@@ -1977,16 +1977,16 @@ def make_exec_poster_png_v3(
     def card(axpos, title, value, sub, badge=None, good=True):
         ax = fig.add_axes(axpos); ax.axis("off")
         ax.add_patch(plt.Rectangle((0,0),1,1, facecolor=(1,1,1,0.94), edgecolor=(0,0,0,0.13), linewidth=1.0))
-        ax.text(0.05, 0.80, title, fontsize=11, fontweight="bold", color=(0.08,0.12,0.20,0.92))
-        ax.text(0.05, 0.42, value, fontsize=20, fontweight="bold", color=(0.02,0.08,0.16,0.98))
-        ax.text(0.05, 0.14, sub, fontsize=11, color=(0.08,0.12,0.20,0.72), fontweight="bold")
+        ax.text(0.05, 0.80, title, fontsize=8, fontweight="bold", color=(0.08,0.12,0.20,0.92))
+        ax.text(0.05, 0.42, value, fontsize=12, fontweight="bold", color=(0.02,0.08,0.16,0.98))
+        ax.text(0.05, 0.14, sub, fontsize=8, color=(0.08,0.12,0.20,0.72), fontweight="bold")
 
         if badge:
             fc = (0.05, 0.65, 0.50, 0.18) if good else (0.85, 0.20, 0.20, 0.16)
             tc = (0.02, 0.45, 0.34, 0.95) if good else (0.55, 0.10, 0.10, 0.95)
             # badge always top-right inside card
             ax.add_patch(plt.Rectangle((0.67, 0.70), 0.30, 0.22, facecolor=fc, edgecolor=(0,0,0,0.10)))
-            ax.text(0.82, 0.81, badge, ha="center", va="center", fontsize=12, fontweight="bold", color=tc)
+            ax.text(0.82, 0.81, badge, ha="center", va="center", fontsize=8, fontweight="bold", color=tc)
 
     # =======================
     # KPI VALUES
@@ -2068,7 +2068,7 @@ def make_exec_poster_png_v3(
     # =======================
     axF = fig.add_axes([0.03, 0.02, 0.94, 0.05]); axF.axis("off")
     axF.text(0.00, 0.50, "",
-             fontsize=10, alpha=0.80, color=(0.02,0.08,0.16,0.80), fontweight="bold")
+             fontsize=8, alpha=0.80, color=(0.02,0.08,0.16,0.80), fontweight="bold")
     axF.text(1.00, 0.50, "Sumber: Tab Analisis (hasil filter aktif)",
              fontsize=10, alpha=0.80, ha="right", color=(0.02,0.08,0.16,0.80), fontweight="bold")
 
