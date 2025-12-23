@@ -2264,9 +2264,9 @@ with tab_analisis:
     st.markdown("### ⚙️ Mode Perbandingan")
     mode = st.radio(
         "Pilih mode",
-        ["Tahun vs Tahun", "Bulan vs Bulan (tahun sama)", "Rentang (A) vs Rentang (B)"],
+        ["Tahun vs Tahun", "Bulan vs Bulan (tahun bebas)", "Rentang (A) vs Rentang (B)"],
         horizontal=True,
-        key="ana_mode_all_v4"
+        key="ana_mode_all_v5"
     )
 
     colA, colB, colS = st.columns([1, 1, 1])
@@ -2290,7 +2290,7 @@ with tab_analisis:
                 if prefer in sla_options:
                     default_idx = sla_options.index(prefer)
                     break
-            sla_pick = st.selectbox("Kolom SLA", sla_options, index=default_idx, key="ana_sla_pick_v4")
+            sla_pick = st.selectbox("Kolom SLA", sla_options, index=default_idx, key="ana_sla_pick_v5")
         else:
             sla_pick = None
             st.info("Kolom SLA tidak terdeteksi (SLA card & chart akan mengikuti kondisi data).")
@@ -2301,19 +2301,19 @@ with tab_analisis:
 
     if mode == "Tahun vs Tahun":
         with colA:
-            yearA = st.selectbox("Periode A — Tahun", years, index=0, key="ana_yearA_v4")
+            yearA = st.selectbox("Periode A — Tahun", years, index=0, key="ana_yearA_v5")
         with colB:
-            yearB = st.selectbox("Periode B — Tahun", years, index=min(1, len(years) - 1), key="ana_yearB_v4")
+            yearB = st.selectbox("Periode B — Tahun", years, index=min(1, len(years) - 1), key="ana_yearB_v5")
 
         selA = [p for p in periods if int(p.year) == int(yearA)]
         selB = [p for p in periods if int(p.year) == int(yearB)]
         labelA, labelB = f"Tahun {yearA}", f"Tahun {yearB}"
 
-    elif mode == "Bulan vs Bulan (tahun sama)":
+    elif mode == "Bulan vs Bulan (tahun bebas)":
         with colA:
-            mA = st.selectbox("Periode A — Bulan", period_labels, index=0, key="ana_monthA_v4")
+            mA = st.selectbox("Periode A — Bulan", period_labels, index=0, key="ana_monthA_v5")
         with colB:
-            mB = st.selectbox("Periode B — Bulan", period_labels, index=min(1, len(period_labels) - 1), key="ana_monthB_v4")
+            mB = st.selectbox("Periode B — Bulan", period_labels, index=min(1, len(period_labels) - 1), key="ana_monthB_v5")
 
         selA = [label_to_period[mA]]
         selB = [label_to_period[mB]]
@@ -2321,11 +2321,11 @@ with tab_analisis:
 
     else:  # range
         with colA:
-            startA = st.selectbox("Periode A — Mulai", period_labels, index=0, key="ana_startA_v4")
-            endA   = st.selectbox("Periode A — Sampai", period_labels, index=len(period_labels)-1, key="ana_endA_v4")
+            startA = st.selectbox("Periode A — Mulai", period_labels, index=0, key="ana_startA_v5")
+            endA   = st.selectbox("Periode A — Sampai", period_labels, index=len(period_labels)-1, key="ana_endA_v5")
         with colB:
-            startB = st.selectbox("Periode B — Mulai", period_labels, index=0, key="ana_startB_v4")
-            endB   = st.selectbox("Periode B — Sampai", period_labels, index=len(period_labels)-1, key="ana_endB_v4")
+            startB = st.selectbox("Periode B — Mulai", period_labels, index=0, key="ana_startB_v5")
+            endB   = st.selectbox("Periode B — Sampai", period_labels, index=len(period_labels)-1, key="ana_endB_v5")
 
         pA0 = label_to_period[startA]; pA1 = label_to_period[endA]
         pB0 = label_to_period[startB]; pB1 = label_to_period[endB]
@@ -2370,7 +2370,7 @@ with tab_analisis:
 
         s = df[sla_pick]
 
-        # 1) coba numeric langsung (kalau SLA sudah detik)
+        # 1) numeric langsung (kalau SLA sudah detik)
         num = pd.to_numeric(s, errors="coerce")
 
         # 2) non-numeric -> parse_sla (format teks)
@@ -2390,7 +2390,7 @@ with tab_analisis:
                 except Exception:
                     sec = np.nan
 
-                # kalau hasil parse = 0 tapi input bukan "0", anggap gagal parse -> NaN
+                # parse gagal -> NaN (hindari garis 0)
                 try:
                     if (sec == 0 or sec == 0.0) and vs not in {"0", "0.0"}:
                         return np.nan
