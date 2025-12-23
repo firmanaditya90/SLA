@@ -2020,7 +2020,7 @@ def make_exec_poster_png_v3(
     # Executive Score label (separate line)
     axES = fig.add_axes([0.03, 0.63, 0.94, 0.05]); axES.axis("off")
     axES.text(0.00, 0.70, "Executive Score", fontsize=12, fontweight="bold", color=(0.02,0.08,0.16,0.95))
-    axES.text(0.00, 0.50, f"Target KPI SLA: {_id_num(kpi_days,2,' hari')}", fontsize=10, color=(0.02,0.08,0.16,0.70), fontweight="bold")
+    axES.text(0.00, 0.35, f"Target KPI SLA: {_id_num(kpi_days,2,' hari')}", fontsize=10, color=(0.02,0.08,0.16,0.70), fontweight="bold")
 
     # Row 2 (Executive Score cards)
     y2 = 0.52
