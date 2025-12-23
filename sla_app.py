@@ -2108,7 +2108,7 @@ with tab_analisis:
         st.warning("Data kosong.")
         st.stop()
     if "periode_col" not in locals() or periode_col is None or periode_col not in df_raw.columns:
-        st.warning("Kolom periode tidak ditemukan.")
+        st.error("Kolom periode (periode_col) tidak ditemukan.")
         st.stop()
 
     # Toggle filter scope
@@ -2118,12 +2118,13 @@ with tab_analisis:
         st.warning("Data kosong (setelah filter).")
         st.stop()
 
-    # Filter tambahan: Jenis Transaksi (multi-select, default ALL)
-    # Catatan: ini memungkinkan analisis spesifik (mis. hanya "PUK") sambil tetap mempertahankan filter waktu A vs B.
+    # =========================================
+    # Filter tambahan: Jenis Transaksi (multi)
+    # =========================================
     trx_col = None
     for _c in df_base.columns:
         _cu = re.sub(r"\s+", " ", str(_c).strip().upper())
-        if _cu in {"JENIS TRANSAKSI","JENIS_TRANSAKSI","TRANSAKSI","NAMA TRANSAKSI","TYPE TRANSAKSI","TIPE TRANSAKSI"}:
+        if _cu in {"JENIS TRANSAKSI", "JENIS_TRANSAKSI", "TRANSAKSI", "NAMA TRANSAKSI", "TYPE TRANSAKSI", "TIPE TRANSAKSI"}:
             trx_col = _c
             break
         if ("JENIS" in _cu and "TRANSAK" in _cu) or (_cu.endswith("TRANSAKSI")):
@@ -2144,9 +2145,6 @@ with tab_analisis:
             if df_base.empty:
                 st.warning("Tidak ada data untuk pilihan jenis transaksi tersebut.")
                 st.stop()
-    else:
-        # Kalau kolom jenis transaksi tidak tersedia, tab_analisis tetap berjalan tanpa filter ini.
-        pass
 
     # Month names
     month_id = {
@@ -2158,7 +2156,7 @@ with tab_analisis:
     # CSS cards (kontras)
     st.markdown("""
 <style>
-.kpi-wrap{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:10px}
+.kpi-wrap{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:10px}
 .kpi-card{
   border:1px solid rgba(49,51,63,.15);
   border-radius:16px;
@@ -2167,16 +2165,17 @@ with tab_analisis:
   box-shadow:0 10px 22px rgba(0,0,0,.08);
 }
 .kpi-title{font-size:13px;color:rgba(15,23,42,.78);margin:0 0 6px 0;font-weight:700;text-align:center}
-.kpi-value{font-size:26px;color:#0f172a;margin:0;font-weight:800;text-align:center;line-height:1.1}
+.kpi-value{font-size:24px;color:#0f172a;margin:0;font-weight:900;text-align:center;line-height:1.1}
 .kpi-sub{font-size:12px;color:rgba(15,23,42,.7);margin-top:6px;text-align:center}
 .kpi-pill{
   display:inline-block;padding:2px 8px;border-radius:999px;
   font-size:11px;font-weight:800;border:1px solid rgba(49,51,63,.18);
   background:rgba(148,163,184,.12); color:#0f172a;
 }
-.kpi-delta-pos{color:#16a34a;font-weight:800}
-.kpi-delta-neg{color:#dc2626;font-weight:800}
-.kpi-delta-neu{color:#334155;font-weight:800}
+.kpi-delta-pos{color:#16a34a;font-weight:900}
+.kpi-delta-neg{color:#dc2626;font-weight:900}
+.kpi-delta-neu{color:#334155;font-weight:900}
+
 .poster-wrap{
   border:1px solid rgba(49,51,63,.14);
   border-radius:16px;
@@ -2204,7 +2203,7 @@ with tab_analisis:
 .small-metric b{font-size:16px}
 .small-metric span{font-size:12px;color:rgba(15,23,42,.7)}
 @media(max-width:1100px){
-  .kpi-wrap{grid-template-columns:repeat(2,1fr)}
+  .kpi-wrap{grid-template-columns:1fr}
   .poster-grid{grid-template-columns:1fr}
 }
 </style>
@@ -2216,14 +2215,12 @@ with tab_analisis:
             return None, None
         s = str(x).strip()
         # Format: "Desember 2024", "Dec 2024", "12/2024", "2024-12", etc.
-        # 1) try pattern "MonthName YYYY"
         m = re.match(r"^([A-Za-zÀ-ÿ]+)\s+(\d{4})$", s)
         if m:
             mname = m.group(1).lower()
             y = int(m.group(2))
             if mname in id_month:
                 return y, id_month[mname]
-            # english short
             en_map = {
                 "jan": 1, "januari": 1, "january": 1,
                 "feb": 2, "februari": 2, "february": 2,
@@ -2241,27 +2238,28 @@ with tab_analisis:
             mm = en_map.get(mname[:3], None) if mname[:3] in en_map else en_map.get(mname, None)
             if mm:
                 return y, mm
-        # 2) try "MM/YYYY" or "M/YYYY"
+
         m = re.match(r"^(\d{1,2})\s*/\s*(\d{4})$", s)
         if m:
             mm = int(m.group(1))
             yy = int(m.group(2))
             if 1 <= mm <= 12:
                 return yy, mm
-        # 3) try "YYYY-MM" or "YYYY/M"
+
         m = re.match(r"^(\d{4})\s*[-/]\s*(\d{1,2})$", s)
         if m:
             yy = int(m.group(1))
             mm = int(m.group(2))
             if 1 <= mm <= 12:
                 return yy, mm
-        # 4) fallback: if datetime-like
+
         try:
             dt = pd.to_datetime(s, errors="coerce")
             if pd.notna(dt):
                 return int(dt.year), int(dt.month)
         except Exception:
             pass
+
         return None, None
 
     # Add periode_y/m
@@ -2283,7 +2281,6 @@ with tab_analisis:
         st.warning("Tidak ada data periode valid untuk dianalisis.")
         st.stop()
 
-    # Get available years & months
     years_avail = sorted(df_base_local["_ana_year"].unique().tolist())
     months_avail = sorted(df_base_local["_ana_month"].unique().tolist())
 
@@ -2303,7 +2300,6 @@ with tab_analisis:
         return df[(df["_ana_year"] == int(y)) & (df["_ana_month"] == int(m))].copy()
 
     def filter_df_range(df, y1, m1, y2, m2):
-        # inclusive range by (year, month)
         a = int(y1) * 100 + int(m1)
         b = int(y2) * 100 + int(m2)
         lo, hi = (a, b) if a <= b else (b, a)
@@ -2328,9 +2324,11 @@ with tab_analisis:
     elif ana_mode == "Bulan vs Bulan (tahun sama)":
         with colA:
             y = st.selectbox("Pilih tahun", years_avail, index=max(0, len(years_avail)-1), key="ana_y_same_v3")
-            mA = st.selectbox("Periode A — Bulan", months_avail, index=max(0, len(months_avail)-2), format_func=lambda x: month_id.get(x, str(x)), key="ana_mA_v3")
+            mA = st.selectbox("Periode A — Bulan", months_avail, index=max(0, len(months_avail)-2),
+                              format_func=lambda x: month_id.get(x, str(x)), key="ana_mA_v3")
         with colB:
-            mB = st.selectbox("Periode B — Bulan", months_avail, index=max(0, len(months_avail)-1), format_func=lambda x: month_id.get(x, str(x)), key="ana_mB_v3")
+            mB = st.selectbox("Periode B — Bulan", months_avail, index=max(0, len(months_avail)-1),
+                              format_func=lambda x: month_id.get(x, str(x)), key="ana_mB_v3")
         dfA = filter_df_year_month(df_base_local, y, mA)
         dfB = filter_df_year_month(df_base_local, y, mB)
         labelA = f"{month_id.get(mA)} {y}"
@@ -2357,11 +2355,9 @@ with tab_analisis:
     # =========================
     # METRICS SECTION
     # =========================
-    # Column detection
-    # priority: jumlah transaksi, total value, SLA, success, etc.
     cols_upper = {c: str(c).upper().strip() for c in df_base_local.columns}
 
-    # Detect common columns
+    # jumlah transaksi (kalau tidak ada, fallback hitung baris)
     col_jumlah = None
     for c, cu in cols_upper.items():
         if cu in ("JUMLAH TRANSAKSI", "JUMLAH_TRANSAKSI", "QTY", "JUMLAH", "TRANSAKSI"):
@@ -2371,125 +2367,147 @@ with tab_analisis:
             col_jumlah = c
             break
 
-    col_value = None
-    for c, cu in cols_upper.items():
-        if cu in ("NILAI", "VALUE", "AMOUNT", "TOTAL NILAI", "TOTAL_NILAI", "NOMINAL"):
-            col_value = c
-            break
-        if "NILAI" in cu or "AMOUNT" in cu or "NOMINAL" in cu:
-            col_value = c
-            break
-
+    # SLA: prioritas KEUANGAN (sesuai tab Overview), baru fallback cari kolom berisi SLA
     col_sla = None
-    for c, cu in cols_upper.items():
-        if cu in ("SLA", "SLA (HARI)", "SLA_HARI", "SLA HARI"):
-            col_sla = c
-            break
-        if "SLA" in cu:
-            col_sla = c
-            break
+    if "KEUANGAN" in df_base_local.columns:
+        col_sla = "KEUANGAN"
+    else:
+        for c, cu in cols_upper.items():
+            if cu in ("SLA", "SLA (HARI)", "SLA_HARI", "SLA HARI", "SLA (DETIK)", "SLA_DETIK", "SLA SECONDS", "SLA_SECONDS"):
+                col_sla = c
+                break
+            if "SLA" in cu:
+                col_sla = c
+                break
 
-    col_status = None
-    for c, cu in cols_upper.items():
-        if cu in ("STATUS", "STATUS SLA", "STATUS_SLA", "KETERANGAN"):
-            col_status = c
-            break
-        if "STATUS" in cu:
-            col_status = c
-            break
-
-    # Safe numeric conversion
     def to_num(s):
         if s is None:
             return pd.Series(dtype=float)
-        ser = pd.to_numeric(s, errors="coerce")
-        return ser
+        return pd.to_numeric(s, errors="coerce")
 
     def sum_or_count(df, col):
         if col and col in df.columns:
             return float(to_num(df[col]).fillna(0).sum())
         return float(len(df))
 
-    def avg_num(df, col):
-        if col and col in df.columns:
-            ser = to_num(df[col])
-            if ser.notna().any():
-                return float(ser.mean())
-        return np.nan
+    def avg_seconds(df, col):
+        if not col or col not in df.columns or len(df) == 0:
+            return np.nan
+        ser = to_num(df[col])
+        if not ser.notna().any():
+            return np.nan
+        return float(ser.mean())
 
-    def pct_success(df):
-        if col_status and col_status in df.columns:
-            ser = df[col_status].astype(str).str.upper()
-            # heuristic: success if contains "OK"/"SELESAI"/"DONE"/"SUCCESS"/"TERPENUHI"
-            ok = ser.str.contains("OK|SELESAI|DONE|SUCCESS|TERPENUHI|YES|YA", regex=True, na=False)
-            if len(ser) == 0:
-                return np.nan
-            return float(ok.sum()) / float(len(ser)) * 100.0
-        return np.nan
+    def fmt_int_id(x):
+        try:
+            if x is None or (isinstance(x, float) and np.isnan(x)):
+                return "-"
+            return f"{int(round(float(x))):,}".replace(",", ".")
+        except Exception:
+            return "-"
 
-    # Compute base metrics A & B
-    jumlah_A = sum_or_count(dfA, col_jumlah)
-    jumlah_B = sum_or_count(dfB, col_jumlah)
+    def pct_change(a, b):
+        if a is None or b is None or pd.isna(a) or pd.isna(b):
+            return np.nan
+        if float(a) == 0.0:
+            return np.nan
+        return (float(b) - float(a)) / float(a) * 100.0
 
-    nilai_A = sum_or_count(dfA, col_value) if col_value else np.nan
-    nilai_B = sum_or_count(dfB, col_value) if col_value else np.nan
-
-    sla_avg_A = avg_num(dfA, col_sla)
-    sla_avg_B = avg_num(dfB, col_sla)
-
-    succ_A = pct_success(dfA)
-    succ_B = pct_success(dfB)
-
-    # Delta helper
-    def delta_text(a, b, is_pct=False):
-        if (a is None) or (b is None) or (pd.isna(a)) or (pd.isna(b)):
-            return "-", "kpi-delta-neu"
-        d = b - a
-        if is_pct:
-            s = f"{d:+.1f} pp"
-        else:
-            # if magnitude big, format
-            if abs(d) >= 1_000_000_000:
-                s = f"{d/1_000_000_000:+.2f}B"
-            elif abs(d) >= 1_000_000:
-                s = f"{d/1_000_000:+.2f}M"
-            elif abs(d) >= 1_000:
-                s = f"{d/1_000:+.2f}K"
-            else:
-                s = f"{d:+.0f}"
-        cls = "kpi-delta-neu"
+    def delta_cls(d):
+        if d is None or pd.isna(d):
+            return "kpi-delta-neu"
         if d > 0:
-            cls = "kpi-delta-pos"
-        elif d < 0:
-            cls = "kpi-delta-neg"
-        return s, cls
+            return "kpi-delta-pos"
+        if d < 0:
+            return "kpi-delta-neg"
+        return "kpi-delta-neu"
 
-    def fmt_big(x):
+    def fmt_pct(x, nd=1):
         if x is None or pd.isna(x):
             return "-"
-        x = float(x)
-        if abs(x) >= 1_000_000_000:
-            return f"{x/1_000_000_000:.2f}B"
-        if abs(x) >= 1_000_000:
-            return f"{x/1_000_000:.2f}M"
-        if abs(x) >= 1_000:
-            return f"{x/1_000:.2f}K"
-        return f"{x:,.0f}".replace(",", ".")
+        return f"{x:+.{nd}f}%"
 
-    # KPI Cards
-    d_jml, cls_jml = delta_text(jumlah_A, jumlah_B, is_pct=False)
-    d_nil, cls_nil = delta_text(nilai_A, nilai_B, is_pct=False)
-    d_sla, cls_sla = delta_text(sla_avg_A, sla_avg_B, is_pct=False)
-    d_suc, cls_suc = delta_text(succ_A, succ_B, is_pct=True)
+    # Hitung jumlah transaksi A/B
+    jumlah_A = sum_or_count(dfA, col_jumlah)
+    jumlah_B = sum_or_count(dfB, col_jumlah)
+    delta_jumlah = jumlah_B - jumlah_A if (not pd.isna(jumlah_A) and not pd.isna(jumlah_B)) else np.nan
+    pct_jumlah = pct_change(jumlah_A, jumlah_B)
 
+    # SLA avg (kolom SLA dianggap seconds seperti tab Overview)
+    sla_sec_A = avg_seconds(dfA, col_sla)
+    sla_sec_B = avg_seconds(dfB, col_sla)
+    sla_day_A = (sla_sec_A / 86400.0) if (sla_sec_A is not None and not pd.isna(sla_sec_A)) else np.nan
+    sla_day_B = (sla_sec_B / 86400.0) if (sla_sec_B is not None and not pd.isna(sla_sec_B)) else np.nan
+    delta_sla_day = sla_day_B - sla_day_A if (not pd.isna(sla_day_A) and not pd.isna(sla_day_B)) else np.nan
+    pct_sla = pct_change(sla_day_A, sla_day_B)
+
+    # Format SLA (ringkas + detail) — gunakan helper global jika ada
+    def sla_short(seconds):
+        if seconds is None or pd.isna(seconds):
+            return "-"
+        # prefer existing helper
+        if " _sla_short_days" in globals():
+            try:
+                return _sla_short_days(seconds)
+            except Exception:
+                pass
+        # fallback
+        return _id_num(float(seconds) / 86400.0, nd=2, suffix=" hari") if "_id_num" in globals() else f"{float(seconds)/86400.0:.2f} hari"
+
+    def sla_detail(seconds):
+        if seconds is None or pd.isna(seconds):
+            return "-"
+        if "seconds_to_sla_format" in globals():
+            try:
+                return seconds_to_sla_format(seconds)
+            except Exception:
+                pass
+        # fallback manual
+        try:
+            s = int(round(float(seconds)))
+            days = s // 86400
+            rem = s % 86400
+            hrs = rem // 3600
+            rem = rem % 3600
+            mins = rem // 60
+            secs = rem % 60
+            return f"{days} hari {hrs:02d} jam {mins:02d} menit {secs:02d} detik"
+        except Exception:
+            return "-"
+
+    # KPI target attainment (berbasis target KPI dari Overview)
+    saved_kpi = load_kpi() if "load_kpi" in globals() else None
+    kpi_days = float(saved_kpi) if saved_kpi is not None else None
+    kpi_seconds = (kpi_days * 86400.0) if kpi_days is not None else None
+
+    def kpi_attainment(df):
+        if kpi_seconds is None or col_sla is None or col_sla not in df.columns or len(df) == 0:
+            return np.nan
+        ser = to_num(df[col_sla])
+        ser = ser[ser.notna()]
+        if len(ser) == 0:
+            return np.nan
+        ok = (ser <= kpi_seconds).sum()
+        return float(ok) / float(len(ser)) * 100.0
+
+    attain_A = kpi_attainment(dfA)
+    attain_B = kpi_attainment(dfB)
+    delta_attain = attain_B - attain_A if (not pd.isna(attain_A) and not pd.isna(attain_B)) else np.nan
+    pct_attain = pct_change(attain_A, attain_B)
+
+    # KPI Cards (3): Jumlah, SLA, KPI Attainment
     st.markdown('<div class="kpi-wrap">', unsafe_allow_html=True)
 
     st.markdown(
         f"""
         <div class="kpi-card">
           <div class="kpi-title">Jumlah Transaksi</div>
-          <div class="kpi-value">{fmt_big(jumlah_B)}</div>
-          <div class="kpi-sub"><span class="kpi-pill">{labelB}</span> vs <span class="kpi-pill">{labelA}</span> — <span class="{cls_jml}">{d_jml}</span></div>
+          <div class="kpi-value">{fmt_int_id(jumlah_A)} → {fmt_int_id(jumlah_B)}</div>
+          <div class="kpi-sub">
+            <span class="kpi-pill">{labelA}</span> vs <span class="kpi-pill">{labelB}</span>
+            — <span class="{delta_cls(delta_jumlah)}">{fmt_int_id(delta_jumlah)}</span>
+            — <span class="{delta_cls(pct_jumlah)}">{fmt_pct(pct_jumlah, nd=1)}</span>
+          </div>
         </div>
         """,
         unsafe_allow_html=True
@@ -2498,9 +2516,17 @@ with tab_analisis:
     st.markdown(
         f"""
         <div class="kpi-card">
-          <div class="kpi-title">Total Nilai</div>
-          <div class="kpi-value">{fmt_big(nilai_B) if not pd.isna(nilai_B) else "-"}</div>
-          <div class="kpi-sub"><span class="kpi-pill">{labelB}</span> vs <span class="kpi-pill">{labelA}</span> — <span class="{cls_nil}">{d_nil}</span></div>
+          <div class="kpi-title">Rata-rata SLA (Keuangan)</div>
+          <div class="kpi-value">{sla_short(sla_sec_A)} → {sla_short(sla_sec_B)}</div>
+          <div class="kpi-sub">
+            <span class="kpi-pill">{labelA}</span> vs <span class="kpi-pill">{labelB}</span>
+            — <span class="{delta_cls(delta_sla_day)}">{_id_num(delta_sla_day, nd=2, suffix=" hari") if ("_id_num" in globals() and not pd.isna(delta_sla_day)) else (f"{delta_sla_day:+.2f} hari" if not pd.isna(delta_sla_day) else "-")}</span>
+            — <span class="{delta_cls(pct_sla)}">{fmt_pct(pct_sla, nd=1)}</span>
+            <br/>
+            <span style="opacity:.85">Detail A: {sla_detail(sla_sec_A)}</span>
+            <br/>
+            <span style="opacity:.85">Detail B: {sla_detail(sla_sec_B)}</span>
+          </div>
         </div>
         """,
         unsafe_allow_html=True
@@ -2509,20 +2535,15 @@ with tab_analisis:
     st.markdown(
         f"""
         <div class="kpi-card">
-          <div class="kpi-title">Rata-rata SLA</div>
-          <div class="kpi-value">{(f"{sla_avg_B:.2f}" if not pd.isna(sla_avg_B) else "-")}</div>
-          <div class="kpi-sub"><span class="kpi-pill">{labelB}</span> vs <span class="kpi-pill">{labelA}</span> — <span class="{cls_sla}">{d_sla}</span></div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.markdown(
-        f"""
-        <div class="kpi-card">
-          <div class="kpi-title">Success Rate (heuristic)</div>
-          <div class="kpi-value">{(f"{succ_B:.1f}%" if not pd.isna(succ_B) else "-")}</div>
-          <div class="kpi-sub"><span class="kpi-pill">{labelB}</span> vs <span class="kpi-pill">{labelA}</span> — <span class="{cls_suc}">{d_suc}</span></div>
+          <div class="kpi-title">KPI Attainment Rate</div>
+          <div class="kpi-value">{(f"{attain_A:.1f}%" if not pd.isna(attain_A) else "-")} → {(f"{attain_B:.1f}%" if not pd.isna(attain_B) else "-")}</div>
+          <div class="kpi-sub">
+            {"Dengan target KPI " + (str(kpi_days) if kpi_days is not None else "-") + " hari" if kpi_days is not None else "Target KPI belum di-set di Overview"}
+            <br/>
+            <span class="kpi-pill">{labelA}</span> vs <span class="kpi-pill">{labelB}</span>
+            — <span class="{delta_cls(delta_attain)}">{(f"{delta_attain:+.1f} pp" if not pd.isna(delta_attain) else "-")}</span>
+            — <span class="{delta_cls(pct_attain)}">{fmt_pct(pct_attain, nd=1)}</span>
+          </div>
         </div>
         """,
         unsafe_allow_html=True
@@ -2556,12 +2577,6 @@ with tab_analisis:
         st.plotly_chart(fig_ts, use_container_width=True)
 
     # Compare breakdown by month (for selected years / ranges)
-    def tag_df(df, tag):
-        d = df.copy()
-        d["_tag"] = tag
-        return d
-
-    # Build compare table by month for A & B
     def summarize_by_month(df, tag):
         d = df.copy()
         if col_jumlah and col_jumlah in d.columns:
@@ -2590,21 +2605,15 @@ with tab_analisis:
     st.markdown("---")
     st.subheader("🧾 Executive Summary (Poster)")
 
-    # headline insights (simple)
-    jml_delta_val = (jumlah_B - jumlah_A) if (not pd.isna(jumlah_A) and not pd.isna(jumlah_B)) else np.nan
-    jml_trend = "Naik" if (not pd.isna(jml_delta_val) and jml_delta_val > 0) else ("Turun" if (not pd.isna(jml_delta_val) and jml_delta_val < 0) else "Stagnan")
-
-    sla_delta_val = (sla_avg_B - sla_avg_A) if (not pd.isna(sla_avg_A) and not pd.isna(sla_avg_B)) else np.nan
-    sla_trend = "Lebih lama" if (not pd.isna(sla_delta_val) and sla_delta_val > 0) else ("Lebih cepat" if (not pd.isna(sla_delta_val) and sla_delta_val < 0) else "Stabil")
-
-    succ_delta_val = (succ_B - succ_A) if (not pd.isna(succ_A) and not pd.isna(succ_B)) else np.nan
-    succ_trend = "Membaik" if (not pd.isna(succ_delta_val) and succ_delta_val > 0) else ("Memburuk" if (not pd.isna(succ_delta_val) and succ_delta_val < 0) else "Stabil")
+    # headline insights
+    jml_trend = "Naik" if (not pd.isna(delta_jumlah) and delta_jumlah > 0) else ("Turun" if (not pd.isna(delta_jumlah) and delta_jumlah < 0) else "Stagnan")
+    sla_trend = "Lebih lama" if (not pd.isna(delta_sla_day) and delta_sla_day > 0) else ("Lebih cepat" if (not pd.isna(delta_sla_day) and delta_sla_day < 0) else "Stabil")
+    attain_trend = "Membaik" if (not pd.isna(delta_attain) and delta_attain > 0) else ("Memburuk" if (not pd.isna(delta_attain) and delta_attain < 0) else "Stabil")
 
     # Logo images if exist in session
     logo_left = st.session_state.get("logo_left_path", None)
     logo_right = st.session_state.get("logo_right_path", None)
 
-    # Compose poster HTML
     def safe_img_tag(path, height=42):
         if not path or not os.path.exists(path):
             return ""
@@ -2633,33 +2642,31 @@ with tab_analisis:
     <div class="poster-box">
       <h4>Highlight Kinerja</h4>
       <div class="small-metric">
-        <b>{fmt_big(jumlah_B)}</b><span>Jumlah transaksi ({jml_trend} vs A)</span>
+        <b>{fmt_int_id(jumlah_A)} → {fmt_int_id(jumlah_B)}</b><span>Jumlah transaksi ({jml_trend})</span>
       </div>
       <div class="small-metric">
-        <b>{fmt_big(nilai_B) if not pd.isna(nilai_B) else "-"}</b><span>Total nilai</span>
+        <b>{sla_short(sla_sec_A)} → {sla_short(sla_sec_B)}</b><span>Rata-rata SLA ({sla_trend})</span>
       </div>
       <div class="small-metric">
-        <b>{(f"{sla_avg_B:.2f}" if not pd.isna(sla_avg_B) else "-")}</b><span>Rata-rata SLA ({sla_trend})</span>
-      </div>
-      <div class="small-metric">
-        <b>{(f"{succ_B:.1f}%" if not pd.isna(succ_B) else "-")}</b><span>Success rate ({succ_trend})</span>
+        <b>{(f"{attain_A:.1f}%" if not pd.isna(attain_A) else "-")} → {(f"{attain_B:.1f}%" if not pd.isna(attain_B) else "-")}</b>
+        <span>KPI attainment ({attain_trend}) {("(target " + str(kpi_days) + " hari)") if kpi_days is not None else ""}</span>
       </div>
 
       <div class="poster-note">
-        Catatan: Success rate menggunakan heuristic dari kolom status (bila tersedia).
+        KPI attainment = % transaksi dengan SLA Keuangan ≤ Target KPI (di-set pada tab Overview).
       </div>
     </div>
 
     <div class="poster-box">
       <h4>Insight Cepat</h4>
       <ul class="poster-list">
-        <li><b>Δ Jumlah transaksi</b>: <span class="{cls_jml}">{d_jml}</span></li>
-        <li><b>Δ Total nilai</b>: <span class="{cls_nil}">{d_nil}</span></li>
-        <li><b>Δ Rata-rata SLA</b>: <span class="{cls_sla}">{d_sla}</span></li>
-        <li><b>Δ Success rate</b>: <span class="{cls_suc}">{d_suc}</span></li>
+        <li><b>Δ Jumlah transaksi</b>: <span class="{delta_cls(delta_jumlah)}">{fmt_int_id(delta_jumlah)}</span> — <span class="{delta_cls(pct_jumlah)}">{fmt_pct(pct_jumlah, nd=1)}</span></li>
+        <li><b>Δ Rata-rata SLA</b>: <span class="{delta_cls(delta_sla_day)}">{_id_num(delta_sla_day, nd=2, suffix=" hari") if ("_id_num" in globals() and not pd.isna(delta_sla_day)) else (f"{delta_sla_day:+.2f} hari" if not pd.isna(delta_sla_day) else "-")}</span> — <span class="{delta_cls(pct_sla)}">{fmt_pct(pct_sla, nd=1)}</span></li>
+        <li><b>Δ KPI attainment</b>: <span class="{delta_cls(delta_attain)}">{(f"{delta_attain:+.1f} pp" if not pd.isna(delta_attain) else "-")}</span> — <span class="{delta_cls(pct_attain)}">{fmt_pct(pct_attain, nd=1)}</span></li>
       </ul>
       <div class="poster-note">
-        Rekomendasi: fokus pada penyebab perubahan SLA & success rate (jika turun), dan validasi anomali transaksi dengan drilldown data.
+        Detail SLA A: {sla_detail(sla_sec_A)}<br/>
+        Detail SLA B: {sla_detail(sla_sec_B)}
       </div>
     </div>
   </div>
@@ -2668,15 +2675,21 @@ with tab_analisis:
 
     st.markdown(poster_html, unsafe_allow_html=True)
 
-    # ====== Buttons: Export poster to PDF ======
     st.markdown("")
+    c1, c2, c3, c4 = st.columns(4)
 
-    col_btn1, col_btn2 = st.columns([1, 1])
-
-    with col_btn1:
-        if st.button("📥 Generate Poster PDF", key="btn_gen_poster_pdf_v3"):
+    with c1:
+        if st.button("📸 Generate Poster PNG", key="btn_poster_png_v3", use_container_width=True):
             try:
-                # Render HTML -> image -> PDF
+                png_bytes = html_to_png_bytes(poster_html, width=1400, height=820)
+                st.session_state["poster_png_bytes"] = png_bytes
+                st.success("Poster PNG berhasil dibuat.")
+            except Exception as e:
+                st.error(f"Gagal membuat PNG: {e}")
+
+    with c2:
+        if st.button("📥 Generate Poster PDF", key="btn_poster_pdf_v3", use_container_width=True):
+            try:
                 png_bytes = html_to_png_bytes(poster_html, width=1400, height=820)
                 pdf_bytes = poster_png_to_pdf_bytes(png_bytes)
                 st.session_state["poster_pdf_bytes"] = pdf_bytes
@@ -2684,18 +2697,28 @@ with tab_analisis:
             except Exception as e:
                 st.error(f"Gagal membuat PDF: {e}")
 
-    with col_btn2:
-        pdf_bytes = st.session_state.get("poster_pdf_bytes", None)
-        if pdf_bytes:
-            st.download_button(
-                "⬇️ Download Poster PDF",
-                data=pdf_bytes,
-                file_name=f"Executive_Summary_{labelB.replace(' ', '_')}_vs_{labelA.replace(' ', '_')}.pdf",
-                mime="application/pdf",
-                key="dl_poster_pdf_v3"
-            )
-        else:
-            st.caption("Klik tombol Generate dulu untuk mengaktifkan download.")
+    png_bytes = st.session_state.get("poster_png_bytes", None)
+    pdf_bytes = st.session_state.get("poster_pdf_bytes", None)
+
+    with c3:
+        st.download_button(
+            "⬇️ Download Poster PNG",
+            data=png_bytes if png_bytes else b"",
+            file_name="Poster_Executive_Summary_Analisis.png",
+            mime="image/png",
+            use_container_width=True,
+            disabled=(png_bytes is None)
+        )
+
+    with c4:
+        st.download_button(
+            "⬇️ Download Poster PDF (Email/Arsip)",
+            data=pdf_bytes if pdf_bytes else b"",
+            file_name="Poster_Executive_Summary_Analisis.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+            disabled=(pdf_bytes is None)
+        )
 
     # ====== Optional drilldown table ======
     with st.expander("🔎 Lihat data ringkas (A & B)"):
@@ -2703,8 +2726,6 @@ with tab_analisis:
         st.dataframe(dfA.head(200), use_container_width=True)
         st.markdown("**B**")
         st.dataframe(dfB.head(200), use_container_width=True)
-
-    st.caption("Tab Analisis selesai — semua fitur existing tetap, ditambah filter multi-select jenis transaksi (ALL / 1 / banyak).")
 
 
 # =====================[ HELPERS PDF ]=====================
