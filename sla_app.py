@@ -26,7 +26,6 @@ if "show_sela" not in st.session_state:
     st.session_state["show_sela"] = False
 
 
-
 from datetime import datetime
 
 KPI_FILE = os.path.join("data", "kpi_target.json")
@@ -607,20 +606,6 @@ with st.sidebar:
     if st.button("💬 Buka / Tutup SELA"):
         st.session_state["show_sela"] = not st.session_state["show_sela"]
     st.caption("SELA 3D + AI hanya di-load saat Anda membukanya, supaya dashboard tetap ringan.")
-
-from sela.sela_ui import render_sela_panel
-
-with st.sidebar:
-    st.markdown("### 🤖 SELA")
-
-    if st.button("🟢 Buka / Tutup SELA"):
-        st.session_state["show_sela"] = not st.session_state["show_sela"]
-
-    if st.session_state["show_sela"]:
-        st.success("SELA aktif")
-    else:
-        st.caption("Klik tombol untuk mulai chat dengan SELA")
-
 
 
 # ==============================
@@ -4149,15 +4134,6 @@ def render_sela_widget(df_filtered, periode_col: str):
 # PANGGIL SELA HANYA JIKA USER MINTA (lebih ringan untuk halaman awal)
 if st.session_state.get("show_sela", False):
     render_sela_widget(df_filtered, periode_col)
-
-from sela.sela_ui import render_sela_panel
-
-# ... setelah df_filtered, periode_col, available_sla_cols sudah ada
-
-if st.session_state.get("show_sela", False):
-    st.markdown("---")
-    st.subheader("🤖 SELA — Asisten Analis SLA")
-    render_sela_panel(df_filtered, periode_col, available_sla_cols)
 
 
 
