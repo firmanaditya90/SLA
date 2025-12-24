@@ -26,6 +26,7 @@ if "show_sela" not in st.session_state:
     st.session_state["show_sela"] = False
 
 
+
 from datetime import datetime
 
 KPI_FILE = os.path.join("data", "kpi_target.json")
@@ -611,11 +612,14 @@ from sela.sela_ui import render_sela_panel
 
 with st.sidebar:
     st.markdown("### 🤖 SELA")
-    if st.session_state.get("show_sela", False):
-        with st.expander("SELA — Tanya & Analisis", expanded=True):
-            render_sela_panel(df_filtered, periode_col, available_sla_cols)
+
+    if st.button("🟢 Buka / Tutup SELA"):
+        st.session_state["show_sela"] = not st.session_state["show_sela"]
+
+    if st.session_state["show_sela"]:
+        st.success("SELA aktif")
     else:
-        st.caption("Klik tombol **Buka/Tutup SELA** untuk mulai chat.")
+        st.caption("Klik tombol untuk mulai chat dengan SELA")
 
 
 
