@@ -4150,5 +4150,14 @@ def render_sela_widget(df_filtered, periode_col: str):
 if st.session_state.get("show_sela", False):
     render_sela_widget(df_filtered, periode_col)
 
+from sela.sela_ui import render_sela_panel
+
+# ... setelah df_filtered, periode_col, available_sla_cols sudah ada
+
+if st.session_state.get("show_sela", False):
+    st.markdown("---")
+    st.subheader("🤖 SELA — Asisten Analis SLA")
+    render_sela_panel(df_filtered, periode_col, available_sla_cols)
+
 
 
