@@ -607,6 +607,17 @@ with st.sidebar:
         st.session_state["show_sela"] = not st.session_state["show_sela"]
     st.caption("SELA 3D + AI hanya di-load saat Anda membukanya, supaya dashboard tetap ringan.")
 
+from sela.sela_ui import render_sela_panel
+
+with st.sidebar:
+    st.markdown("### 🤖 SELA")
+    if st.session_state.get("show_sela", False):
+        with st.expander("SELA — Tanya & Analisis", expanded=True):
+            render_sela_panel(df_filtered, periode_col, available_sla_cols)
+    else:
+        st.caption("Klik tombol **Buka/Tutup SELA** untuk mulai chat.")
+
+
 
 # ==============================
 # Parsing SLA setelah filter (TIDAK DIUBAH)
