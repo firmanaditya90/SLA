@@ -2097,12 +2097,18 @@ def make_exec_poster_pdf_from_png(png_bytes):
 # ============================================================
 # TAB ANALISIS — FULL (tempel di: with tab_analisis:)
 # ============================================================
+# ============================================================
+# TAB ANALISIS — FULL (REVISI FILTER PERIODE, TANPA HILANG FITUR)
+# Tempel di: with tab_analisis:
+# ============================================================
 
 with tab_analisis:
     import plotly.express as px
+    import numpy as np
+    import io, os, re
 
     st.markdown("## 📊 Analisis Data — Executive Dashboard")
-    st.caption("Bandingkan **A vs B** (Tahun vs Tahun, Bulan vs Bulan, atau Rentang vs Rentang). Angka di sini mengikuti filter tab_analisis.")
+    st.caption("Bandingkan **A vs B** (Tahun vs Tahun, Bulan vs Bulan, Rentang vs Rentang). Angka di sini mengikuti filter tab_analisis.")
 
     # Guard
     if "df_raw" not in locals() or df_raw is None or df_raw.empty:
@@ -2112,20 +2118,27 @@ with tab_analisis:
         st.error("Kolom periode (periode_col) tidak ditemukan.")
         st.stop()
 
-    # Toggle filter scope
-    use_sidebar_filter = st.toggle("Gunakan filter sidebar (df_filtered)", value=True, key="ana_usefilter_all_v3")
-    df_base = df_filtered.copy() if (use_sidebar_filter and "df_filtered" in locals()) else df_raw.copy()
+    # -------------------------
+    # Base dataframe source
+    # -------------------------
+    use_sidebar_filter = st.toggle(
+        "Gunakan filter sidebar (Periode Mulai/Akhir) sebagai basis analisis",
+        value=True,
+        key="ana_use_sidebar_filter_v1"
+    )
+
+    df_base = df_filtered.copy() if (use_sidebar_filter and "df_filtered" in locals() and df_filtered is not None) else df_raw.copy()
     if df_base is None or df_base.empty:
-        st.warning("Data kosong (setelah filter).")
+        st.warning("Data kosong pada basis analisis.")
         st.stop()
 
     # -------------------------
-    # Filter tambahan: Jenis Transaksi (multi-select) - ALL / 1 / banyak
+    # Deteksi kolom transaksi (opsional)
     # -------------------------
     trx_col = None
     for _c in df_base.columns:
-        _cu = re.sub(r"\s+", " ", str(_c).strip().upper())
-        if _cu in {"JENIS TRANSAKSI", "JENIS_TRANSAKSI", "TRANSAKSI", "NAMA TRANSAKSI", "TYPE TRANSAKSI", "TIPE TRANSAKSI"}:
+        _cu = str(_c).upper()
+        if _cu.strip() == "JENIS TRANSAKSI":
             trx_col = _c
             break
         if ("JENIS" in _cu and "TRANSAK" in _cu) or (_cu.endswith("TRANSAKSI")):
@@ -2147,153 +2160,183 @@ with tab_analisis:
         st.warning("Data kosong setelah filter transaksi.")
         st.stop()
 
-    # Month names
+    # -------------------------
+    # Month names (ID)
+    # -------------------------
     month_id = {
         1: "Januari", 2: "Februari", 3: "Maret", 4: "April", 5: "Mei", 6: "Juni",
         7: "Juli", 8: "Agustus", 9: "September", 10: "Oktober", 11: "November", 12: "Desember"
     }
     id_month = {v.lower(): k for k, v in month_id.items()}
 
-    # CSS cards (kontras)
-    st.markdown("""
-<style>
-.kpi-wrap{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:10px}
-.kpi-card{
-  border:1px solid rgba(49,51,63,.15);
-  border-radius:16px;
-  padding:14px 14px 12px;
-  background:white;
-  box-shadow:0 10px 22px rgba(0,0,0,.08);
-}
-.kpi-title{font-size:13px;color:rgba(15,23,42,.78);margin:0 0 6px 0;font-weight:700;text-align:center}
-.kpi-value{font-size:38px;font-weight:900;line-height:1.1;margin:0;color:rgb(15,23,42);text-align:center}
-.kpi-sub{font-size:12px;color:rgba(15,23,42,.70);margin-top:6px;font-weight:700;text-align:center}
-.badge{
-  display:inline-block;padding:5px 11px;border-radius:999px;
-  font-size:12px;font-weight:900;margin-top:10px
-}
-.badge-up{background:rgba(16,185,129,.15);color:rgb(4,120,87)}
-.badge-down{background:rgba(239,68,68,.15);color:rgb(153,27,27)}
-.badge-flat{background:rgba(100,116,139,.16);color:rgb(30,41,59)}
-.hero{
-  border-radius:16px;padding:14px 16px;
-  background:rgba(34,197,94,.10);
-  border:1px solid rgba(34,197,94,.28);
-  margin-top:12px;
-  color:rgb(15,23,42);
-  font-weight:750;
-}
-.hero b{font-weight:950}
-.small-cap{color:rgba(15,23,42,.72);font-weight:750}
-@media(max-width:1100px){
-  .kpi-wrap{grid-template-columns:1fr}
-}
-</style>
-""", unsafe_allow_html=True)
-
-    def badge_class(delta):
+    # -------------------------
+    # FIX UTAMA: parsing periode agar tidak banyak drop
+    # -------------------------
+    def _excel_serial_to_datetime(x):
+        # Excel serial date (umumnya > 30000)
         try:
-            if delta is None or (isinstance(delta, float) and np.isnan(delta)):
-                return "badge-flat"
-            if delta > 0:
-                return "badge-up"
-            if delta < 0:
-                return "badge-down"
-            return "badge-flat"
+            xv = float(x)
         except Exception:
-            return "badge-flat"
+            return pd.NaT
+        if np.isnan(xv):
+            return pd.NaT
+        # heuristik excel serial
+        if xv > 20000:
+            try:
+                return pd.to_datetime(xv, unit="D", origin="1899-12-30", errors="coerce")
+            except Exception:
+                return pd.NaT
+        return pd.NaT
 
-    def safe_pct(a, b):
-        if a is None or pd.isna(a) or a == 0:
-            return np.nan
-        return (b - a) / a * 100
-
-    # -------------------------
-    # Periode parsing -> PERIOD_M (Period[M])
-    # -------------------------
     def to_period_month(x):
+        """
+        Menghasilkan pd.Period('YYYY-MM', freq='M') dengan fallback parsing luas.
+        Target: meminimalkan NaT supaya filter tahun tidak undercount.
+        """
         if pd.isna(x):
             return pd.NaT
+
+        # already Period/Timestamp
         if isinstance(x, pd.Period):
-            return x.asfreq("M")
-        if isinstance(x, (pd.Timestamp,)):
+            try:
+                return x.asfreq("M")
+            except Exception:
+                return pd.NaT
+        if isinstance(x, (pd.Timestamp, )):
             return x.to_period("M")
+
+        # numeric (excel serial / YYYYMM / YYYY)
+        if isinstance(x, (int, float, np.integer, np.floating)):
+            dt = _excel_serial_to_datetime(x)
+            if pd.notna(dt):
+                return dt.to_period("M")
+
+            # treat as YYYYMM or YYYY
+            try:
+                xi = int(x)
+                if 190001 <= xi <= 219912:  # YYYYMM
+                    y = xi // 100
+                    m = xi % 100
+                    if 1 <= m <= 12:
+                        return pd.Period(f"{y}-{m:02d}", freq="M")
+                if 1900 <= xi <= 2199:      # YYYY
+                    return pd.Period(f"{xi}-01", freq="M")
+            except Exception:
+                pass
+
         s = str(x).strip()
         if not s:
             return pd.NaT
 
-        dt = pd.to_datetime(s, errors="coerce")
+        s_low = s.lower()
+
+        # 1) coba parse datetime umum
+        # (dayfirst True untuk format lokal seperti 31/12/2024)
+        dt = pd.to_datetime(s, errors="coerce", dayfirst=True)
         if pd.notna(dt):
             return dt.to_period("M")
 
-        m = re.search(r"(\d{4})[-/](\d{1,2})", s)
+        # 2) pola YYYY-MM / YYYY/MM / YYYY-M / YYYY/M
+        m = re.search(r"(\d{4})\s*[-/]\s*(\d{1,2})", s_low)
         if m:
-            y = int(m.group(1)); mo = int(m.group(2))
+            y = int(m.group(1))
+            mo = int(m.group(2))
             if 1 <= mo <= 12:
                 return pd.Period(f"{y}-{mo:02d}", freq="M")
 
-        s_low = s.lower()
-        for nama, mo in id_month.items():
-            if nama in s_low:
+        # 3) pola MM-YYYY / MM/YYYY
+        m = re.search(r"\b(\d{1,2})\s*[-/]\s*(\d{4})\b", s_low)
+        if m:
+            mo = int(m.group(1))
+            y = int(m.group(2))
+            if 1 <= mo <= 12:
+                return pd.Period(f"{y}-{mo:02d}", freq="M")
+
+        # 4) pola YYYYMM (string)
+        m = re.search(r"\b(\d{4})(\d{2})\b", s_low)
+        if m:
+            y = int(m.group(1))
+            mo = int(m.group(2))
+            if 1 <= mo <= 12:
+                return pd.Period(f"{y}-{mo:02d}", freq="M")
+
+        # 5) pola "Jan-24", "Jan 2024", "January 2024"
+        # coba map nama bulan ID
+        for name, mo in id_month.items():
+            if name in s_low:
                 y_m = re.search(r"(\d{4})", s_low)
                 if y_m:
                     y = int(y_m.group(1))
                     return pd.Period(f"{y}-{mo:02d}", freq="M")
+                # format seperti "jan-24"
+                y2 = re.search(r"\b(\d{2})\b", s_low)
+                if y2 and "20" not in s_low:
+                    yy = int(y2.group(1))
+                    y = 2000 + yy if yy <= 79 else 1900 + yy
+                    return pd.Period(f"{y}-{mo:02d}", freq="M")
+
+        # 6) kalau hanya ada tahun: ambil Januari tahun tsb
+        y_only = re.search(r"\b(19\d{2}|20\d{2}|21\d{2})\b", s_low)
+        if y_only:
+            y = int(y_only.group(1))
+            return pd.Period(f"{y}-01", freq="M")
+
         return pd.NaT
 
     if "PERIOD_M" not in df_base.columns:
         df_base["PERIOD_M"] = df_base[periode_col].apply(to_period_month)
+    else:
+        # pastikan type Period M
+        try:
+            df_base["PERIOD_M"] = df_base["PERIOD_M"].apply(to_period_month)
+        except Exception:
+            pass
 
-    df_base = df_base.dropna(subset=["PERIOD_M"]).copy()
-    if df_base.empty:
-        st.warning("Data periode kosong.")
+    # NOTE: tidak langsung drop besar-besaran; tapi untuk analisis time-based kita butuh PERIOD_M valid
+    df_time = df_base.dropna(subset=["PERIOD_M"]).copy()
+    if df_time.empty:
+        st.warning("Data periode kosong setelah parsing (PERIOD_M semuanya NaT).")
         st.stop()
 
-    periods = sorted(df_base["PERIOD_M"].unique().tolist())
+    # list years & periods
+    periods = sorted(df_time["PERIOD_M"].unique().tolist())
     years = sorted({int(p.year) for p in periods})
-
-    def period_label(p: pd.Period):
-        return f"{month_id[int(p.month)]} {int(p.year)}"
-
-    period_labels = [period_label(p) for p in periods]
-    label_to_period = {period_label(p): p for p in periods}
+    if not years:
+        st.warning("Tahun tidak terdeteksi dari kolom periode.")
+        st.stop()
 
     # -------------------------
-    # Mode Perbandingan
+    # Pilih kolom SLA (opsional)
     # -------------------------
-    st.markdown("### ⚙️ Mode Perbandingan")
-    mode = st.radio(
-        "Pilih mode",
-        ["Tahun vs Tahun", "Bulan vs Bulan (tahun bebas)", "Rentang (A) vs Rentang (B)"],
-        horizontal=True,
-        key="ana_mode_all_v5"
+    sla_options = []
+    for c in df_time.columns:
+        cu = str(c).upper()
+        if "SLA" in cu or "TOTAL WAKTU" in cu or "TOTAL_WAKTU" in cu:
+            sla_options.append(c)
+
+    # tetap mempertahankan behavior lama (prefer certain names)
+    if sla_options:
+        default_idx = 0
+        for prefer in ["TOTAL WAKTU", "TOTAL_WAKTU", "SLA", "SLA (DETIK)", "SLA_DETIK"]:
+            if prefer in sla_options:
+                default_idx = sla_options.index(prefer)
+                break
+        sla_pick = st.selectbox("Kolom SLA", sla_options, index=default_idx, key="ana_sla_pick_v5")
+    else:
+        sla_pick = None
+        st.info("Kolom SLA tidak terdeteksi (SLA card & chart akan mengikuti kondisi data).")
+
+    # -------------------------
+    # Mode perbandingan A vs B
+    # -------------------------
+    mode = st.selectbox(
+        "Mode Perbandingan",
+        ["Tahun vs Tahun", "Bulan vs Bulan", "Rentang vs Rentang"],
+        index=0,
+        key="ana_mode_v5"
     )
 
-    colA, colB, colS = st.columns([1, 1, 1])
-    with colS:
-        st.markdown("**Metrik SLA**")
-
-        # pilih kolom SLA (pakai daftar helper kalau ada)
-        sla_candidates = []
-        if "available_sla_cols" in globals() and isinstance(available_sla_cols, list):
-            sla_candidates += [c for c in available_sla_cols if c in df_base.columns]
-
-        # fallback kolom populer
-        for c in ["KEUANGAN", "TOTAL WAKTU", "TOTAL_WAKTU", "SLA", "SLA (DETIK)", "SLA_DETIK", "SLA_HARI", "SLA HARI"]:
-            if c in df_base.columns and c not in sla_candidates:
-                sla_candidates.append(c)
-
-        sla_options = [c for c in sla_candidates if c in df_base.columns]
-        if sla_options:
-            default_idx = 0
-            for prefer in ["KEUANGAN", "TOTAL WAKTU", "TOTAL_WAKTU", "SLA", "SLA (DETIK)", "SLA_DETIK"]:
-                if prefer in sla_options:
-                    default_idx = sla_options.index(prefer)
-                    break
-            sla_pick = st.selectbox("Kolom SLA", sla_options, index=default_idx, key="ana_sla_pick_v5")
-        else:
-            sla_pick = None
-            st.info("Kolom SLA tidak terdeteksi (SLA card & chart akan mengikuti kondisi data).")
+    colA, colB = st.columns(2)
 
     labelA = labelB = ""
     selA = []
@@ -2303,217 +2346,236 @@ with tab_analisis:
         with colA:
             yearA = st.selectbox("Periode A — Tahun", years, index=0, key="ana_yearA_v5")
         with colB:
-            yearB = st.selectbox("Periode B — Tahun", years, index=min(1, len(years) - 1), key="ana_yearB_v5")
+            yearB = st.selectbox("Periode B — Tahun", years, index=min(1, len(years)-1), key="ana_yearB_v5")
 
         selA = [p for p in periods if int(p.year) == int(yearA)]
         selB = [p for p in periods if int(p.year) == int(yearB)]
         labelA, labelB = f"Tahun {yearA}", f"Tahun {yearB}"
 
-    elif mode == "Bulan vs Bulan (tahun bebas)":
+    elif mode == "Bulan vs Bulan":
         with colA:
-            mA = st.selectbox("Periode A — Bulan", period_labels, index=0, key="ana_monthA_v5")
+            yearA = st.selectbox("Periode A — Tahun", years, index=0, key="ana_yearA_m_v5")
+            monthA = st.selectbox("Periode A — Bulan", list(range(1, 13)), index=0, format_func=lambda m: month_id[m], key="ana_monthA_v5")
         with colB:
-            mB = st.selectbox("Periode B — Bulan", period_labels, index=min(1, len(period_labels) - 1), key="ana_monthB_v5")
+            yearB = st.selectbox("Periode B — Tahun", years, index=min(1, len(years)-1), key="ana_yearB_m_v5")
+            monthB = st.selectbox("Periode B — Bulan", list(range(1, 13)), index=0, format_func=lambda m: month_id[m], key="ana_monthB_v5")
 
-        selA = [label_to_period[mA]]
-        selB = [label_to_period[mB]]
-        labelA, labelB = mA, mB
+        pA = pd.Period(f"{int(yearA)}-{int(monthA):02d}", freq="M")
+        pB = pd.Period(f"{int(yearB)}-{int(monthB):02d}", freq="M")
+        selA = [pA] if pA in periods else [pA]
+        selB = [pB] if pB in periods else [pB]
+        labelA, labelB = f"{month_id[monthA]} {yearA}", f"{month_id[monthB]} {yearB}"
 
-    else:  # range
+    else:  # Rentang vs Rentang
         with colA:
-            startA = st.selectbox("Periode A — Mulai", period_labels, index=0, key="ana_startA_v5")
-            endA   = st.selectbox("Periode A — Sampai", period_labels, index=len(period_labels)-1, key="ana_endA_v5")
+            a_start = st.selectbox("Periode A — Mulai", periods, index=0, format_func=lambda p: f"{month_id[int(p.month)]} {int(p.year)}", key="ana_rA_start_v5")
+            a_end = st.selectbox("Periode A — Akhir", periods, index=min(len(periods)-1, 11), format_func=lambda p: f"{month_id[int(p.month)]} {int(p.year)}", key="ana_rA_end_v5")
         with colB:
-            startB = st.selectbox("Periode B — Mulai", period_labels, index=0, key="ana_startB_v5")
-            endB   = st.selectbox("Periode B — Sampai", period_labels, index=len(period_labels)-1, key="ana_endB_v5")
+            b_start = st.selectbox("Periode B — Mulai", periods, index=max(0, len(periods)-12), format_func=lambda p: f"{month_id[int(p.month)]} {int(p.year)}", key="ana_rB_start_v5")
+            b_end = st.selectbox("Periode B — Akhir", periods, index=len(periods)-1, format_func=lambda p: f"{month_id[int(p.month)]} {int(p.year)}", key="ana_rB_end_v5")
 
-        pA0 = label_to_period[startA]; pA1 = label_to_period[endA]
-        pB0 = label_to_period[startB]; pB1 = label_to_period[endB]
+        if a_start > a_end:
+            st.error("Rentang A: Mulai harus <= Akhir.")
+            st.stop()
+        if b_start > b_end:
+            st.error("Rentang B: Mulai harus <= Akhir.")
+            st.stop()
 
-        if pA0 > pA1: pA0, pA1 = pA1, pA0
-        if pB0 > pB1: pB0, pB1 = pB1, pB0
-
-        selA = [p for p in periods if pA0 <= p <= pA1]
-        selB = [p for p in periods if pB0 <= p <= pB1]
-        labelA = f"{period_label(selA[0])} – {period_label(selA[-1])}" if selA else "Periode A"
-        labelB = f"{period_label(selB[0])} – {period_label(selB[-1])}" if selB else "Periode B"
-
-    if not selA or not selB:
-        st.warning("Pilihan periode A/B kosong. Silakan ubah pilihan.")
-        st.stop()
-
-    dfA = df_base[df_base["PERIOD_M"].isin(selA)].copy()
-    dfB = df_base[df_base["PERIOD_M"].isin(selB)].copy()
+        selA = [p for p in periods if a_start <= p <= a_end]
+        selB = [p for p in periods if b_start <= p <= b_end]
+        labelA = f"{month_id[int(a_start.month)]} {int(a_start.year)} – {month_id[int(a_end.month)]} {int(a_end.year)}"
+        labelB = f"{month_id[int(b_start.month)]} {int(b_start.year)} – {month_id[int(b_end.month)]} {int(b_end.year)}"
 
     # -------------------------
-    # KPI Target (ambil dari Tab Overview)
+    # Filter data A & B
     # -------------------------
-    try:
-        kpi_days = load_kpi()
-    except Exception:
-        kpi_days = None
-    kpi_sec = float(kpi_days) * 86400.0 if (kpi_days is not None and not pd.isna(kpi_days)) else None
+    dfA = df_time[df_time["PERIOD_M"].isin(selA)].copy()
+    dfB = df_time[df_time["PERIOD_M"].isin(selB)].copy()
 
-    # -------------------------
-    # SLA seconds: FIXED parsing (numeric dulu, baru parse_sla)
-    # -------------------------
-    has_sla = bool(sla_pick) and (sla_pick in df_base.columns)
+    totalA = int(len(dfA))
+    totalB = int(len(dfB))
 
-    def ensure_sla_seconds_local(df):
-        out_col = "__SLA_SECONDS_ANALYSIS__"
-        if out_col in df.columns:
-            return df, out_col
-
-        if (not has_sla) or (sla_pick not in df.columns):
-            df[out_col] = np.nan
-            return df, out_col
-
-        s = df[sla_pick]
-
-        # 1) numeric langsung (kalau SLA sudah detik)
-        num = pd.to_numeric(s, errors="coerce")
-
-        # 2) non-numeric -> parse_sla (format teks)
-        if "parse_sla" in globals():
-            def _parse_if_needed(v, n):
-                if pd.notna(n):
-                    return float(n)
-
-                if v is None:
-                    return np.nan
-                vs = str(v).strip().lower()
-                if vs in {"", "nan", "none", "-", "null"}:
-                    return np.nan
-
-                try:
-                    sec = parse_sla(v)
-                except Exception:
-                    sec = np.nan
-
-                # parse gagal -> NaN (hindari garis 0)
-                try:
-                    if (sec == 0 or sec == 0.0) and vs not in {"0", "0.0"}:
-                        return np.nan
-                except Exception:
-                    pass
-
-                return float(sec) if pd.notna(sec) else np.nan
-
-            df[out_col] = [_parse_if_needed(v, n) for v, n in zip(s.tolist(), num.tolist())]
-        else:
-            df[out_col] = num
-
-        return df, out_col
-
+    # SLA metrics
+    has_sla = (sla_pick is not None) and (sla_pick in df_time.columns)
     meanA = meanB = np.nan
-    coverageA = coverageB = np.nan
-    complianceA = complianceB = np.nan
-
     if has_sla:
-        dfA, sla_sec_col = ensure_sla_seconds_local(dfA)
-        dfB, _ = ensure_sla_seconds_local(dfB)
+        dfA[sla_pick] = pd.to_numeric(dfA[sla_pick], errors="coerce")
+        dfB[sla_pick] = pd.to_numeric(dfB[sla_pick], errors="coerce")
+        meanA = float(dfA[sla_pick].mean()) if dfA[sla_pick].notna().any() else np.nan
+        meanB = float(dfB[sla_pick].mean()) if dfB[sla_pick].notna().any() else np.nan
 
-        sA_all = dfA[sla_sec_col]
-        sB_all = dfB[sla_sec_col]
-        validA = sA_all.dropna()
-        validB = sB_all.dropna()
+    # KPI target days (jika ada load_kpi)
+    kpi_days = None
+    if "load_kpi" in globals():
+        try:
+            _k = load_kpi()
+            if _k is not None:
+                kpi_days = float(_k)
+        except Exception:
+            kpi_days = None
 
-        meanA = float(validA.mean()) if len(validA) else np.nan
-        meanB = float(validB.mean()) if len(validB) else np.nan
+    # Helper formatting
+    def _id_int(n):
+        try:
+            return f"{int(n):,}".replace(",", ".")
+        except Exception:
+            return str(n)
 
-        coverageA = float(sA_all.notna().mean() * 100) if len(dfA) else np.nan
-        coverageB = float(sB_all.notna().mean() * 100) if len(dfB) else np.nan
+    def _fmt_delta(n, suffix=""):
+        try:
+            n = float(n)
+        except Exception:
+            return "-"
+        sign = "+" if n > 0 else ""
+        if abs(n) >= 1000 and suffix == "":
+            return f"{sign}{_id_int(n)}"
+        return f"{sign}{n:.2f}{suffix}"
 
-        if kpi_sec is not None:
-            complianceA = float((validA <= kpi_sec).mean() * 100) if len(validA) else np.nan
-            complianceB = float((validB <= kpi_sec).mean() * 100) if len(validB) else np.nan
+    def _sla_short_days(seconds, digits=2):
+        if seconds is None or (isinstance(seconds, float) and np.isnan(seconds)):
+            return "-"
+        return f"{(float(seconds)/86400):.{digits}f} hari"
 
-    d_cov = coverageB - coverageA if (np.isfinite(coverageA) and np.isfinite(coverageB)) else np.nan
+    def _badge_text(delta, is_percent=False):
+        if delta is None or (isinstance(delta, float) and np.isnan(delta)):
+            return "-"
+        if is_percent:
+            s = "+" if delta > 0 else ""
+            return f"{s}{delta:.1f}%"
+        s = "+" if delta > 0 else ""
+        return f"{s}{delta:.2f}"
+
+    def badge_class(delta):
+        if delta is None or (isinstance(delta, float) and np.isnan(delta)):
+            return "neutral"
+        if delta > 0:
+            return "bad"
+        if delta < 0:
+            return "good"
+        return "neutral"
+
+    # KPI computations
+    p_total = ( (totalB / totalA * 100.0) - 100.0 ) if totalA > 0 else np.nan
+    d_total = (totalB - totalA)
+
+    d_sla = (meanB - meanA) if (has_sla and np.isfinite(meanA) and np.isfinite(meanB)) else np.nan
+
+    # Compliance & coverage (berdasarkan KPI hari)
+    complianceB = np.nan
+    coverageB = np.nan
+    if has_sla and (kpi_days is not None) and np.isfinite(kpi_days) and len(dfB) > 0:
+        sec_thr = float(kpi_days) * 86400.0
+        validB = dfB[sla_pick].notna().sum()
+        coverageB = (validB / len(dfB) * 100.0) if len(dfB) > 0 else np.nan
+        if validB > 0:
+            complianceB = ( (dfB[sla_pick] <= sec_thr).sum() / validB * 100.0 )
+
+    # Delta compliance/coverage vs A (opsional)
+    complianceA = np.nan
+    coverageA = np.nan
+    if has_sla and (kpi_days is not None) and np.isfinite(kpi_days) and len(dfA) > 0:
+        sec_thr = float(kpi_days) * 86400.0
+        validA = dfA[sla_pick].notna().sum()
+        coverageA = (validA / len(dfA) * 100.0) if len(dfA) > 0 else np.nan
+        if validA > 0:
+            complianceA = ( (dfA[sla_pick] <= sec_thr).sum() / validA * 100.0 )
+
+    d_comp = (complianceB - complianceA) if (np.isfinite(complianceA) and np.isfinite(complianceB)) else np.nan
+    d_cov = (coverageB - coverageA) if (np.isfinite(coverageA) and np.isfinite(coverageB)) else np.nan
 
     # -------------------------
-    # KPI Cards (Total Nilai dihapus)
+    # KPI CARDS (tetap)
     # -------------------------
-    totalA, totalB = len(dfA), len(dfB)
-    d_total = totalB - totalA
-    p_total = safe_pct(totalA, totalB)
+    st.markdown("### 🧾 Ringkasan A vs B")
 
-    d_sla = meanB - meanA if (np.isfinite(meanA) and np.isfinite(meanB)) else np.nan
-    p_sla = safe_pct(meanA, meanB) if (np.isfinite(meanA) and np.isfinite(meanB)) else np.nan
+    badge_vol = _fmt_delta(d_total)
+    badge_sla = _fmt_delta(d_sla/86400.0) if (has_sla and np.isfinite(d_sla)) else "-"
+    badge_comp = _badge_text(d_comp, is_percent=True) if np.isfinite(d_comp) else "-"
+    badge_cov = _badge_text(d_cov, is_percent=True) if np.isfinite(d_cov) else "-"
 
-    d_comp = complianceB - complianceA if (np.isfinite(complianceA) and np.isfinite(complianceB)) else np.nan
-    p_comp = safe_pct(complianceA, complianceB) if (np.isfinite(complianceA) and np.isfinite(complianceB)) else np.nan
-
-    badge_vol = f"{_id_int(d_total)} ({_id_num(p_total,2,'%')})" if np.isfinite(p_total) else _id_int(d_total)
-    badge_sla = (("−" if d_sla < 0 else "+") + _sla_short_days(abs(d_sla), 2) + (f" ({p_sla:+.1f}%)" if np.isfinite(p_sla) else "")) if np.isfinite(d_sla) else "-"
-    badge_comp = (f"{d_comp:+.1f} pts" + (f" ({p_comp:+.1f}%)" if np.isfinite(p_comp) else "")) if np.isfinite(d_comp) else "-"
-
-    trx_sub = f"{labelA}: {_id_int(totalA)} • {labelB}: {_id_int(totalB)}"
-    if np.isfinite(p_total):
-        trx_sub += f" • Δ: {badge_vol}"
-
-    if has_sla and np.isfinite(meanA) and np.isfinite(meanB):
-        sla_sub = (
-            f"{labelA}: {_sla_short_days(meanA,2)} | {seconds_to_sla_format(meanA)}<br/>"
-            f"{labelB}: {_sla_short_days(meanB,2)} | {seconds_to_sla_format(meanB)}"
-        )
-    else:
-        sla_sub = "Data SLA tidak tersedia / belum terbaca (cek pilihan kolom SLA)."
-
-    if kpi_days is not None and has_sla and np.isfinite(complianceB):
-        comp_sub = f"Target KPI {float(kpi_days):.2f} hari • {labelA}: {complianceA:.1f}% • {labelB}: {complianceB:.1f}%"
-    elif kpi_days is not None:
-        comp_sub = f"Target KPI {float(kpi_days):.2f} hari"
-    else:
-        comp_sub = "Target KPI belum diatur di Tab Overview."
+    comp_sub = f"Target KPI: {kpi_days:.2f} hari" if kpi_days is not None else "Target KPI: -"
+    cov_sub = "Rasio data SLA terisi" if has_sla else "SLA tidak terdeteksi"
 
     html_cards = f"""
-    <div class="kpi-wrap">
-      <div class="kpi-card">
-        <p class="kpi-title">Jumlah Transaksi (A vs B)</p>
-        <p class="kpi-value">{_id_int(totalB)}</p>
-        <span class="badge {badge_class(d_total)}">{badge_vol}</span>
-        <div class="kpi-sub">{trx_sub}</div>
+    <style>
+      .kpi-grid {{
+        display:grid; grid-template-columns: repeat(4, 1fr);
+        gap:14px; margin-top: 8px; margin-bottom: 10px;
+      }}
+      .kpi-cardx {{
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.10);
+        border-radius: 16px;
+        padding: 14px 14px;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+        position: relative;
+        min-height: 110px;
+      }}
+      .kpi-title {{ font-size: 12px; opacity: .75; margin-bottom: 4px; }}
+      .kpi-value {{ font-size: 22px; font-weight: 800; margin: 0; }}
+      .kpi-sub {{ font-size: 12px; opacity: .70; margin-top: 6px; }}
+      .badge {{
+        position:absolute; right: 12px; top: 12px;
+        padding: 4px 10px; border-radius: 999px;
+        font-size: 12px; font-weight: 700;
+        border: 1px solid rgba(255,255,255,0.18);
+        background: rgba(0,0,0,0.18);
+      }}
+      .good {{ color: #00ffb0; }}
+      .bad {{ color: #ff5a7a; }}
+      .neutral {{ color: #d1d5db; }}
+      @media (max-width: 1100px) {{
+        .kpi-grid {{ grid-template-columns: repeat(2, 1fr); }}
+      }}
+    </style>
+    <div class="kpi-grid">
+      <div class="kpi-cardx">
+        <div class="kpi-title">Volume Transaksi</div>
+        <p class="kpi-value">{_id_int(totalA)} → {_id_int(totalB)}</p>
+        <span class="badge {('good' if d_total>0 else 'bad' if d_total<0 else 'neutral')}">Δ {badge_vol}</span>
+        <div class="kpi-sub">{labelA} vs {labelB}</div>
       </div>
 
-      <div class="kpi-card">
-        <p class="kpi-title">Rata-rata SLA (A vs B)</p>
-        <p class="kpi-value">{_sla_short_days(meanB,2) if (has_sla and np.isfinite(meanB)) else "-"}</p>
-        <span class="badge {badge_class(-1 if (np.isfinite(d_sla) and d_sla<0) else (1 if (np.isfinite(d_sla) and d_sla>0) else 0))}">{badge_sla}</span>
-        <div class="kpi-sub">{sla_sub}</div>
+      <div class="kpi-cardx">
+        <div class="kpi-title">Rata-rata SLA</div>
+        <p class="kpi-value">{_sla_short_days(meanA,2)} → {_sla_short_days(meanB,2)}</p>
+        <span class="badge {badge_class(d_sla)}">Δ {badge_sla}</span>
+        <div class="kpi-sub">{("Kolom: "+str(sla_pick)) if has_sla else "SLA tidak terdeteksi"}</div>
       </div>
 
-      <div class="kpi-card">
-        <p class="kpi-title">Success Rate vs Target KPI</p>
+      <div class="kpi-cardx">
+        <div class="kpi-title">Compliance (B)</div>
         <p class="kpi-value">{(f"{complianceB:.1f}%") if (has_sla and np.isfinite(complianceB)) else "-"}</p>
-        <span class="badge {badge_class(d_comp)}">{badge_comp}</span>
+        <span class="badge {('good' if (np.isfinite(d_comp) and d_comp>0) else 'bad' if (np.isfinite(d_comp) and d_comp<0) else 'neutral')}">Δ {badge_comp}</span>
         <div class="kpi-sub">{comp_sub}</div>
+      </div>
+
+      <div class="kpi-cardx">
+        <div class="kpi-title">Coverage (B)</div>
+        <p class="kpi-value">{(f"{coverageB:.1f}%") if (has_sla and np.isfinite(coverageB)) else "-"}</p>
+        <span class="badge {('good' if (np.isfinite(d_cov) and d_cov>0) else 'bad' if (np.isfinite(d_cov) and d_cov<0) else 'neutral')}">Δ {badge_cov}</span>
+        <div class="kpi-sub">{cov_sub}</div>
       </div>
     </div>
     """
     st.markdown(html_cards, unsafe_allow_html=True)
 
-    # Highlight ringkas
+    # Highlight ringkas (tetap)
     vol_dir = "naik" if d_total > 0 else ("turun" if d_total < 0 else "stabil")
     spot = f"• Volume transaksi <b>{vol_dir}</b>: {_id_int(totalA)} → {_id_int(totalB)} (Δ {badge_vol})."
     if has_sla and np.isfinite(d_sla):
         sla_dir = "membaik" if d_sla < 0 else ("memburuk" if d_sla > 0 else "stabil")
         spot += f" • SLA <b>{sla_dir}</b>: <b>{_sla_short_days(meanA,2)}</b> → <b>{_sla_short_days(meanB,2)}</b> (Δ {badge_sla})."
-    if kpi_days is not None and has_sla and np.isfinite(complianceB):
-        spot += f" • Dengan target KPI <b>{float(kpi_days):.2f} hari</b>, {labelB} memenuhi target sebesar <b>{complianceB:.1f}%</b>."
-    st.markdown(f"<div class='hero'>{spot}</div>", unsafe_allow_html=True)
+    if kpi_days is not None and np.isfinite(complianceB):
+        spot += f" • Compliance B: <b>{complianceB:.1f}%</b> (Target ≤ {kpi_days:.2f} hari)."
+    st.markdown(f"<div class='card'>{spot}</div>", unsafe_allow_html=True)
 
-    # (opsional) debug SLA
-    with st.expander("🧪 Debug SLA (cek pembacaan detik)", expanded=False):
-        st.write("Kolom SLA dipilih:", sla_pick)
-        if "__SLA_SECONDS_ANALYSIS__" in dfA.columns:
-            st.write("Sample A (seconds):", dfA["__SLA_SECONDS_ANALYSIS__"].dropna().head(10).tolist())
-        if "__SLA_SECONDS_ANALYSIS__" in dfB.columns:
-            st.write("Sample B (seconds):", dfB["__SLA_SECONDS_ANALYSIS__"].dropna().head(10).tolist())
+    st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
 
     # -------------------------
-    # Diagram 1 & 2 (per bulan, sumbu X Jan–Des, warna = periode A vs B)
+    # Diagram 1: jumlah transaksi per bulan (tetap)
     # -------------------------
-    st.markdown("### 📈 Grafik Perbandingan (per Bulan)")
+    st.subheader("📌 Diagram 1 — Volume Transaksi per Bulan (A vs B)")
 
     def year_or_label(sel_periods, fallback_tag):
         ys = sorted({int(p.year) for p in sel_periods})
@@ -2523,16 +2585,15 @@ with tab_analisis:
 
     seriesA = year_or_label(selA, "A")
     seriesB = year_or_label(selB, "B")
-
     month_order = [month_id[m] for m in range(1, 13)]
 
-    # Diagram 1: jumlah transaksi per bulan
     def trx_by_monthnum(df):
         if df.empty:
             return {}
-        g = df.groupby("PERIOD_M").size().reset_index(name="trx")
-        g["m"] = g["PERIOD_M"].apply(lambda p: int(p.month))
-        return g.groupby("m")["trx"].sum().to_dict()
+        tmp = df.copy()
+        tmp["m"] = tmp["PERIOD_M"].apply(lambda p: int(p.month))
+        tmp["trx"] = 1
+        return tmp.groupby("m")["trx"].sum().to_dict()
 
     A_trx = trx_by_monthnum(dfA)
     B_trx = trx_by_monthnum(dfB)
@@ -2542,8 +2603,8 @@ with tab_analisis:
         seriesA: [float(A_trx.get(m, 0)) for m in range(1, 13)],
         seriesB: [float(B_trx.get(m, 0)) for m in range(1, 13)],
     })
-
     vol_long = vol_month.melt(id_vars=["Bulan"], var_name="Periode", value_name="Jumlah Transaksi")
+
     fig_trx = px.bar(
         vol_long,
         x="Bulan",
@@ -2556,24 +2617,24 @@ with tab_analisis:
     fig_trx.update_layout(xaxis_title=None, yaxis_title="Jumlah Transaksi", legend_title=None, height=430)
     st.plotly_chart(fig_trx, use_container_width=True)
 
-    # Diagram 2: rata-rata SLA per bulan (hari)
-    sla_month = pd.DataFrame({"Bulan": month_order})
-    if has_sla and "__SLA_SECONDS_ANALYSIS__" in dfA.columns and "__SLA_SECONDS_ANALYSIS__" in dfB.columns:
-        def mean_sla_days_by_month(df, sec_col):
+    # -------------------------
+    # Diagram 2: SLA per bulan (tetap)
+    # -------------------------
+    st.subheader("📌 Diagram 2 — Rata-rata SLA per Bulan (A vs B)")
+    if has_sla:
+        def sla_days_by_monthnum(df):
             if df.empty:
                 return {}
-            d = df.copy()
-            d = d[d[sec_col].notna()].copy()
-            if d.empty:
-                return {}
-            g = d.groupby("PERIOD_M")[sec_col].mean().reset_index(name="sec")
-            g["m"] = g["PERIOD_M"].apply(lambda p: int(p.month))
-            g["days"] = g["sec"] / 86400.0
-            return g.groupby("m")["days"].mean().to_dict()
+            tmp = df.copy()
+            tmp["m"] = tmp["PERIOD_M"].apply(lambda p: int(p.month))
+            tmp[sla_pick] = pd.to_numeric(tmp[sla_pick], errors="coerce")
+            g = tmp.groupby("m")[sla_pick].mean()
+            return (g / 86400.0).to_dict()
 
-        A_days = mean_sla_days_by_month(dfA, "__SLA_SECONDS_ANALYSIS__")
-        B_days = mean_sla_days_by_month(dfB, "__SLA_SECONDS_ANALYSIS__")
+        A_days = sla_days_by_monthnum(dfA)
+        B_days = sla_days_by_monthnum(dfB)
 
+        sla_month = pd.DataFrame({"Bulan": month_order})
         sla_month[seriesA] = [float(A_days.get(m, np.nan)) for m in range(1, 13)]
         sla_month[seriesB] = [float(B_days.get(m, np.nan)) for m in range(1, 13)]
 
@@ -2590,23 +2651,19 @@ with tab_analisis:
         fig_sla.update_layout(xaxis_title=None, yaxis_title="Rata-rata SLA (hari)", legend_title=None, height=430)
         st.plotly_chart(fig_sla, use_container_width=True)
     else:
-        st.info("Diagram 2 (SLA) tidak ditampilkan karena kolom SLA belum tersedia/terdeteksi atau nilainya tidak terbaca.")
-        sla_month[seriesA] = [np.nan] * 12
-        sla_month[seriesB] = [np.nan] * 12
+        st.info("Diagram 2 (SLA) tidak ditampilkan karena kolom SLA tidak terdeteksi / tidak dipilih.")
+
+    st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
 
     # ============================================================
-    # BLOK POSTER EXECUTIVE SUMMARY — FIXED LAYOUT (NO OVERLAP)
+    # Executive Poster (PNG & PDF) — TIDAK DIHILANGKAN
     # ============================================================
-    st.markdown("---")
-    st.markdown("### 🖼️ Poster Executive Summary (Analisis)")
+    st.subheader("🖼️ Executive Summary Poster")
 
-    # (opsional) animasi di UI saja
-    gif_url = "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif"
-    gif_bytes = _fetch_image_bytes(gif_url)
-    if gif_bytes:
-        st.image(gif_bytes, width=220)
+    # Label A/B, seriesA/B sudah ada dari atas
+    headline = build_auto_headline(totalA, totalB, meanA, meanB, p_total, d_total) if "build_auto_headline" in globals() else ""
 
-    # Logo (kiri/kanan)
+    # --- logo (kiri/kanan) ---
     logo_left_bytes = _fetch_image_bytes(LOGO_LEFT_URL) if "LOGO_LEFT_URL" in globals() else None
     logo_right_bytes = _fetch_image_bytes(LOGO_RIGHT_URL) if "LOGO_RIGHT_URL" in globals() else None
 
@@ -2616,7 +2673,12 @@ with tab_analisis:
     with c2:
         poster_subtitle = st.text_input("Sub Judul", value="Analisis SLA & Transaksi", key="ana_poster_subtitle_v3")
 
-    headline = build_auto_headline(totalA, totalB, meanA, meanB, p_total, d_total) if "build_auto_headline" in globals() else ""
+    # Data untuk poster: agregasi monthly (vol & sla)
+    vol_month_df = vol_month.copy()
+
+    sla_month_df = None
+    if has_sla:
+        sla_month_df = sla_month.copy()
 
     @st.cache_data(show_spinner=False)
     def _gen_exec_poster_cached(payload: dict):
@@ -2631,8 +2693,8 @@ with tab_analisis:
         meanA=meanA, meanB=meanB,
         kpi_days=kpi_days, complianceB=complianceB, coverageB=coverageB,
         d_comp=d_comp, d_cov=d_cov,
-        vol_month_df=vol_month,
-        sla_month_df=sla_month,
+        vol_month_df=vol_month_df,
+        sla_month_df=sla_month_df,
         headline=headline,
         logo_left_bytes=logo_left_bytes,
         logo_right_bytes=logo_right_bytes,
@@ -2642,7 +2704,11 @@ with tab_analisis:
 
     png_bytes, pdf_bytes = _gen_exec_poster_cached(payload)
 
-    st.image(png_bytes, caption="Preview Poster Executive Summary (layout sudah rapih & tidak overlap)", use_container_width=True)
+    st.image(
+        png_bytes,
+        caption="Preview Poster Executive Summary (layout sudah rapih & tidak overlap)",
+        use_container_width=True
+    )
 
     d1, d2 = st.columns(2)
     with d1:
@@ -2661,6 +2727,7 @@ with tab_analisis:
             mime="application/pdf",
             use_container_width=True
         )
+
 
 
 # =====================[ HELPERS PDF ]=====================
