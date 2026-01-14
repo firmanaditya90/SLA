@@ -1751,7 +1751,6 @@ with tab_nilai:
     # =========================
     DATA_PATH = "data/nilai_transaksi.xlsx"
     DATA_GITHUB_PATH = "data/nilai_transaksi.xlsx"
-
     BUCKET_PATH = "data/nilai_bucket.json"
     BUCKET_GITHUB_PATH = "data/nilai_bucket.json"
 
@@ -1786,9 +1785,9 @@ with tab_nilai:
         return f"{sign}{p:.1f}%".replace(".", ",")
 
     # =========================
-    # GITHUB HELPERS (expects your existing funcs)
-    # - github_get_file_info(path)
-    # - upload_file_to_github(bytes, path=..., message=...)
+    # GITHUB HELPERS (expects existing functions)
+    # github_get_file_info(path)
+    # upload_file_to_github(content_bytes, path=..., message=...)
     # =========================
     def github_get_bytes(path: str) -> Optional[bytes]:
         if not (GITHUB_TOKEN and GITHUB_REPO):
@@ -1849,13 +1848,12 @@ with tab_nilai:
         num = pd.to_numeric(s, errors="coerce")
         if num.notna().mean() >= 0.7:
             return num
-
         txt = s.astype(str).str.upper().str.strip()
         txt = txt.replace({"NAN": "", "NONE": "", "NULL": "", "-": ""})
         txt = txt.str.replace("RUPIAH", "", regex=False)
         txt = txt.str.replace("RP", "", regex=False)
         txt = txt.str.replace(r"\s+", "", regex=True)
-        txt = txt.str.replace(".", "", regex=False)  # thousand sep
+        txt = txt.str.replace(".", "", regex=False)
         txt = txt.str.replace(",", "", regex=False)
         txt = txt.str.replace(r"[^0-9\-]", "", regex=True)
         return pd.to_numeric(txt, errors="coerce")
@@ -1880,8 +1878,8 @@ with tab_nilai:
         return out
 
     # =========================
-    # BUCKETS (DYNAMIC THRESHOLDS)
-    # thresholds: [t1, t2, ...] => buckets: 0–t1, t1–t2, ..., >tN
+    # BUCKETS (dynamic thresholds)
+    # thresholds: [t1,t2,...] => 0–t1, t1–t2, ..., >tN
     # =========================
     def build_edges(thresholds: List[float]) -> List[float]:
         t = [float(x) for x in thresholds if x is not None and not math.isnan(float(x))]
@@ -1908,7 +1906,6 @@ with tab_nilai:
                         return cfg
             except Exception:
                 pass
-
         b = github_get_bytes(BUCKET_GITHUB_PATH)
         if b:
             try:
@@ -1919,7 +1916,6 @@ with tab_nilai:
                     return cfg
             except Exception:
                 pass
-
         return default
 
     def save_bucket_cfg(thresholds: List[float]) -> None:
@@ -1933,7 +1929,6 @@ with tab_nilai:
         }
         with open(BUCKET_PATH, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
-
         if GITHUB_TOKEN and GITHUB_REPO:
             github_put_bytes(
                 BUCKET_GITHUB_PATH,
@@ -1942,7 +1937,7 @@ with tab_nilai:
             )
 
     # =========================
-    # ADMIN UPLOAD (TAB ONLY) + MANUAL SYNC
+    # ADMIN UPLOAD + MANUAL SYNC
     # =========================
     left, right = st.columns([2, 1])
     with left:
@@ -1951,8 +1946,7 @@ with tab_nilai:
                 st.info("Hanya admin yang dapat upload.")
                 uploaded = None
             else:
-                uploaded = st.file_uploader("Upload Excel (.xlsx)", type=["xlsx"], key="nilai_upload_full_v1")
-
+                uploaded = st.file_uploader("Upload Excel (.xlsx)", type=["xlsx"], key="nilai_upload_rewrite_v1")
             if is_admin and uploaded is not None:
                 b = uploaded.getvalue()
                 try:
@@ -1983,7 +1977,7 @@ with tab_nilai:
     with right:
         st.caption("⚡ Fast mode: load local-first. GitHub sync manual.")
         if is_admin and (GITHUB_TOKEN and GITHUB_REPO):
-            if st.button("🔄 Sync dari GitHub", key="nilai_sync_full_v1"):
+            if st.button("🔄 Sync dari GitHub", key="nilai_sync_rewrite_v1"):
                 with st.spinner("Mengambil file dari GitHub..."):
                     xlsx = github_get_bytes(DATA_GITHUB_PATH)
                     cfgb = github_get_bytes(BUCKET_GITHUB_PATH)
@@ -2012,7 +2006,6 @@ with tab_nilai:
     df_raw = st.session_state.get("nilai_raw_df")
     if df_raw is None:
         df_raw = load_local_df()
-
     if df_raw is None or df_raw.empty:
         st.warning("Belum ada data Nilai Transaksi. Admin silakan upload di atas.")
         st.stop()
@@ -2035,19 +2028,19 @@ with tab_nilai:
     auto_jenis = detect_col(df_raw, ["JENIS", "TRANSAKSI"]) or detect_col(df_raw, ["TRANSAKSI"])
 
     with st.expander("⚙️ Mapping Kolom", expanded=False):
-        col_periode = st.selectbox("Kolom PERIODE", cols, index=cols.index(auto_periode), key="map_periode_full_v1")
-        col_nilai = st.selectbox("Kolom NILAI", cols, index=cols.index(auto_nilai), key="map_nilai_full_v1")
+        col_periode = st.selectbox("Kolom PERIODE", cols, index=cols.index(auto_periode), key="map_periode_rewrite_v1")
+        col_nilai = st.selectbox("Kolom NILAI", cols, index=cols.index(auto_nilai), key="map_nilai_rewrite_v1")
         col_vendor = st.selectbox(
             "Kolom VENDOR (opsional)",
             ["(none)"] + cols,
             index=(["(none)"] + cols).index(auto_vendor) if auto_vendor in cols else 0,
-            key="map_vendor_full_v1",
+            key="map_vendor_rewrite_v1",
         )
         col_jenis = st.selectbox(
             "Kolom JENIS TRANSAKSI (opsional)",
             ["(none)"] + cols,
             index=(["(none)"] + cols).index(auto_jenis) if auto_jenis in cols else 0,
-            key="map_jenis_full_v1",
+            key="map_jenis_rewrite_v1",
         )
 
     # =========================
@@ -2062,25 +2055,23 @@ with tab_nilai:
     years_all = sorted(df["__YEAR__"].unique().tolist())
 
     # =========================
-    # GLOBAL FILTERS (APPLY TO ALL SUB-TABS)
+    # GLOBAL FILTERS (apply to all)
     # =========================
-    st.markdown("### 🔎 Filter Global (berlaku ke semua tab di bawah)")
+    st.markdown("### 🔎 Filter Global (berlaku untuk semua tab)")
     gf1, gf2 = st.columns([1.2, 2.0])
 
     with gf1:
         years_global = st.multiselect(
-            "Pilih Tahun",
+            "Tahun",
             options=years_all,
             default=years_all[-3:] if len(years_all) >= 3 else years_all,
-            key="global_years_v1",
+            key="global_years_rewrite_v1",
         )
-
-    df_global = df.copy()
-    if years_global:
-        df_global = df_global[df_global["__YEAR__"].isin([int(y) for y in years_global])].copy()
-    else:
+    if not years_global:
         st.warning("Pilih minimal 1 tahun.")
         st.stop()
+
+    df_global = df[df["__YEAR__"].isin([int(y) for y in years_global])].copy()
 
     with gf2:
         if col_jenis != "(none)" and col_jenis in df_global.columns:
@@ -2089,19 +2080,18 @@ with tab_nilai:
                 "Jenis Transaksi (multi)",
                 options=jenis_opts,
                 default=jenis_opts,
-                key="global_jenis_v1",
+                key="global_jenis_rewrite_v1",
             )
-            if jenis_selected:
-                df_global = df_global[df_global[col_jenis].astype(str).isin(jenis_selected)].copy()
-            else:
-                st.warning("Tidak ada jenis transaksi dipilih.")
+            if not jenis_selected:
+                st.warning("Pilih minimal 1 jenis transaksi.")
                 st.stop()
+            df_global = df_global[df_global[col_jenis].astype(str).isin(jenis_selected)].copy()
         else:
             jenis_selected = None
-            st.caption("Filter Jenis Transaksi nonaktif (mapping jenis belum dipilih).")
+            st.caption("Filter jenis transaksi nonaktif (mapping jenis belum dipilih).")
 
     if df_global.empty:
-        st.warning("Tidak ada data untuk kombinasi filter global yang dipilih.")
+        st.warning("Tidak ada data untuk kombinasi filter global.")
         st.stop()
 
     # =========================
@@ -2112,16 +2102,18 @@ with tab_nilai:
     )
 
     # =====================================================
-    # TAB 1: EXECUTIVE SUMMARY (FLEX SOROT: MULTI BUCKET / RANGE)
+    # TAB 1: EXECUTIVE SUMMARY (Bucket multi OR Custom Range multi)
     # =====================================================
     with tab_exec:
         st.markdown("### 🎯 Executive Snapshot")
 
-        # bucket config for executive highlight (uses saved thresholds)
         cfg0 = load_bucket_cfg()
         thresholds0 = cfg0.get("thresholds", [10e6, 50e6, 500e6])
         edges0 = build_edges(thresholds0)
         labs0 = build_labels(edges0)
+
+        dfx = df_global.copy()
+        dfx["Bucket"] = pd.cut(dfx["__NILAI_NUM__"], bins=edges0, labels=labs0, right=False, include_lowest=True)
 
         c1, c2, c3 = st.columns([1.6, 1.6, 1.2])
         with c1:
@@ -2129,22 +2121,29 @@ with tab_nilai:
                 "Mode sorot",
                 options=["Bucket", "Custom Range (Rp)"],
                 horizontal=True,
-                key="exec_focus_mode_full_v1",
+                key="exec_focus_mode_rewrite_v1",
             )
         with c2:
             quick_focus = st.selectbox(
                 "Quick focus",
                 options=["(none)", ">= 100 juta", ">= 250 juta", ">= 500 juta", ">= 1 Miliar"],
                 index=0,
-                key="exec_quick_focus_full_v1",
+                key="exec_quick_focus_rewrite_v1",
             )
         with c3:
-            show_insight = st.toggle("Insight otomatis", value=True, key="exec_insight_full_v1")
+            show_insight = st.toggle("Insight otomatis", value=True, key="exec_insight_rewrite_v1")
 
-        dfx = df_global.copy()
-        dfx["Bucket"] = pd.cut(dfx["__NILAI_NUM__"], bins=edges0, labels=labs0, right=False, include_lowest=True)
+        # ---- custom range multi helpers
+        def _ensure_ranges_session(key: str, defaults: list[dict]) -> None:
+            if key not in st.session_state:
+                st.session_state[key] = defaults
 
-        # focus selection
+        def _clamp_nonneg(x: float) -> float:
+            try:
+                return max(0.0, float(x))
+            except Exception:
+                return 0.0
+
         focus_df = dfx.copy()
         focus_title = ""
 
@@ -2153,41 +2152,111 @@ with tab_nilai:
                 "Sorot bucket (multi)",
                 options=labs0,
                 default=[labs0[min(2, len(labs0) - 1)]],
-                key="exec_focus_buckets_full_v1",
+                key="exec_focus_buckets_rewrite_v1",
             )
             if not focus_buckets:
                 st.warning("Pilih minimal 1 bucket untuk sorotan.")
                 st.stop()
             focus_df = dfx[dfx["Bucket"].astype(str).isin([str(x) for x in focus_buckets])].copy()
             focus_title = " + ".join([str(x) for x in focus_buckets])
+
         else:
-            min_all = float(dfx["__NILAI_NUM__"].min())
-            max_all = float(dfx["__NILAI_NUM__"].max())
+            st.markdown("#### 🎚️ Sorot Range Custom (multi)")
+            st.caption("Isi min–max sendiri. Jika max ∞ → tanpa batas atas.")
 
-            lo_def, hi_def = min_all, max_all
-            if quick_focus != "(none)":
-                if quick_focus == ">= 100 juta":
-                    lo_def = max(lo_def, 100_000_000.0)
-                elif quick_focus == ">= 250 juta":
-                    lo_def = max(lo_def, 250_000_000.0)
-                elif quick_focus == ">= 500 juta":
-                    lo_def = max(lo_def, 500_000_000.0)
-                elif quick_focus == ">= 1 Miliar":
-                    lo_def = max(lo_def, 1_000_000_000.0)
+            _default_ranges = [
+                {"min": 0.0, "max": 10_000_000.0},
+                {"min": 10_000_000.0, "max": 50_000_000.0},
+                {"min": 50_000_000.0, "max": 500_000_000.0},
+                {"min": 500_000_000.0, "max": None},
+            ]
+            _ensure_ranges_session("exec_custom_ranges_rewrite_v1", _default_ranges)
 
-            step = float(max(1.0, (max_all - min_all) / 200.0))
-            lo, hi = st.slider(
-                "Sorot custom range nilai (Rp)",
-                min_value=float(min_all),
-                max_value=float(max_all),
-                value=(float(lo_def), float(hi_def)),
-                step=step,
-                key="exec_focus_range_full_v1",
-            )
-            focus_df = dfx[(dfx["__NILAI_NUM__"] >= lo) & (dfx["__NILAI_NUM__"] <= hi)].copy()
-            focus_title = f"{fmt_rp(lo)} — {fmt_rp(hi)}"
+            r1, r2, r3 = st.columns([1, 1, 2])
+            with r1:
+                if st.button("➕ Tambah range", key="exec_add_range_rewrite_v1"):
+                    st.session_state["exec_custom_ranges_rewrite_v1"].append({"min": 0.0, "max": None})
+            with r2:
+                if st.button("➖ Hapus terakhir", key="exec_del_range_rewrite_v1"):
+                    if st.session_state["exec_custom_ranges_rewrite_v1"]:
+                        st.session_state["exec_custom_ranges_rewrite_v1"] = st.session_state["exec_custom_ranges_rewrite_v1"][:-1]
+            with r3:
+                if quick_focus != "(none)":
+                    if quick_focus == ">= 100 juta":
+                        st.session_state["exec_custom_ranges_rewrite_v1"] = [{"min": 100_000_000.0, "max": None}]
+                    elif quick_focus == ">= 250 juta":
+                        st.session_state["exec_custom_ranges_rewrite_v1"] = [{"min": 250_000_000.0, "max": None}]
+                    elif quick_focus == ">= 500 juta":
+                        st.session_state["exec_custom_ranges_rewrite_v1"] = [{"min": 500_000_000.0, "max": None}]
+                    elif quick_focus == ">= 1 Miliar":
+                        st.session_state["exec_custom_ranges_rewrite_v1"] = [{"min": 1_000_000_000.0, "max": None}]
 
-        # overall KPI YoY (All)
+            ranges_ui: list[dict] = []
+            for i, rr in enumerate(st.session_state["exec_custom_ranges_rewrite_v1"], start=1):
+                cmin, cmax, cen = st.columns([1, 1, 1.1])
+                with cmin:
+                    vmin = st.number_input(
+                        f"Range {i} — Min (Rp)",
+                        min_value=0.0,
+                        value=float(rr.get("min") or 0.0),
+                        step=1e6,
+                        key=f"exec_rmin_rewrite_{i}_v1",
+                    )
+                with cmax:
+                    inf = st.checkbox("∞ (tanpa max)", value=(rr.get("max") is None), key=f"exec_rinf_rewrite_{i}_v1")
+                    if inf:
+                        vmax = None
+                    else:
+                        vmax = st.number_input(
+                            f"Range {i} — Max (Rp)",
+                            min_value=0.0,
+                            value=float(rr.get("max") or 0.0),
+                            step=1e6,
+                            key=f"exec_rmax_rewrite_{i}_v1",
+                        )
+                with cen:
+                    enabled = st.checkbox("Aktif", value=True, key=f"exec_ren_rewrite_{i}_v1")
+
+                ranges_ui.append(
+                    {"min": _clamp_nonneg(vmin), "max": None if vmax is None else _clamp_nonneg(vmax), "enabled": bool(enabled)}
+                )
+
+            ranges_active = []
+            for rr in ranges_ui:
+                if not rr["enabled"]:
+                    continue
+                lo = float(rr["min"])
+                hi = rr["max"]
+                if hi is not None and hi < lo:
+                    lo, hi = hi, lo
+                ranges_active.append({"min": lo, "max": hi})
+
+            if not ranges_active:
+                st.warning("Aktifkan minimal 1 range.")
+                st.stop()
+
+            mask = pd.Series(False, index=focus_df.index)
+            for rr in ranges_active:
+                lo, hi = rr["min"], rr["max"]
+                if hi is None:
+                    mask = mask | (focus_df["__NILAI_NUM__"] >= lo)
+                else:
+                    mask = mask | ((focus_df["__NILAI_NUM__"] >= lo) & (focus_df["__NILAI_NUM__"] <= hi))
+
+            focus_df = focus_df[mask].copy()
+
+            parts = []
+            for rr in ranges_active:
+                lo, hi = rr["min"], rr["max"]
+                if hi is None:
+                    parts.append(f">= {fmt_rp(lo)}")
+                else:
+                    parts.append(f"{fmt_rp(lo)} — {fmt_rp(hi)}")
+            focus_title = " + ".join(parts)
+
+        st.markdown(f"**Sorotan aktif:** {focus_title}")
+
+        # ---- overall KPI YoY (All)
         overall = (
             dfx.groupby("__YEAR__")["__NILAI_NUM__"]
             .agg(Transaksi="size", Total="sum", Rata2="mean")
@@ -2213,8 +2282,7 @@ with tab_nilai:
         k2.metric(f"Total Nilai ({last_year})", fmt_rp(cur_total), delta=pct_delta(cur_total, prev_total))
         k3.metric(f"Rata-rata ({last_year})", fmt_rp(cur_avg), delta=pct_delta(cur_avg, prev_avg))
 
-        # focus KPI
-        st.markdown(f"#### 🔥 Sorotan: **{focus_title}**")
+        st.markdown(f"#### 🔥 KPI Sorotan: **{focus_title}**")
         if focus_df.empty:
             st.info("Tidak ada data pada sorotan untuk filter global saat ini.")
         else:
@@ -2247,7 +2315,6 @@ with tab_nilai:
                 show_focus["Rata2"] = show_focus["Rata2"].apply(lambda x: fmt_rp(float(x)) if not pd.isna(x) else "-")
                 st.dataframe(show_focus, use_container_width=True)
 
-        # charts
         st.markdown("#### 📈 Tren YoY")
         fig1, ax1 = plt.subplots(figsize=(10, 4))
         ax1.plot(overall["Tahun"].astype(str), overall["Total"], marker="o")
@@ -2280,8 +2347,7 @@ with tab_nilai:
             st.dataframe(show_overall, use_container_width=True)
 
     # =====================================================
-    # TAB 2: YOY BUCKETS & ANALYSIS (COUNT + % + 100% STACKED)
-    # Uses df_global (so jenis filter applies too)
+    # TAB 2: YOY BUCKETS & ANALYSIS (uses global filters too)
     # =====================================================
     with tab_yoy:
         st.markdown("### 📊 Analisis YoY per Range Nilai (Custom)")
@@ -2289,33 +2355,33 @@ with tab_nilai:
         cfg = load_bucket_cfg()
         base_thresholds = cfg.get("thresholds", [10e6, 50e6, 500e6])
 
-        if "dyn_thresholds_alltabs_v1" not in st.session_state:
-            st.session_state["dyn_thresholds_alltabs_v1"] = [float(x) for x in base_thresholds]
+        if "dyn_thresholds_yoy_rewrite_v1" not in st.session_state:
+            st.session_state["dyn_thresholds_yoy_rewrite_v1"] = [float(x) for x in base_thresholds]
 
         with st.expander("🧩 Editor Range (Tambah/Kurangi) + Simpan", expanded=True):
             st.caption("Threshold membentuk bucket: 0–t1, t1–t2, ..., >tN.")
 
             a1, a2, a3, a4 = st.columns([1, 1, 1.2, 1.8])
-            if a1.button("➕ Tambah threshold", key="yoy_thr_add_v1"):
-                last = st.session_state["dyn_thresholds_alltabs_v1"][-1] if st.session_state["dyn_thresholds_alltabs_v1"] else 10e6
-                st.session_state["dyn_thresholds_alltabs_v1"].append(float(last * 2))
+            if a1.button("➕ Tambah threshold", key="yoy_add_thr_rewrite_v1"):
+                last = st.session_state["dyn_thresholds_yoy_rewrite_v1"][-1] if st.session_state["dyn_thresholds_yoy_rewrite_v1"] else 10e6
+                st.session_state["dyn_thresholds_yoy_rewrite_v1"].append(float(last * 2))
 
-            if a2.button("➖ Hapus terakhir", key="yoy_thr_del_v1"):
-                if st.session_state["dyn_thresholds_alltabs_v1"]:
-                    st.session_state["dyn_thresholds_alltabs_v1"] = st.session_state["dyn_thresholds_alltabs_v1"][:-1]
+            if a2.button("➖ Hapus terakhir", key="yoy_del_thr_rewrite_v1"):
+                if st.session_state["dyn_thresholds_yoy_rewrite_v1"]:
+                    st.session_state["dyn_thresholds_yoy_rewrite_v1"] = st.session_state["dyn_thresholds_yoy_rewrite_v1"][:-1]
 
-            if a3.button("↩ Reset default", key="yoy_thr_reset_v1"):
-                st.session_state["dyn_thresholds_alltabs_v1"] = [float(x) for x in base_thresholds]
+            if a3.button("↩ Reset default", key="yoy_reset_thr_rewrite_v1"):
+                st.session_state["dyn_thresholds_yoy_rewrite_v1"] = [float(x) for x in base_thresholds]
 
             thresholds_ui: List[float] = []
-            for i, v in enumerate(st.session_state["dyn_thresholds_alltabs_v1"], start=1):
+            for i, v in enumerate(st.session_state["dyn_thresholds_yoy_rewrite_v1"], start=1):
                 thresholds_ui.append(
                     st.number_input(
                         f"Threshold {i} (Rp)",
                         min_value=0.0,
                         value=float(v),
                         step=1e6,
-                        key=f"yoy_thr_input_{i}_v1",
+                        key=f"yoy_thr_input_rewrite_{i}_v1",
                     )
                 )
 
@@ -2327,9 +2393,9 @@ with tab_nilai:
             st.write(labs)
 
             if is_admin:
-                if a4.button("💾 Simpan Bucket (Persisten)", key="yoy_thr_save_v1"):
+                if a4.button("💾 Simpan Bucket (Persisten)", key="yoy_save_thr_rewrite_v1"):
                     save_bucket_cfg(thresholds_norm)
-                    st.session_state["dyn_thresholds_alltabs_v1"] = thresholds_norm
+                    st.session_state["dyn_thresholds_yoy_rewrite_v1"] = thresholds_norm
                     st.success("✅ Bucket tersimpan.")
             else:
                 st.info("Hanya admin yang bisa menyimpan. Anda tetap bisa mencoba sementara.")
@@ -2374,26 +2440,22 @@ with tab_nilai:
         years_sorted = sorted(pivot_cnt.columns.tolist())
         x = list(range(len(years_sorted)))
 
-        st.markdown("#### 📊 100% Stacked — Komposisi Quantity (Direksi View)")
-        label_pct_qty = st.toggle("Tampilkan label % (Quantity)", value=False, key="yoy_label_pct_qty_full_v1")
+        st.markdown("#### 📊 100% Stacked — Komposisi Quantity")
+        label_pct_qty = st.toggle("Tampilkan label % (Quantity)", value=False, key="yoy_label_qty_rewrite_v1")
 
         figq, axq = plt.subplots(figsize=(10, 5))
         bottom = [0.0] * len(years_sorted)
-
         for bucket in labs:
-            vals_pct = []
+            vals = []
             for y in years_sorted:
                 v = float(qty_share.loc[bucket, y]) if (bucket in qty_share.index and y in qty_share.columns) else 0.0
-                vals_pct.append(0.0 if math.isnan(v) else v)
-
-            axq.bar(x, vals_pct, bottom=bottom, label=str(bucket))
-
+                vals.append(0.0 if math.isnan(v) else v)
+            axq.bar(x, vals, bottom=bottom, label=str(bucket))
             if label_pct_qty:
-                for i, p in enumerate(vals_pct):
+                for i, p in enumerate(vals):
                     if p >= 6.0:
                         axq.text(i, bottom[i] + p / 2, f"{p:.0f}%", ha="center", va="center", fontsize=8)
-
-            bottom = [bottom[i] + vals_pct[i] for i in range(len(vals_pct))]
+            bottom = [bottom[i] + vals[i] for i in range(len(vals))]
 
         axq.set_title("Komposisi % Jumlah Transaksi per Tahun (100% Stacked)")
         axq.set_xlabel("Tahun")
@@ -2405,26 +2467,22 @@ with tab_nilai:
         axq.legend(title="Bucket", bbox_to_anchor=(1.02, 1), loc="upper left")
         st.pyplot(figq)
 
-        st.markdown("#### 💰 100% Stacked — Komposisi Nilai (Direksi View)")
-        label_pct_val = st.toggle("Tampilkan label % (Nilai)", value=False, key="yoy_label_pct_val_full_v1")
+        st.markdown("#### 💰 100% Stacked — Komposisi Nilai")
+        label_pct_val = st.toggle("Tampilkan label % (Nilai)", value=False, key="yoy_label_val_rewrite_v1")
 
         figv, axv = plt.subplots(figsize=(10, 5))
         bottom = [0.0] * len(years_sorted)
-
         for bucket in labs:
-            vals_pct = []
+            vals = []
             for y in years_sorted:
                 v = float(val_share.loc[bucket, y]) if (bucket in val_share.index and y in val_share.columns) else 0.0
-                vals_pct.append(0.0 if math.isnan(v) else v)
-
-            axv.bar(x, vals_pct, bottom=bottom, label=str(bucket))
-
+                vals.append(0.0 if math.isnan(v) else v)
+            axv.bar(x, vals, bottom=bottom, label=str(bucket))
             if label_pct_val:
-                for i, p in enumerate(vals_pct):
+                for i, p in enumerate(vals):
                     if p >= 6.0:
                         axv.text(i, bottom[i] + p / 2, f"{p:.0f}%", ha="center", va="center", fontsize=8)
-
-            bottom = [bottom[i] + vals_pct[i] for i in range(len(vals_pct))]
+            bottom = [bottom[i] + vals[i] for i in range(len(vals))]
 
         axv.set_title("Komposisi % Total Nilai per Tahun (100% Stacked)")
         axv.set_xlabel("Tahun")
@@ -2456,7 +2514,7 @@ with tab_nilai:
             st.dataframe(grp.sort_values(["Tahun", "Bucket"]), use_container_width=True)
 
     # =====================================================
-    # TAB 3: VENDOR (uses df_global so jenis filter applies too)
+    # TAB 3: VENDOR (also uses global filters)
     # =====================================================
     with tab_vendor:
         st.markdown("### 🏷️ Vendor Spotlight")
@@ -2475,11 +2533,11 @@ with tab_nilai:
 
         c1, c2, c3 = st.columns([1.3, 1.0, 1.7])
         with c1:
-            bucket_pick = st.selectbox("Bucket fokus", options=labs, index=min(2, len(labs) - 1), key="vendor_bucket_full_v1")
+            bucket_pick = st.selectbox("Bucket fokus", options=labs, index=min(2, len(labs) - 1), key="vendor_bucket_rewrite_v1")
         with c2:
-            topn = st.number_input("Top N", min_value=5, max_value=50, value=10, step=5, key="vendor_topn_full_v1")
+            topn = st.number_input("Top N", min_value=5, max_value=50, value=10, step=5, key="vendor_topn_rewrite_v1")
         with c3:
-            show_detail = st.toggle("Tampilkan detail baris (lebih berat)", value=False, key="vendor_detail_full_v1")
+            show_detail = st.toggle("Tampilkan detail baris (lebih berat)", value=False, key="vendor_detail_rewrite_v1")
 
         dv = dfv[dfv["Bucket"].astype(str) == str(bucket_pick)].copy()
         if dv.empty:
@@ -2516,7 +2574,6 @@ with tab_nilai:
                 detail_cols.insert(1, col_jenis)
             detail_cols += ["__YEAR__", "__NILAI_NUM__", "Bucket"]
             st.dataframe(dv[detail_cols].sort_values("__NILAI_NUM__", ascending=False), use_container_width=True)
-
     
 
 # ==========================================================
