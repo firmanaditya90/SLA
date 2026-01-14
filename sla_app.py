@@ -1724,20 +1724,29 @@ def _detect_col(df: pd.DataFrame, keywords: list[str]) -> str | None:
 # ==============================
 # TAB NILAI TRANSAKSI (FULL)
 # ==============================
+# ==============================
+# TAB NILAI TRANSAKSI (FULL + SAVE BUCKET + FILTER PERIODE)
+# ==============================
 with tab_nilai:
     import math
     import os
     import re
+    import json
     import base64
     from io import BytesIO
+    import pandas as pd
+    import matplotlib.pyplot as plt
 
     st.subheader("💰 Nilai Transaksi")
 
     # ------------------------------
-    # Config (file khusus tab ini)
+    # Config
     # ------------------------------
     NILAI_DATA_PATH = os.path.join("data", "nilai_transaksi.xlsx")
-    NILAI_GITHUB_PATH = "data/nilai_transaksi.xlsx"  # ubah jika mau
+    NILAI_GITHUB_PATH = "data/nilai_transaksi.xlsx"
+
+    BUCKET_CFG_PATH = os.path.join("data", "nilai_bucket.json")
+    BUCKET_GITHUB_PATH = "data/nilai_bucket.json"
 
     os.makedirs("data", exist_ok=True)
 
@@ -1753,12 +1762,10 @@ with tab_nilai:
 
     def _detect_col(df: pd.DataFrame, keywords: list[str]) -> str | None:
         cols = list(df.columns)
-        # strict: semua keyword harus muncul
         for c in cols:
             cu = re.sub(r"\s+", " ", str(c).strip().upper())
             if all(k in cu for k in keywords):
                 return c
-        # loose: salah satu keyword
         for c in cols:
             cu = re.sub(r"\s+", " ", str(c).strip().upper())
             if any(k in cu for k in keywords):
@@ -1771,32 +1778,22 @@ with tab_nilai:
         return "Rp " + f"{x:,.0f}".replace(",", ".")
 
     def _parse_rupiah_series_vectorized(s: pd.Series) -> pd.Series:
-        """
-        Parse kolom nominal cepat:
-        'Rp 192.250.000' / '192.250.000' / '192,250,000' -> 192250000
-        """
-        # numeric fast-path
         num = pd.to_numeric(s, errors="coerce")
         if num.notna().mean() >= 0.7:
             return num
 
         txt = s.astype(str).str.upper().str.strip()
         txt = txt.replace({"NAN": "", "NONE": "", "NULL": "", "-": ""})
-
-        # remove currency text & spaces
         txt = txt.str.replace("RUPIAH", "", regex=False)
         txt = txt.str.replace("RP", "", regex=False)
         txt = txt.str.replace(r"\s+", "", regex=True)
 
-        # if format Indonesia: 192.250.000 -> remove dots (thousand sep)
+        # format Indonesia: 192.250.000 -> remove dots
         txt = txt.str.replace(".", "", regex=False)
-
-        # if comma exists, usually thousand sep or decimal; for rupiah treat as separator -> remove commas
+        # remove commas if any (treat as thousand sep)
         txt = txt.str.replace(",", "", regex=False)
 
-        # keep digits and minus only
         txt = txt.str.replace(r"[^0-9\-]", "", regex=True)
-
         return pd.to_numeric(txt, errors="coerce")
 
     def _load_local_first() -> pd.DataFrame | None:
@@ -1808,24 +1805,112 @@ with tab_nilai:
                 return None
         return None
 
-    def _github_get_nilai_bytes() -> bytes | None:
+    # ------------------------------
+    # GitHub helpers (optional)
+    # ------------------------------
+    def _github_get_bytes(path: str) -> bytes | None:
         if not (GITHUB_TOKEN and GITHUB_REPO):
             return None
         try:
-            info = github_get_file_info(NILAI_GITHUB_PATH)
+            info = github_get_file_info(path)
             if not info or "content" not in info:
                 return None
             return base64.b64decode(info["content"].encode())
         except Exception:
             return None
 
-    def _github_put_nilai_bytes(file_bytes: bytes) -> dict | None:
+    def _github_put_bytes(path: str, content: bytes, message: str) -> dict | None:
         if not (GITHUB_TOKEN and GITHUB_REPO):
             return None
         try:
-            return upload_file_to_github(file_bytes, path=NILAI_GITHUB_PATH, message="Update Nilai Transaksi (via tab Nilai)")
+            return upload_file_to_github(content, path=path, message=message)
         except Exception:
             return None
+
+    # ------------------------------
+    # Bucket config load/save
+    # ------------------------------
+    def _default_bucket_cfg() -> dict:
+        # default: mirip yang Anda mau (termasuk >100jt)
+        return {
+            "mode": "preset",
+            "edges": [0, 10_000_000, 50_000_000, 100_000_000, 250_000_000, 500_000_000, "inf"],
+            "labels": ["< 10 juta", "10–50 juta", "50–100 juta", "100–250 juta", "250–500 juta", "> 500 juta"],
+        }
+
+    def _normalize_cfg(cfg: dict) -> dict:
+        # pastikan edges angka + inf
+        edges = cfg.get("edges") or []
+        norm_edges: list[float] = []
+        for e in edges:
+            if isinstance(e, str) and e.lower() == "inf":
+                norm_edges.append(float("inf"))
+            else:
+                try:
+                    norm_edges.append(float(e))
+                except Exception:
+                    continue
+        norm_edges = sorted(set(norm_edges))
+        if 0.0 not in norm_edges:
+            norm_edges = [0.0] + norm_edges
+        if not any(math.isinf(x) for x in norm_edges):
+            norm_edges.append(float("inf"))
+
+        labels = cfg.get("labels") or []
+        if len(labels) != (len(norm_edges) - 1):
+            # regen label otomatis kalau mismatch
+            labels = []
+            for i in range(len(norm_edges) - 1):
+                lo, hi = norm_edges[i], norm_edges[i + 1]
+                if math.isinf(hi):
+                    labels.append(f">= {lo:,.0f}".replace(",", "."))
+                else:
+                    labels.append(f"{lo:,.0f} – {hi:,.0f}".replace(",", "."))
+        return {"mode": cfg.get("mode", "custom"), "edges": norm_edges, "labels": labels}
+
+    def load_bucket_cfg() -> dict:
+        # 1) local
+        if os.path.exists(BUCKET_CFG_PATH):
+            try:
+                with open(BUCKET_CFG_PATH, "r", encoding="utf-8") as f:
+                    return _normalize_cfg(json.load(f))
+            except Exception:
+                pass
+
+        # 2) github
+        b = _github_get_bytes(BUCKET_GITHUB_PATH)
+        if b:
+            try:
+                cfg = json.loads(b.decode("utf-8"))
+                # cache to local
+                with open(BUCKET_CFG_PATH, "w", encoding="utf-8") as f:
+                    json.dump(cfg, f, ensure_ascii=False, indent=2)
+                return _normalize_cfg(cfg)
+            except Exception:
+                pass
+
+        return _normalize_cfg(_default_bucket_cfg())
+
+    def save_bucket_cfg(cfg: dict) -> None:
+        cfg = _normalize_cfg(cfg)
+        with open(BUCKET_CFG_PATH, "w", encoding="utf-8") as f:
+            json.dump(
+                {"mode": cfg["mode"], "edges": [("inf" if math.isinf(x) else x) for x in cfg["edges"]], "labels": cfg["labels"]},
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        if GITHUB_TOKEN and GITHUB_REPO:
+            _github_put_bytes(
+                BUCKET_GITHUB_PATH,
+                json.dumps(
+                    {"mode": cfg["mode"], "edges": [("inf" if math.isinf(x) else x) for x in cfg["edges"]], "labels": cfg["labels"]},
+                    ensure_ascii=False,
+                    indent=2,
+                ).encode("utf-8"),
+                message="Update bucket Nilai Transaksi (via tab Nilai)",
+            )
 
     # ------------------------------
     # Admin upload (TAB ONLY)
@@ -1838,13 +1923,13 @@ with tab_nilai:
             uploaded_nilai = st.file_uploader(
                 "Upload Excel Nilai Transaksi (.xlsx)",
                 type=["xlsx"],
-                key="nilai_uploader_full_v1",
+                key="nilai_uploader_full_v2",
             )
 
         if is_admin and uploaded_nilai is not None:
             file_bytes = uploaded_nilai.getvalue()
 
-            # 1) instant preview from bytes (no cache/network)
+            # instant preview from bytes
             try:
                 df_now = _read_excel_bytes_fast(file_bytes)
                 st.session_state["nilai_df"] = df_now
@@ -1854,14 +1939,14 @@ with tab_nilai:
                 st.error(f"Gagal baca Excel upload: {e}")
                 st.stop()
 
-            # 2) save local
+            # save local
             with open(NILAI_DATA_PATH, "wb") as f:
                 f.write(file_bytes)
 
-            # 3) optional github sync
+            # optional github sync
             if GITHUB_TOKEN and GITHUB_REPO:
                 with st.spinner("Sync ke GitHub..."):
-                    res = _github_put_nilai_bytes(file_bytes)
+                    res = _github_put_bytes(NILAI_GITHUB_PATH, file_bytes, "Update Nilai Transaksi (via tab Nilai)")
                 if res:
                     st.success("✅ Tersimpan lokal & tersinkron ke GitHub.")
                 else:
@@ -1872,33 +1957,40 @@ with tab_nilai:
             st.cache_data.clear()
             st.rerun()
 
-    # ------------------------------
-    # Admin tool: manual GitHub sync (avoid slow auto)
-    # ------------------------------
+    # optional manual github sync (avoid slow auto)
     if is_admin and (GITHUB_TOKEN and GITHUB_REPO):
         c_sync, c_info = st.columns([1, 3])
         with c_sync:
-            if st.button("🔄 Sync dari GitHub", key="nilai_sync_github_full_v1"):
-                with st.spinner("Mengambil data dari GitHub..."):
-                    content = _github_get_nilai_bytes()
-                if not content:
-                    st.warning("Tidak ada file di GitHub / gagal ambil.")
-                else:
+            if st.button("🔄 Sync dari GitHub (Nilai + Bucket)", key="nilai_sync_github_full_v2"):
+                with st.spinner("Mengambil file dari GitHub..."):
+                    xlsx = _github_get_bytes(NILAI_GITHUB_PATH)
+                    cfgb = _github_get_bytes(BUCKET_GITHUB_PATH)
+
+                if xlsx:
                     try:
-                        df_now = _read_excel_bytes_fast(content)
+                        df_now = _read_excel_bytes_fast(xlsx)
                         st.session_state["nilai_df"] = df_now
                         with open(NILAI_DATA_PATH, "wb") as f:
-                            f.write(content)
-                        st.cache_data.clear()
-                        st.success("✅ Sync selesai (GitHub → Lokal).")
-                        st.rerun()
+                            f.write(xlsx)
                     except Exception as e:
-                        st.error(f"Gagal baca file dari GitHub: {e}")
+                        st.error(f"Gagal baca Excel dari GitHub: {e}")
+
+                if cfgb:
+                    try:
+                        cfg = json.loads(cfgb.decode("utf-8"))
+                        with open(BUCKET_CFG_PATH, "w", encoding="utf-8") as f:
+                            json.dump(cfg, f, ensure_ascii=False, indent=2)
+                    except Exception as e:
+                        st.error(f"Gagal parse bucket dari GitHub: {e}")
+
+                st.cache_data.clear()
+                st.success("✅ Sync selesai (GitHub → Lokal).")
+                st.rerun()
         with c_info:
-            st.caption("Sync GitHub dibuat manual supaya load tab ini tetap cepat.")
+            st.caption("Sync dibuat manual supaya tab tetap cepat saat dibuka.")
 
     # ------------------------------
-    # Load (fast path): session -> local
+    # Load data (fast): session -> local
     # ------------------------------
     df_nilai = st.session_state.get("nilai_df")
     if df_nilai is None:
@@ -1919,21 +2011,58 @@ with tab_nilai:
     auto_vendor = _detect_col(df_nilai, ["NAMA", "VENDOR"])
     auto_nilai = _detect_col(df_nilai, ["NILAI"]) or _detect_col(df_nilai, ["NOMINAL"]) or _detect_col(df_nilai, ["AMOUNT"])
 
+    cols = list(df_nilai.columns)
     with st.expander("⚙️ Mapping Kolom (auto-detect + bisa diubah)", expanded=False):
-        cols = list(df_nilai.columns)
-        col_periode = st.selectbox("Kolom PERIODE", cols, index=cols.index(auto_periode) if auto_periode in cols else 0, key="nilai_map_periode_v1")
-        col_no = st.selectbox("Kolom NO PERMOHONAN", cols, index=cols.index(auto_no) if auto_no in cols else 0, key="nilai_map_no_v1")
-        col_jenis = st.selectbox("Kolom JENIS TRANSAKSI", cols, index=cols.index(auto_jenis) if auto_jenis in cols else 0, key="nilai_map_jenis_v1")
-        col_vendor = st.selectbox("Kolom NAMA VENDOR", cols, index=cols.index(auto_vendor) if auto_vendor in cols else 0, key="nilai_map_vendor_v1")
-        col_nilai = st.selectbox("Kolom NILAI", cols, index=cols.index(auto_nilai) if auto_nilai in cols else 0, key="nilai_map_nilai_v1")
+        col_periode = st.selectbox("Kolom PERIODE", cols, index=cols.index(auto_periode) if auto_periode in cols else 0, key="nilai_map_periode_v2")
+        col_no = st.selectbox("Kolom NO PERMOHONAN", cols, index=cols.index(auto_no) if auto_no in cols else 0, key="nilai_map_no_v2")
+        col_jenis = st.selectbox("Kolom JENIS TRANSAKSI", cols, index=cols.index(auto_jenis) if auto_jenis in cols else 0, key="nilai_map_jenis_v2")
+        col_vendor = st.selectbox("Kolom NAMA VENDOR", cols, index=cols.index(auto_vendor) if auto_vendor in cols else 0, key="nilai_map_vendor_v2")
+        col_nilai = st.selectbox("Kolom NILAI", cols, index=cols.index(auto_nilai) if auto_nilai in cols else 0, key="nilai_map_nilai_v2")
+
+    # ------------------------------
+    # Filter periode (baru)
+    # ------------------------------
+    st.markdown("### 📅 Filter Periode (Tab Nilai)")
+    periods_raw = df_nilai[col_periode].dropna().astype(str).unique().tolist()
+
+    def _periode_sort_key(x: str):
+        # coba parse "Agustus 2022" / "2022-08" / dll
+        dt = pd.to_datetime(x, errors="coerce")
+        if pd.notna(dt):
+            return dt
+        m = re.search(r"(\d{4})\D+(\d{1,2})", x)
+        if m:
+            y, mo = int(m.group(1)), int(m.group(2))
+            return pd.Timestamp(y, mo, 1)
+        # fallback: keep stable
+        return pd.Timestamp(1900, 1, 1)
+
+    periods = sorted(periods_raw, key=_periode_sort_key)
+    if not periods:
+        st.info("Kolom PERIODE kosong.")
+        df_nilai_filtered = df_nilai.copy()
+    else:
+        cfp1, cfp2 = st.columns(2)
+        with cfp1:
+            p_start = st.selectbox("Periode Mulai", periods, index=0, key="nilai_periode_start_v1")
+        with cfp2:
+            p_end = st.selectbox("Periode Akhir", periods, index=len(periods) - 1, key="nilai_periode_end_v1")
+
+        i1, i2 = periods.index(p_start), periods.index(p_end)
+        if i1 > i2:
+            st.error("Periode Mulai harus sebelum Periode Akhir.")
+            st.stop()
+
+        selected = periods[i1 : i2 + 1]
+        df_nilai_filtered = df_nilai[df_nilai[col_periode].astype(str).isin(selected)].copy()
+        st.caption(f"Menampilkan {len(df_nilai_filtered):,} baris untuk periode {p_start} s/d {p_end}".replace(",", "."))
 
     # ------------------------------
     # Parse NILAI -> numeric (fast)
     # ------------------------------
-    df_nilai = df_nilai.copy()
-    df_nilai["__NILAI_NUM__"] = _parse_rupiah_series_vectorized(df_nilai[col_nilai])
+    df_nilai_filtered["__NILAI_NUM__"] = _parse_rupiah_series_vectorized(df_nilai_filtered[col_nilai])
 
-    valid = df_nilai["__NILAI_NUM__"].dropna()
+    valid = df_nilai_filtered["__NILAI_NUM__"].dropna()
     c1, c2, c3 = st.columns(3)
     with c1:
         st.metric("Valid NILAI", f"{len(valid):,}".replace(",", "."))
@@ -1944,38 +2073,62 @@ with tab_nilai:
 
     if valid.empty:
         st.warning("Kolom NILAI tidak berhasil diparse menjadi angka. Cek mapping kolom dan format nilai.")
-        st.dataframe(df_nilai.head(20), use_container_width=True)
+        st.dataframe(df_nilai_filtered.head(20), use_container_width=True)
         st.stop()
 
     # ------------------------------
-    # Bucket / grouping
+    # Bucket UI (baru + save admin)
     # ------------------------------
-    st.markdown("### Kelompok Nilai")
+    st.markdown("### 🧩 Kelompok Nilai (Bucket)")
 
-    mode = st.radio("Mode kelompok", ["Preset", "Custom"], horizontal=True, key="nilai_group_mode_full_v1")
+    cfg = load_bucket_cfg()
+    mode = st.radio("Mode bucket", ["Preset", "Custom"], horizontal=True, index=0 if cfg["mode"] == "preset" else 1, key="nilai_bucket_mode_v1")
 
     if mode == "Preset":
         edges = [0, 10e6, 50e6, 100e6, 250e6, 500e6, float("inf")]
         labels = ["< 10 juta", "10–50 juta", "50–100 juta", "100–250 juta", "250–500 juta", "> 500 juta"]
     else:
-        st.caption("Masukkan batas (rupiah). Contoh 100000000 = 100 juta.")
-        b1 = st.number_input("Batas 1", min_value=0.0, value=10e6, step=1e6, key="nilai_b1_full_v1")
-        b2 = st.number_input("Batas 2", min_value=0.0, value=50e6, step=1e6, key="nilai_b2_full_v1")
-        b3 = st.number_input("Batas 3", min_value=0.0, value=100e6, step=1e6, key="nilai_b3_full_v1")
-        b4 = st.number_input("Batas 4", min_value=0.0, value=250e6, step=1e6, key="nilai_b4_full_v1")
-        b5 = st.number_input("Batas 5", min_value=0.0, value=500e6, step=1e6, key="nilai_b5_full_v1")
+        # load from cfg
+        edges_cfg = cfg["edges"]
+        # ambil 5 batas pertama setelah 0 (kalau kurang, isi default)
+        base = [10e6, 50e6, 100e6, 250e6, 500e6]
+        mid = [x for x in edges_cfg if (x not in [0.0, float("inf")])]
+        mid = (mid + base)[:5]
 
-        edges = sorted(set([0, b1, b2, b3, b4, b5, float("inf")]))
+        st.caption("Masukkan batas (rupiah). Contoh 100000000 = 100 juta.")
+        b1 = st.number_input("Batas 1", min_value=0.0, value=float(mid[0]), step=1e6, key="nilai_b1_saved_v1")
+        b2 = st.number_input("Batas 2", min_value=0.0, value=float(mid[1]), step=1e6, key="nilai_b2_saved_v1")
+        b3 = st.number_input("Batas 3", min_value=0.0, value=float(mid[2]), step=1e6, key="nilai_b3_saved_v1")
+        b4 = st.number_input("Batas 4", min_value=0.0, value=float(mid[3]), step=1e6, key="nilai_b4_saved_v1")
+        b5 = st.number_input("Batas 5", min_value=0.0, value=float(mid[4]), step=1e6, key="nilai_b5_saved_v1")
+
+        edges = sorted(set([0.0, b1, b2, b3, b4, b5, float("inf")]))
+
         labels = []
         for i in range(len(edges) - 1):
             lo, hi = edges[i], edges[i + 1]
-            if hi == float("inf"):
+            if math.isinf(hi):
                 labels.append(f">= {lo:,.0f}".replace(",", "."))
             else:
                 labels.append(f"{lo:,.0f} – {hi:,.0f}".replace(",", "."))
 
-    df_nilai["Kelompok"] = pd.cut(
-        df_nilai["__NILAI_NUM__"],
+        # save config (admin only)
+        if is_admin:
+            csave1, csave2 = st.columns([1, 2])
+            with csave1:
+                if st.button("💾 Simpan Bucket", key="nilai_save_bucket_v1"):
+                    save_bucket_cfg({"mode": "custom", "edges": [("inf" if math.isinf(x) else x) for x in edges], "labels": labels})
+                    st.success("✅ Bucket tersimpan (persisten).")
+            with csave2:
+                st.caption("Bucket disimpan ke data/nilai_bucket.json (dan GitHub jika secrets tersedia).")
+        else:
+            st.info("Bucket hanya bisa disimpan oleh admin. Anda tetap bisa melihat hasilnya.")
+
+    # ------------------------------
+    # Apply bucket & summary
+    # ------------------------------
+    df_nilai_filtered["Kelompok"] = pd.cut(
+        df_nilai_filtered["__NILAI_NUM__"],
         bins=edges,
         labels=labels,
         right=False,
@@ -1983,18 +2136,18 @@ with tab_nilai:
     )
 
     summary = (
-        df_nilai.dropna(subset=["Kelompok"])
+        df_nilai_filtered.dropna(subset=["Kelompok"])
         .groupby("Kelompok")["__NILAI_NUM__"]
         .agg(Jumlah="size", Total="sum", Rata2="mean")
         .reset_index()
     )
+
     show = summary.copy()
     show["Total"] = show["Total"].apply(lambda x: _fmt_rp(float(x)))
     show["Rata2"] = show["Rata2"].apply(lambda x: _fmt_rp(float(x)))
 
     st.dataframe(show, use_container_width=True)
 
-    # Chart count per bucket
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.bar(summary["Kelompok"].astype(str), summary["Jumlah"])
     ax.set_title("Jumlah Transaksi per Kelompok Nilai")
@@ -2011,21 +2164,21 @@ with tab_nilai:
     # ------------------------------
     st.markdown("### Breakdown (opsional)")
     dim_opts = []
-    if col_jenis in df_nilai.columns:
+    if col_jenis in df_nilai_filtered.columns:
         dim_opts.append(("JENIS TRANSAKSI", col_jenis))
-    if col_vendor in df_nilai.columns:
+    if col_vendor in df_nilai_filtered.columns:
         dim_opts.append(("NAMA VENDOR", col_vendor))
 
     if dim_opts:
         dim_label = st.selectbox(
             "Kelompokkan juga berdasarkan",
             ["(none)"] + [d[0] for d in dim_opts],
-            key="nilai_dim_pick_full_v1",
+            key="nilai_dim_pick_v2",
         )
         if dim_label != "(none)":
             dim_col = dict(dim_opts)[dim_label]
             pivot = (
-                df_nilai.dropna(subset=["Kelompok"])
+                df_nilai_filtered.dropna(subset=["Kelompok"])
                 .groupby([dim_col, "Kelompok"])["__NILAI_NUM__"]
                 .agg(Jumlah="size", Total="sum")
                 .reset_index()
@@ -2044,16 +2197,15 @@ with tab_nilai:
             "Pilih kelompok",
             options=[str(x) for x in labels],
             default=[],
-            key="nilai_group_pick_full_v1",
+            key="nilai_group_pick_v2",
         )
 
-        view = df_nilai.copy()
+        view = df_nilai_filtered.copy()
         if group_pick:
             view = view[view["Kelompok"].astype(str).isin(group_pick)]
 
         cols_show = [c for c in [col_periode, col_no, col_jenis, col_vendor, col_nilai] if c in view.columns]
         cols_show += ["__NILAI_NUM__", "Kelompok"]
-
         st.dataframe(view[cols_show], use_container_width=True)
 
 
