@@ -1727,6 +1727,9 @@ def _detect_col(df: pd.DataFrame, keywords: list[str]) -> str | None:
 # ==============================
 # TAB NILAI TRANSAKSI (FULL + SAVE BUCKET + FILTER PERIODE)
 # ==============================
+# ==============================
+# TAB NILAI TRANSAKSI (EXEC DASH + COMPARE YEAR + FAST)
+# ==============================
 with tab_nilai:
     import math
     import os
@@ -1734,10 +1737,11 @@ with tab_nilai:
     import json
     import base64
     from io import BytesIO
+
     import pandas as pd
     import matplotlib.pyplot as plt
 
-    st.subheader("💰 Nilai Transaksi")
+    st.subheader("💰 Nilai Transaksi (Executive View)")
 
     # ------------------------------
     # Config
@@ -1751,63 +1755,45 @@ with tab_nilai:
     os.makedirs("data", exist_ok=True)
 
     # ------------------------------
-    # Helpers
+    # Tiny UI helpers
     # ------------------------------
-    @st.cache_data(show_spinner=False)
-    def _read_excel_path_cached(path: str, size: int, mtime: float) -> pd.DataFrame:
-        return pd.read_excel(path)
+    def _kpi_row(items: list[tuple[str, str, str | None]]):
+        cols = st.columns(len(items))
+        for i, (label, value, delta) in enumerate(items):
+            with cols[i]:
+                st.metric(label, value, delta=delta)
 
-    def _read_excel_bytes_fast(xlsx_bytes: bytes) -> pd.DataFrame:
-        return pd.read_excel(BytesIO(xlsx_bytes))
-
-    def _detect_col(df: pd.DataFrame, keywords: list[str]) -> str | None:
-        cols = list(df.columns)
-        for c in cols:
-            cu = re.sub(r"\s+", " ", str(c).strip().upper())
-            if all(k in cu for k in keywords):
-                return c
-        for c in cols:
-            cu = re.sub(r"\s+", " ", str(c).strip().upper())
-            if any(k in cu for k in keywords):
-                return c
-        return None
+    def _fmt_int(n: float | int) -> str:
+        try:
+            return f"{int(n):,}".replace(",", ".")
+        except Exception:
+            return "-"
 
     def _fmt_rp(x: float) -> str:
         if x is None or (isinstance(x, float) and math.isnan(x)):
             return "-"
         return "Rp " + f"{x:,.0f}".replace(",", ".")
 
-    def _parse_rupiah_series_vectorized(s: pd.Series) -> pd.Series:
-        num = pd.to_numeric(s, errors="coerce")
-        if num.notna().mean() >= 0.7:
-            return num
-
-        txt = s.astype(str).str.upper().str.strip()
-        txt = txt.replace({"NAN": "", "NONE": "", "NULL": "", "-": ""})
-        txt = txt.str.replace("RUPIAH", "", regex=False)
-        txt = txt.str.replace("RP", "", regex=False)
-        txt = txt.str.replace(r"\s+", "", regex=True)
-
-        # format Indonesia: 192.250.000 -> remove dots
-        txt = txt.str.replace(".", "", regex=False)
-        # remove commas if any (treat as thousand sep)
-        txt = txt.str.replace(",", "", regex=False)
-
-        txt = txt.str.replace(r"[^0-9\-]", "", regex=True)
-        return pd.to_numeric(txt, errors="coerce")
-
-    def _load_local_first() -> pd.DataFrame | None:
-        if os.path.exists(NILAI_DATA_PATH):
-            try:
-                stat = os.stat(NILAI_DATA_PATH)
-                return _read_excel_path_cached(NILAI_DATA_PATH, stat.st_size, stat.st_mtime)
-            except Exception:
-                return None
-        return None
-
     # ------------------------------
-    # GitHub helpers (optional)
+    # Low-level IO + caching
     # ------------------------------
+    @st.cache_data(show_spinner=False)
+    def _read_excel_path_cached(path: str, size: int, mtime: float) -> pd.DataFrame:
+        return pd.read_excel(path)
+
+    @st.cache_data(show_spinner=False)
+    def _read_excel_bytes_cached(b: bytes) -> pd.DataFrame:
+        return pd.read_excel(BytesIO(b))
+
+    def _load_local_df() -> pd.DataFrame | None:
+        if not os.path.exists(NILAI_DATA_PATH):
+            return None
+        try:
+            stat = os.stat(NILAI_DATA_PATH)
+            return _read_excel_path_cached(NILAI_DATA_PATH, stat.st_size, stat.st_mtime)
+        except Exception:
+            return None
+
     def _github_get_bytes(path: str) -> bytes | None:
         if not (GITHUB_TOKEN and GITHUB_REPO):
             return None
@@ -1828,10 +1814,65 @@ with tab_nilai:
             return None
 
     # ------------------------------
-    # Bucket config load/save
+    # Column detection + parsing
+    # ------------------------------
+    def _detect_col(df: pd.DataFrame, keywords: list[str]) -> str | None:
+        cols = list(df.columns)
+        for c in cols:
+            cu = re.sub(r"\s+", " ", str(c).strip().upper())
+            if all(k in cu for k in keywords):
+                return c
+        for c in cols:
+            cu = re.sub(r"\s+", " ", str(c).strip().upper())
+            if any(k in cu for k in keywords):
+                return c
+        return None
+
+    def _parse_rupiah_series_vectorized(s: pd.Series) -> pd.Series:
+        num = pd.to_numeric(s, errors="coerce")
+        if num.notna().mean() >= 0.7:
+            return num
+
+        txt = s.astype(str).str.upper().str.strip()
+        txt = txt.replace({"NAN": "", "NONE": "", "NULL": "", "-": ""})
+        txt = txt.str.replace("RUPIAH", "", regex=False)
+        txt = txt.str.replace("RP", "", regex=False)
+        txt = txt.str.replace(r"\s+", "", regex=True)
+        txt = txt.str.replace(".", "", regex=False)
+        txt = txt.str.replace(",", "", regex=False)
+        txt = txt.str.replace(r"[^0-9\-]", "", regex=True)
+        return pd.to_numeric(txt, errors="coerce")
+
+    def _extract_year_series(period_s: pd.Series) -> pd.Series:
+        """
+        Robust: coba parse datetime, fallback regex cari 4 digit tahun.
+        """
+        s = period_s.astype(str).str.strip()
+        dt = pd.to_datetime(s, errors="coerce", dayfirst=True)
+        year = dt.dt.year
+
+        mask = year.isna()
+        if mask.any():
+            extracted = s[mask].str.extract(r"(\d{4})", expand=False)
+            year.loc[mask] = pd.to_numeric(extracted, errors="coerce")
+        return year
+
+    @st.cache_data(show_spinner=False)
+    def _preprocess_nilai_df(df: pd.DataFrame, col_periode: str, col_nilai: str) -> pd.DataFrame:
+        """
+        Preprocess sekali untuk performa:
+        - __YEAR__
+        - __NILAI_NUM__
+        """
+        out = df.copy()
+        out["__YEAR__"] = _extract_year_series(out[col_periode])
+        out["__NILAI_NUM__"] = _parse_rupiah_series_vectorized(out[col_nilai])
+        return out
+
+    # ------------------------------
+    # Bucket config (persist)
     # ------------------------------
     def _default_bucket_cfg() -> dict:
-        # default: mirip yang Anda mau (termasuk >100jt)
         return {
             "mode": "preset",
             "edges": [0, 10_000_000, 50_000_000, 100_000_000, 250_000_000, 500_000_000, "inf"],
@@ -1839,7 +1880,6 @@ with tab_nilai:
         }
 
     def _normalize_cfg(cfg: dict) -> dict:
-        # pastikan edges angka + inf
         edges = cfg.get("edges") or []
         norm_edges: list[float] = []
         for e in edges:
@@ -1858,7 +1898,6 @@ with tab_nilai:
 
         labels = cfg.get("labels") or []
         if len(labels) != (len(norm_edges) - 1):
-            # regen label otomatis kalau mismatch
             labels = []
             for i in range(len(norm_edges) - 1):
                 lo, hi = norm_edges[i], norm_edges[i + 1]
@@ -1869,7 +1908,6 @@ with tab_nilai:
         return {"mode": cfg.get("mode", "custom"), "edges": norm_edges, "labels": labels}
 
     def load_bucket_cfg() -> dict:
-        # 1) local
         if os.path.exists(BUCKET_CFG_PATH):
             try:
                 with open(BUCKET_CFG_PATH, "r", encoding="utf-8") as f:
@@ -1877,12 +1915,10 @@ with tab_nilai:
             except Exception:
                 pass
 
-        # 2) github
         b = _github_get_bytes(BUCKET_GITHUB_PATH)
         if b:
             try:
                 cfg = json.loads(b.decode("utf-8"))
-                # cache to local
                 with open(BUCKET_CFG_PATH, "w", encoding="utf-8") as f:
                     json.dump(cfg, f, ensure_ascii=False, indent=2)
                 return _normalize_cfg(cfg)
@@ -1893,60 +1929,48 @@ with tab_nilai:
 
     def save_bucket_cfg(cfg: dict) -> None:
         cfg = _normalize_cfg(cfg)
+        payload = {
+            "mode": cfg["mode"],
+            "edges": [("inf" if math.isinf(x) else x) for x in cfg["edges"]],
+            "labels": cfg["labels"],
+        }
         with open(BUCKET_CFG_PATH, "w", encoding="utf-8") as f:
-            json.dump(
-                {"mode": cfg["mode"], "edges": [("inf" if math.isinf(x) else x) for x in cfg["edges"]], "labels": cfg["labels"]},
-                f,
-                ensure_ascii=False,
-                indent=2,
-            )
+            json.dump(payload, f, ensure_ascii=False, indent=2)
 
         if GITHUB_TOKEN and GITHUB_REPO:
             _github_put_bytes(
                 BUCKET_GITHUB_PATH,
-                json.dumps(
-                    {"mode": cfg["mode"], "edges": [("inf" if math.isinf(x) else x) for x in cfg["edges"]], "labels": cfg["labels"]},
-                    ensure_ascii=False,
-                    indent=2,
-                ).encode("utf-8"),
+                json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
                 message="Update bucket Nilai Transaksi (via tab Nilai)",
             )
 
     # ------------------------------
-    # Admin upload (TAB ONLY)
+    # Admin upload (TAB ONLY) + instant display
     # ------------------------------
     with st.expander("📤 Upload Data Nilai Transaksi (Admin Only)", expanded=is_admin):
         if not is_admin:
             st.info("Upload hanya untuk admin.")
-            uploaded_nilai = None
+            uploaded = None
         else:
-            uploaded_nilai = st.file_uploader(
-                "Upload Excel Nilai Transaksi (.xlsx)",
-                type=["xlsx"],
-                key="nilai_uploader_full_v2",
-            )
+            uploaded = st.file_uploader("Upload Excel Nilai Transaksi (.xlsx)", type=["xlsx"], key="nilai_upload_exec_v1")
 
-        if is_admin and uploaded_nilai is not None:
-            file_bytes = uploaded_nilai.getvalue()
-
-            # instant preview from bytes
+        if is_admin and uploaded is not None:
+            b = uploaded.getvalue()
             try:
-                df_now = _read_excel_bytes_fast(file_bytes)
-                st.session_state["nilai_df"] = df_now
-                st.success(f"✅ Upload terbaca: {len(df_now):,} baris".replace(",", "."))
-                st.dataframe(df_now.head(30), use_container_width=True)
+                df_now = _read_excel_bytes_cached(b)
+                st.session_state["nilai_raw_df"] = df_now
+                st.success(f"✅ Upload terbaca: {_fmt_int(len(df_now))} baris")
+                st.dataframe(df_now.head(20), use_container_width=True)
             except Exception as e:
-                st.error(f"Gagal baca Excel upload: {e}")
+                st.error(f"Gagal baca Excel: {e}")
                 st.stop()
 
-            # save local
             with open(NILAI_DATA_PATH, "wb") as f:
-                f.write(file_bytes)
+                f.write(b)
 
-            # optional github sync
             if GITHUB_TOKEN and GITHUB_REPO:
                 with st.spinner("Sync ke GitHub..."):
-                    res = _github_put_bytes(NILAI_GITHUB_PATH, file_bytes, "Update Nilai Transaksi (via tab Nilai)")
+                    res = _github_put_bytes(NILAI_GITHUB_PATH, b, "Update Nilai Transaksi (via tab Nilai)")
                 if res:
                     st.success("✅ Tersimpan lokal & tersinkron ke GitHub.")
                 else:
@@ -1957,256 +1981,317 @@ with tab_nilai:
             st.cache_data.clear()
             st.rerun()
 
-    # optional manual github sync (avoid slow auto)
+    # Manual sync GitHub (avoid slow default)
     if is_admin and (GITHUB_TOKEN and GITHUB_REPO):
-        c_sync, c_info = st.columns([1, 3])
-        with c_sync:
-            if st.button("🔄 Sync dari GitHub (Nilai + Bucket)", key="nilai_sync_github_full_v2"):
+        c1, c2 = st.columns([1, 3])
+        with c1:
+            if st.button("🔄 Sync dari GitHub", key="nilai_sync_exec_v1"):
                 with st.spinner("Mengambil file dari GitHub..."):
-                    xlsx = _github_get_bytes(NILAI_GITHUB_PATH)
-                    cfgb = _github_get_bytes(BUCKET_GITHUB_PATH)
-
-                if xlsx:
-                    try:
-                        df_now = _read_excel_bytes_fast(xlsx)
-                        st.session_state["nilai_df"] = df_now
+                    xlsx_b = _github_get_bytes(NILAI_GITHUB_PATH)
+                    if not xlsx_b:
+                        st.warning("Gagal ambil Excel dari GitHub / file tidak ada.")
+                    else:
+                        df_now = _read_excel_bytes_cached(xlsx_b)
+                        st.session_state["nilai_raw_df"] = df_now
                         with open(NILAI_DATA_PATH, "wb") as f:
-                            f.write(xlsx)
-                    except Exception as e:
-                        st.error(f"Gagal baca Excel dari GitHub: {e}")
-
-                if cfgb:
-                    try:
-                        cfg = json.loads(cfgb.decode("utf-8"))
-                        with open(BUCKET_CFG_PATH, "w", encoding="utf-8") as f:
-                            json.dump(cfg, f, ensure_ascii=False, indent=2)
-                    except Exception as e:
-                        st.error(f"Gagal parse bucket dari GitHub: {e}")
-
-                st.cache_data.clear()
-                st.success("✅ Sync selesai (GitHub → Lokal).")
-                st.rerun()
-        with c_info:
-            st.caption("Sync dibuat manual supaya tab tetap cepat saat dibuka.")
+                            f.write(xlsx_b)
+                        st.cache_data.clear()
+                        st.success("✅ Sync selesai.")
+                        st.rerun()
+        with c2:
+            st.caption("Sync dibuat manual agar load cepat. Default baca lokal.")
 
     # ------------------------------
-    # Load data (fast): session -> local
+    # Load raw df: session -> local
     # ------------------------------
-    df_nilai = st.session_state.get("nilai_df")
-    if df_nilai is None:
-        df_nilai = _load_local_first()
+    df_raw = st.session_state.get("nilai_raw_df")
+    if df_raw is None:
+        df_raw = _load_local_df()
 
-    if df_nilai is None or df_nilai.empty:
+    if df_raw is None or df_raw.empty:
         st.warning("Belum ada data Nilai Transaksi. Admin silakan upload di atas.")
         st.stop()
 
-    st.caption(f"Total baris: {len(df_nilai):,}".replace(",", "."))
+    st.caption(f"Loaded: {_fmt_int(len(df_raw))} baris (local-first)")
 
     # ------------------------------
-    # Column mapping (auto + override)
+    # Mapping kolom (auto + override)
     # ------------------------------
-    auto_periode = _detect_col(df_nilai, ["PERIODE"])
-    auto_no = _detect_col(df_nilai, ["NO", "PERMOHONAN"])
-    auto_jenis = _detect_col(df_nilai, ["JENIS", "TRANSAKSI"])
-    auto_vendor = _detect_col(df_nilai, ["NAMA", "VENDOR"])
-    auto_nilai = _detect_col(df_nilai, ["NILAI"]) or _detect_col(df_nilai, ["NOMINAL"]) or _detect_col(df_nilai, ["AMOUNT"])
+    auto_periode = _detect_col(df_raw, ["PERIODE"]) or _detect_col(df_raw, ["PERIOD"])
+    auto_jenis = _detect_col(df_raw, ["JENIS", "TRANSAKSI"])
+    auto_vendor = _detect_col(df_raw, ["NAMA", "VENDOR"])
+    auto_nilai = _detect_col(df_raw, ["NILAI"]) or _detect_col(df_raw, ["NOMINAL"]) or _detect_col(df_raw, ["AMOUNT"])
 
-    cols = list(df_nilai.columns)
-    with st.expander("⚙️ Mapping Kolom (auto-detect + bisa diubah)", expanded=False):
-        col_periode = st.selectbox("Kolom PERIODE", cols, index=cols.index(auto_periode) if auto_periode in cols else 0, key="nilai_map_periode_v2")
-        col_no = st.selectbox("Kolom NO PERMOHONAN", cols, index=cols.index(auto_no) if auto_no in cols else 0, key="nilai_map_no_v2")
-        col_jenis = st.selectbox("Kolom JENIS TRANSAKSI", cols, index=cols.index(auto_jenis) if auto_jenis in cols else 0, key="nilai_map_jenis_v2")
-        col_vendor = st.selectbox("Kolom NAMA VENDOR", cols, index=cols.index(auto_vendor) if auto_vendor in cols else 0, key="nilai_map_vendor_v2")
-        col_nilai = st.selectbox("Kolom NILAI", cols, index=cols.index(auto_nilai) if auto_nilai in cols else 0, key="nilai_map_nilai_v2")
+    cols = list(df_raw.columns)
+    with st.expander("⚙️ Mapping Kolom (sekali set, lalu fokus ke analisis)", expanded=False):
+        col_periode = st.selectbox("Kolom PERIODE", cols, index=cols.index(auto_periode) if auto_periode in cols else 0, key="nilai_map_periode_exec_v1")
+        col_jenis = st.selectbox("Kolom JENIS TRANSAKSI", cols, index=cols.index(auto_jenis) if auto_jenis in cols else 0, key="nilai_map_jenis_exec_v1")
+        col_vendor = st.selectbox("Kolom NAMA VENDOR", cols, index=cols.index(auto_vendor) if auto_vendor in cols else 0, key="nilai_map_vendor_exec_v1")
+        col_nilai = st.selectbox("Kolom NILAI", cols, index=cols.index(auto_nilai) if auto_nilai in cols else 0, key="nilai_map_nilai_exec_v1")
 
     # ------------------------------
-    # Filter periode (baru)
+    # Preprocess (cached): year + numeric value
     # ------------------------------
-    st.markdown("### 📅 Filter Periode (Tab Nilai)")
-    periods_raw = df_nilai[col_periode].dropna().astype(str).unique().tolist()
+    df = _preprocess_nilai_df(df_raw, col_periode=col_periode, col_nilai=col_nilai)
+    df = df.dropna(subset=["__YEAR__", "__NILAI_NUM__"]).copy()
 
-    def _periode_sort_key(x: str):
-        # coba parse "Agustus 2022" / "2022-08" / dll
-        dt = pd.to_datetime(x, errors="coerce")
-        if pd.notna(dt):
-            return dt
-        m = re.search(r"(\d{4})\D+(\d{1,2})", x)
-        if m:
-            y, mo = int(m.group(1)), int(m.group(2))
-            return pd.Timestamp(y, mo, 1)
-        # fallback: keep stable
-        return pd.Timestamp(1900, 1, 1)
+    if df.empty:
+        st.error("Tidak ada data valid setelah parsing (YEAR/NILAI). Cek mapping kolom & format data.")
+        st.dataframe(df_raw.head(30), use_container_width=True)
+        st.stop()
 
-    periods = sorted(periods_raw, key=_periode_sort_key)
-    if not periods:
-        st.info("Kolom PERIODE kosong.")
-        df_nilai_filtered = df_nilai.copy()
-    else:
-        cfp1, cfp2 = st.columns(2)
-        with cfp1:
-            p_start = st.selectbox("Periode Mulai", periods, index=0, key="nilai_periode_start_v1")
-        with cfp2:
-            p_end = st.selectbox("Periode Akhir", periods, index=len(periods) - 1, key="nilai_periode_end_v1")
-
-        i1, i2 = periods.index(p_start), periods.index(p_end)
-        if i1 > i2:
-            st.error("Periode Mulai harus sebelum Periode Akhir.")
-            st.stop()
-
-        selected = periods[i1 : i2 + 1]
-        df_nilai_filtered = df_nilai[df_nilai[col_periode].astype(str).isin(selected)].copy()
-        st.caption(f"Menampilkan {len(df_nilai_filtered):,} baris untuk periode {p_start} s/d {p_end}".replace(",", "."))
-
-    # ------------------------------
-    # Parse NILAI -> numeric (fast)
-    # ------------------------------
-    df_nilai_filtered["__NILAI_NUM__"] = _parse_rupiah_series_vectorized(df_nilai_filtered[col_nilai])
-
-    valid = df_nilai_filtered["__NILAI_NUM__"].dropna()
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.metric("Valid NILAI", f"{len(valid):,}".replace(",", "."))
-    with c2:
-        st.metric("Total NILAI", _fmt_rp(float(valid.sum())) if len(valid) else "-")
-    with c3:
-        st.metric("Rata-rata NILAI", _fmt_rp(float(valid.mean())) if len(valid) else "-")
-
-    if valid.empty:
-        st.warning("Kolom NILAI tidak berhasil diparse menjadi angka. Cek mapping kolom dan format nilai.")
-        st.dataframe(df_nilai_filtered.head(20), use_container_width=True)
+    years_all = sorted(df["__YEAR__"].dropna().astype(int).unique().tolist())
+    if not years_all:
+        st.error("Tidak bisa mendeteksi tahun dari kolom PERIODE.")
         st.stop()
 
     # ------------------------------
-    # Bucket UI (baru + save admin)
+    # Executive controls: Compare Year + Range Value
     # ------------------------------
-    st.markdown("### 🧩 Kelompok Nilai (Bucket)")
+    st.markdown("### 🎯 Executive Controls")
 
-    cfg = load_bucket_cfg()
-    mode = st.radio("Mode bucket", ["Preset", "Custom"], horizontal=True, index=0 if cfg["mode"] == "preset" else 1, key="nilai_bucket_mode_v1")
+    yc1, yc2, yc3 = st.columns([1.4, 1.2, 1.4])
+    with yc1:
+        years_selected = st.multiselect(
+            "Bandingkan Tahun",
+            options=years_all,
+            default=years_all[-3:] if len(years_all) >= 3 else years_all,
+            key="nilai_years_selected_v1",
+        )
+    with yc2:
+        compare_mode = st.selectbox(
+            "Mode Tampilan",
+            options=["Range Fokus", "Distribusi Bucket"],
+            index=0,
+            key="nilai_compare_mode_v1",
+        )
+    with yc3:
+        topn = st.number_input("Top N Vendor", min_value=5, max_value=50, value=10, step=5, key="nilai_topn_vendor_v1")
 
-    if mode == "Preset":
-        edges = [0, 10e6, 50e6, 100e6, 250e6, 500e6, float("inf")]
-        labels = ["< 10 juta", "10–50 juta", "50–100 juta", "100–250 juta", "250–500 juta", "> 500 juta"]
-    else:
-        # load from cfg
-        edges_cfg = cfg["edges"]
-        # ambil 5 batas pertama setelah 0 (kalau kurang, isi default)
-        base = [10e6, 50e6, 100e6, 250e6, 500e6]
-        mid = [x for x in edges_cfg if (x not in [0.0, float("inf")])]
-        mid = (mid + base)[:5]
+    if not years_selected:
+        st.warning("Pilih minimal 1 tahun.")
+        st.stop()
 
-        st.caption("Masukkan batas (rupiah). Contoh 100000000 = 100 juta.")
-        b1 = st.number_input("Batas 1", min_value=0.0, value=float(mid[0]), step=1e6, key="nilai_b1_saved_v1")
-        b2 = st.number_input("Batas 2", min_value=0.0, value=float(mid[1]), step=1e6, key="nilai_b2_saved_v1")
-        b3 = st.number_input("Batas 3", min_value=0.0, value=float(mid[2]), step=1e6, key="nilai_b3_saved_v1")
-        b4 = st.number_input("Batas 4", min_value=0.0, value=float(mid[3]), step=1e6, key="nilai_b4_saved_v1")
-        b5 = st.number_input("Batas 5", min_value=0.0, value=float(mid[4]), step=1e6, key="nilai_b5_saved_v1")
-
-        edges = sorted(set([0.0, b1, b2, b3, b4, b5, float("inf")]))
-
-        labels = []
-        for i in range(len(edges) - 1):
-            lo, hi = edges[i], edges[i + 1]
-            if math.isinf(hi):
-                labels.append(f">= {lo:,.0f}".replace(",", "."))
-            else:
-                labels.append(f"{lo:,.0f} – {hi:,.0f}".replace(",", "."))
-
-        # save config (admin only)
-        if is_admin:
-            csave1, csave2 = st.columns([1, 2])
-            with csave1:
-                if st.button("💾 Simpan Bucket", key="nilai_save_bucket_v1"):
-                    save_bucket_cfg({"mode": "custom", "edges": [("inf" if math.isinf(x) else x) for x in edges], "labels": labels})
-                    st.success("✅ Bucket tersimpan (persisten).")
-            with csave2:
-                st.caption("Bucket disimpan ke data/nilai_bucket.json (dan GitHub jika secrets tersedia).")
-        else:
-            st.info("Bucket hanya bisa disimpan oleh admin. Anda tetap bisa melihat hasilnya.")
+    df_y = df[df["__YEAR__"].astype(int).isin([int(y) for y in years_selected])].copy()
 
     # ------------------------------
-    # Apply bucket & summary
+    # Range focus (custom range for directors)
     # ------------------------------
-    df_nilai_filtered["Kelompok"] = pd.cut(
-        df_nilai_filtered["__NILAI_NUM__"],
-        bins=edges,
-        labels=labels,
-        right=False,
-        include_lowest=True,
-    )
+    min_val = float(df_y["__NILAI_NUM__"].min())
+    max_val = float(df_y["__NILAI_NUM__"].max())
+    st.caption(f"Rentang data terpilih: {_fmt_rp(min_val)} — {_fmt_rp(max_val)}")
 
-    summary = (
-        df_nilai_filtered.dropna(subset=["Kelompok"])
-        .groupby("Kelompok")["__NILAI_NUM__"]
-        .agg(Jumlah="size", Total="sum", Rata2="mean")
+    range_default_low = max(0.0, min_val)
+    range_default_high = max_val
+
+    rf1, rf2 = st.columns([1.6, 1.0])
+    with rf1:
+        focus_range = st.slider(
+            "Range Nilai Fokus (Rp)",
+            min_value=float(range_default_low),
+            max_value=float(range_default_high),
+            value=(float(range_default_low), float(range_default_high)),
+            step=float(max(1.0, (range_default_high - range_default_low) / 200.0)),
+            key="nilai_focus_range_v1",
+        )
+    with rf2:
+        quick = st.selectbox(
+            "Shortcut",
+            options=["(none)", ">= 100 juta", ">= 250 juta", ">= 500 juta", ">= 1 Miliar"],
+            index=0,
+            key="nilai_quick_range_v1",
+        )
+        if quick != "(none)":
+            if quick == ">= 100 juta":
+                focus_range = (100_000_000.0, float(range_default_high))
+            elif quick == ">= 250 juta":
+                focus_range = (250_000_000.0, float(range_default_high))
+            elif quick == ">= 500 juta":
+                focus_range = (500_000_000.0, float(range_default_high))
+            elif quick == ">= 1 Miliar":
+                focus_range = (1_000_000_000.0, float(range_default_high))
+
+    low, high = focus_range
+    df_focus = df_y[(df_y["__NILAI_NUM__"] >= low) & (df_y["__NILAI_NUM__"] <= high)].copy()
+
+    # ------------------------------
+    # Executive KPIs (per year + deltas)
+    # ------------------------------
+    st.markdown("### 🧾 Executive KPIs")
+
+    agg = (
+        df_focus.groupby(df_focus["__YEAR__"].astype(int))["__NILAI_NUM__"]
+        .agg(Transaksi="size", Total="sum", Rata2="mean")
         .reset_index()
+        .rename(columns={"__YEAR__": "Tahun"})
+        .sort_values("Tahun")
     )
 
-    show = summary.copy()
-    show["Total"] = show["Total"].apply(lambda x: _fmt_rp(float(x)))
-    show["Rata2"] = show["Rata2"].apply(lambda x: _fmt_rp(float(x)))
+    if agg.empty:
+        st.warning("Tidak ada transaksi pada range nilai & tahun yang dipilih.")
+        st.stop()
 
-    st.dataframe(show, use_container_width=True)
+    # headline KPIs: latest year vs previous
+    agg2 = agg.set_index("Tahun")
+    last_year = int(agg["Tahun"].max())
+    prev_year = int(sorted(agg["Tahun"].unique())[-2]) if len(agg["Tahun"].unique()) >= 2 else None
 
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.bar(summary["Kelompok"].astype(str), summary["Jumlah"])
-    ax.set_title("Jumlah Transaksi per Kelompok Nilai")
-    ax.set_ylabel("Jumlah")
-    ax.set_xlabel("Kelompok")
-    ax.grid(axis="y", linestyle="--", alpha=0.4)
-    for lab in ax.get_xticklabels():
-        lab.set_rotation(25)
-        lab.set_ha("right")
-    st.pyplot(fig)
+    def _delta(curr: float, prev: float | None) -> str | None:
+        if prev is None or prev == 0 or prev != prev:
+            return None
+        pct = (curr - prev) / prev * 100.0
+        sign = "+" if pct >= 0 else ""
+        return f"{sign}{pct:,.1f}%".replace(",", ".")
+
+    curr_tx = float(agg2.loc[last_year, "Transaksi"])
+    curr_total = float(agg2.loc[last_year, "Total"])
+    curr_avg = float(agg2.loc[last_year, "Rata2"])
+
+    prev_tx = float(agg2.loc[prev_year, "Transaksi"]) if prev_year in agg2.index else None
+    prev_total = float(agg2.loc[prev_year, "Total"]) if prev_year in agg2.index else None
+    prev_avg = float(agg2.loc[prev_year, "Rata2"]) if prev_year in agg2.index else None
+
+    _kpi_row(
+        [
+            (f"Transaksi ({last_year})", _fmt_int(curr_tx), _delta(curr_tx, prev_tx)),
+            (f"Total Nilai ({last_year})", _fmt_rp(curr_total), _delta(curr_total, prev_total)),
+            (f"Rata-rata ({last_year})", _fmt_rp(curr_avg), _delta(curr_avg, prev_avg)),
+        ]
+    )
+
+    # table for directors
+    show_agg = agg.copy()
+    show_agg["Total"] = show_agg["Total"].apply(lambda x: _fmt_rp(float(x)))
+    show_agg["Rata2"] = show_agg["Rata2"].apply(lambda x: _fmt_rp(float(x)))
+    st.dataframe(show_agg, use_container_width=True)
 
     # ------------------------------
-    # Breakdown optional
+    # Charts (simple but "wow")
     # ------------------------------
-    st.markdown("### Breakdown (opsional)")
-    dim_opts = []
-    if col_jenis in df_nilai_filtered.columns:
-        dim_opts.append(("JENIS TRANSAKSI", col_jenis))
-    if col_vendor in df_nilai_filtered.columns:
-        dim_opts.append(("NAMA VENDOR", col_vendor))
+    st.markdown("### 📈 Perbandingan Tahun (Range Fokus)")
 
-    if dim_opts:
-        dim_label = st.selectbox(
-            "Kelompokkan juga berdasarkan",
-            ["(none)"] + [d[0] for d in dim_opts],
-            key="nilai_dim_pick_v2",
+    fig1, ax1 = plt.subplots(figsize=(10, 4))
+    ax1.bar(agg["Tahun"].astype(str), agg["Transaksi"])
+    ax1.set_title("Jumlah Transaksi per Tahun (dalam Range)")
+    ax1.set_xlabel("Tahun")
+    ax1.set_ylabel("Jumlah")
+    ax1.grid(axis="y", linestyle="--", alpha=0.4)
+    st.pyplot(fig1)
+
+    fig2, ax2 = plt.subplots(figsize=(10, 4))
+    ax2.plot(agg["Tahun"].astype(str), agg["Total"], marker="o")
+    ax2.set_title("Total Nilai per Tahun (dalam Range)")
+    ax2.set_xlabel("Tahun")
+    ax2.set_ylabel("Total Nilai (Rp)")
+    ax2.grid(axis="y", linestyle="--", alpha=0.4)
+    st.pyplot(fig2)
+
+    # ------------------------------
+    # Optional: Distribusi bucket (saved config)
+    # ------------------------------
+    if compare_mode == "Distribusi Bucket":
+        st.markdown("### 🧩 Distribusi Bucket per Tahun")
+
+        cfg = load_bucket_cfg()
+        mode = st.radio(
+            "Mode bucket",
+            ["Preset", "Custom (saved)"],
+            horizontal=True,
+            index=0 if cfg["mode"] == "preset" else 1,
+            key="nilai_bucket_mode_exec_v1",
         )
-        if dim_label != "(none)":
-            dim_col = dict(dim_opts)[dim_label]
-            pivot = (
-                df_nilai_filtered.dropna(subset=["Kelompok"])
-                .groupby([dim_col, "Kelompok"])["__NILAI_NUM__"]
-                .agg(Jumlah="size", Total="sum")
-                .reset_index()
-            )
-            pivot["Total"] = pivot["Total"].apply(lambda x: _fmt_rp(float(x)))
-            st.dataframe(pivot, use_container_width=True)
+
+        if mode == "Preset":
+            edges = [0, 10e6, 50e6, 100e6, 250e6, 500e6, float("inf")]
+            labels = ["< 10 juta", "10–50 juta", "50–100 juta", "100–250 juta", "250–500 juta", "> 500 juta"]
+        else:
+            edges = cfg["edges"]
+            labels = cfg["labels"]
+
+        if mode != "Preset" and is_admin:
+            with st.expander("💾 Edit & Simpan Bucket (Admin)", expanded=False):
+                base = [x for x in edges if (x not in [0.0, float("inf")])]
+                base = (base + [10e6, 50e6, 100e6, 250e6, 500e6])[:5]
+                b1 = st.number_input("Batas 1", min_value=0.0, value=float(base[0]), step=1e6, key="nilai_bucket_b1_exec_v1")
+                b2 = st.number_input("Batas 2", min_value=0.0, value=float(base[1]), step=1e6, key="nilai_bucket_b2_exec_v1")
+                b3 = st.number_input("Batas 3", min_value=0.0, value=float(base[2]), step=1e6, key="nilai_bucket_b3_exec_v1")
+                b4 = st.number_input("Batas 4", min_value=0.0, value=float(base[3]), step=1e6, key="nilai_bucket_b4_exec_v1")
+                b5 = st.number_input("Batas 5", min_value=0.0, value=float(base[4]), step=1e6, key="nilai_bucket_b5_exec_v1")
+
+                new_edges = sorted(set([0.0, b1, b2, b3, b4, b5, float("inf")]))
+                new_labels = []
+                for i in range(len(new_edges) - 1):
+                    lo, hi = new_edges[i], new_edges[i + 1]
+                    if math.isinf(hi):
+                        new_labels.append(f">= {lo:,.0f}".replace(",", "."))
+                    else:
+                        new_labels.append(f"{lo:,.0f} – {hi:,.0f}".replace(",", "."))
+
+                if st.button("Simpan Bucket", key="nilai_bucket_save_exec_v1"):
+                    save_bucket_cfg({"mode": "custom", "edges": [("inf" if math.isinf(x) else x) for x in new_edges], "labels": new_labels})
+                    st.success("✅ Bucket tersimpan.")
+                    st.cache_data.clear()
+                    st.rerun()
+
+        df_bucket = df_y.copy()
+        df_bucket["Kelompok"] = pd.cut(
+            df_bucket["__NILAI_NUM__"], bins=edges, labels=labels, right=False, include_lowest=True
+        )
+
+        bucket_year = (
+            df_bucket.dropna(subset=["Kelompok"])
+            .groupby([df_bucket["__YEAR__"].astype(int), "Kelompok"])["__NILAI_NUM__"]
+            .agg(Jumlah="size", Total="sum")
+            .reset_index()
+            .rename(columns={"__YEAR__": "Tahun"})
+            .sort_values(["Tahun", "Kelompok"])
+        )
+
+        # pivot count (easy for directors)
+        pivot_cnt = bucket_year.pivot_table(index="Kelompok", columns="Tahun", values="Jumlah", fill_value=0)
+        st.dataframe(pivot_cnt, use_container_width=True)
+
+        # chart per bucket (sum across selected years) - quick insight
+        bucket_sum = bucket_year.groupby("Kelompok")["Jumlah"].sum().reset_index()
+        figb, axb = plt.subplots(figsize=(10, 4))
+        axb.bar(bucket_sum["Kelompok"].astype(str), bucket_sum["Jumlah"])
+        axb.set_title("Total Jumlah Transaksi per Bucket (Gabungan Tahun Terpilih)")
+        axb.set_xlabel("Bucket")
+        axb.set_ylabel("Jumlah")
+        axb.grid(axis="y", linestyle="--", alpha=0.4)
+        for lab in axb.get_xticklabels():
+            lab.set_rotation(25)
+            lab.set_ha("right")
+        st.pyplot(figb)
+
+    # ------------------------------
+    # Vendor spotlight (wow + actionable)
+    # ------------------------------
+    st.markdown("### 🏷️ Vendor Spotlight (dalam Range Fokus)")
+
+    if col_vendor in df_focus.columns:
+        top_vendor = (
+            df_focus.groupby(df_focus[col_vendor].astype(str))["__NILAI_NUM__"]
+            .agg(Total="sum", Transaksi="size")
+            .reset_index()
+            .sort_values("Total", ascending=False)
+            .head(int(topn))
+        )
+        top_vendor["Total"] = top_vendor["Total"].apply(lambda x: _fmt_rp(float(x)))
+        st.dataframe(top_vendor, use_container_width=True)
     else:
-        st.info("Kolom jenis/vendor tidak tersedia untuk breakdown.")
+        st.info("Kolom vendor tidak ada pada dataset.")
 
     # ------------------------------
-    # Detail viewer
+    # Detail viewer (fast + optional)
     # ------------------------------
-    st.markdown("### Data Detail (opsional)")
-    with st.expander("Tampilkan data terfilter"):
-        group_pick = st.multiselect(
-            "Pilih kelompok",
-            options=[str(x) for x in labels],
-            default=[],
-            key="nilai_group_pick_v2",
+    with st.expander("🔎 Detail Data (opsional)", expanded=False):
+        st.caption("Buka hanya jika diperlukan (untuk menjaga performa).")
+        st.dataframe(
+            df_focus[[c for c in [col_periode, col_jenis, col_vendor, col_nilai] if c in df_focus.columns] + ["__YEAR__", "__NILAI_NUM__"]],
+            use_container_width=True,
         )
 
-        view = df_nilai_filtered.copy()
-        if group_pick:
-            view = view[view["Kelompok"].astype(str).isin(group_pick)]
-
-        cols_show = [c for c in [col_periode, col_no, col_jenis, col_vendor, col_nilai] if c in view.columns]
-        cols_show += ["__NILAI_NUM__", "Kelompok"]
-        st.dataframe(view[cols_show], use_container_width=True)
 
 
 # ==========================================================
