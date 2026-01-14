@@ -1740,7 +1740,7 @@ with tab_nilai:
     import math
     import base64
     from io import BytesIO
-    from typing import Optional, List, Dict, Tuple
+    from typing import Optional, List, Dict
 
     import pandas as pd
     import matplotlib.pyplot as plt
@@ -1756,6 +1756,8 @@ with tab_nilai:
     BUCKET_GITHUB_PATH = "data/nilai_bucket.json"
 
     os.makedirs("data", exist_ok=True)
+
+    st.subheader("💰 Nilai Transaksi — Direksi Dashboard")
 
     # =========================
     # FORMATTERS
@@ -1853,7 +1855,7 @@ with tab_nilai:
         txt = txt.str.replace("RUPIAH", "", regex=False)
         txt = txt.str.replace("RP", "", regex=False)
         txt = txt.str.replace(r"\s+", "", regex=True)
-        txt = txt.str.replace(".", "", regex=False)   # thousand sep
+        txt = txt.str.replace(".", "", regex=False)  # thousand sep
         txt = txt.str.replace(",", "", regex=False)
         txt = txt.str.replace(r"[^0-9\-]", "", regex=True)
         return pd.to_numeric(txt, errors="coerce")
@@ -1940,11 +1942,6 @@ with tab_nilai:
             )
 
     # =========================
-    # UI HEADER
-    # =========================
-    st.subheader("💰 Nilai Transaksi — Direksi Dashboard")
-
-    # =========================
     # ADMIN UPLOAD (TAB ONLY) + MANUAL SYNC
     # =========================
     left, right = st.columns([2, 1])
@@ -1954,7 +1951,7 @@ with tab_nilai:
                 st.info("Hanya admin yang dapat upload.")
                 uploaded = None
             else:
-                uploaded = st.file_uploader("Upload Excel (.xlsx)", type=["xlsx"], key="nilai_upload_v_final")
+                uploaded = st.file_uploader("Upload Excel (.xlsx)", type=["xlsx"], key="nilai_upload_full_v1")
 
             if is_admin and uploaded is not None:
                 b = uploaded.getvalue()
@@ -1986,7 +1983,7 @@ with tab_nilai:
     with right:
         st.caption("⚡ Fast mode: load local-first. GitHub sync manual.")
         if is_admin and (GITHUB_TOKEN and GITHUB_REPO):
-            if st.button("🔄 Sync dari GitHub", key="nilai_sync_v_final"):
+            if st.button("🔄 Sync dari GitHub", key="nilai_sync_full_v1"):
                 with st.spinner("Mengambil file dari GitHub..."):
                     xlsx = github_get_bytes(DATA_GITHUB_PATH)
                     cfgb = github_get_bytes(BUCKET_GITHUB_PATH)
@@ -2026,7 +2023,6 @@ with tab_nilai:
     # MAPPING KOLOM
     # =========================
     cols = list(df_raw.columns)
-
     auto_periode = detect_col(df_raw, ["PERIODE"]) or detect_col(df_raw, ["PERIOD"]) or cols[0]
     auto_nilai = (
         detect_col(df_raw, ["NILAI"])
@@ -2039,10 +2035,20 @@ with tab_nilai:
     auto_jenis = detect_col(df_raw, ["JENIS", "TRANSAKSI"]) or detect_col(df_raw, ["TRANSAKSI"])
 
     with st.expander("⚙️ Mapping Kolom", expanded=False):
-        col_periode = st.selectbox("Kolom PERIODE", cols, index=cols.index(auto_periode), key="nilai_map_periode_final")
-        col_nilai = st.selectbox("Kolom NILAI", cols, index=cols.index(auto_nilai), key="nilai_map_nilai_final")
-        col_vendor = st.selectbox("Kolom VENDOR (opsional)", ["(none)"] + cols, index=(["(none)"] + cols).index(auto_vendor) if auto_vendor in cols else 0, key="nilai_map_vendor_final")
-        col_jenis = st.selectbox("Kolom JENIS (opsional)", ["(none)"] + cols, index=(["(none)"] + cols).index(auto_jenis) if auto_jenis in cols else 0, key="nilai_map_jenis_final")
+        col_periode = st.selectbox("Kolom PERIODE", cols, index=cols.index(auto_periode), key="map_periode_full_v1")
+        col_nilai = st.selectbox("Kolom NILAI", cols, index=cols.index(auto_nilai), key="map_nilai_full_v1")
+        col_vendor = st.selectbox(
+            "Kolom VENDOR (opsional)",
+            ["(none)"] + cols,
+            index=(["(none)"] + cols).index(auto_vendor) if auto_vendor in cols else 0,
+            key="map_vendor_full_v1",
+        )
+        col_jenis = st.selectbox(
+            "Kolom JENIS TRANSAKSI (opsional)",
+            ["(none)"] + cols,
+            index=(["(none)"] + cols).index(auto_jenis) if auto_jenis in cols else 0,
+            key="map_jenis_full_v1",
+        )
 
     # =========================
     # PREPROCESS (CACHED)
@@ -2056,43 +2062,132 @@ with tab_nilai:
     years_all = sorted(df["__YEAR__"].unique().tolist())
 
     # =========================
-    # SUB-TABS (RAPI + WOW)
+    # GLOBAL FILTERS (APPLY TO ALL SUB-TABS)
+    # =========================
+    st.markdown("### 🔎 Filter Global (berlaku ke semua tab di bawah)")
+    gf1, gf2 = st.columns([1.2, 2.0])
+
+    with gf1:
+        years_global = st.multiselect(
+            "Pilih Tahun",
+            options=years_all,
+            default=years_all[-3:] if len(years_all) >= 3 else years_all,
+            key="global_years_v1",
+        )
+
+    df_global = df.copy()
+    if years_global:
+        df_global = df_global[df_global["__YEAR__"].isin([int(y) for y in years_global])].copy()
+    else:
+        st.warning("Pilih minimal 1 tahun.")
+        st.stop()
+
+    with gf2:
+        if col_jenis != "(none)" and col_jenis in df_global.columns:
+            jenis_opts = sorted(df_global[col_jenis].dropna().astype(str).unique().tolist())
+            jenis_selected = st.multiselect(
+                "Jenis Transaksi (multi)",
+                options=jenis_opts,
+                default=jenis_opts,
+                key="global_jenis_v1",
+            )
+            if jenis_selected:
+                df_global = df_global[df_global[col_jenis].astype(str).isin(jenis_selected)].copy()
+            else:
+                st.warning("Tidak ada jenis transaksi dipilih.")
+                st.stop()
+        else:
+            jenis_selected = None
+            st.caption("Filter Jenis Transaksi nonaktif (mapping jenis belum dipilih).")
+
+    if df_global.empty:
+        st.warning("Tidak ada data untuk kombinasi filter global yang dipilih.")
+        st.stop()
+
+    # =========================
+    # SUB-TABS
     # =========================
     tab_exec, tab_yoy, tab_vendor = st.tabs(
         ["🏁 Executive Summary", "📊 YoY Buckets & Analysis", "🏷️ Vendor & Drilldown"]
     )
 
     # =====================================================
-    # TAB 1: EXECUTIVE SUMMARY (WAH)
+    # TAB 1: EXECUTIVE SUMMARY (FLEX SOROT: MULTI BUCKET / RANGE)
     # =====================================================
     with tab_exec:
         st.markdown("### 🎯 Executive Snapshot")
 
-        c1, c2, c3 = st.columns([1.6, 1.2, 1.2])
+        # bucket config for executive highlight (uses saved thresholds)
+        cfg0 = load_bucket_cfg()
+        thresholds0 = cfg0.get("thresholds", [10e6, 50e6, 500e6])
+        edges0 = build_edges(thresholds0)
+        labs0 = build_labels(edges0)
+
+        c1, c2, c3 = st.columns([1.6, 1.6, 1.2])
         with c1:
-            years_sel = st.multiselect(
-                "Tahun yang ditampilkan",
-                options=years_all,
-                default=years_all[-3:] if len(years_all) >= 3 else years_all,
-                key="exec_years_sel_final",
+            focus_mode = st.radio(
+                "Mode sorot",
+                options=["Bucket", "Custom Range (Rp)"],
+                horizontal=True,
+                key="exec_focus_mode_full_v1",
             )
         with c2:
-            cfg0 = load_bucket_cfg()
-            thresholds0 = cfg0.get("thresholds", [10e6, 50e6, 500e6])
-            edges0 = build_edges(thresholds0)
-            labs0 = build_labels(edges0)
-            focus_bucket = st.selectbox("Sorot bucket", options=labs0, index=min(2, len(labs0) - 1), key="exec_focus_bucket_final")
+            quick_focus = st.selectbox(
+                "Quick focus",
+                options=["(none)", ">= 100 juta", ">= 250 juta", ">= 500 juta", ">= 1 Miliar"],
+                index=0,
+                key="exec_quick_focus_full_v1",
+            )
         with c3:
-            show_insight = st.toggle("Tampilkan insight otomatis", value=True, key="exec_insight_toggle_final")
+            show_insight = st.toggle("Insight otomatis", value=True, key="exec_insight_full_v1")
 
-        if not years_sel:
-            st.warning("Pilih minimal 1 tahun.")
-            st.stop()
-
-        dfx = df[df["__YEAR__"].isin([int(y) for y in years_sel])].copy()
+        dfx = df_global.copy()
         dfx["Bucket"] = pd.cut(dfx["__NILAI_NUM__"], bins=edges0, labels=labs0, right=False, include_lowest=True)
 
-        # Overall YoY KPI
+        # focus selection
+        focus_df = dfx.copy()
+        focus_title = ""
+
+        if focus_mode == "Bucket":
+            focus_buckets = st.multiselect(
+                "Sorot bucket (multi)",
+                options=labs0,
+                default=[labs0[min(2, len(labs0) - 1)]],
+                key="exec_focus_buckets_full_v1",
+            )
+            if not focus_buckets:
+                st.warning("Pilih minimal 1 bucket untuk sorotan.")
+                st.stop()
+            focus_df = dfx[dfx["Bucket"].astype(str).isin([str(x) for x in focus_buckets])].copy()
+            focus_title = " + ".join([str(x) for x in focus_buckets])
+        else:
+            min_all = float(dfx["__NILAI_NUM__"].min())
+            max_all = float(dfx["__NILAI_NUM__"].max())
+
+            lo_def, hi_def = min_all, max_all
+            if quick_focus != "(none)":
+                if quick_focus == ">= 100 juta":
+                    lo_def = max(lo_def, 100_000_000.0)
+                elif quick_focus == ">= 250 juta":
+                    lo_def = max(lo_def, 250_000_000.0)
+                elif quick_focus == ">= 500 juta":
+                    lo_def = max(lo_def, 500_000_000.0)
+                elif quick_focus == ">= 1 Miliar":
+                    lo_def = max(lo_def, 1_000_000_000.0)
+
+            step = float(max(1.0, (max_all - min_all) / 200.0))
+            lo, hi = st.slider(
+                "Sorot custom range nilai (Rp)",
+                min_value=float(min_all),
+                max_value=float(max_all),
+                value=(float(lo_def), float(hi_def)),
+                step=step,
+                key="exec_focus_range_full_v1",
+            )
+            focus_df = dfx[(dfx["__NILAI_NUM__"] >= lo) & (dfx["__NILAI_NUM__"] <= hi)].copy()
+            focus_title = f"{fmt_rp(lo)} — {fmt_rp(hi)}"
+
+        # overall KPI YoY (All)
         overall = (
             dfx.groupby("__YEAR__")["__NILAI_NUM__"]
             .agg(Transaksi="size", Total="sum", Rata2="mean")
@@ -2100,52 +2195,59 @@ with tab_nilai:
             .rename(columns={"__YEAR__": "Tahun"})
             .sort_values("Tahun")
         )
-
         last_year = int(overall["Tahun"].max())
         prev_year = int(sorted(overall["Tahun"].unique())[-2]) if len(overall["Tahun"].unique()) >= 2 else None
-        ov_idx = overall.set_index("Tahun")
+        ov = overall.set_index("Tahun")
 
-        cur_tx = float(ov_idx.loc[last_year, "Transaksi"])
-        cur_total = float(ov_idx.loc[last_year, "Total"])
-        cur_avg = float(ov_idx.loc[last_year, "Rata2"])
+        cur_tx = float(ov.loc[last_year, "Transaksi"])
+        cur_total = float(ov.loc[last_year, "Total"])
+        cur_avg = float(ov.loc[last_year, "Rata2"])
 
-        prev_tx = float(ov_idx.loc[prev_year, "Transaksi"]) if prev_year in ov_idx.index else None
-        prev_total = float(ov_idx.loc[prev_year, "Total"]) if prev_year in ov_idx.index else None
-        prev_avg = float(ov_idx.loc[prev_year, "Rata2"]) if prev_year in ov_idx.index else None
+        prev_tx = float(ov.loc[prev_year, "Transaksi"]) if (prev_year in ov.index) else None
+        prev_total = float(ov.loc[prev_year, "Total"]) if (prev_year in ov.index) else None
+        prev_avg = float(ov.loc[prev_year, "Rata2"]) if (prev_year in ov.index) else None
 
-        # HERO KPI ROW
         st.markdown("#### 🧾 KPI Utama (All Transactions)")
         k1, k2, k3 = st.columns(3)
         k1.metric(f"Jumlah Transaksi ({last_year})", fmt_int(cur_tx), delta=pct_delta(cur_tx, prev_tx))
         k2.metric(f"Total Nilai ({last_year})", fmt_rp(cur_total), delta=pct_delta(cur_total, prev_total))
         k3.metric(f"Rata-rata ({last_year})", fmt_rp(cur_avg), delta=pct_delta(cur_avg, prev_avg))
 
-        # Bucket Focus KPI
-        focus = dfx[dfx["Bucket"].astype(str) == str(focus_bucket)]
-        focus_kpi = (
-            focus.groupby("__YEAR__")["__NILAI_NUM__"]
-            .agg(Transaksi="size", Total="sum")
-            .reset_index()
-            .rename(columns={"__YEAR__": "Tahun"})
-            .sort_values("Tahun")
-        )
-
-        st.markdown(f"#### 🔥 Highlight Bucket: **{focus_bucket}**")
-        if focus_kpi.empty:
-            st.info("Tidak ada data pada bucket highlight untuk tahun terpilih.")
+        # focus KPI
+        st.markdown(f"#### 🔥 Sorotan: **{focus_title}**")
+        if focus_df.empty:
+            st.info("Tidak ada data pada sorotan untuk filter global saat ini.")
         else:
-            fk_idx = focus_kpi.set_index("Tahun")
-            cur_f_tx = float(fk_idx.loc[last_year, "Transaksi"]) if last_year in fk_idx.index else 0.0
-            cur_f_total = float(fk_idx.loc[last_year, "Total"]) if last_year in fk_idx.index else 0.0
-            prev_f_tx = float(fk_idx.loc[prev_year, "Transaksi"]) if (prev_year in fk_idx.index) else None
-            prev_f_total = float(fk_idx.loc[prev_year, "Total"]) if (prev_year in fk_idx.index) else None
+            focus_kpi = (
+                focus_df.groupby("__YEAR__")["__NILAI_NUM__"]
+                .agg(Transaksi="size", Total="sum", Rata2="mean")
+                .reset_index()
+                .rename(columns={"__YEAR__": "Tahun"})
+                .sort_values("Tahun")
+            )
+            fk = focus_kpi.set_index("Tahun")
 
-            b1, b2, b3 = st.columns(3)
-            b1.metric("Transaksi (bucket)", fmt_int(cur_f_tx), delta=pct_delta(cur_f_tx, prev_f_tx))
-            b2.metric("Total Nilai (bucket)", fmt_rp(cur_f_total), delta=pct_delta(cur_f_total, prev_f_total))
-            b3.metric("% share transaksi", fmt_pct((cur_f_tx / cur_tx * 100.0) if cur_tx else float("nan")))
+            cur_f_tx = float(fk.loc[last_year, "Transaksi"]) if (last_year in fk.index) else 0.0
+            cur_f_total = float(fk.loc[last_year, "Total"]) if (last_year in fk.index) else 0.0
+            cur_f_avg = float(fk.loc[last_year, "Rata2"]) if (last_year in fk.index) else float("nan")
 
-        # “Wah” Charts: Total + Quantity
+            prev_f_tx = float(fk.loc[prev_year, "Transaksi"]) if (prev_year in fk.index) else None
+            prev_f_total = float(fk.loc[prev_year, "Total"]) if (prev_year in fk.index) else None
+            prev_f_avg = float(fk.loc[prev_year, "Rata2"]) if (prev_year in fk.index) else None
+
+            b1, b2, b3, b4 = st.columns(4)
+            b1.metric("Transaksi (sorotan)", fmt_int(cur_f_tx), delta=pct_delta(cur_f_tx, prev_f_tx))
+            b2.metric("Total Nilai (sorotan)", fmt_rp(cur_f_total), delta=pct_delta(cur_f_total, prev_f_total))
+            b3.metric("Rata-rata (sorotan)", fmt_rp(cur_f_avg) if not pd.isna(cur_f_avg) else "-", delta=pct_delta(cur_f_avg, prev_f_avg))
+            b4.metric("% share transaksi", fmt_pct((cur_f_tx / cur_tx * 100.0) if cur_tx else float("nan")))
+
+            with st.expander("📋 Tabel KPI Sorotan (YoY)", expanded=False):
+                show_focus = focus_kpi.copy()
+                show_focus["Total"] = show_focus["Total"].apply(lambda x: fmt_rp(float(x)))
+                show_focus["Rata2"] = show_focus["Rata2"].apply(lambda x: fmt_rp(float(x)) if not pd.isna(x) else "-")
+                st.dataframe(show_focus, use_container_width=True)
+
+        # charts
         st.markdown("#### 📈 Tren YoY")
         fig1, ax1 = plt.subplots(figsize=(10, 4))
         ax1.plot(overall["Tahun"].astype(str), overall["Total"], marker="o")
@@ -2163,71 +2265,57 @@ with tab_nilai:
         ax2.grid(axis="y", linestyle="--", alpha=0.35)
         st.pyplot(fig2)
 
-        # Insight otomatis (direksi suka 1-2 kalimat)
         if show_insight and len(overall) >= 2:
-            top_year = overall.sort_values("Total", ascending=False).iloc[0]
-            worst_year = overall.sort_values("Total", ascending=True).iloc[0]
             st.markdown("#### 🧠 Insight Otomatis")
+            top_year = overall.sort_values("Total", ascending=False).iloc[0]
             st.write(
-                f"- Tahun tertinggi berdasarkan total nilai: **{int(top_year['Tahun'])}** ({fmt_rp(float(top_year['Total']))}).\n"
-                f"- Tahun terendah berdasarkan total nilai: **{int(worst_year['Tahun'])}** ({fmt_rp(float(worst_year['Total']))}).\n"
-                f"- Tahun terakhir **{last_year}** vs sebelumnya: Total nilai {pct_delta(cur_total, prev_total) or 'n/a'} dan jumlah transaksi {pct_delta(cur_tx, prev_tx) or 'n/a'}."
+                f"- Tahun tertinggi (Total Nilai): **{int(top_year['Tahun'])}** ({fmt_rp(float(top_year['Total']))}).\n"
+                f"- Tahun terakhir **{last_year}**: Total {pct_delta(cur_total, prev_total) or 'n/a'} | Qty {pct_delta(cur_tx, prev_tx) or 'n/a'}."
             )
 
-        show_overall = overall.copy()
-        show_overall["Total"] = show_overall["Total"].apply(lambda x: fmt_rp(float(x)))
-        show_overall["Rata2"] = show_overall["Rata2"].apply(lambda x: fmt_rp(float(x)))
         with st.expander("📋 Tabel KPI YoY (All)", expanded=False):
+            show_overall = overall.copy()
+            show_overall["Total"] = show_overall["Total"].apply(lambda x: fmt_rp(float(x)))
+            show_overall["Rata2"] = show_overall["Rata2"].apply(lambda x: fmt_rp(float(x)))
             st.dataframe(show_overall, use_container_width=True)
 
     # =====================================================
-    # TAB 2: YOY BUCKETS + ANALYSIS (COUNT + % + 100% STACKED + TABLES)
+    # TAB 2: YOY BUCKETS & ANALYSIS (COUNT + % + 100% STACKED)
+    # Uses df_global (so jenis filter applies too)
     # =====================================================
     with tab_yoy:
         st.markdown("### 📊 Analisis YoY per Range Nilai (Custom)")
 
-        years_sel = st.multiselect(
-            "Bandingkan tahun",
-            options=years_all,
-            default=years_all[-3:] if len(years_all) >= 3 else years_all,
-            key="yoy_years_sel_final",
-        )
-        if not years_sel:
-            st.warning("Pilih minimal 1 tahun.")
-            st.stop()
-
-        dfy = df[df["__YEAR__"].isin([int(y) for y in years_sel])].copy()
-
         cfg = load_bucket_cfg()
         base_thresholds = cfg.get("thresholds", [10e6, 50e6, 500e6])
 
-        if "dyn_thresholds_final" not in st.session_state:
-            st.session_state["dyn_thresholds_final"] = [float(x) for x in base_thresholds]
+        if "dyn_thresholds_alltabs_v1" not in st.session_state:
+            st.session_state["dyn_thresholds_alltabs_v1"] = [float(x) for x in base_thresholds]
 
         with st.expander("🧩 Editor Range (Tambah/Kurangi) + Simpan", expanded=True):
-            st.caption("Threshold membentuk bucket: 0–t1, t1–t2, ..., >tN. Contoh: 10jt, 50jt, 500jt.")
+            st.caption("Threshold membentuk bucket: 0–t1, t1–t2, ..., >tN.")
 
             a1, a2, a3, a4 = st.columns([1, 1, 1.2, 1.8])
-            if a1.button("➕ Tambah threshold", key="thr_add_final"):
-                last = st.session_state["dyn_thresholds_final"][-1] if st.session_state["dyn_thresholds_final"] else 10e6
-                st.session_state["dyn_thresholds_final"].append(float(last * 2))
+            if a1.button("➕ Tambah threshold", key="yoy_thr_add_v1"):
+                last = st.session_state["dyn_thresholds_alltabs_v1"][-1] if st.session_state["dyn_thresholds_alltabs_v1"] else 10e6
+                st.session_state["dyn_thresholds_alltabs_v1"].append(float(last * 2))
 
-            if a2.button("➖ Hapus terakhir", key="thr_del_final"):
-                if st.session_state["dyn_thresholds_final"]:
-                    st.session_state["dyn_thresholds_final"] = st.session_state["dyn_thresholds_final"][:-1]
+            if a2.button("➖ Hapus terakhir", key="yoy_thr_del_v1"):
+                if st.session_state["dyn_thresholds_alltabs_v1"]:
+                    st.session_state["dyn_thresholds_alltabs_v1"] = st.session_state["dyn_thresholds_alltabs_v1"][:-1]
 
-            if a3.button("↩ Reset default", key="thr_reset_final"):
-                st.session_state["dyn_thresholds_final"] = [float(x) for x in base_thresholds]
+            if a3.button("↩ Reset default", key="yoy_thr_reset_v1"):
+                st.session_state["dyn_thresholds_alltabs_v1"] = [float(x) for x in base_thresholds]
 
             thresholds_ui: List[float] = []
-            for i, v in enumerate(st.session_state["dyn_thresholds_final"], start=1):
+            for i, v in enumerate(st.session_state["dyn_thresholds_alltabs_v1"], start=1):
                 thresholds_ui.append(
                     st.number_input(
                         f"Threshold {i} (Rp)",
                         min_value=0.0,
                         value=float(v),
                         step=1e6,
-                        key=f"thr_input_final_{i}",
+                        key=f"yoy_thr_input_{i}_v1",
                     )
                 )
 
@@ -2239,14 +2327,14 @@ with tab_nilai:
             st.write(labs)
 
             if is_admin:
-                if a4.button("💾 Simpan Bucket (Persisten)", key="thr_save_final"):
+                if a4.button("💾 Simpan Bucket (Persisten)", key="yoy_thr_save_v1"):
                     save_bucket_cfg(thresholds_norm)
-                    st.session_state["dyn_thresholds_final"] = thresholds_norm
+                    st.session_state["dyn_thresholds_alltabs_v1"] = thresholds_norm
                     st.success("✅ Bucket tersimpan.")
             else:
                 st.info("Hanya admin yang bisa menyimpan. Anda tetap bisa mencoba sementara.")
 
-        # Apply buckets
+        dfy = df_global.copy()
         dfy["Bucket"] = pd.cut(dfy["__NILAI_NUM__"], bins=edges, labels=labs, right=False, include_lowest=True)
 
         grp = (
@@ -2257,20 +2345,18 @@ with tab_nilai:
             .rename(columns={"__YEAR__": "Tahun"})
         )
 
-        # Pivot: count + total
         pivot_cnt = grp.pivot_table(index="Bucket", columns="Tahun", values="Jumlah", fill_value=0).reindex(labs)
         pivot_total = grp.pivot_table(index="Bucket", columns="Tahun", values="Total", fill_value=0.0).reindex(labs)
 
-        st.markdown("#### ✅ Jumlah transaksi per Range (per Tahun)")
+        st.markdown("#### ✅ Jumlah Transaksi per Range (per Tahun)")
         st.dataframe(pivot_cnt, use_container_width=True)
 
-        st.markdown("#### ✅ Total nilai per Range (per Tahun)")
+        st.markdown("#### ✅ Total Nilai per Range (per Tahun)")
         pivot_total_fmt = pivot_total.copy()
         for c in pivot_total_fmt.columns:
             pivot_total_fmt[c] = pivot_total_fmt[c].apply(lambda x: fmt_rp(float(x)))
         st.dataframe(pivot_total_fmt, use_container_width=True)
 
-        # Share quantity (%)
         st.markdown("#### 📌 % Share Quantity (per Range, per Tahun)")
         qty_share = pivot_cnt.div(pivot_cnt.sum(axis=0).replace(0, float("nan")), axis=1) * 100.0
         qty_share_fmt = qty_share.copy()
@@ -2278,7 +2364,6 @@ with tab_nilai:
             qty_share_fmt[c] = qty_share_fmt[c].apply(lambda x: fmt_pct(float(x)) if not pd.isna(x) else "-")
         st.dataframe(qty_share_fmt, use_container_width=True)
 
-        # Share value (%)
         st.markdown("#### 📌 % Share Nilai (per Range, per Tahun)")
         val_share = pivot_total.div(pivot_total.sum(axis=0).replace(0, float("nan")), axis=1) * 100.0
         val_share_fmt = val_share.copy()
@@ -2286,12 +2371,11 @@ with tab_nilai:
             val_share_fmt[c] = val_share_fmt[c].apply(lambda x: fmt_pct(float(x)) if not pd.isna(x) else "-")
         st.dataframe(val_share_fmt, use_container_width=True)
 
-        years_sorted = sorted([int(y) for y in years_sel])
+        years_sorted = sorted(pivot_cnt.columns.tolist())
         x = list(range(len(years_sorted)))
 
-        # 100% stacked (Quantity)
         st.markdown("#### 📊 100% Stacked — Komposisi Quantity (Direksi View)")
-        label_pct = st.toggle("Tampilkan label % (Quantity)", value=False, key="label_pct_qty_final")
+        label_pct_qty = st.toggle("Tampilkan label % (Quantity)", value=False, key="yoy_label_pct_qty_full_v1")
 
         figq, axq = plt.subplots(figsize=(10, 5))
         bottom = [0.0] * len(years_sorted)
@@ -2304,7 +2388,7 @@ with tab_nilai:
 
             axq.bar(x, vals_pct, bottom=bottom, label=str(bucket))
 
-            if label_pct:
+            if label_pct_qty:
                 for i, p in enumerate(vals_pct):
                     if p >= 6.0:
                         axq.text(i, bottom[i] + p / 2, f"{p:.0f}%", ha="center", va="center", fontsize=8)
@@ -2321,9 +2405,8 @@ with tab_nilai:
         axq.legend(title="Bucket", bbox_to_anchor=(1.02, 1), loc="upper left")
         st.pyplot(figq)
 
-        # 100% stacked (Value)
         st.markdown("#### 💰 100% Stacked — Komposisi Nilai (Direksi View)")
-        label_pct_val = st.toggle("Tampilkan label % (Nilai)", value=False, key="label_pct_val_final")
+        label_pct_val = st.toggle("Tampilkan label % (Nilai)", value=False, key="yoy_label_pct_val_full_v1")
 
         figv, axv = plt.subplots(figsize=(10, 5))
         bottom = [0.0] * len(years_sorted)
@@ -2353,22 +2436,19 @@ with tab_nilai:
         axv.legend(title="Bucket", bbox_to_anchor=(1.02, 1), loc="upper left")
         st.pyplot(figv)
 
-        # One-liner insights from buckets
         st.markdown("#### 🧠 Insight Bucket (ringkas)")
         try:
             last_y = max(years_sorted)
-            col_last = last_y if last_y in pivot_cnt.columns else None
-            if col_last is not None:
-                top_qty_bucket = pivot_cnt[col_last].idxmax()
-                top_val_bucket = pivot_total[col_last].idxmax()
-                st.write(
-                    f"- Tahun **{last_y}**: bucket dengan **jumlah transaksi** terbesar = **{top_qty_bucket}** "
-                    f"({fmt_int(int(pivot_cnt.loc[top_qty_bucket, last_y]))} transaksi; {fmt_pct(float(qty_share.loc[top_qty_bucket, last_y]))})."
-                )
-                st.write(
-                    f"- Tahun **{last_y}**: bucket dengan **nilai** terbesar = **{top_val_bucket}** "
-                    f"({fmt_rp(float(pivot_total.loc[top_val_bucket, last_y]))}; {fmt_pct(float(val_share.loc[top_val_bucket, last_y]))})."
-                )
+            top_qty_bucket = pivot_cnt[last_y].idxmax()
+            top_val_bucket = pivot_total[last_y].idxmax()
+            st.write(
+                f"- Tahun **{last_y}**: bucket **qty terbesar** = **{top_qty_bucket}** "
+                f"({fmt_int(int(pivot_cnt.loc[top_qty_bucket, last_y]))} transaksi; {fmt_pct(float(qty_share.loc[top_qty_bucket, last_y]))})."
+            )
+            st.write(
+                f"- Tahun **{last_y}**: bucket **nilai terbesar** = **{top_val_bucket}** "
+                f"({fmt_rp(float(pivot_total.loc[top_val_bucket, last_y]))}; {fmt_pct(float(val_share.loc[top_val_bucket, last_y]))})."
+            )
         except Exception:
             pass
 
@@ -2376,22 +2456,13 @@ with tab_nilai:
             st.dataframe(grp.sort_values(["Tahun", "Bucket"]), use_container_width=True)
 
     # =====================================================
-    # TAB 3: VENDOR & DRILLDOWN (OPTIONAL)
+    # TAB 3: VENDOR (uses df_global so jenis filter applies too)
     # =====================================================
     with tab_vendor:
         st.markdown("### 🏷️ Vendor Spotlight")
+
         if col_vendor == "(none)":
             st.info("Pilih kolom vendor di Mapping Kolom untuk membuka analisis vendor.")
-            st.stop()
-
-        years_sel = st.multiselect(
-            "Filter tahun",
-            options=years_all,
-            default=[years_all[-1]] if years_all else years_all,
-            key="vendor_years_sel_final",
-        )
-        if not years_sel:
-            st.warning("Pilih minimal 1 tahun.")
             st.stop()
 
         cfg = load_bucket_cfg()
@@ -2399,16 +2470,16 @@ with tab_nilai:
         edges = build_edges(thresholds)
         labs = build_labels(edges)
 
-        dfv = df[df["__YEAR__"].isin([int(y) for y in years_sel])].copy()
+        dfv = df_global.copy()
         dfv["Bucket"] = pd.cut(dfv["__NILAI_NUM__"], bins=edges, labels=labs, right=False, include_lowest=True)
 
         c1, c2, c3 = st.columns([1.3, 1.0, 1.7])
         with c1:
-            bucket_pick = st.selectbox("Bucket fokus", options=labs, index=min(2, len(labs) - 1), key="vendor_bucket_pick_final")
+            bucket_pick = st.selectbox("Bucket fokus", options=labs, index=min(2, len(labs) - 1), key="vendor_bucket_full_v1")
         with c2:
-            topn = st.number_input("Top N", min_value=5, max_value=50, value=10, step=5, key="vendor_topn_final")
+            topn = st.number_input("Top N", min_value=5, max_value=50, value=10, step=5, key="vendor_topn_full_v1")
         with c3:
-            show_detail = st.toggle("Tampilkan detail baris (lebih berat)", value=False, key="vendor_detail_toggle_final")
+            show_detail = st.toggle("Tampilkan detail baris (lebih berat)", value=False, key="vendor_detail_full_v1")
 
         dv = dfv[dfv["Bucket"].astype(str) == str(bucket_pick)].copy()
         if dv.empty:
@@ -2434,9 +2505,9 @@ with tab_nilai:
             lab.set_ha("right")
         st.pyplot(fig)
 
-        top_vendor_show = top_vendor.copy()
-        top_vendor_show["Total"] = top_vendor_show["Total"].apply(lambda x: fmt_rp(float(x)))
-        st.dataframe(top_vendor_show, use_container_width=True)
+        show_vendor = top_vendor.copy()
+        show_vendor["Total"] = show_vendor["Total"].apply(lambda x: fmt_rp(float(x)))
+        st.dataframe(show_vendor, use_container_width=True)
 
         if show_detail:
             st.markdown("#### 🔎 Detail Baris (Filtered)")
@@ -2446,7 +2517,7 @@ with tab_nilai:
             detail_cols += ["__YEAR__", "__NILAI_NUM__", "Bucket"]
             st.dataframe(dv[detail_cols].sort_values("__NILAI_NUM__", ascending=False), use_container_width=True)
 
-
+    
 
 # ==========================================================
 # Tab Report (Poster & PDF)
