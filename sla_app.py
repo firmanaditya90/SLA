@@ -733,8 +733,8 @@ components.html(html_code, height=350)
 # ==============================
 # Tabs untuk konten (TIDAK DIUBAH)
 # ==============================
-tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_report, tab_analisis = st.tabs(
-    ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi", "📥 Download Report","🧠 Analisis Data"]
+tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_nilai, tab_report, tab_analisis = st.tabs(
+    ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi", "💰 Nilai Transaksi", "📥 Download Report", "🧠 Analisis Data"]
 )
 
 with tab_overview:
@@ -1617,6 +1617,249 @@ def generate_poster_A4(
     bg.save(out, format="PNG")
     out.seek(0)
     return out
+
+
+# =========================================
+# [ADD] Konfigurasi file khusus Nilai Transaksi
+# =========================================
+NILAI_DATA_PATH = os.path.join("data", "nilai_transaksi.xlsx")
+NILAI_GITHUB_PATH = "data/nilai_transaksi.xlsx"  # bisa ubah kalau mau folder lain
+
+
+def download_nilai_xlsx_from_github() -> bytes | None:
+    """Ambil file nilai_transaksi.xlsx dari GitHub (kalau ada secrets)."""
+    if not (GITHUB_TOKEN and GITHUB_REPO):
+        return None
+    info = github_get_file_info(NILAI_GITHUB_PATH)
+    if not info or "content" not in info:
+        return None
+    try:
+        return base64.b64decode(info["content"].encode())
+    except Exception:
+        return None
+
+
+def upload_nilai_xlsx_to_github(file_bytes: bytes, message="Update Nilai Transaksi (via tab Nilai)") -> dict | None:
+    """Upload/overwrite file nilai_transaksi.xlsx ke GitHub."""
+    return upload_file_to_github(file_bytes, path=NILAI_GITHUB_PATH, message=message)
+
+
+@st.cache_data(show_spinner=False)
+def _read_nilai_excel_bytes(xlsx_bytes: bytes) -> pd.DataFrame:
+    """Read excel dari bytes (cache)."""
+    return pd.read_excel(BytesIO(xlsx_bytes))
+
+
+@st.cache_data(show_spinner=False)
+def _read_nilai_excel_path(path: str, size: int, mtime: float) -> pd.DataFrame:
+    """Read excel dari path (cache)."""
+    return pd.read_excel(path)
+
+
+def load_nilai_df() -> pd.DataFrame | None:
+    """Load data nilai: GitHub -> lokal -> None."""
+    # 1) GitHub
+    content = download_nilai_xlsx_from_github()
+    if content:
+        try:
+            return _read_nilai_excel_bytes(content)
+        except Exception:
+            pass
+
+    # 2) Lokal
+    if os.path.exists(NILAI_DATA_PATH):
+        try:
+            stat = os.stat(NILAI_DATA_PATH)
+            return _read_nilai_excel_path(NILAI_DATA_PATH, stat.st_size, stat.st_mtime)
+        except Exception:
+            return None
+
+    return None
+
+
+def _parse_rupiah_series(s: pd.Series) -> pd.Series:
+    """
+    Parse kolom NILAI dari:
+    - angka
+    - '192.250.000' / 'Rp 192.250.000'
+    Menjadi float.
+    """
+    num = pd.to_numeric(s, errors="coerce")
+    if num.notna().mean() >= 0.7:
+        return num
+
+    def one(v):
+        if v is None:
+            return float("nan")
+        txt = str(v).strip()
+        if txt == "" or txt.lower() in {"nan", "none", "-", "null"}:
+            return float("nan")
+        txt = txt.upper().replace("RP", "").replace("RUPIAH", "").strip()
+        txt = re.sub(r"\s+", "", txt)
+        # format Indonesia: 192.250.000 -> remove dots
+        txt = txt.replace(".", "")
+        # kalau ada koma sebagai desimal (jarang untuk rupiah), ubah ke titik
+        txt = txt.replace(",", ".")
+        return pd.to_numeric(txt, errors="coerce")
+
+    return s.apply(one)
+
+
+def _detect_col(df: pd.DataFrame, keywords: list[str]) -> str | None:
+    cols = list(df.columns)
+    for c in cols:
+        cu = re.sub(r"\s+", " ", str(c).strip().upper())
+        if all(k in cu for k in keywords):
+            return c
+    for c in cols:
+        cu = re.sub(r"\s+", " ", str(c).strip().upper())
+        if any(k in cu for k in keywords):
+            return c
+    return None
+
+
+# =========================================
+# [ADD] TAB NILAI TRANSAKSI (upload hanya di tab ini)
+# =========================================
+with tab_nilai:
+    st.subheader("💰 Nilai Transaksi")
+
+    # ===== Upload khusus tab (ADMIN ONLY) =====
+    with st.expander("📤 Upload Data Nilai Transaksi (Admin Only)", expanded=is_admin):
+        if not is_admin:
+            st.info("Upload hanya untuk admin.")
+            uploaded_nilai = None
+        else:
+            uploaded_nilai = st.file_uploader(
+                "Upload Excel Nilai Transaksi (.xlsx)",
+                type=["xlsx"],
+                key="nilai_uploader_v1"
+            )
+
+        if is_admin and uploaded_nilai is not None:
+            file_bytes = uploaded_nilai.getbuffer()
+
+            # Simpan lokal
+            os.makedirs("data", exist_ok=True)
+            with open(NILAI_DATA_PATH, "wb") as f:
+                f.write(file_bytes)
+
+            # Simpan GitHub (opsional)
+            if GITHUB_TOKEN and GITHUB_REPO:
+                res = upload_nilai_xlsx_to_github(bytes(file_bytes))
+                if res:
+                    st.success("✅ Data Nilai Transaksi tersimpan & tersinkron ke GitHub.")
+                else:
+                    st.warning("⚠️ Tersimpan lokal, tapi gagal upload ke GitHub.")
+            else:
+                st.success("✅ Data Nilai Transaksi tersimpan lokal (mode tanpa GitHub).")
+
+            st.cache_data.clear()
+            st.rerun()
+
+    # ===== Load data nilai (auto-load) =====
+    df_nilai = load_nilai_df()
+    if df_nilai is None or df_nilai.empty:
+        st.warning("Belum ada data Nilai Transaksi. Admin silakan upload di atas.")
+        st.stop()
+
+    st.caption(f"Total baris: {len(df_nilai):,}".replace(",", "."))
+
+    # ===== Normalisasi kolom sesuai contoh file =====
+    col_periode = _detect_col(df_nilai, ["PERIODE"]) or "PERIODE"
+    col_no = _detect_col(df_nilai, ["NO", "PERMOHONAN"]) or "NO PERMOHONAN"
+    col_jenis = _detect_col(df_nilai, ["JENIS", "TRANSAKSI"]) or "JENIS TRANSAKSI"
+    col_vendor = _detect_col(df_nilai, ["NAMA", "VENDOR"]) or "NAMA VENDOR"
+    col_nilai = _detect_col(df_nilai, ["NILAI"]) or "NILAI"
+
+    missing = [c for c in [col_periode, col_no, col_jenis, col_vendor, col_nilai] if c not in df_nilai.columns]
+    if missing:
+        st.error(f"Kolom wajib tidak ditemukan: {missing}")
+        st.write("Kolom yang tersedia:", list(df_nilai.columns))
+        st.stop()
+
+    df_nilai = df_nilai.copy()
+    df_nilai["__NILAI_NUM__"] = _parse_rupiah_series(df_nilai[col_nilai])
+
+    valid = df_nilai["__NILAI_NUM__"].dropna()
+    c1, c2, c3 = st.columns(3)
+
+    def _rp(x: float) -> str:
+        if x is None or (isinstance(x, float) and math.isnan(x)):
+            return "-"
+        return "Rp " + f"{x:,.0f}".replace(",", ".")
+
+    with c1:
+        st.metric("Valid NILAI", f"{len(valid):,}".replace(",", "."))
+    with c2:
+        st.metric("Total NILAI", _rp(float(valid.sum())))
+    with c3:
+        st.metric("Rata-rata NILAI", _rp(float(valid.mean())))
+
+    st.markdown("### Kelompok Nilai")
+
+    mode = st.radio("Mode kelompok", ["Preset", "Custom"], horizontal=True, key="nilai_group_mode_v1")
+
+    if mode == "Preset":
+        edges = [0, 10e6, 50e6, 100e6, 250e6, 500e6, float("inf")]
+        labels = ["< 10 juta", "10–50 juta", "50–100 juta", "100–250 juta", "250–500 juta", "> 500 juta"]
+    else:
+        st.caption("Masukkan batas (rupiah). Contoh 100000000 untuk 100 juta.")
+        b1 = st.number_input("Batas 1", min_value=0.0, value=10e6, step=1e6, key="nilai_b1_v1")
+        b2 = st.number_input("Batas 2", min_value=0.0, value=50e6, step=1e6, key="nilai_b2_v1")
+        b3 = st.number_input("Batas 3", min_value=0.0, value=100e6, step=1e6, key="nilai_b3_v1")
+        b4 = st.number_input("Batas 4", min_value=0.0, value=250e6, step=1e6, key="nilai_b4_v1")
+        b5 = st.number_input("Batas 5", min_value=0.0, value=500e6, step=1e6, key="nilai_b5_v1")
+        edges = sorted(set([0, b1, b2, b3, b4, b5, float("inf")]))
+        labels = []
+        for i in range(len(edges) - 1):
+            lo, hi = edges[i], edges[i + 1]
+            if hi == float("inf"):
+                labels.append(f">= {lo:,.0f}".replace(",", "."))
+            else:
+                labels.append(f"{lo:,.0f} – {hi:,.0f}".replace(",", "."))
+
+    df_nilai["Kelompok"] = pd.cut(
+        df_nilai["__NILAI_NUM__"],
+        bins=edges,
+        labels=labels,
+        right=False,
+        include_lowest=True,
+    )
+
+    summary = (
+        df_nilai.dropna(subset=["Kelompok"])
+        .groupby("Kelompok")["__NILAI_NUM__"]
+        .agg(Jumlah="size", Total="sum", Rata2="mean")
+        .reset_index()
+    )
+    show = summary.copy()
+    show["Total"] = show["Total"].apply(lambda x: _rp(float(x)))
+    show["Rata2"] = show["Rata2"].apply(lambda x: _rp(float(x)))
+
+    st.dataframe(show, use_container_width=True)
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.bar(summary["Kelompok"].astype(str), summary["Jumlah"])
+    ax.set_title("Jumlah Transaksi per Kelompok Nilai")
+    ax.set_ylabel("Jumlah")
+    ax.set_xlabel("Kelompok")
+    ax.grid(axis="y", linestyle="--", alpha=0.4)
+    for lab in ax.get_xticklabels():
+        lab.set_rotation(25)
+        lab.set_ha("right")
+    st.pyplot(fig)
+
+    st.markdown("### Data Detail (opsional)")
+    with st.expander("Tampilkan data terfilter"):
+        group_pick = st.multiselect("Pilih kelompok", options=labels, default=[], key="nilai_group_pick_v1")
+        view = df_nilai.copy()
+        if group_pick:
+            view = view[view["Kelompok"].astype(str).isin(group_pick)]
+        cols_show = [col_periode, col_no, col_jenis, col_vendor, col_nilai, "__NILAI_NUM__", "Kelompok"]
+        st.dataframe(view[cols_show], use_container_width=True)
+
+
 
 # ==========================================================
 # Tab Report (Poster & PDF)
