@@ -3173,16 +3173,23 @@ with tab_transaksi:
                             )
 
                         # =====================================================
-                        # DRILLDOWN DETAIL - ISOLATED
+                        # DRILLDOWN DETAIL - SAFE MODE TANPA st.fragment
                         # =====================================================
                         st.markdown("### 🔍 Drilldown Detail Jenis Transaksi")
 
-                        def trx_render_drilldown_content():
-                            if not detail_options:
-                                st.info("Tidak ada jenis transaksi yang dapat ditampilkan untuk drilldown.")
-                                return
+                        # Catatan:
+                        # Jangan gunakan st.fragment di dalam st.tabs untuk kasus ini.
+                        # Pada beberapa versi Streamlit, fragment rerun di dalam tab bisa membuat
+                        # output menumpuk / keluar dari konteks tab, sehingga isi tab lain tampak
+                        # muncul di bawah tab aktif.
 
-                            current_value = st.session_state.get("trx_detail_select_wow", detail_options[0])
+                        if not detail_options:
+                            st.info("Tidak ada jenis transaksi yang dapat ditampilkan untuk drilldown.")
+                        else:
+                            current_value = st.session_state.get(
+                                "trx_detail_select_wow",
+                                detail_options[0],
+                            )
 
                             if current_value not in detail_options:
                                 current_index = 0
@@ -3220,75 +3227,22 @@ with tab_transaksi:
 
                                 if not detail_chart.empty:
                                     fig_detail = trx_build_detail_fig(detail_chart, selected_detail)
-                                    st.plotly_chart(fig_detail, use_container_width=True)
+                                    st.plotly_chart(
+                                        fig_detail,
+                                        use_container_width=True,
+                                        key="trx_detail_chart_safe_wow",
+                                    )
                                 else:
                                     st.info("Tidak ada data SLA proses yang valid untuk jenis transaksi ini.")
+                            else:
+                                st.warning("Detail transaksi tidak ditemukan untuk pilihan ini.")
 
                             with st.expander("🔎 Lihat Data Baris Detail", expanded=False):
-                                st.dataframe(detail_df, use_container_width=True)
-
-                        if hasattr(st, "fragment"):
-                            @st.fragment
-                            def trx_drilldown_fragment():
-                                trx_render_drilldown_content()
-
-                            trx_drilldown_fragment()
-
-                        else:
-                            with st.form("trx_drilldown_form"):
-                                st.caption(
-                                    "Versi Streamlit belum mendukung st.fragment. "
-                                    "Pilih jenis transaksi lalu klik tombol di bawah."
+                                st.dataframe(
+                                    detail_df,
+                                    use_container_width=True,
+                                    key="trx_detail_table_safe_wow",
                                 )
-
-                                if not detail_options:
-                                    st.info("Tidak ada jenis transaksi yang dapat ditampilkan untuk drilldown.")
-                                else:
-                                    pending_detail = st.selectbox(
-                                        "Pilih jenis transaksi untuk drilldown",
-                                        options=detail_options,
-                                        key="trx_detail_select_wow_form",
-                                    )
-
-                                    submitted = st.form_submit_button("Tampilkan Drilldown")
-
-                                    if submitted:
-                                        st.session_state["trx_detail_select_wow"] = pending_detail
-
-                            selected_detail_fallback = st.session_state.get(
-                                "trx_detail_select_wow",
-                                detail_options[0] if detail_options else None,
-                            )
-
-                            if selected_detail_fallback:
-                                detail_df, detail_mean, detail_chart = trx_get_detail_objects(selected_detail_fallback)
-
-                                if not detail_mean.empty:
-                                    detail_row = detail_mean.iloc[0]
-
-                                    d1, d2, d3 = st.columns(3)
-
-                                    d1.metric(
-                                        "Jumlah Transaksi",
-                                        trx_fmt_int(detail_row["Jumlah Transaksi"]),
-                                    )
-
-                                    d2.metric(
-                                        "SLA Utama",
-                                        trx_fmt_hari(detail_row["SLA Utama (hari)"]),
-                                    )
-
-                                    d3.metric(
-                                        "Acuan SLA",
-                                        sla_utama_label,
-                                    )
-
-                                    if not detail_chart.empty:
-                                        fig_detail = trx_build_detail_fig(detail_chart, selected_detail_fallback)
-                                        st.plotly_chart(fig_detail, use_container_width=True)
-
-                                with st.expander("🔎 Lihat Data Baris Detail", expanded=False):
-                                    st.dataframe(detail_df, use_container_width=True)
 
 # ===================== END OF TAB_TRANSAKSI =====================
 
