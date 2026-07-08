@@ -3243,7 +3243,6 @@ with tab_transaksi:
                                     use_container_width=True,
                                     key="trx_detail_table_safe_wow",
                                 )
-
 # ===================== END OF TAB_TRANSAKSI =====================
 
 with tab_vendor:
@@ -4436,14 +4435,14 @@ with tab_nilai:
     # =========================
     # SUB-TABS
     # =========================
-    tab_exec, tab_yoy, tab_vendor = st.tabs(
+    tab_nilai_exec, tab_nilai_yoy, tab_nilai_vendor = st.tabs(
         ["🏁 Executive Summary", "📊 YoY Buckets & Analysis", "🏷️ Vendor & Drilldown"]
     )
 
     # =====================================================
     # TAB 1: EXECUTIVE SUMMARY (Bucket multi OR Custom Range multi)
     # =====================================================
-    with tab_exec:
+    with tab_nilai_exec:
         st.markdown("### 🎯 Executive Snapshot")
 
         cfg0 = load_bucket_cfg()
@@ -4688,7 +4687,7 @@ with tab_nilai:
     # =====================================================
     # TAB 2: YOY BUCKETS & ANALYSIS (uses global filters too)
     # =====================================================
-    with tab_yoy:
+    with tab_nilai_yoy:
         st.markdown("### 📊 Analisis YoY per Range Nilai (Custom)")
 
         cfg = load_bucket_cfg()
@@ -4855,7 +4854,7 @@ with tab_nilai:
     # =====================================================
     # TAB 3: VENDOR (also uses global filters)
     # =====================================================
-    with tab_vendor:
+    with tab_nilai_vendor:
         st.markdown("### 🏷️ Vendor Spotlight")
 
         if col_vendor == "(none)":
