@@ -990,9 +990,9 @@ with tab_transaksi:
         img = Image.new("RGB", (width, height), "#07111f")
         draw = ImageDraw.Draw(img)
 
-        top = (6, 17, 38)
-        mid = (15, 42, 88)
-        bottom = (3, 96, 120)
+        top = (4, 13, 33)
+        mid = (10, 38, 84)
+        bottom = (0, 105, 120)
 
         for y in range(height):
             t = y / max(height - 1, 1)
@@ -1224,7 +1224,7 @@ with tab_transaksi:
         }
 
     # =====================================================
-    # PNG/PDF GENERATOR UNTUK EXECUTIVE SUMMARY
+    # PNG/PDF GENERATOR UNTUK EXECUTIVE SUMMARY — REVISED
     # =====================================================
     def make_trx_exec_summary_png_pdf(
         trx_view,
@@ -1240,20 +1240,21 @@ with tab_transaksi:
 
         glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         gd = ImageDraw.Draw(glow)
-        gd.ellipse((-180, -160, 430, 430), fill=(0, 234, 255, 55))
-        gd.ellipse((1430, 660, 2150, 1380), fill=(56, 239, 125, 45))
-        glow = glow.filter(ImageFilter.GaussianBlur(18))
+        gd.ellipse((-220, -180, 520, 520), fill=(0, 234, 255, 55))
+        gd.ellipse((1320, 650, 2150, 1420), fill=(56, 239, 125, 45))
+        gd.ellipse((1280, -220, 2100, 480), fill=(255, 65, 108, 28))
+        glow = glow.filter(ImageFilter.GaussianBlur(22))
         img = Image.alpha_composite(img, glow)
         draw = ImageDraw.Draw(img)
 
         font_title = trx_get_font(58, True)
-        font_sub = trx_get_font(24, False)
-        font_h = trx_get_font(30, True)
-        font_kpi_label = trx_get_font(20, True)
-        font_kpi_value = trx_get_font(40, True)
-        font_body = trx_get_font(23, False)
-        font_body_bold = trx_get_font(23, True)
-        font_small = trx_get_font(17, False)
+        font_sub = trx_get_font(23, False)
+        font_h = trx_get_font(29, True)
+        font_kpi_label = trx_get_font(18, True)
+        font_kpi_value = trx_get_font(38, True)
+        font_body = trx_get_font(22, False)
+        font_body_bold = trx_get_font(22, True)
+        font_small = trx_get_font(16, False)
         font_badge = trx_get_font(22, True)
 
         exec_df = trx_view.copy()
@@ -1272,53 +1273,57 @@ with tab_transaksi:
         status_label = ai_result.get("status_label", "CONTROLLED")
 
         if status_label == "CRITICAL":
-            status_fill = (255, 65, 108, 75)
-            status_outline = (255, 120, 145, 190)
+            status_fill = (255, 65, 108, 235)
+            status_outline = (255, 180, 195, 255)
         elif status_label == "WATCHLIST":
-            status_fill = (254, 225, 64, 70)
-            status_outline = (255, 230, 120, 190)
+            status_fill = (255, 180, 60, 235)
+            status_outline = (255, 235, 150, 255)
         else:
-            status_fill = (56, 239, 125, 65)
-            status_outline = (100, 255, 180, 180)
+            status_fill = (40, 200, 145, 235)
+            status_outline = (160, 255, 210, 255)
 
         bottleneck_proses = ai_result.get("bottleneck_proses", "-")
         bottleneck_value = ai_result.get("bottleneck_value", np.nan)
         headline = ai_result.get("headline", "-")
         reco_items = ai_result.get("recommendations", [])[:3]
 
-        draw.text((70, 58), "EXECUTIVE SUMMARY", font=font_title, fill=(255, 255, 255, 255))
+        # Header
+        draw.text((70, 55), "EXECUTIVE SUMMARY", font=font_title, fill=(255, 255, 255, 255))
         draw.text(
-            (74, 130),
-            f"SLA Jenis Transaksi • Periode {start_periode} s.d. {end_periode} • Acuan: {sla_utama_label}",
+            (74, 127),
+            f"SLA Jenis Transaksi | Periode {start_periode} s.d. {end_periode} | Acuan: {sla_utama_label}",
             font=font_sub,
-            fill=(215, 235, 255, 230),
+            fill=(210, 235, 255, 235),
         )
 
-        badge_box = (1510, 62, 1835, 120)
-        trx_round_rect(draw, badge_box, 28, status_fill, status_outline, 2)
+        # Badge
+        badge_box = (1495, 58, 1835, 118)
+        trx_round_rect(draw, badge_box, 30, status_fill, status_outline, 2)
         bbox = draw.textbbox((0, 0), status_label, font=font_badge)
         draw.text(
             (
                 badge_box[0] + (badge_box[2] - badge_box[0] - (bbox[2] - bbox[0])) / 2,
-                badge_box[1] + 14,
+                badge_box[1] + 15,
             ),
             status_label,
             font=font_badge,
             fill=(255, 255, 255, 255),
         )
 
-        headline_box = (70, 175, 1850, 300)
-        trx_round_rect(draw, headline_box, 28, (255, 255, 255, 28), (255, 255, 255, 55), 2)
+        # Headline dark card
+        headline_box = (70, 170, 1850, 300)
+        trx_round_rect(draw, headline_box, 30, (10, 25, 55, 235), (0, 234, 255, 115), 2)
         trx_draw_wrapped_text(
             draw,
             headline,
             (105, 205),
-            trx_get_font(27, True),
+            trx_get_font(28, True),
             (255, 255, 255, 245),
             1705,
             9,
         )
 
+        # KPI cards
         kpis = [
             ("TOTAL TRANSAKSI", trx_fmt_int(total_trx_exec), "Filter aktif"),
             ("JENIS TRANSAKSI", trx_fmt_int(total_jenis_exec), "Kategori dianalisis"),
@@ -1328,19 +1333,20 @@ with tab_transaksi:
 
         card_y = 330
         card_w = 420
-        card_h = 135
+        card_h = 138
         card_gap = 35
 
         for i, (label, value, sub) in enumerate(kpis):
             x = 70 + i * (card_w + card_gap)
             box = (x, card_y, x + card_w, card_y + card_h)
-            trx_round_rect(draw, box, 26, (255, 255, 255, 34), (255, 255, 255, 62), 2)
-            draw.text((x + 28, card_y + 24), label, font=font_kpi_label, fill=(190, 235, 255, 230))
+            trx_round_rect(draw, box, 26, (10, 25, 55, 225), (255, 255, 255, 72), 2)
+            draw.text((x + 28, card_y + 24), label, font=font_kpi_label, fill=(130, 230, 255, 255))
             draw.text((x + 28, card_y + 58), value, font=font_kpi_value, fill=(255, 255, 255, 255))
-            draw.text((x + 28, card_y + 106), sub, font=font_small, fill=(220, 235, 245, 190))
+            draw.text((x + 28, card_y + 108), sub, font=font_small, fill=(205, 225, 240, 220))
 
-        left_box = (70, 500, 1050, 955)
-        trx_round_rect(draw, left_box, 30, (255, 255, 255, 30), (255, 255, 255, 58), 2)
+        # Left panel
+        left_box = (70, 505, 1050, 955)
+        trx_round_rect(draw, left_box, 30, (10, 25, 55, 225), (255, 255, 255, 64), 2)
         draw.text((105, 535), "Executive Notes", font=font_h, fill=(255, 255, 255, 255))
 
         notes = [
@@ -1351,7 +1357,7 @@ with tab_transaksi:
             + ("" if pd.isna(bottleneck_value) else f" ({trx_fmt_hari(bottleneck_value)})."),
         ]
 
-        y = 590
+        y = 585
         for note in notes:
             draw.text((112, y), "•", font=font_body_bold, fill=(0, 234, 255, 255))
             y = trx_draw_wrapped_text(
@@ -1359,14 +1365,14 @@ with tab_transaksi:
                 note,
                 (140, y),
                 font_body,
-                (245, 250, 255, 235),
+                (245, 250, 255, 245),
                 850,
                 6,
             )
-            y += 10
+            y += 8
 
-        draw.text((105, 775), "Recommended Actions", font=font_h, fill=(255, 255, 255, 255))
-        y = 825
+        draw.text((105, 760), "Recommended Actions", font=font_h, fill=(255, 255, 255, 255))
+        y = 810
 
         if not reco_items:
             reco_items = ["Lakukan monitoring berkala terhadap jenis transaksi dengan SLA tertinggi."]
@@ -1378,14 +1384,15 @@ with tab_transaksi:
                 reco,
                 (145, y),
                 font_body,
-                (245, 250, 255, 235),
+                (245, 250, 255, 245),
                 830,
                 6,
             )
-            y += 10
+            y += 8
 
-        right_box = (1090, 500, 1850, 955)
-        trx_round_rect(draw, right_box, 30, (255, 255, 255, 30), (255, 255, 255, 58), 2)
+        # Right panel
+        right_box = (1090, 505, 1850, 955)
+        trx_round_rect(draw, right_box, 30, (10, 25, 55, 225), (255, 255, 255, 64), 2)
         draw.text((1125, 535), "Top Priority Transactions", font=font_h, fill=(255, 255, 255, 255))
 
         if priority_df_exec.empty:
@@ -1401,42 +1408,43 @@ with tab_transaksi:
 
         y = 595
         for _, row in top_priority.iterrows():
-            name = trx_safe_text(row["JENIS TRANSAKSI"], 42)
+            name = trx_safe_text(row["JENIS TRANSAKSI"], 40)
             sla_val = float(row["SLA Utama (hari)"])
             trx_val = int(row["Jumlah Transaksi"])
             prio = str(row.get("Prioritas AI", ""))
 
             row_box = (1125, y, 1815, y + 62)
-            trx_round_rect(draw, row_box, 18, (255, 255, 255, 22), (255, 255, 255, 38), 1)
+            trx_round_rect(draw, row_box, 18, (255, 255, 255, 28), (255, 255, 255, 44), 1)
 
-            draw.text((1148, y + 10), name, font=trx_get_font(20, True), fill=(255, 255, 255, 245))
-            draw.text((1148, y + 36), prio[:48], font=trx_get_font(15, False), fill=(215, 235, 245, 170))
+            draw.text((1148, y + 9), name, font=trx_get_font(19, True), fill=(255, 255, 255, 245))
+            draw.text((1148, y + 35), prio[:48], font=trx_get_font(14, False), fill=(200, 225, 240, 205))
 
-            bar_x = 1510
-            bar_y = y + 38
-            bar_w = 180
+            bar_x = 1515
+            bar_y = y + 40
+            bar_w = 170
             bar_h = 9
-            trx_round_rect(draw, (bar_x, bar_y, bar_x + bar_w, bar_y + bar_h), 5, (255, 255, 255, 38), None, 1)
+            trx_round_rect(draw, (bar_x, bar_y, bar_x + bar_w, bar_y + bar_h), 5, (255, 255, 255, 48), None, 1)
 
             fill_w = int(bar_w * min(sla_val / max_sla, 1))
-            trx_round_rect(draw, (bar_x, bar_y, bar_x + fill_w, bar_y + bar_h), 5, (0, 234, 255, 210), None, 1)
+            trx_round_rect(draw, (bar_x, bar_y, bar_x + fill_w, bar_y + bar_h), 5, (0, 234, 255, 235), None, 1)
 
-            draw.text((1708, y + 9), trx_fmt_hari(sla_val), font=trx_get_font(17, True), fill=(255, 255, 255, 235))
-            draw.text((1708, y + 34), f"{trx_fmt_int(trx_val)} trx", font=trx_get_font(15, False), fill=(220, 235, 245, 180))
+            draw.text((1705, y + 9), trx_fmt_hari(sla_val), font=trx_get_font(16, True), fill=(255, 255, 255, 245))
+            draw.text((1705, y + 34), f"{trx_fmt_int(trx_val)} trx", font=trx_get_font(14, False), fill=(200, 225, 240, 210))
 
             y += 72
 
+        # Footer
         draw.text(
             (70, 1005),
             "Generated automatically from Tab Jenis Transaksi filter.",
             font=font_small,
-            fill=(220, 235, 245, 160),
+            fill=(210, 230, 245, 190),
         )
         draw.text(
-            (1435, 1005),
-            "SLA Payment Analyzer • Executive View",
+            (1415, 1005),
+            "SLA Payment Analyzer | Executive View",
             font=font_small,
-            fill=(220, 235, 245, 160),
+            fill=(210, 230, 245, 190),
         )
 
         out_png = io.BytesIO()
@@ -2308,6 +2316,9 @@ with tab_transaksi:
 
                     components.html(exec_html, height=exec_height, scrolling=False)
 
+                    # =====================================================
+                    # GENERATE + DOWNLOAD PNG/PDF
+                    # =====================================================
                     col_down1, col_down2, col_down3 = st.columns([1, 1, 1.2])
 
                     with col_down1:
@@ -2324,7 +2335,7 @@ with tab_transaksi:
                             st.session_state["trx_exec_summary_png"] = png_bytes
                             st.session_state["trx_exec_summary_pdf"] = pdf_bytes
 
-                            st.success("Executive Summary berhasil dibuat.")
+                            st.success("Executive Summary berhasil dibuat. Silakan download PNG/PDF di tombol sebelah kanan.")
 
                     with col_down2:
                         if "trx_exec_summary_png" in st.session_state:
@@ -2347,7 +2358,7 @@ with tab_transaksi:
                             )
 
                     if "trx_exec_summary_png" in st.session_state:
-                        with st.expander("👀 Preview File Executive Summary yang Siap Dipresentasikan", expanded=False):
+                        with st.expander("👀 Preview File Executive Summary yang Siap Dipresentasikan", expanded=True):
                             st.image(
                                 st.session_state["trx_exec_summary_png"],
                                 caption="Preview Executive Summary 16:9",
