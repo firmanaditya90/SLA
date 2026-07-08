@@ -889,7 +889,7 @@ if active_tab == "🔍 Overview":
     else:
         st.info("Tidak ada kolom SLA Keuangan yang bisa ditampilkan.")
 
-elif active_tab == "🧮 Per Proses":
+if active_tab == "🧮 Per Proses":
     if available_sla_cols:
         st.subheader("📌 Rata-rata SLA per Proses (format hari jam menit detik)")
         rata_proses_seconds = df_filtered[available_sla_cols].mean()
@@ -908,7 +908,7 @@ elif active_tab == "🧮 Per Proses":
             ax2.grid(axis='y', linestyle='--', alpha=0.7)
             st.pyplot(fig2)
 
-elif active_tab == "🧾 Jenis Transaksi":
+if active_tab == "🧾 Jenis Transaksi":
     import os
     import io
     import html
@@ -3306,7 +3306,7 @@ elif active_tab == "🧾 Jenis Transaksi":
 
 # ===================== END OF TAB_TRANSAKSI =====================
 
-elif active_tab == "🏷️ Vendor":
+if active_tab == "🏷️ Vendor":
     import plotly.express as px
     import streamlit.components.v1 as components
 
@@ -3554,7 +3554,7 @@ elif active_tab == "🏷️ Vendor":
     else:
         st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
 
-elif active_tab == "📈 Tren":
+if active_tab == "📈 Tren":
     if available_sla_cols:
         st.subheader("📈 Trend Rata-rata SLA per Periode")
         
@@ -3635,7 +3635,7 @@ elif active_tab == "📈 Tren":
         st.info("Tidak ada kolom SLA yang dapat ditampilkan di tren.")
 
 
-elif active_tab == "📊 Jumlah Transaksi":
+if active_tab == "📊 Jumlah Transaksi":
     st.subheader("📊 Jumlah Transaksi per Periode")
     jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name='Jumlah')
     jumlah_transaksi = jumlah_transaksi.sort_values(
@@ -4132,7 +4132,7 @@ def _detect_col(df: pd.DataFrame, keywords: list[str]) -> str | None:
 # ==============================
 # FULL TAB NILAI TRANSAKSI (WOW + FAST + YOY BUCKETS DYNAMIC)
 # ==============================
-elif active_tab == "💰 Nilai Transaksi":
+if active_tab == "💰 Nilai Transaksi":
     import os
     import re
     import json
@@ -4978,7 +4978,7 @@ elif active_tab == "💰 Nilai Transaksi":
 # ==========================================================
 # Tab Report (Poster & PDF)
 # ==========================================================
-elif active_tab == "📥 Download Report":
+if active_tab == "📥 Download Report":
     tab_poster, tab_pdf = st.tabs(["🎨 Poster", "📄 PDF"])
 
 with tab_poster:
@@ -5455,7 +5455,7 @@ def make_exec_poster_pdf_from_png(png_bytes):
 # TAB ANALISIS — FULL (tempel di: with tab_analisis:)
 # ============================================================
 
-elif active_tab == "🧠 Analisis Data":
+if active_tab == "🧠 Analisis Data":
     import plotly.express as px
 
     st.markdown("## 📊 Analisis Data — Executive Dashboard")
