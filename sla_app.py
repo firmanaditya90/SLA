@@ -909,7 +909,7 @@ with tab_transaksi:
     st.subheader("🧾 Analisis SLA per Jenis Transaksi")
 
     # =====================================================
-    # HELPER FORMAT
+    # LOCAL HELPERS
     # =====================================================
     def trx_fmt_int(x):
         try:
@@ -925,6 +925,30 @@ with tab_transaksi:
         except Exception:
             return "-"
 
+    def trx_seconds_to_text(seconds):
+        try:
+            if seconds is None or pd.isna(seconds):
+                return "-"
+            seconds = int(round(float(seconds)))
+            days = seconds // 86400
+            seconds %= 86400
+            hours = seconds // 3600
+            seconds %= 3600
+            minutes = seconds // 60
+            secs = seconds % 60
+
+            parts = []
+            if days > 0:
+                parts.append(f"{days} hari")
+            if hours > 0 or days > 0:
+                parts.append(f"{hours} jam")
+            if minutes > 0 or hours > 0 or days > 0:
+                parts.append(f"{minutes} menit")
+            parts.append(f"{secs} detik")
+            return " ".join(parts)
+        except Exception:
+            return "-"
+
     def trx_safe_text(x, max_len=55):
         x = str(x)
         return x if len(x) <= max_len else x[:max_len] + "..."
@@ -937,6 +961,7 @@ with tab_transaksi:
         return "".join([f"<li>{html.escape(str(x))}</li>" for x in items])
 
     def trx_get_font(size=28, bold=False):
+        candidates = []
         if bold:
             candidates = [
                 "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -957,6 +982,46 @@ with tab_transaksi:
                 pass
 
         return ImageFont.load_default()
+
+    def trx_resample_filter():
+        try:
+            return Image.Resampling.LANCZOS
+        except Exception:
+            return Image.LANCZOS
+
+    def trx_base_dir():
+        try:
+            return os.path.dirname(os.path.abspath(__file__))
+        except Exception:
+            return os.getcwd()
+
+    def trx_logo_paths():
+        base_dir = trx_base_dir()
+        return [
+            os.path.join(base_dir, "asdp_logo.png"),
+            os.path.join(os.getcwd(), "asdp_logo.png"),
+            "asdp_logo.png",
+        ]
+
+    def trx_load_logo_image():
+        for path in trx_logo_paths():
+            if os.path.exists(path):
+                try:
+                    return Image.open(path).convert("RGBA")
+                except Exception:
+                    pass
+        return None
+
+    def trx_logo_data_uri():
+        for path in trx_logo_paths():
+            if os.path.exists(path):
+                try:
+                    with open(path, "rb") as f:
+                        b64 = base64.b64encode(f.read()).decode("utf-8")
+                    return f"data:image/png;base64,{b64}"
+                except Exception:
+                    pass
+        return ""
 
     def trx_draw_wrapped_text(draw, text, xy, font, fill, max_width, line_gap=7):
         x, y = xy
@@ -1005,7 +1070,6 @@ with tab_transaksi:
 
         for y in range(height):
             t = y / max(height - 1, 1)
-
             if t < 0.55:
                 k = t / 0.55
                 r = int(top[0] * (1 - k) + mid[0] * k)
@@ -1021,64 +1085,10 @@ with tab_transaksi:
 
         return img.convert("RGBA")
 
-    def trx_get_resample_filter():
-        try:
-            return Image.Resampling.LANCZOS
-        except Exception:
-            return Image.LANCZOS
-
-    def trx_base_dir():
-        try:
-            return os.path.dirname(os.path.abspath(__file__))
-        except Exception:
-            return os.getcwd()
-
-    def trx_load_logo_image():
-        base_dir = trx_base_dir()
-
-        logo_candidates = [
-            os.path.join(base_dir, "asdp_logo.png"),
-            os.path.join(os.getcwd(), "asdp_logo.png"),
-            "asdp_logo.png",
-        ]
-
-        for path in logo_candidates:
-            if os.path.exists(path):
-                try:
-                    return Image.open(path).convert("RGBA")
-                except Exception:
-                    pass
-
-        return None
-
-    def trx_logo_data_uri():
-        base_dir = trx_base_dir()
-
-        logo_candidates = [
-            os.path.join(base_dir, "asdp_logo.png"),
-            os.path.join(os.getcwd(), "asdp_logo.png"),
-            "asdp_logo.png",
-        ]
-
-        for path in logo_candidates:
-            if os.path.exists(path):
-                try:
-                    with open(path, "rb") as f:
-                        b64 = base64.b64encode(f.read()).decode("utf-8")
-                    return f"data:image/png;base64,{b64}"
-                except Exception:
-                    pass
-
-        return ""
-
     # =====================================================
-    # AI INSIGHT GENERATOR
-    # Catatan:
-    # - AI memakai data setelah filter jenis transaksi.
-    # - AI TIDAK memakai Top N/sorting agar insight tidak bias.
-    # - Bottleneck memakai proses riil, bukan TOTAL WAKTU.
+    # AI INSIGHT
     # =====================================================
-    def generate_ai_insights_trx(trx_ai_base, proses_bottleneck_cols):
+    def trx_generate_ai_insight(trx_ai_base, proses_bottleneck_cols):
         if trx_ai_base is None or trx_ai_base.empty:
             return {
                 "headline": "Belum ada data yang cukup untuk menghasilkan insight.",
@@ -1095,12 +1105,12 @@ with tab_transaksi:
 
         df_ai = trx_ai_base.copy()
 
-        avg_sla = df_ai["SLA Utama (hari)"].mean()
-        max_sla = df_ai["SLA Utama (hari)"].max()
-
         fastest = df_ai.sort_values("SLA Utama (hari)", ascending=True).iloc[0]
         slowest = df_ai.sort_values("SLA Utama (hari)", ascending=False).iloc[0]
         biggest = df_ai.sort_values("Jumlah Transaksi", ascending=False).iloc[0]
+
+        avg_sla = df_ai["SLA Utama (hari)"].mean()
+        max_sla = df_ai["SLA Utama (hari)"].max()
 
         proses_hari_cols = [
             f"{p} (hari)"
@@ -1108,16 +1118,17 @@ with tab_transaksi:
             if f"{p} (hari)" in df_ai.columns
         ]
 
-        bottleneck_text = "-"
         bottleneck_proses = "-"
         bottleneck_value = np.nan
+        bottleneck_text = "-"
 
         if proses_hari_cols:
-            proses_mean = df_ai[proses_hari_cols].mean().sort_values(ascending=False)
-            bottleneck_col = proses_mean.index[0]
-            bottleneck_proses = bottleneck_col.replace(" (hari)", "")
-            bottleneck_value = proses_mean.iloc[0]
-            bottleneck_text = f"{bottleneck_proses} dengan rata-rata {trx_fmt_hari(bottleneck_value)}"
+            proses_mean = df_ai[proses_hari_cols].mean().dropna().sort_values(ascending=False)
+            if not proses_mean.empty:
+                bottleneck_col = proses_mean.index[0]
+                bottleneck_proses = bottleneck_col.replace(" (hari)", "")
+                bottleneck_value = proses_mean.iloc[0]
+                bottleneck_text = f"{bottleneck_proses} dengan rata-rata {trx_fmt_hari(bottleneck_value)}"
 
         sla_threshold = df_ai["SLA Utama (hari)"].median()
         volume_threshold = df_ai["Jumlah Transaksi"].median()
@@ -1197,27 +1208,17 @@ with tab_transaksi:
             )
 
         summary = [
-            (
-                f"Jenis transaksi tercepat adalah “{trx_safe_text(fastest['JENIS TRANSAKSI'])}” "
-                f"dengan SLA rata-rata {trx_fmt_hari(fastest['SLA Utama (hari)'])}."
-            ),
-            (
-                f"Jenis transaksi terlama adalah “{trx_safe_text(slowest['JENIS TRANSAKSI'])}” "
-                f"dengan SLA rata-rata {trx_fmt_hari(slowest['SLA Utama (hari)'])}."
-            ),
-            (
-                f"Jenis transaksi dengan volume terbesar adalah “{trx_safe_text(biggest['JENIS TRANSAKSI'])}” "
-                f"sebanyak {trx_fmt_int(biggest['Jumlah Transaksi'])} transaksi."
-            ),
+            f"Jenis transaksi tercepat adalah “{trx_safe_text(fastest['JENIS TRANSAKSI'])}” dengan SLA rata-rata {trx_fmt_hari(fastest['SLA Utama (hari)'])}.",
+            f"Jenis transaksi terlama adalah “{trx_safe_text(slowest['JENIS TRANSAKSI'])}” dengan SLA rata-rata {trx_fmt_hari(slowest['SLA Utama (hari)'])}.",
+            f"Jenis transaksi dengan volume terbesar adalah “{trx_safe_text(biggest['JENIS TRANSAKSI'])}” sebanyak {trx_fmt_int(biggest['Jumlah Transaksi'])} transaksi.",
             f"Bottleneck proses terbesar terindikasi pada proses {bottleneck_text}.",
         ]
 
         risks = []
 
-        if pd.notna(avg_sla) and avg_sla > 0 and max_sla > avg_sla * 1.5:
+        if pd.notna(avg_sla) and avg_sla > 0 and pd.notna(max_sla) and max_sla > avg_sla * 1.5:
             risks.append(
-                f"Terdapat outlier SLA: kategori “{trx_safe_text(slowest['JENIS TRANSAKSI'])}” "
-                f"jauh di atas rata-rata keseluruhan."
+                f"Terdapat outlier SLA: kategori “{trx_safe_text(slowest['JENIS TRANSAKSI'])}” jauh di atas rata-rata keseluruhan."
             )
 
         if p1_count > 0:
@@ -1230,7 +1231,7 @@ with tab_transaksi:
                 f"Proses {bottleneck_proses} berpotensi menjadi titik perlambatan utama pada siklus dokumen."
             )
 
-        if len(risks) == 0:
+        if not risks:
             risks.append("Tidak terdapat anomali besar pada data yang sedang ditampilkan.")
 
         recommendations = []
@@ -1250,14 +1251,12 @@ with tab_transaksi:
             )
         else:
             recommendations.append(
-                f"Fokus monitoring cukup diarahkan pada kategori dengan SLA tertinggi, yaitu "
-                f"“{trx_safe_text(slowest['JENIS TRANSAKSI'])}”."
+                f"Fokus monitoring cukup diarahkan pada kategori dengan SLA tertinggi, yaitu “{trx_safe_text(slowest['JENIS TRANSAKSI'])}”."
             )
 
         if bottleneck_proses != "-":
             recommendations.append(
-                f"Lakukan pendalaman pada proses {bottleneck_proses}, termasuk cek antrean dokumen, approval, "
-                f"kelengkapan dokumen, dan pola keterlambatan per vendor/unit."
+                f"Lakukan pendalaman pada proses {bottleneck_proses}, termasuk cek antrean dokumen, approval, kelengkapan dokumen, dan pola keterlambatan per vendor/unit."
             )
 
         recommendations.append(
@@ -1292,11 +1291,13 @@ with tab_transaksi:
             hover_data={"Jumlah Transaksi": True, "SLA Utama (hari)": ":.2f"},
             title=f"Ranking Rata-rata SLA — Acuan: {sla_utama_label}",
         )
+
         fig.update_traces(
             texttemplate="%{text:.2f} hari",
             textposition="outside",
             marker_line_width=0,
         )
+
         fig.update_layout(
             height=max(430, 42 * len(trx_view)),
             xaxis_title="Rata-rata SLA (hari)",
@@ -1305,6 +1306,7 @@ with tab_transaksi:
             margin=dict(l=20, r=80, t=70, b=30),
             title_font=dict(size=20),
         )
+
         return fig
 
     def trx_build_heat_fig(trx_view, chart_proses_cols):
@@ -1314,7 +1316,10 @@ with tab_transaksi:
             if f"{c} (hari)" in trx_view.columns
         ]
 
-        heatmap_data = trx_view.set_index("JENIS TRANSAKSI")[value_cols]
+        if not value_cols:
+            return None
+
+        heatmap_data = trx_view.set_index("JENIS TRANSAKSI")[value_cols].copy()
         heatmap_data.columns = [c.replace(" (hari)", "") for c in value_cols]
 
         fig = px.imshow(
@@ -1324,6 +1329,7 @@ with tab_transaksi:
             color_continuous_scale="Turbo",
             title="Peta Panas Rata-rata SLA: Jenis Transaksi vs Proses",
         )
+
         fig.update_layout(
             height=max(430, 38 * len(heatmap_data)),
             xaxis_title="Proses",
@@ -1331,9 +1337,11 @@ with tab_transaksi:
             margin=dict(l=20, r=20, t=70, b=40),
             title_font=dict(size=20),
         )
+
         fig.update_traces(
             hovertemplate="<b>%{y}</b><br>Proses: %{x}<br>SLA: %{z:.2f} hari<extra></extra>"
         )
+
         return fig
 
     def trx_build_group_fig(trx_long_view):
@@ -1347,7 +1355,12 @@ with tab_transaksi:
             title="Rata-rata SLA Masing-masing Proses per Jenis Transaksi",
             hover_data={"Jumlah Transaksi": True, "Rata-rata SLA (hari)": ":.2f"},
         )
-        fig.update_traces(texttemplate="%{text:.1f}", textposition="outside")
+
+        fig.update_traces(
+            texttemplate="%{text:.1f}",
+            textposition="outside",
+        )
+
         fig.update_layout(
             height=560,
             xaxis_title="Jenis Transaksi",
@@ -1357,6 +1370,7 @@ with tab_transaksi:
             title_font=dict(size=20),
             xaxis_tickangle=-35,
         )
+
         return fig
 
     def trx_build_bubble_fig(trx_view):
@@ -1375,6 +1389,7 @@ with tab_transaksi:
             size_max=58,
             title="Peta Prioritas: Volume Besar dan SLA Tinggi",
         )
+
         fig.add_vline(
             x=median_volume,
             line_dash="dash",
@@ -1382,6 +1397,7 @@ with tab_transaksi:
             annotation_text="Median Volume",
             annotation_position="top left",
         )
+
         fig.add_hline(
             y=median_sla,
             line_dash="dash",
@@ -1389,10 +1405,12 @@ with tab_transaksi:
             annotation_text="Median SLA",
             annotation_position="bottom right",
         )
+
         fig.update_traces(
             textposition="top center",
             marker=dict(opacity=0.78, line=dict(width=1, color="white")),
         )
+
         fig.update_layout(
             height=580,
             xaxis_title="Jumlah Transaksi",
@@ -1401,6 +1419,7 @@ with tab_transaksi:
             margin=dict(l=20, r=20, t=70, b=40),
             title_font=dict(size=20),
         )
+
         return fig
 
     def trx_build_donut_fig(trx_view):
@@ -1411,17 +1430,20 @@ with tab_transaksi:
             hole=0.58,
             title="Komposisi Transaksi berdasarkan Jenis Transaksi",
         )
+
         fig.update_traces(
             textposition="inside",
             textinfo="percent+label",
             pull=[0.03] * len(trx_view),
         )
+
         fig.update_layout(
             height=530,
             margin=dict(l=20, r=20, t=70, b=30),
             title_font=dict(size=20),
             legend_title="Jenis Transaksi",
         )
+
         return fig
 
     def trx_build_process_fig(data_proses, proses):
@@ -1437,11 +1459,13 @@ with tab_transaksi:
             color_continuous_scale="Blues",
             title=f"SLA {proses}",
         )
+
         fig.update_traces(
             texttemplate="%{text:.2f}",
             textposition="outside",
             marker_line_width=0,
         )
+
         fig.update_layout(
             height=max(360, 32 * len(data_proses)),
             xaxis_title="Hari",
@@ -1450,10 +1474,12 @@ with tab_transaksi:
             margin=dict(l=10, r=55, t=55, b=25),
             title_font=dict(size=16),
         )
+
         return fig
 
     def trx_build_detail_fig(detail_chart, selected_detail):
         fig = go.Figure()
+
         fig.add_trace(
             go.Bar(
                 x=detail_chart["Proses"],
@@ -1468,6 +1494,7 @@ with tab_transaksi:
                 ),
             )
         )
+
         fig.update_layout(
             title=f"Profil SLA per Proses — {selected_detail}",
             height=470,
@@ -1476,19 +1503,15 @@ with tab_transaksi:
             margin=dict(l=20, r=20, t=70, b=40),
             title_font=dict(size=20),
         )
+
         return fig
 
     # =====================================================
-    # EXECUTIVE IMAGE GENERATOR
+    # EXECUTIVE IMAGE + PDF
     # =====================================================
-    def make_trx_exec_summary_image(
-        trx_exec_base,
-        ai_result,
-        sla_utama_label,
-        start_periode,
-        end_periode,
-    ):
+    def trx_make_summary_image(trx_exec_base, ai_result, sla_utama_label, start_periode, end_periode):
         W, H = 1920, 1080
+
         img = trx_gradient_bg(W, H)
         draw = ImageDraw.Draw(img)
 
@@ -1498,6 +1521,7 @@ with tab_transaksi:
         gd.ellipse((1320, 650, 2150, 1420), fill=(56, 239, 125, 45))
         gd.ellipse((1280, -220, 2100, 480), fill=(255, 65, 108, 28))
         glow = glow.filter(ImageFilter.GaussianBlur(22))
+
         img = Image.alpha_composite(img, glow)
         draw = ImageDraw.Draw(img)
 
@@ -1524,6 +1548,10 @@ with tab_transaksi:
         priority_df_exec = ai_result.get("priority_df", pd.DataFrame()).copy()
         p1_count = ai_result.get("p1_count", 0)
         status_label = ai_result.get("status_label", "CONTROLLED")
+        bottleneck_proses = ai_result.get("bottleneck_proses", "-")
+        bottleneck_value = ai_result.get("bottleneck_value", np.nan)
+        headline = ai_result.get("headline", "-")
+        reco_items = ai_result.get("recommendations", [])[:3]
 
         if status_label == "CRITICAL":
             status_fill = (255, 65, 108, 235)
@@ -1535,27 +1563,16 @@ with tab_transaksi:
             status_fill = (40, 200, 145, 235)
             status_outline = (160, 255, 210, 255)
 
-        bottleneck_proses = ai_result.get("bottleneck_proses", "-")
-        bottleneck_value = ai_result.get("bottleneck_value", np.nan)
-        headline = ai_result.get("headline", "-")
-        reco_items = ai_result.get("recommendations", [])[:3]
-
         logo = trx_load_logo_image()
         title_x = 70
 
         if logo is not None:
             logo = logo.copy()
-            logo.thumbnail((210, 82), trx_get_resample_filter())
+            logo.thumbnail((210, 82), trx_resample_filter())
             img.alpha_composite(logo, (70, 42))
             title_x = 310
 
-        draw.text(
-            (title_x, 52),
-            "EXECUTIVE SUMMARY",
-            font=font_title,
-            fill=(255, 255, 255, 255),
-        )
-
+        draw.text((title_x, 52), "EXECUTIVE SUMMARY", font=font_title, fill=(255, 255, 255, 255))
         draw.text(
             (title_x + 3, 122),
             f"SLA Jenis Transaksi | Periode {start_periode} s.d. {end_periode} | Acuan: {sla_utama_label}",
@@ -1565,8 +1582,8 @@ with tab_transaksi:
 
         badge_box = (1495, 58, 1835, 118)
         trx_round_rect(draw, badge_box, 30, status_fill, status_outline, 2)
-        bbox = draw.textbbox((0, 0), status_label, font=font_badge)
 
+        bbox = draw.textbbox((0, 0), status_label, font=font_badge)
         draw.text(
             (
                 badge_box[0] + (badge_box[2] - badge_box[0] - (bbox[2] - bbox[0])) / 2,
@@ -1578,14 +1595,7 @@ with tab_transaksi:
         )
 
         headline_box = (70, 170, 1850, 300)
-        trx_round_rect(
-            draw,
-            headline_box,
-            30,
-            (10, 25, 55, 235),
-            (0, 234, 255, 125),
-            3,
-        )
+        trx_round_rect(draw, headline_box, 30, (10, 25, 55, 235), (0, 234, 255, 125), 3)
 
         trx_draw_wrapped_text(
             draw,
@@ -1613,50 +1623,16 @@ with tab_transaksi:
             x = 70 + i * (card_w + card_gap)
             box = (x, card_y, x + card_w, card_y + card_h)
 
-            trx_round_rect(
-                draw,
-                box,
-                26,
-                (10, 25, 55, 230),
-                (255, 255, 255, 95),
-                2,
-            )
+            trx_round_rect(draw, box, 26, (10, 25, 55, 230), (255, 255, 255, 95), 2)
 
-            draw.text(
-                (x + 28, card_y + 24),
-                label,
-                font=font_kpi_label,
-                fill=(130, 230, 255, 255),
-            )
-            draw.text(
-                (x + 28, card_y + 58),
-                value,
-                font=font_kpi_value,
-                fill=(255, 255, 255, 255),
-            )
-            draw.text(
-                (x + 28, card_y + 108),
-                sub,
-                font=font_small,
-                fill=(205, 225, 240, 220),
-            )
+            draw.text((x + 28, card_y + 24), label, font=font_kpi_label, fill=(130, 230, 255, 255))
+            draw.text((x + 28, card_y + 58), value, font=font_kpi_value, fill=(255, 255, 255, 255))
+            draw.text((x + 28, card_y + 108), sub, font=font_small, fill=(205, 225, 240, 220))
 
         left_box = (70, 505, 1050, 955)
-        trx_round_rect(
-            draw,
-            left_box,
-            30,
-            (10, 25, 55, 230),
-            (255, 255, 255, 85),
-            2,
-        )
+        trx_round_rect(draw, left_box, 30, (10, 25, 55, 230), (255, 255, 255, 85), 2)
 
-        draw.text(
-            (105, 535),
-            "Executive Notes",
-            font=font_h,
-            fill=(255, 255, 255, 255),
-        )
+        draw.text((105, 535), "Executive Notes", font=font_h, fill=(255, 255, 255, 255))
 
         notes = [
             f"Jenis tercepat: {trx_safe_text(fastest_exec['JENIS TRANSAKSI'], 54)} ({trx_fmt_hari(fastest_exec['SLA Utama (hari)'])}).",
@@ -1669,12 +1645,7 @@ with tab_transaksi:
         y = 585
 
         for note in notes:
-            draw.text(
-                (112, y),
-                "•",
-                font=font_body_bold,
-                fill=(0, 234, 255, 255),
-            )
+            draw.text((112, y), "•", font=font_body_bold, fill=(0, 234, 255, 255))
             y = trx_draw_wrapped_text(
                 draw,
                 note,
@@ -1686,12 +1657,7 @@ with tab_transaksi:
             )
             y += 8
 
-        draw.text(
-            (105, 760),
-            "Recommended Actions",
-            font=font_h,
-            fill=(255, 255, 255, 255),
-        )
+        draw.text((105, 760), "Recommended Actions", font=font_h, fill=(255, 255, 255, 255))
 
         y = 810
 
@@ -1699,12 +1665,7 @@ with tab_transaksi:
             reco_items = ["Lakukan monitoring berkala terhadap jenis transaksi dengan SLA tertinggi."]
 
         for reco in reco_items:
-            draw.text(
-                (112, y),
-                "✓",
-                font=font_body_bold,
-                fill=(56, 239, 125, 255),
-            )
+            draw.text((112, y), "✓", font=font_body_bold, fill=(56, 239, 125, 255))
             y = trx_draw_wrapped_text(
                 draw,
                 reco,
@@ -1717,21 +1678,9 @@ with tab_transaksi:
             y += 8
 
         right_box = (1090, 505, 1850, 955)
-        trx_round_rect(
-            draw,
-            right_box,
-            30,
-            (10, 25, 55, 230),
-            (255, 255, 255, 85),
-            2,
-        )
+        trx_round_rect(draw, right_box, 30, (10, 25, 55, 230), (255, 255, 255, 85), 2)
 
-        draw.text(
-            (1125, 535),
-            "Top Priority Transactions",
-            font=font_h,
-            fill=(255, 255, 255, 255),
-        )
+        draw.text((1125, 535), "Top Priority Transactions", font=font_h, fill=(255, 255, 255, 255))
 
         if priority_df_exec.empty:
             priority_df_exec = exec_df[
@@ -1753,67 +1702,24 @@ with tab_transaksi:
             prio = str(row.get("Prioritas AI", ""))
 
             row_box = (1125, y, 1815, y + 62)
-            trx_round_rect(
-                draw,
-                row_box,
-                18,
-                (18, 42, 88, 245),
-                (0, 234, 255, 90),
-                1,
-            )
+            trx_round_rect(draw, row_box, 18, (18, 42, 88, 245), (0, 234, 255, 90), 1)
 
-            draw.text(
-                (1148, y + 9),
-                name,
-                font=trx_get_font(19, True),
-                fill=(255, 255, 255, 250),
-            )
-
-            draw.text(
-                (1148, y + 35),
-                prio[:48],
-                font=trx_get_font(14, False),
-                fill=(200, 225, 240, 220),
-            )
+            draw.text((1148, y + 9), name, font=trx_get_font(19, True), fill=(255, 255, 255, 250))
+            draw.text((1148, y + 35), prio[:48], font=trx_get_font(14, False), fill=(200, 225, 240, 220))
 
             bar_x = 1515
             bar_y = y + 40
             bar_w = 170
             bar_h = 9
 
-            trx_round_rect(
-                draw,
-                (bar_x, bar_y, bar_x + bar_w, bar_y + bar_h),
-                5,
-                (255, 255, 255, 55),
-                None,
-                1,
-            )
+            trx_round_rect(draw, (bar_x, bar_y, bar_x + bar_w, bar_y + bar_h), 5, (255, 255, 255, 55), None, 1)
 
             fill_w = int(bar_w * min(sla_val / max_sla, 1))
 
-            trx_round_rect(
-                draw,
-                (bar_x, bar_y, bar_x + fill_w, bar_y + bar_h),
-                5,
-                (0, 234, 255, 240),
-                None,
-                1,
-            )
+            trx_round_rect(draw, (bar_x, bar_y, bar_x + fill_w, bar_y + bar_h), 5, (0, 234, 255, 240), None, 1)
 
-            draw.text(
-                (1705, y + 9),
-                trx_fmt_hari(sla_val),
-                font=trx_get_font(16, True),
-                fill=(255, 255, 255, 245),
-            )
-
-            draw.text(
-                (1705, y + 34),
-                f"{trx_fmt_int(trx_val)} trx",
-                font=trx_get_font(14, False),
-                fill=(200, 225, 240, 220),
-            )
+            draw.text((1705, y + 9), trx_fmt_hari(sla_val), font=trx_get_font(16, True), fill=(255, 255, 255, 245))
+            draw.text((1705, y + 34), f"{trx_fmt_int(trx_val)} trx", font=trx_get_font(14, False), fill=(200, 225, 240, 220))
 
             y += 72
 
@@ -1838,29 +1744,14 @@ with tab_transaksi:
         img.save(out_png, format="PNG", quality=95)
         return out_png.getvalue()
 
-    # =====================================================
-    # PDF FULL REPORT GENERATOR
-    # =====================================================
     def trx_make_placeholder_page(title, message):
         W, H = 1920, 1080
         page = trx_gradient_bg(W, H)
         draw = ImageDraw.Draw(page)
 
-        trx_round_rect(
-            draw,
-            (90, 100, 1830, 980),
-            35,
-            (10, 25, 55, 230),
-            (0, 234, 255, 100),
-            2,
-        )
+        trx_round_rect(draw, (90, 100, 1830, 980), 35, (10, 25, 55, 230), (0, 234, 255, 100), 2)
 
-        draw.text(
-            (140, 150),
-            title,
-            font=trx_get_font(44, True),
-            fill=(255, 255, 255, 255),
-        )
+        draw.text((140, 150), title, font=trx_get_font(44, True), fill=(255, 255, 255, 255))
 
         trx_draw_wrapped_text(
             draw,
@@ -1894,12 +1785,7 @@ with tab_transaksi:
                 + str(e),
             )
 
-        draw.text(
-            (70, 48),
-            title,
-            font=trx_get_font(42, True),
-            fill=(255, 255, 255, 255),
-        )
+        draw.text((70, 48), title, font=trx_get_font(42, True), fill=(255, 255, 255, 255))
 
         trx_round_rect(
             draw,
@@ -1910,49 +1796,37 @@ with tab_transaksi:
             2,
         )
 
-        chart_img.thumbnail((1710, 840), trx_get_resample_filter())
+        chart_img.thumbnail((1710, 840), trx_resample_filter())
+
         x = 70 + (1780 - chart_img.width) // 2
         y = 135 + (860 - chart_img.height) // 2
+
         page.alpha_composite(chart_img, (x, y))
 
         return page.convert("RGB")
 
-    def trx_table_pages(df, title, subtitle="", rows_per_page=24, max_pages=12):
+    def trx_table_pages(df, title, subtitle="", rows_per_page=24, max_pages=8):
         if df is None or df.empty:
             return [trx_make_placeholder_page(title, "Tidak ada data tabel yang dapat ditampilkan.")]
 
-        df_show = df.copy()
-        df_show = df_show.astype(str)
-
+        df_show = df.copy().astype(str)
         pages = []
         total_rows = len(df_show)
 
         chunks = [
             df_show.iloc[i:i + rows_per_page]
             for i in range(0, total_rows, rows_per_page)
-        ]
-
-        chunks = chunks[:max_pages]
+        ][:max_pages]
 
         for page_idx, chunk in enumerate(chunks, start=1):
             W, H = 1920, 1080
             page = trx_gradient_bg(W, H)
             draw = ImageDraw.Draw(page)
 
-            draw.text(
-                (70, 45),
-                title,
-                font=trx_get_font(42, True),
-                fill=(255, 255, 255, 255),
-            )
+            draw.text((70, 45), title, font=trx_get_font(42, True), fill=(255, 255, 255, 255))
 
             if subtitle:
-                draw.text(
-                    (72, 98),
-                    subtitle,
-                    font=trx_get_font(20, False),
-                    fill=(210, 235, 255, 220),
-                )
+                draw.text((72, 98), subtitle, font=trx_get_font(20, False), fill=(210, 235, 255, 220))
 
             draw.text(
                 (1560, 98),
@@ -1962,29 +1836,18 @@ with tab_transaksi:
             )
 
             box = (70, 140, 1850, 1010)
-            trx_round_rect(
-                draw,
-                box,
-                28,
-                (10, 25, 55, 230),
-                (0, 234, 255, 90),
-                2,
-            )
+            trx_round_rect(draw, box, 28, (10, 25, 55, 230), (0, 234, 255, 90), 2)
 
             cols = list(chunk.columns)
-            n_cols = len(cols)
-
             table_x = 105
             table_y = 180
             table_w = 1710
             row_h = 31
             header_h = 38
-
-            col_w = max(120, table_w // max(n_cols, 1))
+            col_w = max(120, table_w // max(len(cols), 1))
 
             for j, col in enumerate(cols):
                 x = table_x + j * col_w
-
                 if x >= table_x + table_w:
                     continue
 
@@ -2013,15 +1876,12 @@ with tab_transaksi:
 
                 for j, col in enumerate(cols):
                     x = table_x + j * col_w
-
                     if x >= table_x + table_w:
                         continue
 
-                    val = trx_safe_text(row[col], 24)
-
                     draw.text(
                         (x + 8, y + 8),
-                        val,
+                        trx_safe_text(row[col], 24),
                         font=trx_get_font(14, False),
                         fill=(235, 245, 255, 235),
                     )
@@ -2056,11 +1916,14 @@ with tab_transaksi:
 
         chart_pages = [
             ("Ranking SLA per Jenis Transaksi", trx_build_rank_fig(trx_view, sla_utama_label)),
-            ("Heatmap SLA per Proses", trx_build_heat_fig(trx_view, chart_proses_cols)),
             ("Perbandingan SLA Masing-masing Proses", trx_build_group_fig(trx_long_view)),
             ("Bubble Matrix Volume vs SLA", trx_build_bubble_fig(trx_view)),
             ("Komposisi Jumlah Transaksi", trx_build_donut_fig(trx_view)),
         ]
+
+        fig_heat = trx_build_heat_fig(trx_view, chart_proses_cols)
+        if fig_heat is not None:
+            chart_pages.insert(1, ("Heatmap SLA per Proses", fig_heat))
 
         if detail_chart is not None and not detail_chart.empty:
             chart_pages.append(
@@ -2075,10 +1938,8 @@ with tab_transaksi:
 
         for proses in chart_proses_cols:
             col_hari = f"{proses} (hari)"
-
             if col_hari in trx_view.columns:
                 data_proses = trx_view.sort_values(col_hari, ascending=True)
-
                 pages.append(
                     trx_fig_to_pdf_page(
                         trx_build_process_fig(data_proses, proses),
@@ -2139,8 +2000,10 @@ with tab_transaksi:
     # =====================================================
     # MAIN TAB LOGIC
     # =====================================================
-    if "JENIS TRANSAKSI" in df_filtered.columns and available_sla_cols:
+    if "JENIS TRANSAKSI" not in df_filtered.columns or not available_sla_cols:
+        st.info("Kolom 'JENIS TRANSAKSI' tidak ditemukan atau tidak ada kolom SLA yang tersedia.")
 
+    else:
         df_trx = df_filtered.copy()
 
         df_trx["JENIS TRANSAKSI"] = (
@@ -2361,8 +2224,6 @@ with tab_transaksi:
                         key="trx_filter_jenis_wow",
                     )
 
-                # Base data setelah filter jenis transaksi.
-                # Ini dipakai untuk AI dan Executive Summary agar tidak bias Top N/sorting.
                 if "ALL" in selected_jenis or not selected_jenis:
                     trx_ai_base = trx_summary.copy()
                 else:
@@ -2432,12 +2293,14 @@ with tab_transaksi:
                             regex=False,
                         )
 
+                        trx_long_view = trx_long_view.dropna(subset=["Rata-rata SLA (hari)"])
+
                         # =====================================================
                         # AI EXECUTIVE INSIGHT
                         # =====================================================
                         st.markdown("### 🤖 AI Executive Insight")
 
-                        ai_result = generate_ai_insights_trx(
+                        ai_result = trx_generate_ai_insight(
                             trx_ai_base,
                             proses_bottleneck_cols,
                         )
@@ -2657,9 +2520,7 @@ with tab_transaksi:
                             priority_show = ai_result.get("priority_df", pd.DataFrame()).copy()
 
                             if not priority_show.empty:
-                                priority_show["SLA Utama (hari)"] = priority_show[
-                                    "SLA Utama (hari)"
-                                ].round(2)
+                                priority_show["SLA Utama (hari)"] = priority_show["SLA Utama (hari)"].round(2)
 
                                 def style_priority(row):
                                     label = str(row["Prioritas AI"])
@@ -2688,7 +2549,7 @@ with tab_transaksi:
                                 st.info("Belum ada matriks prioritas yang dapat ditampilkan.")
 
                         # =====================================================
-                        # EXECUTIVE SUMMARY DIREKSI — DASHBOARD PREVIEW
+                        # EXECUTIVE SUMMARY DIREKSI
                         # =====================================================
                         st.markdown("### 🎯 Executive Summary Direksi")
 
@@ -2750,6 +2611,7 @@ with tab_transaksi:
                             """
 
                         bottleneck_sentence = "."
+
                         if not pd.isna(bottleneck_value):
                             bottleneck_sentence = f" dengan rata-rata {trx_fmt_hari(bottleneck_value)}."
 
@@ -3078,9 +2940,7 @@ with tab_transaksi:
                         components.html(exec_html, height=exec_height, scrolling=False)
 
                         # =====================================================
-                        # DETAIL DEFAULT UNTUK PDF
-                        # Dropdown drilldown tetap ditampilkan di bawah agar tidak membuat
-                        # seluruh grafik utama muncul setelah widget drilldown.
+                        # DETAIL OBJECTS
                         # =====================================================
                         def trx_get_detail_objects(selected_name):
                             detail_df_local = df_trx[
@@ -3095,19 +2955,26 @@ with tab_transaksi:
 
                             if not detail_mean_local.empty:
                                 detail_row_local = detail_mean_local.iloc[0]
+                                rows = []
 
-                                detail_chart_local = pd.DataFrame({
-                                    "Proses": chart_proses_cols,
-                                    "Rata-rata SLA (hari)": [
-                                        detail_row_local[f"{p} (hari)"]
-                                        for p in chart_proses_cols
-                                        if f"{p} (hari)" in detail_row_local.index
-                                    ],
-                                })
+                                for p in chart_proses_cols:
+                                    col_hari = f"{p} (hari)"
+                                    if col_hari in detail_row_local.index:
+                                        val = detail_row_local[col_hari]
+                                        if pd.notna(val):
+                                            rows.append(
+                                                {
+                                                    "Proses": p,
+                                                    "Rata-rata SLA (hari)": val,
+                                                }
+                                            )
+
+                                detail_chart_local = pd.DataFrame(rows)
 
                             return detail_df_local, detail_mean_local, detail_chart_local
 
                         detail_options = trx_view["JENIS TRANSAKSI"].tolist()
+
                         previous_detail = st.session_state.get("trx_detail_select_wow", None)
 
                         if previous_detail in detail_options:
@@ -3120,10 +2987,7 @@ with tab_transaksi:
                         )
 
                         # =====================================================
-                        # GENERATE + DOWNLOAD PNG/PDF LENGKAP
-                        # Perbaikan:
-                        # - PNG disimpan dulu.
-                        # - Jika PDF gagal, PNG tetap muncul.
+                        # DOWNLOAD EXECUTIVE PACK
                         # =====================================================
                         st.markdown("### 📥 Download Executive Pack")
 
@@ -3136,8 +3000,8 @@ with tab_transaksi:
 
                                     for col in chart_proses_cols:
                                         if col in transaksi_display_pdf.columns:
-                                            transaksi_display_pdf[f"{col} (Rata-rata)"] = (
-                                                transaksi_display_pdf[col].apply(seconds_to_sla_format)
+                                            transaksi_display_pdf[f"{col} (Rata-rata)"] = transaksi_display_pdf[col].apply(
+                                                trx_seconds_to_text
                                             )
 
                                     display_cols_pdf = (
@@ -3151,7 +3015,7 @@ with tab_transaksi:
 
                                     transaksi_display_pdf = transaksi_display_pdf[display_cols_pdf]
 
-                                    summary_img = make_trx_exec_summary_image(
+                                    summary_img = trx_make_summary_image(
                                         trx_exec_base=trx_ai_base,
                                         ai_result=ai_result,
                                         sla_utama_label=sla_utama_label,
@@ -3222,52 +3086,39 @@ with tab_transaksi:
                                 )
 
                         # =====================================================
-                        # GRAFIK 1: RANKING SLA UTAMA
+                        # MAIN CHARTS
                         # =====================================================
                         st.markdown("### 🏆 Ranking SLA per Jenis Transaksi")
-
                         fig_rank = trx_build_rank_fig(trx_view, sla_utama_label)
                         st.plotly_chart(fig_rank, use_container_width=True)
 
-                        # =====================================================
-                        # GRAFIK 2: HEATMAP SLA PROSES X JENIS TRANSAKSI
-                        # =====================================================
                         st.markdown("### 🔥 Heatmap SLA per Proses")
-
                         fig_heat = trx_build_heat_fig(trx_view, chart_proses_cols)
-                        st.plotly_chart(fig_heat, use_container_width=True)
 
-                        # =====================================================
-                        # GRAFIK 3: GROUPED BAR PER PROSES
-                        # =====================================================
+                        if fig_heat is not None:
+                            st.plotly_chart(fig_heat, use_container_width=True)
+                        else:
+                            st.info("Tidak ada kolom proses yang dapat ditampilkan pada heatmap.")
+
                         st.markdown("### 📊 Perbandingan SLA Masing-masing Proses")
 
-                        fig_group = trx_build_group_fig(trx_long_view)
-                        st.plotly_chart(fig_group, use_container_width=True)
+                        if not trx_long_view.empty:
+                            fig_group = trx_build_group_fig(trx_long_view)
+                            st.plotly_chart(fig_group, use_container_width=True)
+                        else:
+                            st.info("Tidak ada data SLA proses yang valid untuk grafik perbandingan.")
 
-                        # =====================================================
-                        # GRAFIK 4: BUBBLE MATRIX VOLUME VS SLA
-                        # =====================================================
                         st.markdown("### 🫧 Bubble Matrix: Volume vs SLA")
-
                         fig_bubble = trx_build_bubble_fig(trx_view)
                         st.plotly_chart(fig_bubble, use_container_width=True)
 
-                        # =====================================================
-                        # GRAFIK 5: DONUT KOMPOSISI JUMLAH TRANSAKSI
-                        # =====================================================
                         st.markdown("### 🍩 Komposisi Jumlah Transaksi")
-
                         fig_donut = trx_build_donut_fig(trx_view)
                         st.plotly_chart(fig_donut, use_container_width=True)
 
-                        # =====================================================
-                        # GRAFIK 6: MASING-MASING PROSES
-                        # =====================================================
                         st.markdown("### ⚙️ Grafik Masing-masing Proses")
 
                         cols_per_row = 2
-
                         proses_chunks = [
                             chart_proses_cols[i:i + cols_per_row]
                             for i in range(0, len(chart_proses_cols), cols_per_row)
@@ -3283,27 +3134,27 @@ with tab_transaksi:
                                     if col_hari not in trx_view.columns:
                                         continue
 
-                                    data_proses = trx_view.sort_values(
+                                    data_proses = trx_view.dropna(subset=[col_hari]).sort_values(
                                         col_hari,
                                         ascending=True,
                                     )
 
-                                    fig_each = trx_build_process_fig(data_proses, proses)
-                                    st.plotly_chart(fig_each, use_container_width=True)
+                                    if data_proses.empty:
+                                        st.info(f"Tidak ada data valid untuk proses {proses}.")
+                                    else:
+                                        fig_each = trx_build_process_fig(data_proses, proses)
+                                        st.plotly_chart(fig_each, use_container_width=True)
 
                         # =====================================================
                         # TABEL RATA-RATA SLA
                         # =====================================================
-                        with st.expander(
-                            "📋 Tabel Detail Rata-rata SLA per Jenis Transaksi",
-                            expanded=False,
-                        ):
+                        with st.expander("📋 Tabel Detail Rata-rata SLA per Jenis Transaksi", expanded=False):
                             transaksi_display = trx_view.copy()
 
                             for col in chart_proses_cols:
                                 if col in transaksi_display.columns:
-                                    transaksi_display[f"{col} (Rata-rata)"] = (
-                                        transaksi_display[col].apply(seconds_to_sla_format)
+                                    transaksi_display[f"{col} (Rata-rata)"] = transaksi_display[col].apply(
+                                        trx_seconds_to_text
                                     )
 
                             display_cols = (
@@ -3322,19 +3173,26 @@ with tab_transaksi:
                             )
 
                         # =====================================================
-                        # DRILLDOWN DETAIL DISPLAY
-                        # Dipindahkan ke PALING BAWAH agar saat dropdown diganti,
-                        # tidak terasa seolah seluruh tab muncul ulang di bawah dropdown.
+                        # DRILLDOWN DETAIL - ISOLATED
                         # =====================================================
                         st.markdown("### 🔍 Drilldown Detail Jenis Transaksi")
 
-                        if detail_options:
-                            if st.session_state.get("trx_detail_select_wow") not in detail_options:
-                                st.session_state["trx_detail_select_wow"] = detail_options[0]
+                        def trx_render_drilldown_content():
+                            if not detail_options:
+                                st.info("Tidak ada jenis transaksi yang dapat ditampilkan untuk drilldown.")
+                                return
+
+                            current_value = st.session_state.get("trx_detail_select_wow", detail_options[0])
+
+                            if current_value not in detail_options:
+                                current_index = 0
+                            else:
+                                current_index = detail_options.index(current_value)
 
                             selected_detail = st.selectbox(
                                 "Pilih jenis transaksi untuk drilldown",
                                 options=detail_options,
+                                index=current_index,
                                 key="trx_detail_select_wow",
                             )
 
@@ -3363,17 +3221,76 @@ with tab_transaksi:
                                 if not detail_chart.empty:
                                     fig_detail = trx_build_detail_fig(detail_chart, selected_detail)
                                     st.plotly_chart(fig_detail, use_container_width=True)
+                                else:
+                                    st.info("Tidak ada data SLA proses yang valid untuk jenis transaksi ini.")
 
                             with st.expander("🔎 Lihat Data Baris Detail", expanded=False):
                                 st.dataframe(detail_df, use_container_width=True)
 
-                        else:
-                            st.info("Tidak ada jenis transaksi yang dapat ditampilkan untuk drilldown.")
+                        if hasattr(st, "fragment"):
+                            @st.fragment
+                            def trx_drilldown_fragment():
+                                trx_render_drilldown_content()
 
-    else:
-        st.info(
-            "Kolom 'JENIS TRANSAKSI' tidak ditemukan atau tidak ada kolom SLA yang tersedia."
-        )
+                            trx_drilldown_fragment()
+
+                        else:
+                            with st.form("trx_drilldown_form"):
+                                st.caption(
+                                    "Versi Streamlit belum mendukung st.fragment. "
+                                    "Pilih jenis transaksi lalu klik tombol di bawah."
+                                )
+
+                                if not detail_options:
+                                    st.info("Tidak ada jenis transaksi yang dapat ditampilkan untuk drilldown.")
+                                else:
+                                    pending_detail = st.selectbox(
+                                        "Pilih jenis transaksi untuk drilldown",
+                                        options=detail_options,
+                                        key="trx_detail_select_wow_form",
+                                    )
+
+                                    submitted = st.form_submit_button("Tampilkan Drilldown")
+
+                                    if submitted:
+                                        st.session_state["trx_detail_select_wow"] = pending_detail
+
+                            selected_detail_fallback = st.session_state.get(
+                                "trx_detail_select_wow",
+                                detail_options[0] if detail_options else None,
+                            )
+
+                            if selected_detail_fallback:
+                                detail_df, detail_mean, detail_chart = trx_get_detail_objects(selected_detail_fallback)
+
+                                if not detail_mean.empty:
+                                    detail_row = detail_mean.iloc[0]
+
+                                    d1, d2, d3 = st.columns(3)
+
+                                    d1.metric(
+                                        "Jumlah Transaksi",
+                                        trx_fmt_int(detail_row["Jumlah Transaksi"]),
+                                    )
+
+                                    d2.metric(
+                                        "SLA Utama",
+                                        trx_fmt_hari(detail_row["SLA Utama (hari)"]),
+                                    )
+
+                                    d3.metric(
+                                        "Acuan SLA",
+                                        sla_utama_label,
+                                    )
+
+                                    if not detail_chart.empty:
+                                        fig_detail = trx_build_detail_fig(detail_chart, selected_detail_fallback)
+                                        st.plotly_chart(fig_detail, use_container_width=True)
+
+                                with st.expander("🔎 Lihat Data Baris Detail", expanded=False):
+                                    st.dataframe(detail_df, use_container_width=True)
+
+# ===================== END OF TAB_TRANSAKSI =====================
 
 with tab_vendor:
     import plotly.express as px
