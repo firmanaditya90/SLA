@@ -733,11 +733,25 @@ components.html(html_code, height=350)
 # ==============================
 # Tabs untuk konten (TIDAK DIUBAH)
 # ==============================
-tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_nilai, tab_report, tab_analisis = st.tabs(
-    ["🔍 Overview", "🧮 Per Proses", "🧾 Jenis Transaksi", "🏷️ Vendor", "📈 Tren", "📊 Jumlah Transaksi", "💰 Nilai Transaksi", "📥 Download Report", "🧠 Analisis Data"]
-)
+with st.sidebar:
+    active_tab = st.radio(
+        "📌 Menu Dashboard",
+        [
+            "🔍 Overview",
+            "🧮 Per Proses",
+            "🧾 Jenis Transaksi",
+            "🏷️ Vendor",
+            "📈 Tren",
+            "📊 Jumlah Transaksi",
+            "💰 Nilai Transaksi",
+            "📥 Download Report",
+            "🧠 Analisis Data",
+        ],
+        index=0,
+        key="active_main_tab",
+    )
 
-with tab_overview:
+if active_tab == "🔍 Overview":
     st.subheader("📊 KPI Verifikasi Dokumen Penagihan")
 
     # Hitung rata-rata SLA Keuangan
@@ -875,7 +889,7 @@ with tab_overview:
     else:
         st.info("Tidak ada kolom SLA Keuangan yang bisa ditampilkan.")
 
-with tab_proses:
+elif active_tab == "🧮 Per Proses":
     if available_sla_cols:
         st.subheader("📌 Rata-rata SLA per Proses (format hari jam menit detik)")
         rata_proses_seconds = df_filtered[available_sla_cols].mean()
@@ -894,7 +908,7 @@ with tab_proses:
             ax2.grid(axis='y', linestyle='--', alpha=0.7)
             st.pyplot(fig2)
 
-with tab_transaksi:
+elif active_tab == "🧾 Jenis Transaksi":
     import os
     import io
     import html
@@ -3292,7 +3306,7 @@ with tab_transaksi:
 
 # ===================== END OF TAB_TRANSAKSI =====================
 
-with tab_vendor:
+elif active_tab == "🏷️ Vendor":
     import plotly.express as px
     import streamlit.components.v1 as components
 
@@ -3540,7 +3554,7 @@ with tab_vendor:
     else:
         st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
 
-with tab_tren:
+elif active_tab == "📈 Tren":
     if available_sla_cols:
         st.subheader("📈 Trend Rata-rata SLA per Periode")
         
@@ -3621,7 +3635,7 @@ with tab_tren:
         st.info("Tidak ada kolom SLA yang dapat ditampilkan di tren.")
 
 
-with tab_jumlah:
+elif active_tab == "📊 Jumlah Transaksi":
     st.subheader("📊 Jumlah Transaksi per Periode")
     jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name='Jumlah')
     jumlah_transaksi = jumlah_transaksi.sort_values(
@@ -4118,7 +4132,7 @@ def _detect_col(df: pd.DataFrame, keywords: list[str]) -> str | None:
 # ==============================
 # FULL TAB NILAI TRANSAKSI (WOW + FAST + YOY BUCKETS DYNAMIC)
 # ==============================
-with tab_nilai:
+elif active_tab == "💰 Nilai Transaksi":
     import os
     import re
     import json
@@ -4964,7 +4978,7 @@ with tab_nilai:
 # ==========================================================
 # Tab Report (Poster & PDF)
 # ==========================================================
-with tab_report:
+elif active_tab == "📥 Download Report":
     tab_poster, tab_pdf = st.tabs(["🎨 Poster", "📄 PDF"])
 
 with tab_poster:
@@ -5441,7 +5455,7 @@ def make_exec_poster_pdf_from_png(png_bytes):
 # TAB ANALISIS — FULL (tempel di: with tab_analisis:)
 # ============================================================
 
-with tab_analisis:
+elif active_tab == "🧠 Analisis Data":
     import plotly.express as px
 
     st.markdown("## 📊 Analisis Data — Executive Dashboard")
