@@ -901,6 +901,7 @@ with tab_transaksi:
     import pandas as pd
     import plotly.express as px
     import plotly.graph_objects as go
+    import streamlit.components.v1 as components
     from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
     st.subheader("🧾 Analisis SLA per Jenis Transaksi")
@@ -1285,7 +1286,6 @@ with tab_transaksi:
         headline = ai_result.get("headline", "-")
         reco_items = ai_result.get("recommendations", [])[:3]
 
-        # Header
         draw.text((70, 58), "EXECUTIVE SUMMARY", font=font_title, fill=(255, 255, 255, 255))
         draw.text(
             (74, 130),
@@ -1294,7 +1294,6 @@ with tab_transaksi:
             fill=(215, 235, 255, 230),
         )
 
-        # Badge
         badge_box = (1510, 62, 1835, 120)
         trx_round_rect(draw, badge_box, 28, status_fill, status_outline, 2)
         bbox = draw.textbbox((0, 0), status_label, font=font_badge)
@@ -1308,7 +1307,6 @@ with tab_transaksi:
             fill=(255, 255, 255, 255),
         )
 
-        # Headline
         headline_box = (70, 175, 1850, 300)
         trx_round_rect(draw, headline_box, 28, (255, 255, 255, 28), (255, 255, 255, 55), 2)
         trx_draw_wrapped_text(
@@ -1321,7 +1319,6 @@ with tab_transaksi:
             9,
         )
 
-        # KPI cards
         kpis = [
             ("TOTAL TRANSAKSI", trx_fmt_int(total_trx_exec), "Filter aktif"),
             ("JENIS TRANSAKSI", trx_fmt_int(total_jenis_exec), "Kategori dianalisis"),
@@ -1342,7 +1339,6 @@ with tab_transaksi:
             draw.text((x + 28, card_y + 58), value, font=font_kpi_value, fill=(255, 255, 255, 255))
             draw.text((x + 28, card_y + 106), sub, font=font_small, fill=(220, 235, 245, 190))
 
-        # Left panel
         left_box = (70, 500, 1050, 955)
         trx_round_rect(draw, left_box, 30, (255, 255, 255, 30), (255, 255, 255, 58), 2)
         draw.text((105, 535), "Executive Notes", font=font_h, fill=(255, 255, 255, 255))
@@ -1388,7 +1384,6 @@ with tab_transaksi:
             )
             y += 10
 
-        # Right panel
         right_box = (1090, 500, 1850, 955)
         trx_round_rect(draw, right_box, 30, (255, 255, 255, 30), (255, 255, 255, 58), 2)
         draw.text((1125, 535), "Top Priority Transactions", font=font_h, fill=(255, 255, 255, 255))
@@ -1481,9 +1476,6 @@ with tab_transaksi:
             st.info("Tidak ada kolom SLA yang dapat dianalisis.")
         else:
 
-            # =====================================================
-            # AGGREGATION
-            # =====================================================
             trx_mean_sec = (
                 df_trx
                 .groupby("JENIS TRANSAKSI")[proses_cols]
@@ -1536,98 +1528,118 @@ with tab_transaksi:
                 fastest_name = html.escape(str(fastest_row["JENIS TRANSAKSI"]))
                 slowest_name = html.escape(str(slowest_row["JENIS TRANSAKSI"]))
 
-                st.markdown(
-                    f"""
-                    <style>
-                    .trx-kpi-grid {{
-                        display: grid;
-                        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-                        gap: 16px;
-                        margin: 14px 0 24px 0;
-                    }}
-                    .trx-kpi-card {{
-                        border-radius: 20px;
-                        padding: 18px 18px;
-                        color: white;
-                        min-height: 135px;
-                        box-shadow: 0 12px 30px rgba(0,0,0,0.22);
-                        transition: all 0.25s ease;
-                        overflow: hidden;
-                        position: relative;
-                        font-family: 'Segoe UI', sans-serif;
-                    }}
-                    .trx-kpi-card:hover {{
-                        transform: translateY(-5px);
-                        box-shadow: 0 18px 42px rgba(0,0,0,0.34);
-                    }}
-                    .trx-kpi-card::after {{
-                        content: "";
-                        position: absolute;
-                        right: -35px;
-                        top: -35px;
-                        width: 125px;
-                        height: 125px;
-                        border-radius: 50%;
-                        background: rgba(255,255,255,0.18);
-                    }}
-                    .trx-kpi-icon {{
-                        font-size: 30px;
-                        margin-bottom: 8px;
-                    }}
-                    .trx-kpi-label {{
-                        font-size: 12px;
-                        text-transform: uppercase;
-                        letter-spacing: 0.6px;
-                        opacity: 0.88;
-                        margin-bottom: 4px;
-                    }}
-                    .trx-kpi-value {{
-                        font-size: 25px;
-                        font-weight: 900;
-                        line-height: 1.12;
-                        word-break: break-word;
-                    }}
-                    .trx-kpi-sub {{
-                        margin-top: 8px;
-                        font-size: 11.5px;
-                        opacity: 0.82;
-                        line-height: 1.32;
-                    }}
-                    .trx-blue {{ background: linear-gradient(135deg, #0072ff, #00c6ff); }}
-                    .trx-green {{ background: linear-gradient(135deg, #11998e, #38ef7d); }}
-                    .trx-purple {{ background: linear-gradient(135deg, #7f00ff, #e100ff); }}
-                    .trx-red {{ background: linear-gradient(135deg, #ff416c, #ff4b2b); }}
-                    </style>
+                kpi_html = f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                <style>
+                body {{
+                    margin: 0;
+                    padding: 0;
+                    background: transparent;
+                    font-family: Segoe UI, sans-serif;
+                }}
 
-                    <div class="trx-kpi-grid">
-                        <div class="trx-kpi-card trx-blue">
-                            <div class="trx-kpi-icon">🧾</div>
-                            <div class="trx-kpi-label">Total Jenis Transaksi</div>
-                            <div class="trx-kpi-value">{trx_fmt_int(total_jenis)}</div>
-                            <div class="trx-kpi-sub">Kategori transaksi terdeteksi</div>
-                        </div>
-                        <div class="trx-kpi-card trx-green">
-                            <div class="trx-kpi-icon">📄</div>
-                            <div class="trx-kpi-label">Total Transaksi</div>
-                            <div class="trx-kpi-value">{trx_fmt_int(total_transaksi_trx)}</div>
-                            <div class="trx-kpi-sub">Dalam periode terpilih</div>
-                        </div>
-                        <div class="trx-kpi-card trx-purple">
-                            <div class="trx-kpi-icon">⚡</div>
-                            <div class="trx-kpi-label">Jenis Tercepat</div>
-                            <div class="trx-kpi-value" style="font-size:18px;">{fastest_name}</div>
-                            <div class="trx-kpi-sub">{trx_fmt_hari(fastest_row["SLA Utama (hari)"])} berdasarkan {sla_utama_label}</div>
-                        </div>
-                        <div class="trx-kpi-card trx-red">
-                            <div class="trx-kpi-icon">🚨</div>
-                            <div class="trx-kpi-label">Jenis Terlama</div>
-                            <div class="trx-kpi-value" style="font-size:18px;">{slowest_name}</div>
-                            <div class="trx-kpi-sub">{trx_fmt_hari(slowest_row["SLA Utama (hari)"])} berdasarkan {sla_utama_label}</div>
-                        </div>
+                .trx-kpi-grid {{
+                    display: grid;
+                    grid-template-columns: repeat(4, 1fr);
+                    gap: 16px;
+                    margin: 4px 0 10px 0;
+                }}
+
+                .trx-kpi-card {{
+                    border-radius: 20px;
+                    padding: 18px;
+                    color: white;
+                    min-height: 135px;
+                    box-shadow: 0 12px 30px rgba(0,0,0,0.22);
+                    transition: all 0.25s ease;
+                    overflow: hidden;
+                    position: relative;
+                }}
+
+                .trx-kpi-card::after {{
+                    content: "";
+                    position: absolute;
+                    right: -35px;
+                    top: -35px;
+                    width: 125px;
+                    height: 125px;
+                    border-radius: 50%;
+                    background: rgba(255,255,255,0.18);
+                }}
+
+                .trx-kpi-icon {{
+                    font-size: 30px;
+                    margin-bottom: 8px;
+                }}
+
+                .trx-kpi-label {{
+                    font-size: 12px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.6px;
+                    opacity: 0.88;
+                    margin-bottom: 4px;
+                }}
+
+                .trx-kpi-value {{
+                    font-size: 25px;
+                    font-weight: 900;
+                    line-height: 1.12;
+                    word-break: break-word;
+                }}
+
+                .trx-kpi-sub {{
+                    margin-top: 8px;
+                    font-size: 11.5px;
+                    opacity: 0.82;
+                    line-height: 1.32;
+                }}
+
+                .trx-blue {{ background: linear-gradient(135deg, #0072ff, #00c6ff); }}
+                .trx-green {{ background: linear-gradient(135deg, #11998e, #38ef7d); }}
+                .trx-purple {{ background: linear-gradient(135deg, #7f00ff, #e100ff); }}
+                .trx-red {{ background: linear-gradient(135deg, #ff416c, #ff4b2b); }}
+
+                @media (max-width: 900px) {{
+                    .trx-kpi-grid {{
+                        grid-template-columns: repeat(2, 1fr);
+                    }}
+                }}
+                </style>
+                </head>
+                <body>
+                <div class="trx-kpi-grid">
+                    <div class="trx-kpi-card trx-blue">
+                        <div class="trx-kpi-icon">🧾</div>
+                        <div class="trx-kpi-label">Total Jenis Transaksi</div>
+                        <div class="trx-kpi-value">{trx_fmt_int(total_jenis)}</div>
+                        <div class="trx-kpi-sub">Kategori transaksi terdeteksi</div>
                     </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                    <div class="trx-kpi-card trx-green">
+                        <div class="trx-kpi-icon">📄</div>
+                        <div class="trx-kpi-label">Total Transaksi</div>
+                        <div class="trx-kpi-value">{trx_fmt_int(total_transaksi_trx)}</div>
+                        <div class="trx-kpi-sub">Dalam periode terpilih</div>
+                    </div>
+                    <div class="trx-kpi-card trx-purple">
+                        <div class="trx-kpi-icon">⚡</div>
+                        <div class="trx-kpi-label">Jenis Tercepat</div>
+                        <div class="trx-kpi-value" style="font-size:18px;">{fastest_name}</div>
+                        <div class="trx-kpi-sub">{trx_fmt_hari(fastest_row["SLA Utama (hari)"])} berdasarkan {sla_utama_label}</div>
+                    </div>
+                    <div class="trx-kpi-card trx-red">
+                        <div class="trx-kpi-icon">🚨</div>
+                        <div class="trx-kpi-label">Jenis Terlama</div>
+                        <div class="trx-kpi-value" style="font-size:18px;">{slowest_name}</div>
+                        <div class="trx-kpi-sub">{trx_fmt_hari(slowest_row["SLA Utama (hari)"])} berdasarkan {sla_utama_label}</div>
+                    </div>
+                </div>
+                </body>
+                </html>
+                """
+
+                components.html(kpi_html, height=190, scrolling=False)
 
                 # =====================================================
                 # FILTER VISUALISASI
@@ -1703,7 +1715,7 @@ with tab_transaksi:
                     )
 
                     # =====================================================
-                    # AI EXECUTIVE INSIGHT — AUTOSCALE
+                    # AI EXECUTIVE INSIGHT
                     # =====================================================
                     st.markdown("### 🤖 AI Executive Insight")
 
@@ -1716,188 +1728,207 @@ with tab_transaksi:
                     status_label = ai_result.get("status_label", "CONTROLLED")
                     status_class = ai_result.get("status_class", "trx-status-good")
 
-                    st.markdown(
-                        f"""
-                        <style>
-                        .trx-ai-wrap {{
-                            width: 100%;
-                            box-sizing: border-box;
-                            background:
-                                radial-gradient(circle at top left, rgba(0,234,255,0.30), transparent 28%),
-                                radial-gradient(circle at bottom right, rgba(225,0,255,0.25), transparent 30%),
-                                linear-gradient(135deg, rgba(13,19,45,0.98), rgba(20,28,60,0.94));
-                            border: 1px solid rgba(255,255,255,0.18);
-                            border-radius: 26px;
-                            padding: 24px;
-                            box-shadow: 0 18px 48px rgba(0,0,0,0.35);
-                            color: white;
-                            font-family: 'Segoe UI', sans-serif;
-                            margin: 6px 0 24px 0;
-                            overflow: visible;
-                            position: relative;
-                        }}
-                        .trx-ai-header {{
-                            display: flex;
-                            flex-wrap: wrap;
-                            justify-content: space-between;
-                            align-items: center;
-                            gap: 12px;
-                            margin-bottom: 16px;
-                        }}
-                        .trx-ai-title {{
-                            font-size: clamp(22px, 2vw, 30px);
-                            font-weight: 950;
-                            letter-spacing: 0.3px;
-                            background: linear-gradient(90deg, #00eaff, #38ef7d, #fee140);
-                            -webkit-background-clip: text;
-                            -webkit-text-fill-color: transparent;
-                        }}
-                        .trx-ai-badge-row {{
-                            display: flex;
-                            flex-wrap: wrap;
-                            gap: 10px;
-                            align-items: center;
-                        }}
-                        .trx-ai-badge {{
-                            background: rgba(255,255,255,0.13);
-                            border: 1px solid rgba(255,255,255,0.22);
-                            padding: 8px 12px;
-                            border-radius: 999px;
-                            font-size: 12px;
-                            font-weight: 800;
-                            color: #dffcff;
-                        }}
-                        .trx-ai-status {{
-                            padding: 8px 14px;
-                            border-radius: 999px;
-                            font-size: 12px;
-                            font-weight: 950;
-                            letter-spacing: 0.6px;
-                            border: 1px solid rgba(255,255,255,0.20);
-                        }}
-                        .trx-status-critical {{
-                            background: rgba(255,65,108,0.24);
-                            color: #ffdce5;
-                        }}
-                        .trx-status-watch {{
-                            background: rgba(254,225,64,0.22);
-                            color: #fff4b0;
-                        }}
-                        .trx-status-good {{
-                            background: rgba(56,239,125,0.20);
-                            color: #d9ffe9;
-                        }}
-                        .trx-status-neutral {{
-                            background: rgba(255,255,255,0.14);
-                            color: #ffffff;
-                        }}
-                        .trx-ai-headline {{
-                            background: rgba(255,255,255,0.10);
-                            border: 1px solid rgba(255,255,255,0.16);
-                            border-radius: 20px;
-                            padding: 18px 20px;
-                            font-size: clamp(15px, 1.25vw, 18px);
-                            font-weight: 760;
-                            line-height: 1.48;
-                            margin-bottom: 18px;
-                            box-shadow: inset 0 0 18px rgba(255,255,255,0.05);
-                            color: rgba(255,255,255,0.96);
-                        }}
+                    ai_height = 430
+                    ai_height += 28 * max(
+                        len(ai_result.get("summary", [])),
+                        len(ai_result.get("risks", [])),
+                        len(ai_result.get("recommendations", []))
+                    )
+
+                    ai_html = f"""
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                    <style>
+                    body {{
+                        margin: 0;
+                        padding: 0;
+                        background: transparent;
+                        font-family: Segoe UI, sans-serif;
+                    }}
+
+                    .trx-ai-wrap {{
+                        width: 100%;
+                        box-sizing: border-box;
+                        background:
+                            radial-gradient(circle at top left, rgba(0,234,255,0.30), transparent 28%),
+                            radial-gradient(circle at bottom right, rgba(225,0,255,0.25), transparent 30%),
+                            linear-gradient(135deg, rgba(13,19,45,0.98), rgba(20,28,60,0.94));
+                        border: 1px solid rgba(255,255,255,0.18);
+                        border-radius: 26px;
+                        padding: 24px;
+                        box-shadow: 0 18px 48px rgba(0,0,0,0.35);
+                        color: white;
+                        overflow: hidden;
+                    }}
+
+                    .trx-ai-header {{
+                        display: flex;
+                        flex-wrap: wrap;
+                        justify-content: space-between;
+                        align-items: center;
+                        gap: 12px;
+                        margin-bottom: 16px;
+                    }}
+
+                    .trx-ai-title {{
+                        font-size: 30px;
+                        font-weight: 950;
+                        letter-spacing: 0.3px;
+                        background: linear-gradient(90deg, #00eaff, #38ef7d, #fee140);
+                        -webkit-background-clip: text;
+                        -webkit-text-fill-color: transparent;
+                    }}
+
+                    .trx-ai-badge-row {{
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 10px;
+                        align-items: center;
+                    }}
+
+                    .trx-ai-badge {{
+                        background: rgba(255,255,255,0.13);
+                        border: 1px solid rgba(255,255,255,0.22);
+                        padding: 8px 12px;
+                        border-radius: 999px;
+                        font-size: 12px;
+                        font-weight: 800;
+                        color: #dffcff;
+                    }}
+
+                    .trx-ai-status {{
+                        padding: 8px 14px;
+                        border-radius: 999px;
+                        font-size: 12px;
+                        font-weight: 950;
+                        letter-spacing: 0.6px;
+                        border: 1px solid rgba(255,255,255,0.20);
+                    }}
+
+                    .trx-status-critical {{
+                        background: rgba(255,65,108,0.24);
+                        color: #ffdce5;
+                    }}
+
+                    .trx-status-watch {{
+                        background: rgba(254,225,64,0.22);
+                        color: #fff4b0;
+                    }}
+
+                    .trx-status-good {{
+                        background: rgba(56,239,125,0.20);
+                        color: #d9ffe9;
+                    }}
+
+                    .trx-status-neutral {{
+                        background: rgba(255,255,255,0.14);
+                        color: #ffffff;
+                    }}
+
+                    .trx-ai-headline {{
+                        background: rgba(255,255,255,0.10);
+                        border: 1px solid rgba(255,255,255,0.16);
+                        border-radius: 20px;
+                        padding: 18px 20px;
+                        font-size: 18px;
+                        font-weight: 760;
+                        line-height: 1.48;
+                        margin-bottom: 18px;
+                        box-shadow: inset 0 0 18px rgba(255,255,255,0.05);
+                        color: rgba(255,255,255,0.96);
+                    }}
+
+                    .trx-ai-grid {{
+                        display: grid;
+                        grid-template-columns: repeat(3, 1fr);
+                        gap: 16px;
+                        align-items: stretch;
+                    }}
+
+                    .trx-ai-box {{
+                        background: rgba(255,255,255,0.09);
+                        border: 1px solid rgba(255,255,255,0.14);
+                        border-radius: 20px;
+                        padding: 18px;
+                        backdrop-filter: blur(10px);
+                        min-height: 220px;
+                    }}
+
+                    .trx-ai-box h4 {{
+                        margin: 0 0 12px 0;
+                        font-size: 16px;
+                        letter-spacing: 0.4px;
+                        color: rgba(255,255,255,0.98);
+                    }}
+
+                    .trx-ai-box ul {{
+                        margin: 0;
+                        padding-left: 20px;
+                    }}
+
+                    .trx-ai-box li {{
+                        margin-bottom: 9px;
+                        font-size: 13.5px;
+                        line-height: 1.45;
+                        color: rgba(255,255,255,0.92);
+                    }}
+
+                    .trx-ai-foot {{
+                        margin-top: 14px;
+                        font-size: 11.5px;
+                        opacity: 0.67;
+                        text-align: right;
+                    }}
+
+                    @media (max-width: 900px) {{
                         .trx-ai-grid {{
-                            display: grid;
-                            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-                            gap: 16px;
-                            align-items: stretch;
+                            grid-template-columns: 1fr;
                         }}
-                        .trx-ai-box {{
-                            background: rgba(255,255,255,0.09);
-                            border: 1px solid rgba(255,255,255,0.14);
-                            border-radius: 20px;
-                            padding: 18px;
-                            backdrop-filter: blur(10px);
-                            min-height: auto;
-                            overflow: visible;
-                        }}
-                        .trx-ai-box h4 {{
-                            margin: 0 0 12px 0;
-                            font-size: 16px;
-                            letter-spacing: 0.4px;
-                            color: rgba(255,255,255,0.98);
-                        }}
-                        .trx-ai-box ul {{
-                            margin: 0;
-                            padding-left: 20px;
-                        }}
-                        .trx-ai-box li {{
-                            margin-bottom: 9px;
-                            font-size: 13.5px;
-                            line-height: 1.45;
-                            color: rgba(255,255,255,0.92);
-                        }}
-                        .trx-ai-foot {{
-                            margin-top: 14px;
-                            font-size: 11.5px;
-                            opacity: 0.67;
-                            text-align: right;
-                        }}
-                        @media (max-width: 900px) {{
-                            .trx-ai-wrap {{
-                                padding: 18px;
-                            }}
-                            .trx-ai-foot {{
-                                text-align: left;
-                            }}
-                        }}
-                        </style>
+                    }}
+                    </style>
+                    </head>
 
-                        <div class="trx-ai-wrap">
-                            <div class="trx-ai-header">
-                                <div class="trx-ai-title">🤖 AI Executive Insight</div>
-                                <div class="trx-ai-badge-row">
-                                    <div class="trx-aimax-width: 900px) {{
-                            .trx-ai-wrap {{
-                                padding: 18px;
-                            }}
-                            .trx-ai-foot {{
-                                text-align: left;
-                            }}
-                        }}
-                        </style>
-
-                        <div class="trx-ai-wrap">
-                            <div class-status {status_class}">{html.escape(status_label)}</div>
-                                    <div class="trx-ai-badge">Auto-generated from filtered data</div>
-                                </div>
-                            </div>
-
-                            <div class="trx-ai-headline">
-                                {html.escape(str(ai_result.get("headline", "-")))}
-                            </div>
-
-                            <div class="trx-ai-grid">
-                                <div class="trx-ai-box">
-                                    <h4>📌 Key Findings</h4>
-                                    <ul>{summary_html}</ul>
-                                </div>
-
-                                <div class="trx-ai-box">
-                                    <h4>🚨 Risk Signals</h4>
-                                    <ul>{risk_html}</ul>
-                                </div>
-
-                                <div class="trx-ai-box">
-                                    <h4>✅ Recommended Actions</h4>
-                                    <ul>{reco_html}</ul>
-                                </div>
-                            </div>
-
-                            <div class="trx-ai-foot">
-                                Insight mengikuti filter jenis transaksi, Top N, dan sorting yang sedang aktif.
+                    <body>
+                    <div class="trx-ai-wrap">
+                        <div class="trx-ai-header">
+                            <div class="trx-ai-title">🤖 AI Executive Insight</div>
+                            <div class="trx-ai-badge-row">
+                                <div class="trx-ai-status {status_class}">{html.escape(status_label)}</div>
+                                <div class="trx-ai-badge">Auto-generated from filtered data</div>
                             </div>
                         </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+
+                        <div class="trx-ai-headline">
+                            {html.escape(str(ai_result.get("headline", "-")))}
+                        </div>
+
+                        <div class="trx-ai-grid">
+                            <div class="trx-ai-box">
+                                <h4>📌 Key Findings</h4>
+                                <ul>{summary_html}</ul>
+                            </div>
+
+                            <div class="trx-ai-box">
+                                <h4>🚨 Risk Signals</h4>
+                                <ul>{risk_html}</ul>
+                            </div>
+
+                            <div class="trx-ai-box">
+                                <h4>✅ Recommended Actions</h4>
+                                <ul>{reco_html}</ul>
+                            </div>
+                        </div>
+
+                        <div class="trx-ai-foot">
+                            Insight mengikuti filter jenis transaksi, Top N, dan sorting yang sedang aktif.
+                        </div>
+                    </div>
+                    </body>
+                    </html>
+                    """
+
+                    components.html(ai_html, height=ai_height, scrolling=False)
 
                     # =====================================================
                     # PRIORITY MATRIX TABLE
@@ -2002,230 +2033,280 @@ with tab_transaksi:
                     if not pd.isna(bottleneck_value):
                         bottleneck_sentence = f" dengan rata-rata {trx_fmt_hari(bottleneck_value)}."
 
-                    st.markdown(
-                        f"""
-                        <style>
-                        .trx-exec-wrap {{
-                            width: 100%;
-                            box-sizing: border-box;
-                            background:
-                                radial-gradient(circle at top left, rgba(0, 234, 255, 0.34), transparent 25%),
-                                radial-gradient(circle at bottom right, rgba(56, 239, 125, 0.22), transparent 30%),
-                                linear-gradient(135deg, #061126 0%, #102a58 50%, #034e62 100%);
-                            border: 1px solid rgba(255,255,255,0.18);
-                            border-radius: 28px;
-                            padding: 24px;
-                            color: white;
-                            font-family: 'Segoe UI', sans-serif;
-                            box-shadow: 0 22px 58px rgba(0,0,0,0.38);
-                            overflow: visible;
-                            position: relative;
-                            margin-bottom: 18px;
-                        }}
-                        .trx-exec-header {{
-                            display: flex;
-                            flex-wrap: wrap;
-                            justify-content: space-between;
-                            align-items: flex-start;
-                            gap: 14px;
-                            margin-bottom: 18px;
-                        }}
-                        .trx-exec-title {{
-                            font-size: clamp(26px, 2.5vw, 36px);
-                            font-weight: 950;
-                            letter-spacing: 0.2px;
-                            line-height: 1.08;
-                        }}
-                        .trx-exec-subtitle {{
-                            margin-top: 8px;
-                            opacity: 0.82;
-                            font-size: 14px;
-                            line-height: 1.35;
-                        }}
-                        .trx-exec-status {{
-                            padding: 12px 16px;
-                            border-radius: 999px;
-                            font-size: 13px;
-                            font-weight: 950;
-                            letter-spacing: 0.7px;
-                            border: 1px solid rgba(255,255,255,0.22);
-                        }}
-                        .trx-exec-headline {{
-                            background: rgba(255,255,255,0.11);
-                            border: 1px solid rgba(255,255,255,0.16);
-                            border-radius: 22px;
-                            padding: 18px 20px;
-                            font-size: clamp(15px, 1.2vw, 18px);
-                            font-weight: 760;
-                            line-height: 1.48;
-                            margin-bottom: 18px;
-                        }}
+                    exec_height = 760 + (len(priority_df_exec.head(5)) * 12)
+
+                    exec_fastest_name = html.escape(trx_safe_text(fastest_exec["JENIS TRANSAKSI"]))
+                    exec_slowest_name = html.escape(trx_safe_text(slowest_exec["JENIS TRANSAKSI"]))
+                    exec_biggest_name = html.escape(trx_safe_text(biggest_exec["JENIS TRANSAKSI"]))
+
+                    exec_html = f"""
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                    <style>
+                    body {{
+                        margin: 0;
+                        padding: 0;
+                        background: transparent;
+                        font-family: Segoe UI, sans-serif;
+                    }}
+
+                    .trx-exec-wrap {{
+                        width: 100%;
+                        box-sizing: border-box;
+                        background:
+                            radial-gradient(circle at top left, rgba(0, 234, 255, 0.34), transparent 25%),
+                            radial-gradient(circle at bottom right, rgba(56, 239, 125, 0.22), transparent 30%),
+                            linear-gradient(135deg, #061126 0%, #102a58 50%, #034e62 100%);
+                        border: 1px solid rgba(255,255,255,0.18);
+                        border-radius: 28px;
+                        padding: 24px;
+                        color: white;
+                        box-shadow: 0 22px 58px rgba(0,0,0,0.38);
+                        overflow: hidden;
+                    }}
+
+                    .trx-exec-header {{
+                        display: flex;
+                        flex-wrap: wrap;
+                        justify-content: space-between;
+                        align-items: flex-start;
+                        gap: 14px;
+                        margin-bottom: 18px;
+                    }}
+
+                    .trx-exec-title {{
+                        font-size: 34px;
+                        font-weight: 950;
+                        letter-spacing: 0.2px;
+                        line-height: 1.08;
+                    }}
+
+                    .trx-exec-subtitle {{
+                        margin-top: 8px;
+                        opacity: 0.82;
+                        font-size: 14px;
+                        line-height: 1.35;
+                    }}
+
+                    .trx-exec-status {{
+                        padding: 12px 16px;
+                        border-radius: 999px;
+                        font-size: 13px;
+                        font-weight: 950;
+                        letter-spacing: 0.7px;
+                        border: 1px solid rgba(255,255,255,0.22);
+                    }}
+
+                    .trx-exec-headline {{
+                        background: rgba(255,255,255,0.11);
+                        border: 1px solid rgba(255,255,255,0.16);
+                        border-radius: 22px;
+                        padding: 18px 20px;
+                        font-size: 18px;
+                        font-weight: 760;
+                        line-height: 1.48;
+                        margin-bottom: 18px;
+                    }}
+
+                    .trx-exec-kpi-grid {{
+                        display: grid;
+                        grid-template-columns: repeat(4, 1fr);
+                        gap: 14px;
+                        margin-bottom: 18px;
+                    }}
+
+                    .trx-exec-kpi {{
+                        background: rgba(255,255,255,0.12);
+                        border: 1px solid rgba(255,255,255,0.16);
+                        border-radius: 20px;
+                        padding: 16px;
+                        min-height: 110px;
+                    }}
+
+                    .trx-exec-kpi-label {{
+                        font-size: 12px;
+                        opacity: 0.75;
+                        text-transform: uppercase;
+                        letter-spacing: 0.6px;
+                    }}
+
+                    .trx-exec-kpi-value {{
+                        margin-top: 8px;
+                        font-size: 24px;
+                        font-weight: 950;
+                    }}
+
+                    .trx-exec-kpi-sub {{
+                        margin-top: 6px;
+                        font-size: 11.5px;
+                        opacity: 0.76;
+                        line-height: 1.28;
+                    }}
+
+                    .trx-exec-main-grid {{
+                        display: grid;
+                        grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+                        gap: 16px;
+                    }}
+
+                    .trx-exec-box {{
+                        background: rgba(255,255,255,0.10);
+                        border: 1px solid rgba(255,255,255,0.14);
+                        border-radius: 22px;
+                        padding: 18px;
+                    }}
+
+                    .trx-exec-box h4 {{
+                        margin: 0 0 12px 0;
+                        font-size: 16px;
+                    }}
+
+                    .trx-exec-box ul {{
+                        margin: 0;
+                        padding-left: 20px;
+                    }}
+
+                    .trx-exec-box li {{
+                        margin-bottom: 9px;
+                        line-height: 1.42;
+                        font-size: 13.5px;
+                        color: rgba(255,255,255,0.91);
+                    }}
+
+                    .trx-exec-prio-row {{
+                        display: flex;
+                        justify-content: space-between;
+                        gap: 12px;
+                        padding: 12px 0;
+                        border-bottom: 1px solid rgba(255,255,255,0.14);
+                    }}
+
+                    .trx-exec-prio-name {{
+                        font-size: 13.5px;
+                        font-weight: 850;
+                        line-height: 1.25;
+                    }}
+
+                    .trx-exec-prio-sub {{
+                        font-size: 11px;
+                        opacity: 0.70;
+                        margin-top: 4px;
+                        line-height: 1.25;
+                    }}
+
+                    .trx-exec-prio-metric {{
+                        text-align: right;
+                        font-size: 12px;
+                        min-width: 108px;
+                    }}
+
+                    .trx-exec-prio-metric span {{
+                        opacity: 0.72;
+                    }}
+
+                    .trx-exec-note {{
+                        margin-top: 14px;
+                        font-size: 11.5px;
+                        opacity: 0.62;
+                        text-align: right;
+                    }}
+
+                    .trx-status-critical {{
+                        background: rgba(255,65,108,0.24);
+                        color: #ffdce5;
+                    }}
+
+                    .trx-status-watch {{
+                        background: rgba(254,225,64,0.22);
+                        color: #fff4b0;
+                    }}
+
+                    .trx-status-good {{
+                        background: rgba(56,239,125,0.20);
+                        color: #d9ffe9;
+                    }}
+
+                    @media (max-width: 950px) {{
                         .trx-exec-kpi-grid {{
-                            display: grid;
-                            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-                            gap: 14px;
-                            margin-bottom: 18px;
-                        }}
-                        .trx-exec-kpi {{
-                            background: rgba(255,255,255,0.12);
-                            border: 1px solid rgba(255,255,255,0.16);
-                            border-radius: 20px;
-                            padding: 16px;
-                            min-height: 110px;
-                        }}
-                        .trx-exec-kpi-label {{
-                            font-size: 12px;
-                            opacity: 0.75;
-                            text-transform: uppercase;
-                            letter-spacing: 0.6px;
-                        }}
-                        .trx-exec-kpi-value {{
-                            margin-top: 8px;
-                            font-size: 24px;
-                            font-weight: 950;
-                            word-break: break-word;
-                        }}
-                        .trx-exec-kpi-sub {{
-                            margin-top: 6px;
-                            font-size: 11.5px;
-                            opacity: 0.76;
-                            line-height: 1.28;
+                            grid-template-columns: repeat(2, 1fr);
                         }}
                         .trx-exec-main-grid {{
-                            display: grid;
-                            grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
-                            gap: 16px;
+                            grid-template-columns: 1fr;
                         }}
-                        .trx-exec-box {{
-                            background: rgba(255,255,255,0.10);
-                            border: 1px solid rgba(255,255,255,0.14);
-                            border-radius: 22px;
-                            padding: 18px;
-                            min-height: auto;
-                            overflow: visible;
-                        }}
-                        .trx-exec-box h4 {{
-                            margin: 0 0 12px 0;
-                            font-size: 16px;
-                        }}
-                        .trx-exec-box ul {{
-                            margin: 0;
-                            padding-left: 20px;
-                        }}
-                        .trx-exec-box li {{
-                            margin-bottom: 9px;
-                            line-height: 1.42;
-                            font-size: 13.5px;
-                            color: rgba(255,255,255,0.91);
-                        }}
-                        .trx-exec-prio-row {{
-                            display: flex;
-                            justify-content: space-between;
-                            gap: 12px;
-                            padding: 12px 0;
-                            border-bottom: 1px solid rgba(255,255,255,0.14);
-                        }}
-                        .trx-exec-prio-name {{
-                            font-size: 13.5px;
-                            font-weight: 850;
-                            line-height: 1.25;
-                        }}
-                        .trx-exec-prio-sub {{
-                            font-size: 11px;
-                            opacity: 0.70;
-                            margin-top: 4px;
-                            line-height: 1.25;
-                        }}
-                        .trx-exec-prio-metric {{
-                            text-align: right;
-                            font-size: 12px;
-                            min-width: 108px;
-                        }}
-                        .trx-exec-prio-metric span {{
-                            opacity: 0.72;
-                        }}
-                        .trx-exec-note {{
-                            margin-top: 14px;
-                            font-size: 11.5px;
-                            opacity: 0.62;
-                            text-align: right;
-                        }}
-                        @media (max-width: 950px) {{
-                            .trx-exec-main-grid {{
-                                grid-template-columns: 1fr;
-                            }}
-                            .trx-exec-note {{
-                                text-align: left;
-                            }}
-                        }}
-                        </style>
+                    }}
+                    </style>
+                    </head>
 
-                        <div class="trx-exec-wrap">
-                            <div class="trx-exec-header">
-                                <div>
-                                    <div class="trx-exec-title">Executive Summary<br>SLA Jenis Transaksi</div>
-                                    <div class="trx-exec-subtitle">
-                                        Periode {html.escape(str(start_periode))} s.d. {html.escape(str(end_periode))}
-                                        • Acuan: {html.escape(str(sla_utama_label))}
-                                    </div>
-                                </div>
-                                <div class="trx-exec-status {status_class}">{html.escape(status_label)}</div>
-                            </div>
-
-                            <div class="trx-exec-headline">
-                                {html.escape(str(ai_result.get("headline", "-")))}
-                            </div>
-
-                            <div class="trx-exec-kpi-grid">
-                                <div class="trx-exec-kpi">
-                                    <div class="trx-exec-kpi-label">Total Transaksi</div>
-                                    <div class="trx-exec-kpi-value">{trx_fmt_int(total_trx_exec)}</div>
-                                    <div class="trx-exec-kpi-sub">Jumlah transaksi pada filter aktif</div>
-                                </div>
-                                <div class="trx-exec-kpi">
-                                    <div class="trx-exec-kpi-label">Jenis Transaksi</div>
-                                    <div class="trx-exec-kpi-value">{trx_fmt_int(total_jenis_exec)}</div>
-                                    <div class="trx-exec-kpi-sub">Kategori transaksi dianalisis</div>
-                                </div>
-                                <div class="trx-exec-kpi">
-                                    <div class="trx-exec-kpi-label">Rata-rata SLA</div>
-                                    <div class="trx-exec-kpi-value">{trx_fmt_hari(avg_sla_exec)}</div>
-                                    <div class="trx-exec-kpi-sub">Rata-rata SLA utama</div>
-                                </div>
-                                <div class="trx-exec-kpi">
-                                    <div class="trx-exec-kpi-label">Prioritas Tinggi</div>
-                                    <div class="trx-exec-kpi-value">{trx_fmt_int(p1_count)}</div>
-                                    <div class="trx-exec-kpi-sub">{html.escape(status_desc)}</div>
+                    <body>
+                    <div class="trx-exec-wrap">
+                        <div class="trx-exec-header">
+                            <div>
+                                <div class="trx-exec-title">Executive Summary<br>SLA Jenis Transaksi</div>
+                                <div class="trx-exec-subtitle">
+                                    Periode {html.escape(str(start_periode))} s.d. {html.escape(str(end_periode))}
+                                    • Acuan: {html.escape(str(sla_utama_label))}
                                 </div>
                             </div>
+                            <div class="trx-exec-status {status_class}">{html.escape(status_label)}</div>
+                        </div>
 
-                            <div class="trx-exec-main-grid">
-                                <div class="trx-exec-box">
-                                    <h4>📌 Executive Notes</h4>
-                                    <ul>
-                                        <li>Jenis tercepat: <b>{html.escape(trx_safe_text(fastest_exec["JENIS TRANSAKSI"]))}</b> dengan SLA {trx_fmt_hari(fastest_exec["SLA Utama (hari)"])}.</li>
-                                        <li>Jenis terlama: <b>{html.escape(trx_safe_text(slowest_exec["JENIS TRANSAKSI"]))}</b> dengan SLA {trx_fmt_hari(slowest_exec["SLA Utama (hari)"])}.</li>
-                                        <li>Volume terbesar: <b>{html.escape(trx_safe_text(biggest_exec["JENIS TRANSAKSI"]))}</b> sebanyak {trx_fmt_int(biggest_exec["Jumlah Transaksi"])} transaksi.</li>
-                                        <li>Bottleneck proses: <b>{html.escape(str(bottleneck_proses))}</b>{bottleneck_sentence}</li>
-                                    </ul>
+                        <div class="trx-exec-headline">
+                            {html.escape(str(ai_result.get("headline", "-")))}
+                        </div>
 
-                                    <h4 style="margin-top:18px;">✅ Recommended Actions</h4>
-                                    <ul>{trx_html_list(ai_result.get("recommendations", []), max_items=3)}</ul>
-                                </div>
-
-                                <div class="trx-exec-box">
-                                    <h4>🔥 Top Priority Transactions</h4>
-                                    {top_priority_html}
-                                </div>
+                        <div class="trx-exec-kpi-grid">
+                            <div class="trx-exec-kpi">
+                                <div class="trx-exec-kpi-label">Total Transaksi</div>
+                                <div class="trx-exec-kpi-value">{trx_fmt_int(total_trx_exec)}</div>
+                                <div class="trx-exec-kpi-sub">Jumlah transaksi pada filter aktif</div>
                             </div>
-
-                            <div class="trx-exec-note">
-                                Executive summary otomatis mengikuti filter Jenis Transaksi, Top N, dan sorting yang sedang aktif.
+                            <div class="trx-exec-kpi">
+                                <div class="trx-exec-kpi-label">Jenis Transaksi</div>
+                                <div class="trx-exec-kpi-value">{trx_fmt_int(total_jenis_exec)}</div>
+                                <div class="trx-exec-kpi-sub">Kategori transaksi dianalisis</div>
+                            </div>
+                            <div class="trx-exec-kpi">
+                                <div class="trx-exec-kpi-label">Rata-rata SLA</div>
+                                <div class="trx-exec-kpi-value">{trx_fmt_hari(avg_sla_exec)}</div>
+                                <div class="trx-exec-kpi-sub">Rata-rata SLA utama</div>
+                            </div>
+                            <div class="trx-exec-kpi">
+                                <div class="trx-exec-kpi-label">Prioritas Tinggi</div>
+                                <div class="trx-exec-kpi-value">{trx_fmt_int(p1_count)}</div>
+                                <div class="trx-exec-kpi-sub">{html.escape(status_desc)}</div>
                             </div>
                         </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+
+                        <div class="trx-exec-main-grid">
+                            <div class="trx-exec-box">
+                                <h4>📌 Executive Notes</h4>
+                                <ul>
+                                    <li>Jenis tercepat: <b>{exec_fastest_name}</b> dengan SLA {trx_fmt_hari(fastest_exec["SLA Utama (hari)"])}.</li>
+                                    <li>Jenis terlama: <b>{exec_slowest_name}</b> dengan SLA {trx_fmt_hari(slowest_exec["SLA Utama (hari)"])}.</li>
+                                    <li>Volume terbesar: <b>{exec_biggest_name}</b> sebanyak {trx_fmt_int(biggest_exec["Jumlah Transaksi"])} transaksi.</li>
+                                    <li>Bottleneck proses: <b>{html.escape(str(bottleneck_proses))}</b>{bottleneck_sentence}</li>
+                                </ul>
+
+                                <h4 style="margin-top:18px;">✅ Recommended Actions</h4>
+                                <ul>{trx_html_list(ai_result.get("recommendations", []), max_items=3)}</ul>
+                            </div>
+
+                            <div class="trx-exec-box">
+                                <h4>🔥 Top Priority Transactions</h4>
+                                {top_priority_html}
+                            </div>
+                        </div>
+
+                        <div class="trx-exec-note">
+                            Executive summary otomatis mengikuti filter Jenis Transaksi, Top N, dan sorting yang sedang aktif.
+                        </div>
+                    </div>
+                    </body>
+                    </html>
+                    """
+
+                    components.html(exec_html, height=exec_height, scrolling=False)
 
                     col_down1, col_down2, col_down3 = st.columns([1, 1, 1.2])
 
@@ -2621,7 +2702,7 @@ with tab_transaksi:
         st.info(
             "Kolom 'JENIS TRANSAKSI' tidak ditemukan atau tidak ada kolom SLA yang tersedia."
         )
-        
+
 with tab_vendor:
     import plotly.express as px
     import streamlit.components.v1 as components
