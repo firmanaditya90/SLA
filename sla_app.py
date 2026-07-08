@@ -992,7 +992,7 @@ with tab_transaksi:
             radius=radius,
             fill=fill,
             outline=outline,
-            width=width
+            width=width,
         )
 
     def trx_gradient_bg(width, height):
@@ -1027,10 +1027,19 @@ with tab_transaksi:
         except Exception:
             return Image.LANCZOS
 
+    def trx_base_dir():
+        try:
+            return os.path.dirname(os.path.abspath(__file__))
+        except Exception:
+            return os.getcwd()
+
     def trx_load_logo_image():
+        base_dir = trx_base_dir()
+
         logo_candidates = [
-            "asdp_logo.png",
+            os.path.join(base_dir, "asdp_logo.png"),
             os.path.join(os.getcwd(), "asdp_logo.png"),
+            "asdp_logo.png",
         ]
 
         for path in logo_candidates:
@@ -1043,9 +1052,12 @@ with tab_transaksi:
         return None
 
     def trx_logo_data_uri():
+        base_dir = trx_base_dir()
+
         logo_candidates = [
-            "asdp_logo.png",
+            os.path.join(base_dir, "asdp_logo.png"),
             os.path.join(os.getcwd(), "asdp_logo.png"),
+            "asdp_logo.png",
         ]
 
         for path in logo_candidates:
@@ -1061,9 +1073,13 @@ with tab_transaksi:
 
     # =====================================================
     # AI INSIGHT GENERATOR
+    # Catatan:
+    # - AI memakai data setelah filter jenis transaksi.
+    # - AI TIDAK memakai Top N/sorting agar insight tidak bias.
+    # - Bottleneck memakai proses riil, bukan TOTAL WAKTU.
     # =====================================================
-    def generate_ai_insights_trx(trx_view, proses_cols):
-        if trx_view is None or trx_view.empty:
+    def generate_ai_insights_trx(trx_ai_base, proses_bottleneck_cols):
+        if trx_ai_base is None or trx_ai_base.empty:
             return {
                 "headline": "Belum ada data yang cukup untuk menghasilkan insight.",
                 "summary": [],
@@ -1077,7 +1093,7 @@ with tab_transaksi:
                 "bottleneck_value": np.nan,
             }
 
-        df_ai = trx_view.copy()
+        df_ai = trx_ai_base.copy()
 
         avg_sla = df_ai["SLA Utama (hari)"].mean()
         max_sla = df_ai["SLA Utama (hari)"].max()
@@ -1088,7 +1104,7 @@ with tab_transaksi:
 
         proses_hari_cols = [
             f"{p} (hari)"
-            for p in proses_cols
+            for p in proses_bottleneck_cols
             if f"{p} (hari)" in df_ai.columns
         ]
 
@@ -1262,7 +1278,7 @@ with tab_transaksi:
         }
 
     # =====================================================
-    # CHART BUILDERS UNTUK DISPLAY DAN PDF
+    # CHART BUILDERS
     # =====================================================
     def trx_build_rank_fig(trx_view, sla_utama_label):
         fig = px.bar(
@@ -1276,22 +1292,30 @@ with tab_transaksi:
             hover_data={"Jumlah Transaksi": True, "SLA Utama (hari)": ":.2f"},
             title=f"Ranking Rata-rata SLA — Acuan: {sla_utama_label}",
         )
-        fig.update_traces(texttemplate="%{text:.2f} hari", textposition="outside", marker_line_width=0)
+        fig.update_traces(
+            texttemplate="%{text:.2f} hari",
+            textposition="outside",
+            marker_line_width=0,
+        )
         fig.update_layout(
             height=max(430, 42 * len(trx_view)),
             xaxis_title="Rata-rata SLA (hari)",
             yaxis_title="Jenis Transaksi",
             coloraxis_showscale=False,
-            margin=dict(l=20, r=70, t=70, b=30),
+            margin=dict(l=20, r=80, t=70, b=30),
             title_font=dict(size=20),
         )
         return fig
 
-    def trx_build_heat_fig(trx_view, proses_cols):
-        heatmap_data = trx_view.set_index("JENIS TRANSAKSI")[
-            [f"{c} (hari)" for c in proses_cols]
+    def trx_build_heat_fig(trx_view, chart_proses_cols):
+        value_cols = [
+            f"{c} (hari)"
+            for c in chart_proses_cols
+            if f"{c} (hari)" in trx_view.columns
         ]
-        heatmap_data.columns = proses_cols
+
+        heatmap_data = trx_view.set_index("JENIS TRANSAKSI")[value_cols]
+        heatmap_data.columns = [c.replace(" (hari)", "") for c in value_cols]
 
         fig = px.imshow(
             heatmap_data,
@@ -1402,6 +1426,7 @@ with tab_transaksi:
 
     def trx_build_process_fig(data_proses, proses):
         col_hari = f"{proses} (hari)"
+
         fig = px.bar(
             data_proses,
             x=col_hari,
@@ -1412,13 +1437,17 @@ with tab_transaksi:
             color_continuous_scale="Blues",
             title=f"SLA {proses}",
         )
-        fig.update_traces(texttemplate="%{text:.2f}", textposition="outside", marker_line_width=0)
+        fig.update_traces(
+            texttemplate="%{text:.2f}",
+            textposition="outside",
+            marker_line_width=0,
+        )
         fig.update_layout(
             height=max(360, 32 * len(data_proses)),
             xaxis_title="Hari",
             yaxis_title="",
             coloraxis_showscale=False,
-            margin=dict(l=10, r=45, t=55, b=25),
+            margin=dict(l=10, r=55, t=55, b=25),
             title_font=dict(size=16),
         )
         return fig
@@ -1453,7 +1482,7 @@ with tab_transaksi:
     # EXECUTIVE IMAGE GENERATOR
     # =====================================================
     def make_trx_exec_summary_image(
-        trx_view,
+        trx_exec_base,
         ai_result,
         sla_utama_label,
         start_periode,
@@ -1482,7 +1511,7 @@ with tab_transaksi:
         font_small = trx_get_font(15, False)
         font_badge = trx_get_font(21, True)
 
-        exec_df = trx_view.copy()
+        exec_df = trx_exec_base.copy()
 
         total_jenis_exec = exec_df["JENIS TRANSAKSI"].nunique()
         total_trx_exec = int(exec_df["Jumlah Transaksi"].sum())
@@ -1494,7 +1523,6 @@ with tab_transaksi:
 
         priority_df_exec = ai_result.get("priority_df", pd.DataFrame()).copy()
         p1_count = ai_result.get("p1_count", 0)
-
         status_label = ai_result.get("status_label", "CONTROLLED")
 
         if status_label == "CRITICAL":
@@ -1521,7 +1549,13 @@ with tab_transaksi:
             img.alpha_composite(logo, (70, 42))
             title_x = 310
 
-        draw.text((title_x, 52), "EXECUTIVE SUMMARY", font=font_title, fill=(255, 255, 255, 255))
+        draw.text(
+            (title_x, 52),
+            "EXECUTIVE SUMMARY",
+            font=font_title,
+            fill=(255, 255, 255, 255),
+        )
+
         draw.text(
             (title_x + 3, 122),
             f"SLA Jenis Transaksi | Periode {start_periode} s.d. {end_periode} | Acuan: {sla_utama_label}",
@@ -1532,6 +1566,7 @@ with tab_transaksi:
         badge_box = (1495, 58, 1835, 118)
         trx_round_rect(draw, badge_box, 30, status_fill, status_outline, 2)
         bbox = draw.textbbox((0, 0), status_label, font=font_badge)
+
         draw.text(
             (
                 badge_box[0] + (badge_box[2] - badge_box[0] - (bbox[2] - bbox[0])) / 2,
@@ -1543,7 +1578,15 @@ with tab_transaksi:
         )
 
         headline_box = (70, 170, 1850, 300)
-        trx_round_rect(draw, headline_box, 30, (10, 25, 55, 235), (0, 234, 255, 125), 3)
+        trx_round_rect(
+            draw,
+            headline_box,
+            30,
+            (10, 25, 55, 235),
+            (0, 234, 255, 125),
+            3,
+        )
+
         trx_draw_wrapped_text(
             draw,
             headline,
@@ -1555,7 +1598,7 @@ with tab_transaksi:
         )
 
         kpis = [
-            ("TOTAL TRANSAKSI", trx_fmt_int(total_trx_exec), "Filter aktif"),
+            ("TOTAL TRANSAKSI", trx_fmt_int(total_trx_exec), "Filter jenis transaksi aktif"),
             ("JENIS TRANSAKSI", trx_fmt_int(total_jenis_exec), "Kategori dianalisis"),
             ("RATA-RATA SLA", trx_fmt_hari(avg_sla_exec), "SLA utama"),
             ("PRIORITAS TINGGI", trx_fmt_int(p1_count), "SLA tinggi & volume besar"),
@@ -1569,14 +1612,51 @@ with tab_transaksi:
         for i, (label, value, sub) in enumerate(kpis):
             x = 70 + i * (card_w + card_gap)
             box = (x, card_y, x + card_w, card_y + card_h)
-            trx_round_rect(draw, box, 26, (10, 25, 55, 230), (255, 255, 255, 95), 2)
-            draw.text((x + 28, card_y + 24), label, font=font_kpi_label, fill=(130, 230, 255, 255))
-            draw.text((x + 28, card_y + 58), value, font=font_kpi_value, fill=(255, 255, 255, 255))
-            draw.text((x + 28, card_y + 108), sub, font=font_small, fill=(205, 225, 240, 220))
+
+            trx_round_rect(
+                draw,
+                box,
+                26,
+                (10, 25, 55, 230),
+                (255, 255, 255, 95),
+                2,
+            )
+
+            draw.text(
+                (x + 28, card_y + 24),
+                label,
+                font=font_kpi_label,
+                fill=(130, 230, 255, 255),
+            )
+            draw.text(
+                (x + 28, card_y + 58),
+                value,
+                font=font_kpi_value,
+                fill=(255, 255, 255, 255),
+            )
+            draw.text(
+                (x + 28, card_y + 108),
+                sub,
+                font=font_small,
+                fill=(205, 225, 240, 220),
+            )
 
         left_box = (70, 505, 1050, 955)
-        trx_round_rect(draw, left_box, 30, (10, 25, 55, 230), (255, 255, 255, 85), 2)
-        draw.text((105, 535), "Executive Notes", font=font_h, fill=(255, 255, 255, 255))
+        trx_round_rect(
+            draw,
+            left_box,
+            30,
+            (10, 25, 55, 230),
+            (255, 255, 255, 85),
+            2,
+        )
+
+        draw.text(
+            (105, 535),
+            "Executive Notes",
+            font=font_h,
+            fill=(255, 255, 255, 255),
+        )
 
         notes = [
             f"Jenis tercepat: {trx_safe_text(fastest_exec['JENIS TRANSAKSI'], 54)} ({trx_fmt_hari(fastest_exec['SLA Utama (hari)'])}).",
@@ -1587,8 +1667,14 @@ with tab_transaksi:
         ]
 
         y = 585
+
         for note in notes:
-            draw.text((112, y), "•", font=font_body_bold, fill=(0, 234, 255, 255))
+            draw.text(
+                (112, y),
+                "•",
+                font=font_body_bold,
+                fill=(0, 234, 255, 255),
+            )
             y = trx_draw_wrapped_text(
                 draw,
                 note,
@@ -1600,14 +1686,25 @@ with tab_transaksi:
             )
             y += 8
 
-        draw.text((105, 760), "Recommended Actions", font=font_h, fill=(255, 255, 255, 255))
+        draw.text(
+            (105, 760),
+            "Recommended Actions",
+            font=font_h,
+            fill=(255, 255, 255, 255),
+        )
+
         y = 810
 
         if not reco_items:
             reco_items = ["Lakukan monitoring berkala terhadap jenis transaksi dengan SLA tertinggi."]
 
         for reco in reco_items:
-            draw.text((112, y), "✓", font=font_body_bold, fill=(56, 239, 125, 255))
+            draw.text(
+                (112, y),
+                "✓",
+                font=font_body_bold,
+                fill=(56, 239, 125, 255),
+            )
             y = trx_draw_wrapped_text(
                 draw,
                 reco,
@@ -1620,8 +1717,21 @@ with tab_transaksi:
             y += 8
 
         right_box = (1090, 505, 1850, 955)
-        trx_round_rect(draw, right_box, 30, (10, 25, 55, 230), (255, 255, 255, 85), 2)
-        draw.text((1125, 535), "Top Priority Transactions", font=font_h, fill=(255, 255, 255, 255))
+        trx_round_rect(
+            draw,
+            right_box,
+            30,
+            (10, 25, 55, 230),
+            (255, 255, 255, 85),
+            2,
+        )
+
+        draw.text(
+            (1125, 535),
+            "Top Priority Transactions",
+            font=font_h,
+            fill=(255, 255, 255, 255),
+        )
 
         if priority_df_exec.empty:
             priority_df_exec = exec_df[
@@ -1635,6 +1745,7 @@ with tab_transaksi:
         max_sla = max_sla if pd.notna(max_sla) and max_sla > 0 else 1
 
         y = 595
+
         for _, row in top_priority.iterrows():
             name = trx_safe_text(row["JENIS TRANSAKSI"], 40)
             sla_val = float(row["SLA Utama (hari)"])
@@ -1642,22 +1753,67 @@ with tab_transaksi:
             prio = str(row.get("Prioritas AI", ""))
 
             row_box = (1125, y, 1815, y + 62)
-            trx_round_rect(draw, row_box, 18, (18, 42, 88, 245), (0, 234, 255, 90), 1)
+            trx_round_rect(
+                draw,
+                row_box,
+                18,
+                (18, 42, 88, 245),
+                (0, 234, 255, 90),
+                1,
+            )
 
-            draw.text((1148, y + 9), name, font=trx_get_font(19, True), fill=(255, 255, 255, 250))
-            draw.text((1148, y + 35), prio[:48], font=trx_get_font(14, False), fill=(200, 225, 240, 220))
+            draw.text(
+                (1148, y + 9),
+                name,
+                font=trx_get_font(19, True),
+                fill=(255, 255, 255, 250),
+            )
+
+            draw.text(
+                (1148, y + 35),
+                prio[:48],
+                font=trx_get_font(14, False),
+                fill=(200, 225, 240, 220),
+            )
 
             bar_x = 1515
             bar_y = y + 40
             bar_w = 170
             bar_h = 9
-            trx_round_rect(draw, (bar_x, bar_y, bar_x + bar_w, bar_y + bar_h), 5, (255, 255, 255, 55), None, 1)
+
+            trx_round_rect(
+                draw,
+                (bar_x, bar_y, bar_x + bar_w, bar_y + bar_h),
+                5,
+                (255, 255, 255, 55),
+                None,
+                1,
+            )
 
             fill_w = int(bar_w * min(sla_val / max_sla, 1))
-            trx_round_rect(draw, (bar_x, bar_y, bar_x + fill_w, bar_y + bar_h), 5, (0, 234, 255, 240), None, 1)
 
-            draw.text((1705, y + 9), trx_fmt_hari(sla_val), font=trx_get_font(16, True), fill=(255, 255, 255, 245))
-            draw.text((1705, y + 34), f"{trx_fmt_int(trx_val)} trx", font=trx_get_font(14, False), fill=(200, 225, 240, 220))
+            trx_round_rect(
+                draw,
+                (bar_x, bar_y, bar_x + fill_w, bar_y + bar_h),
+                5,
+                (0, 234, 255, 240),
+                None,
+                1,
+            )
+
+            draw.text(
+                (1705, y + 9),
+                trx_fmt_hari(sla_val),
+                font=trx_get_font(16, True),
+                fill=(255, 255, 255, 245),
+            )
+
+            draw.text(
+                (1705, y + 34),
+                f"{trx_fmt_int(trx_val)} trx",
+                font=trx_get_font(14, False),
+                fill=(200, 225, 240, 220),
+            )
 
             y += 72
 
@@ -1667,6 +1823,7 @@ with tab_transaksi:
             font=font_small,
             fill=(210, 230, 245, 190),
         )
+
         draw.text(
             (1415, 1005),
             "SLA Payment Analyzer | Executive View",
@@ -1688,8 +1845,23 @@ with tab_transaksi:
         W, H = 1920, 1080
         page = trx_gradient_bg(W, H)
         draw = ImageDraw.Draw(page)
-        trx_round_rect(draw, (90, 100, 1830, 980), 35, (10, 25, 55, 230), (0, 234, 255, 100), 2)
-        draw.text((140, 150), title, font=trx_get_font(44, True), fill=(255, 255, 255, 255))
+
+        trx_round_rect(
+            draw,
+            (90, 100, 1830, 980),
+            35,
+            (10, 25, 55, 230),
+            (0, 234, 255, 100),
+            2,
+        )
+
+        draw.text(
+            (140, 150),
+            title,
+            font=trx_get_font(44, True),
+            fill=(255, 255, 255, 255),
+        )
+
         trx_draw_wrapped_text(
             draw,
             message,
@@ -1699,6 +1871,7 @@ with tab_transaksi:
             1600,
             10,
         )
+
         return page.convert("RGB")
 
     def trx_fig_to_pdf_page(fig, title):
@@ -1707,17 +1880,35 @@ with tab_transaksi:
         draw = ImageDraw.Draw(page)
 
         try:
-            png_bytes = fig.to_image(format="png", width=1600, height=820, scale=2)
+            png_bytes = fig.to_image(
+                format="png",
+                width=1600,
+                height=820,
+                scale=2,
+            )
             chart_img = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
         except Exception as e:
             return trx_make_placeholder_page(
                 title,
-                "Chart tidak dapat dirender ke PDF. Tambahkan dependency 'kaleido' pada requirements.txt agar seluruh diagram Plotly dapat masuk ke file PDF.\n\nDetail error: " + str(e)
+                "Chart tidak dapat dirender ke PDF. Pastikan dependency 'kaleido' sudah masuk ke requirements.txt.\n\nDetail error: "
+                + str(e),
             )
 
-        draw.text((70, 48), title, font=trx_get_font(42, True), fill=(255, 255, 255, 255))
+        draw.text(
+            (70, 48),
+            title,
+            font=trx_get_font(42, True),
+            fill=(255, 255, 255, 255),
+        )
 
-        trx_round_rect(draw, (70, 115, 1850, 1015), 28, (245, 250, 255, 245), (0, 234, 255, 95), 2)
+        trx_round_rect(
+            draw,
+            (70, 115, 1850, 1015),
+            28,
+            (245, 250, 255, 245),
+            (0, 234, 255, 95),
+            2,
+        )
 
         chart_img.thumbnail((1710, 840), trx_get_resample_filter())
         x = 70 + (1780 - chart_img.width) // 2
@@ -1735,6 +1926,7 @@ with tab_transaksi:
 
         pages = []
         total_rows = len(df_show)
+
         chunks = [
             df_show.iloc[i:i + rows_per_page]
             for i in range(0, total_rows, rows_per_page)
@@ -1747,23 +1939,41 @@ with tab_transaksi:
             page = trx_gradient_bg(W, H)
             draw = ImageDraw.Draw(page)
 
-            draw.text((70, 45), title, font=trx_get_font(42, True), fill=(255, 255, 255, 255))
+            draw.text(
+                (70, 45),
+                title,
+                font=trx_get_font(42, True),
+                fill=(255, 255, 255, 255),
+            )
 
             if subtitle:
-                draw.text((72, 98), subtitle, font=trx_get_font(20, False), fill=(210, 235, 255, 220))
+                draw.text(
+                    (72, 98),
+                    subtitle,
+                    font=trx_get_font(20, False),
+                    fill=(210, 235, 255, 220),
+                )
 
             draw.text(
                 (1560, 98),
                 f"Page {page_idx}/{len(chunks)}",
                 font=trx_get_font(20, True),
-                fill=(210, 235, 255, 220)
+                fill=(210, 235, 255, 220),
             )
 
             box = (70, 140, 1850, 1010)
-            trx_round_rect(draw, box, 28, (10, 25, 55, 230), (0, 234, 255, 90), 2)
+            trx_round_rect(
+                draw,
+                box,
+                28,
+                (10, 25, 55, 230),
+                (0, 234, 255, 90),
+                2,
+            )
 
             cols = list(chunk.columns)
             n_cols = len(cols)
+
             table_x = 105
             table_y = 180
             table_w = 1710
@@ -1774,15 +1984,25 @@ with tab_transaksi:
 
             for j, col in enumerate(cols):
                 x = table_x + j * col_w
+
+                if x >= table_x + table_w:
+                    continue
+
                 draw.rectangle(
-                    (x, table_y, min(x + col_w, table_x + table_w), table_y + header_h),
-                    fill=(0, 160, 190, 210)
+                    (
+                        x,
+                        table_y,
+                        min(x + col_w, table_x + table_w),
+                        table_y + header_h,
+                    ),
+                    fill=(0, 160, 190, 210),
                 )
+
                 draw.text(
                     (x + 8, table_y + 9),
                     trx_safe_text(col, 18),
                     font=trx_get_font(15, True),
-                    fill=(255, 255, 255, 255)
+                    fill=(255, 255, 255, 255),
                 )
 
             y = table_y + header_h
@@ -1793,12 +2013,17 @@ with tab_transaksi:
 
                 for j, col in enumerate(cols):
                     x = table_x + j * col_w
+
+                    if x >= table_x + table_w:
+                        continue
+
                     val = trx_safe_text(row[col], 24)
+
                     draw.text(
                         (x + 8, y + 8),
                         val,
                         font=trx_get_font(14, False),
-                        fill=(235, 245, 255, 235)
+                        fill=(235, 245, 255, 235),
                     )
 
                 y += row_h
@@ -1808,7 +2033,7 @@ with tab_transaksi:
                     (105, 970),
                     f"Catatan: tabel dibatasi sampai {rows_per_page * max_pages} baris pertama agar ukuran PDF tetap wajar.",
                     font=trx_get_font(16, False),
-                    fill=(255, 220, 150, 230)
+                    fill=(255, 220, 150, 230),
                 )
 
             pages.append(page.convert("RGB"))
@@ -1819,7 +2044,7 @@ with tab_transaksi:
         summary_img,
         trx_view,
         trx_long_view,
-        proses_cols,
+        chart_proses_cols,
         sla_utama_label,
         priority_df,
         transaksi_display,
@@ -1831,28 +2056,38 @@ with tab_transaksi:
 
         chart_pages = [
             ("Ranking SLA per Jenis Transaksi", trx_build_rank_fig(trx_view, sla_utama_label)),
-            ("Heatmap SLA per Proses", trx_build_heat_fig(trx_view, proses_cols)),
+            ("Heatmap SLA per Proses", trx_build_heat_fig(trx_view, chart_proses_cols)),
             ("Perbandingan SLA Masing-masing Proses", trx_build_group_fig(trx_long_view)),
             ("Bubble Matrix Volume vs SLA", trx_build_bubble_fig(trx_view)),
             ("Komposisi Jumlah Transaksi", trx_build_donut_fig(trx_view)),
-            (f"Drilldown SLA — {selected_detail}", trx_build_detail_fig(detail_chart, selected_detail)),
         ]
+
+        if detail_chart is not None and not detail_chart.empty:
+            chart_pages.append(
+                (
+                    f"Drilldown SLA — {selected_detail}",
+                    trx_build_detail_fig(detail_chart, selected_detail),
+                )
+            )
 
         for title, fig in chart_pages:
             pages.append(trx_fig_to_pdf_page(fig, title))
 
-        for proses in proses_cols:
+        for proses in chart_proses_cols:
             col_hari = f"{proses} (hari)"
+
             if col_hari in trx_view.columns:
                 data_proses = trx_view.sort_values(col_hari, ascending=True)
+
                 pages.append(
                     trx_fig_to_pdf_page(
                         trx_build_process_fig(data_proses, proses),
-                        f"Grafik SLA Proses {proses}"
+                        f"Grafik SLA Proses {proses}",
                     )
                 )
 
         priority_table = priority_df.copy()
+
         if not priority_table.empty and "SLA Utama (hari)" in priority_table.columns:
             priority_table["SLA Utama (hari)"] = priority_table["SLA Utama (hari)"].round(2)
 
@@ -1870,7 +2105,7 @@ with tab_transaksi:
             trx_table_pages(
                 transaksi_display,
                 "Tabel Rata-rata SLA per Jenis Transaksi",
-                "Ringkasan rata-rata SLA setiap proses per jenis transaksi.",
+                "Ringkasan rata-rata SLA setiap proses per jenis transaksi sesuai tampilan aktif.",
                 rows_per_page=24,
                 max_pages=8,
             )
@@ -1878,6 +2113,7 @@ with tab_transaksi:
 
         if detail_df is not None and not detail_df.empty:
             detail_pdf_df = detail_df.head(120).copy()
+
             pages.extend(
                 trx_table_pages(
                     detail_pdf_df,
@@ -1889,13 +2125,15 @@ with tab_transaksi:
             )
 
         out_pdf = io.BytesIO()
+
         pages[0].save(
             out_pdf,
             format="PDF",
             save_all=True,
             append_images=pages[1:],
-            resolution=150.0
+            resolution=150.0,
         )
+
         return out_pdf.getvalue()
 
     # =====================================================
@@ -1904,6 +2142,7 @@ with tab_transaksi:
     if "JENIS TRANSAKSI" in df_filtered.columns and available_sla_cols:
 
         df_trx = df_filtered.copy()
+
         df_trx["JENIS TRANSAKSI"] = (
             df_trx["JENIS TRANSAKSI"]
             .fillna("TIDAK TERDETEKSI")
@@ -1921,10 +2160,22 @@ with tab_transaksi:
             if c in available_sla_cols
         ]
 
+        proses_bottleneck_cols = [
+            c for c in [
+                "FUNGSIONAL",
+                "VENDOR",
+                "KEUANGAN",
+                "PERBENDAHARAAN",
+            ]
+            if c in proses_cols
+        ]
+
+        chart_proses_cols = proses_cols.copy()
+
         if not proses_cols:
             st.info("Tidak ada kolom SLA yang dapat dianalisis.")
-        else:
 
+        else:
             trx_mean_sec = (
                 df_trx
                 .groupby("JENIS TRANSAKSI")[proses_cols]
@@ -1961,8 +2212,8 @@ with tab_transaksi:
 
             if trx_summary.empty:
                 st.warning("Tidak ada data SLA valid untuk tab jenis transaksi.")
-            else:
 
+            else:
                 trx_summary = trx_summary.sort_values("SLA Utama (hari)", ascending=True)
 
                 # =====================================================
@@ -2056,6 +2307,7 @@ with tab_transaksi:
                 }}
                 </style>
                 </head>
+
                 <body>
                 <div class="trx-kpi-grid">
                     <div class="trx-kpi-card trx-blue">
@@ -2064,18 +2316,21 @@ with tab_transaksi:
                         <div class="trx-kpi-value">{trx_fmt_int(total_jenis)}</div>
                         <div class="trx-kpi-sub">Kategori transaksi terdeteksi</div>
                     </div>
+
                     <div class="trx-kpi-card trx-green">
                         <div class="trx-kpi-icon">📄</div>
                         <div class="trx-kpi-label">Total Transaksi</div>
                         <div class="trx-kpi-value">{trx_fmt_int(total_transaksi_trx)}</div>
                         <div class="trx-kpi-sub">Dalam periode terpilih</div>
                     </div>
+
                     <div class="trx-kpi-card trx-purple">
                         <div class="trx-kpi-icon">⚡</div>
                         <div class="trx-kpi-label">Jenis Tercepat</div>
                         <div class="trx-kpi-value" style="font-size:18px;">{fastest_name}</div>
                         <div class="trx-kpi-sub">{trx_fmt_hari(fastest_row["SLA Utama (hari)"])} berdasarkan {sla_utama_label}</div>
                     </div>
+
                     <div class="trx-kpi-card trx-red">
                         <div class="trx-kpi-icon">🚨</div>
                         <div class="trx-kpi-label">Jenis Terlama</div>
@@ -2098,6 +2353,7 @@ with tab_transaksi:
 
                 with c_filter1:
                     jenis_options = trx_summary["JENIS TRANSAKSI"].tolist()
+
                     selected_jenis = st.multiselect(
                         "Pilih Jenis Transaksi",
                         options=["ALL"] + jenis_options,
@@ -2105,8 +2361,17 @@ with tab_transaksi:
                         key="trx_filter_jenis_wow",
                     )
 
+                # Base data setelah filter jenis transaksi.
+                # Ini dipakai untuk AI dan Executive Summary agar tidak bias Top N/sorting.
+                if "ALL" in selected_jenis or not selected_jenis:
+                    trx_ai_base = trx_summary.copy()
+                else:
+                    trx_ai_base = trx_summary[
+                        trx_summary["JENIS TRANSAKSI"].isin(selected_jenis)
+                    ].copy()
+
                 with c_filter2:
-                    max_top_n = max(1, min(30, len(trx_summary)))
+                    max_top_n = max(1, min(30, len(trx_ai_base)))
                     default_top_n = min(10, max_top_n)
 
                     top_n = st.slider(
@@ -2129,896 +2394,981 @@ with tab_transaksi:
                         key="trx_sort_mode_wow",
                     )
 
-                if "ALL" in selected_jenis or not selected_jenis:
-                    trx_view = trx_summary.copy()
-                else:
-                    trx_view = trx_summary[
-                        trx_summary["JENIS TRANSAKSI"].isin(selected_jenis)
-                    ].copy()
-
-                if sort_mode == "SLA tercepat":
-                    trx_view = trx_view.sort_values("SLA Utama (hari)", ascending=True)
-                elif sort_mode == "SLA terlama":
-                    trx_view = trx_view.sort_values("SLA Utama (hari)", ascending=False)
-                else:
-                    trx_view = trx_view.sort_values("Jumlah Transaksi", ascending=False)
-
-                trx_view = trx_view.head(top_n)
-
-                if trx_view.empty:
+                if trx_ai_base.empty:
                     st.warning("Tidak ada data untuk kombinasi filter yang dipilih.")
+
                 else:
+                    trx_view = trx_ai_base.copy()
 
-                    trx_long_view = trx_view.melt(
-                        id_vars=["JENIS TRANSAKSI", "Jumlah Transaksi"],
-                        value_vars=[f"{c} (hari)" for c in proses_cols],
-                        var_name="Proses",
-                        value_name="Rata-rata SLA (hari)",
-                    )
-
-                    trx_long_view["Proses"] = trx_long_view["Proses"].str.replace(
-                        " (hari)",
-                        "",
-                        regex=False,
-                    )
-
-                    # =====================================================
-                    # AI EXECUTIVE INSIGHT
-                    # =====================================================
-                    st.markdown("### 🤖 AI Executive Insight")
-
-                    ai_result = generate_ai_insights_trx(trx_view, proses_cols)
-
-                    summary_html = trx_html_list(ai_result.get("summary", []))
-                    risk_html = trx_html_list(ai_result.get("risks", []))
-                    reco_html = trx_html_list(ai_result.get("recommendations", []))
-
-                    status_label = ai_result.get("status_label", "CONTROLLED")
-                    status_class = ai_result.get("status_class", "trx-status-good")
-
-                    ai_height = 430
-                    ai_height += 28 * max(
-                        len(ai_result.get("summary", [])),
-                        len(ai_result.get("risks", [])),
-                        len(ai_result.get("recommendations", []))
-                    )
-
-                    ai_html = f"""
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                    <style>
-                    body {{
-                        margin: 0;
-                        padding: 0;
-                        background: transparent;
-                        font-family: Segoe UI, sans-serif;
-                    }}
-
-                    .trx-ai-wrap {{
-                        width: 100%;
-                        box-sizing: border-box;
-                        background:
-                            radial-gradient(circle at top left, rgba(0,234,255,0.30), transparent 28%),
-                            radial-gradient(circle at bottom right, rgba(225,0,255,0.25), transparent 30%),
-                            linear-gradient(135deg, rgba(13,19,45,0.98), rgba(20,28,60,0.94));
-                        border: 1px solid rgba(255,255,255,0.18);
-                        border-radius: 26px;
-                        padding: 24px;
-                        box-shadow: 0 18px 48px rgba(0,0,0,0.35);
-                        color: white;
-                        overflow: hidden;
-                    }}
-
-                    .trx-ai-header {{
-                        display: flex;
-                        flex-wrap: wrap;
-                        justify-content: space-between;
-                        align-items: center;
-                        gap: 12px;
-                        margin-bottom: 16px;
-                    }}
-
-                    .trx-ai-title {{
-                        font-size: 30px;
-                        font-weight: 950;
-                        letter-spacing: 0.3px;
-                        background: linear-gradient(90deg, #00eaff, #38ef7d, #fee140);
-                        -webkit-background-clip: text;
-                        -webkit-text-fill-color: transparent;
-                    }}
-
-                    .trx-ai-badge-row {{
-                        display: flex;
-                        flex-wrap: wrap;
-                        gap: 10px;
-                        align-items: center;
-                    }}
-
-                    .trx-ai-badge {{
-                        background: rgba(255,255,255,0.13);
-                        border: 1px solid rgba(255,255,255,0.22);
-                        padding: 8px 12px;
-                        border-radius: 999px;
-                        font-size: 12px;
-                        font-weight: 800;
-                        color: #dffcff;
-                    }}
-
-                    .trx-ai-status {{
-                        padding: 8px 14px;
-                        border-radius: 999px;
-                        font-size: 12px;
-                        font-weight: 950;
-                        letter-spacing: 0.6px;
-                        border: 1px solid rgba(255,255,255,0.20);
-                    }}
-
-                    .trx-status-critical {{
-                        background: rgba(255,65,108,0.24);
-                        color: #ffdce5;
-                    }}
-
-                    .trx-status-watch {{
-                        background: rgba(254,225,64,0.22);
-                        color: #fff4b0;
-                    }}
-
-                    .trx-status-good {{
-                        background: rgba(56,239,125,0.20);
-                        color: #d9ffe9;
-                    }}
-
-                    .trx-status-neutral {{
-                        background: rgba(255,255,255,0.14);
-                        color: #ffffff;
-                    }}
-
-                    .trx-ai-headline {{
-                        background: rgba(255,255,255,0.10);
-                        border: 1px solid rgba(255,255,255,0.16);
-                        border-radius: 20px;
-                        padding: 18px 20px;
-                        font-size: 18px;
-                        font-weight: 760;
-                        line-height: 1.48;
-                        margin-bottom: 18px;
-                        box-shadow: inset 0 0 18px rgba(255,255,255,0.05);
-                        color: rgba(255,255,255,0.96);
-                    }}
-
-                    .trx-ai-grid {{
-                        display: grid;
-                        grid-template-columns: repeat(3, 1fr);
-                        gap: 16px;
-                        align-items: stretch;
-                    }}
-
-                    .trx-ai-box {{
-                        background: rgba(255,255,255,0.09);
-                        border: 1px solid rgba(255,255,255,0.14);
-                        border-radius: 20px;
-                        padding: 18px;
-                        backdrop-filter: blur(10px);
-                        min-height: 220px;
-                    }}
-
-                    .trx-ai-box h4 {{
-                        margin: 0 0 12px 0;
-                        font-size: 16px;
-                        letter-spacing: 0.4px;
-                        color: rgba(255,255,255,0.98);
-                    }}
-
-                    .trx-ai-box ul {{
-                        margin: 0;
-                        padding-left: 20px;
-                    }}
-
-                    .trx-ai-box li {{
-                        margin-bottom: 9px;
-                        font-size: 13.5px;
-                        line-height: 1.45;
-                        color: rgba(255,255,255,0.92);
-                    }}
-
-                    .trx-ai-foot {{
-                        margin-top: 14px;
-                        font-size: 11.5px;
-                        opacity: 0.67;
-                        text-align: right;
-                    }}
-
-                    @media (max-width: 900px) {{
-                        .trx-ai-grid {{
-                            grid-template-columns: 1fr;
-                        }}
-                    }}
-                    </style>
-                    </head>
-
-                    <body>
-                    <div class="trx-ai-wrap">
-                        <div class="trx-ai-header">
-                            <div class="trx-ai-title">🤖 AI Executive Insight</div>
-                            <div class="trx-ai-badge-row">
-                                <div class="trx-ai-status {status_class}">{html.escape(status_label)}</div>
-                                <div class="trx-ai-badge">Auto-generated from filtered data</div>
-                            </div>
-                        </div>
-
-                        <div class="trx-ai-headline">
-                            {html.escape(str(ai_result.get("headline", "-")))}
-                        </div>
-
-                        <div class="trx-ai-grid">
-                            <div class="trx-ai-box">
-                                <h4>📌 Key Findings</h4>
-                                <ul>{summary_html}</ul>
-                            </div>
-
-                            <div class="trx-ai-box">
-                                <h4>🚨 Risk Signals</h4>
-                                <ul>{risk_html}</ul>
-                            </div>
-
-                            <div class="trx-ai-box">
-                                <h4>✅ Recommended Actions</h4>
-                                <ul>{reco_html}</ul>
-                            </div>
-                        </div>
-
-                        <div class="trx-ai-foot">
-                            Insight mengikuti filter jenis transaksi, Top N, dan sorting yang sedang aktif.
-                        </div>
-                    </div>
-                    </body>
-                    </html>
-                    """
-
-                    components.html(ai_html, height=ai_height, scrolling=False)
-
-                    # =====================================================
-                    # PRIORITY MATRIX TABLE
-                    # =====================================================
-                    with st.expander("🧠 Lihat Matriks Prioritas AI", expanded=False):
-                        priority_show = ai_result.get("priority_df", pd.DataFrame()).copy()
-
-                        if not priority_show.empty:
-                            priority_show["SLA Utama (hari)"] = priority_show[
-                                "SLA Utama (hari)"
-                            ].round(2)
-
-                            def style_priority(row):
-                                label = str(row["Prioritas AI"])
-
-                                if "Prioritas 1" in label:
-                                    return [
-                                        "background-color: #ffe2e2; color: #7a0000; font-weight: bold"
-                                    ] * len(row)
-                                elif "Prioritas 2" in label:
-                                    return [
-                                        "background-color: #fff3cd; color: #6b4e00; font-weight: bold"
-                                    ] * len(row)
-                                elif "Prioritas 3" in label:
-                                    return [
-                                        "background-color: #dff5ff; color: #004761; font-weight: bold"
-                                    ] * len(row)
-                                else:
-                                    return [""] * len(row)
-
-                            st.dataframe(
-                                priority_show.style.apply(style_priority, axis=1),
-                                use_container_width=True,
-                                hide_index=True,
-                            )
-                        else:
-                            st.info("Belum ada matriks prioritas yang dapat ditampilkan.")
-
-                    # =====================================================
-                    # EXECUTIVE SUMMARY DIREKSI — DASHBOARD PREVIEW
-                    # =====================================================
-                    st.markdown("### 🎯 Executive Summary Direksi")
-
-                    exec_df = trx_view.copy()
-
-                    total_jenis_exec = exec_df["JENIS TRANSAKSI"].nunique()
-                    total_trx_exec = int(exec_df["Jumlah Transaksi"].sum())
-                    avg_sla_exec = float(exec_df["SLA Utama (hari)"].mean())
-
-                    fastest_exec = exec_df.sort_values("SLA Utama (hari)", ascending=True).iloc[0]
-                    slowest_exec = exec_df.sort_values("SLA Utama (hari)", ascending=False).iloc[0]
-                    biggest_exec = exec_df.sort_values("Jumlah Transaksi", ascending=False).iloc[0]
-
-                    priority_df_exec = ai_result.get("priority_df", pd.DataFrame()).copy()
-                    p1_count = ai_result.get("p1_count", 0)
-                    bottleneck_proses = ai_result.get("bottleneck_proses", "-")
-                    bottleneck_value = ai_result.get("bottleneck_value", np.nan)
-
-                    if status_label == "CRITICAL":
-                        status_desc = "Perlu perhatian segera karena beberapa jenis transaksi memiliki kombinasi SLA tinggi dan volume besar."
-                    elif status_label == "WATCHLIST":
-                        status_desc = "Terdapat transaksi prioritas yang perlu dipantau dan ditindaklanjuti."
+                    if sort_mode == "SLA tercepat":
+                        trx_view = trx_view.sort_values("SLA Utama (hari)", ascending=True)
+                    elif sort_mode == "SLA terlama":
+                        trx_view = trx_view.sort_values("SLA Utama (hari)", ascending=False)
                     else:
-                        status_desc = "Secara umum kondisi transaksi masih terkendali pada filter yang aktif."
+                        trx_view = trx_view.sort_values("Jumlah Transaksi", ascending=False)
 
-                    top_priority_html = ""
+                    trx_view = trx_view.head(top_n)
 
-                    if not priority_df_exec.empty:
-                        priority_show_exec = priority_df_exec.head(5).copy()
+                    if trx_view.empty:
+                        st.warning("Tidak ada data untuk kombinasi filter yang dipilih.")
 
-                        for _, row in priority_show_exec.iterrows():
-                            trx_name = html.escape(trx_safe_text(row["JENIS TRANSAKSI"], 42))
-                            trx_count = trx_fmt_int(row["Jumlah Transaksi"])
-                            trx_sla = trx_fmt_hari(row["SLA Utama (hari)"])
-                            trx_priority = html.escape(str(row["Prioritas AI"]))
+                    else:
+                        value_vars_chart = [
+                            f"{c} (hari)"
+                            for c in chart_proses_cols
+                            if f"{c} (hari)" in trx_view.columns
+                        ]
 
-                            top_priority_html += f"""
+                        trx_long_view = trx_view.melt(
+                            id_vars=["JENIS TRANSAKSI", "Jumlah Transaksi"],
+                            value_vars=value_vars_chart,
+                            var_name="Proses",
+                            value_name="Rata-rata SLA (hari)",
+                        )
+
+                        trx_long_view["Proses"] = trx_long_view["Proses"].str.replace(
+                            " (hari)",
+                            "",
+                            regex=False,
+                        )
+
+                        # =====================================================
+                        # AI EXECUTIVE INSIGHT
+                        # =====================================================
+                        st.markdown("### 🤖 AI Executive Insight")
+
+                        ai_result = generate_ai_insights_trx(
+                            trx_ai_base,
+                            proses_bottleneck_cols,
+                        )
+
+                        summary_html = trx_html_list(ai_result.get("summary", []))
+                        risk_html = trx_html_list(ai_result.get("risks", []))
+                        reco_html = trx_html_list(ai_result.get("recommendations", []))
+
+                        status_label = ai_result.get("status_label", "CONTROLLED")
+                        status_class = ai_result.get("status_class", "trx-status-good")
+
+                        ai_height = 430 + 28 * max(
+                            len(ai_result.get("summary", [])),
+                            len(ai_result.get("risks", [])),
+                            len(ai_result.get("recommendations", [])),
+                        )
+
+                        ai_html = f"""
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                        <style>
+                        body {{
+                            margin: 0;
+                            padding: 0;
+                            background: transparent;
+                            font-family: Segoe UI, sans-serif;
+                        }}
+
+                        .trx-ai-wrap {{
+                            width: 100%;
+                            box-sizing: border-box;
+                            background:
+                                radial-gradient(circle at top left, rgba(0,234,255,0.30), transparent 28%),
+                                radial-gradient(circle at bottom right, rgba(225,0,255,0.25), transparent 30%),
+                                linear-gradient(135deg, rgba(13,19,45,0.98), rgba(20,28,60,0.94));
+                            border: 1px solid rgba(255,255,255,0.18);
+                            border-radius: 26px;
+                            padding: 24px;
+                            box-shadow: 0 18px 48px rgba(0,0,0,0.35);
+                            color: white;
+                            overflow: hidden;
+                        }}
+
+                        .trx-ai-header {{
+                            display: flex;
+                            flex-wrap: wrap;
+                            justify-content: space-between;
+                            align-items: center;
+                            gap: 12px;
+                            margin-bottom: 16px;
+                        }}
+
+                        .trx-ai-title {{
+                            font-size: 30px;
+                            font-weight: 950;
+                            letter-spacing: 0.3px;
+                            background: linear-gradient(90deg, #00eaff, #38ef7d, #fee140);
+                            -webkit-background-clip: text;
+                            -webkit-text-fill-color: transparent;
+                        }}
+
+                        .trx-ai-badge-row {{
+                            display: flex;
+                            flex-wrap: wrap;
+                            gap: 10px;
+                            align-items: center;
+                        }}
+
+                        .trx-ai-badge {{
+                            background: rgba(255,255,255,0.13);
+                            border: 1px solid rgba(255,255,255,0.22);
+                            padding: 8px 12px;
+                            border-radius: 999px;
+                            font-size: 12px;
+                            font-weight: 800;
+                            color: #dffcff;
+                        }}
+
+                        .trx-ai-status {{
+                            padding: 8px 14px;
+                            border-radius: 999px;
+                            font-size: 12px;
+                            font-weight: 950;
+                            letter-spacing: 0.6px;
+                            border: 1px solid rgba(255,255,255,0.20);
+                        }}
+
+                        .trx-status-critical {{
+                            background: rgba(255,65,108,0.24);
+                            color: #ffdce5;
+                        }}
+
+                        .trx-status-watch {{
+                            background: rgba(254,225,64,0.22);
+                            color: #fff4b0;
+                        }}
+
+                        .trx-status-good {{
+                            background: rgba(56,239,125,0.20);
+                            color: #d9ffe9;
+                        }}
+
+                        .trx-status-neutral {{
+                            background: rgba(255,255,255,0.14);
+                            color: #ffffff;
+                        }}
+
+                        .trx-ai-headline {{
+                            background: rgba(255,255,255,0.10);
+                            border: 1px solid rgba(255,255,255,0.16);
+                            border-radius: 20px;
+                            padding: 18px 20px;
+                            font-size: 18px;
+                            font-weight: 760;
+                            line-height: 1.48;
+                            margin-bottom: 18px;
+                            box-shadow: inset 0 0 18px rgba(255,255,255,0.05);
+                            color: rgba(255,255,255,0.96);
+                        }}
+
+                        .trx-ai-grid {{
+                            display: grid;
+                            grid-template-columns: repeat(3, 1fr);
+                            gap: 16px;
+                            align-items: stretch;
+                        }}
+
+                        .trx-ai-box {{
+                            background: rgba(255,255,255,0.09);
+                            border: 1px solid rgba(255,255,255,0.14);
+                            border-radius: 20px;
+                            padding: 18px;
+                            backdrop-filter: blur(10px);
+                            min-height: 220px;
+                        }}
+
+                        .trx-ai-box h4 {{
+                            margin: 0 0 12px 0;
+                            font-size: 16px;
+                            letter-spacing: 0.4px;
+                            color: rgba(255,255,255,0.98);
+                        }}
+
+                        .trx-ai-box ul {{
+                            margin: 0;
+                            padding-left: 20px;
+                        }}
+
+                        .trx-ai-box li {{
+                            margin-bottom: 9px;
+                            font-size: 13.5px;
+                            line-height: 1.45;
+                            color: rgba(255,255,255,0.92);
+                        }}
+
+                        .trx-ai-foot {{
+                            margin-top: 14px;
+                            font-size: 11.5px;
+                            opacity: 0.67;
+                            text-align: right;
+                        }}
+
+                        @media (max-width: 900px) {{
+                            .trx-ai-grid {{
+                                grid-template-columns: 1fr;
+                            }}
+                        }}
+                        </style>
+                        </head>
+
+                        <body>
+                        <div class="trx-ai-wrap">
+                            <div class="trx-ai-header">
+                                <div class="trx-ai-title">🤖 AI Executive Insight</div>
+                                <div class="trx-ai-badge-row">
+                                    <div class="trx-ai-status {status_class}">{html.escape(status_label)}</div>
+                                    <div class="trx-ai-badge">Auto-generated from filtered transaction type</div>
+                                </div>
+                            </div>
+
+                            <div class="trx-ai-headline">
+                                {html.escape(str(ai_result.get("headline", "-")))}
+                            </div>
+
+                            <div class="trx-ai-grid">
+                                <div class="trx-ai-box">
+                                    <h4>📌 Key Findings</h4>
+                                    <ul>{summary_html}</ul>
+                                </div>
+
+                                <div class="trx-ai-box">
+                                    <h4>🚨 Risk Signals</h4>
+                                    <ul>{risk_html}</ul>
+                                </div>
+
+                                <div class="trx-ai-box">
+                                    <h4>✅ Recommended Actions</h4>
+                                    <ul>{reco_html}</ul>
+                                </div>
+                            </div>
+
+                            <div class="trx-ai-foot">
+                                Insight mengikuti filter jenis transaksi aktif, namun tidak bias oleh Top N dan sorting visual.
+                            </div>
+                        </div>
+                        </body>
+                        </html>
+                        """
+
+                        components.html(ai_html, height=ai_height, scrolling=False)
+
+                        # =====================================================
+                        # PRIORITY MATRIX TABLE
+                        # =====================================================
+                        with st.expander("🧠 Lihat Matriks Prioritas AI", expanded=False):
+                            priority_show = ai_result.get("priority_df", pd.DataFrame()).copy()
+
+                            if not priority_show.empty:
+                                priority_show["SLA Utama (hari)"] = priority_show[
+                                    "SLA Utama (hari)"
+                                ].round(2)
+
+                                def style_priority(row):
+                                    label = str(row["Prioritas AI"])
+
+                                    if "Prioritas 1" in label:
+                                        return [
+                                            "background-color: #ffe2e2; color: #7a0000; font-weight: bold"
+                                        ] * len(row)
+                                    elif "Prioritas 2" in label:
+                                        return [
+                                            "background-color: #fff3cd; color: #6b4e00; font-weight: bold"
+                                        ] * len(row)
+                                    elif "Prioritas 3" in label:
+                                        return [
+                                            "background-color: #dff5ff; color: #004761; font-weight: bold"
+                                        ] * len(row)
+                                    else:
+                                        return [""] * len(row)
+
+                                st.dataframe(
+                                    priority_show.style.apply(style_priority, axis=1),
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
+                            else:
+                                st.info("Belum ada matriks prioritas yang dapat ditampilkan.")
+
+                        # =====================================================
+                        # EXECUTIVE SUMMARY DIREKSI — DASHBOARD PREVIEW
+                        # =====================================================
+                        st.markdown("### 🎯 Executive Summary Direksi")
+
+                        exec_df = trx_ai_base.copy()
+
+                        total_jenis_exec = exec_df["JENIS TRANSAKSI"].nunique()
+                        total_trx_exec = int(exec_df["Jumlah Transaksi"].sum())
+                        avg_sla_exec = float(exec_df["SLA Utama (hari)"].mean())
+
+                        fastest_exec = exec_df.sort_values("SLA Utama (hari)", ascending=True).iloc[0]
+                        slowest_exec = exec_df.sort_values("SLA Utama (hari)", ascending=False).iloc[0]
+                        biggest_exec = exec_df.sort_values("Jumlah Transaksi", ascending=False).iloc[0]
+
+                        priority_df_exec = ai_result.get("priority_df", pd.DataFrame()).copy()
+                        p1_count = ai_result.get("p1_count", 0)
+                        bottleneck_proses = ai_result.get("bottleneck_proses", "-")
+                        bottleneck_value = ai_result.get("bottleneck_value", np.nan)
+
+                        if status_label == "CRITICAL":
+                            status_desc = "Perlu perhatian segera karena beberapa jenis transaksi memiliki kombinasi SLA tinggi dan volume besar."
+                        elif status_label == "WATCHLIST":
+                            status_desc = "Terdapat transaksi prioritas yang perlu dipantau dan ditindaklanjuti."
+                        else:
+                            status_desc = "Secara umum kondisi transaksi masih terkendali pada filter yang aktif."
+
+                        top_priority_html = ""
+
+                        if not priority_df_exec.empty:
+                            priority_show_exec = priority_df_exec.head(5).copy()
+
+                            for _, row in priority_show_exec.iterrows():
+                                trx_name = html.escape(trx_safe_text(row["JENIS TRANSAKSI"], 42))
+                                trx_count = trx_fmt_int(row["Jumlah Transaksi"])
+                                trx_sla = trx_fmt_hari(row["SLA Utama (hari)"])
+                                trx_priority = html.escape(str(row["Prioritas AI"]))
+
+                                top_priority_html += f"""
+                                <div class="trx-exec-prio-row">
+                                    <div>
+                                        <div class="trx-exec-prio-name">{trx_name}</div>
+                                        <div class="trx-exec-prio-sub">{trx_priority}</div>
+                                    </div>
+                                    <div class="trx-exec-prio-metric">
+                                        <b>{trx_sla}</b><br>
+                                        <span>{trx_count} trx</span>
+                                    </div>
+                                </div>
+                                """
+
+                        if top_priority_html == "":
+                            top_priority_html = """
                             <div class="trx-exec-prio-row">
                                 <div>
-                                    <div class="trx-exec-prio-name">{trx_name}</div>
-                                    <div class="trx-exec-prio-sub">{trx_priority}</div>
+                                    <div class="trx-exec-prio-name">Belum ada prioritas khusus</div>
+                                    <div class="trx-exec-prio-sub">Data prioritas tidak tersedia</div>
                                 </div>
-                                <div class="trx-exec-prio-metric">
-                                    <b>{trx_sla}</b><br>
-                                    <span>{trx_count} trx</span>
-                                </div>
+                                <div class="trx-exec-prio-metric"><b>-</b></div>
                             </div>
                             """
 
-                    if top_priority_html == "":
-                        top_priority_html = """
-                        <div class="trx-exec-prio-row">
-                            <div>
-                                <div class="trx-exec-prio-name">Belum ada prioritas khusus</div>
-                                <div class="trx-exec-prio-sub">Data prioritas tidak tersedia</div>
-                            </div>
-                            <div class="trx-exec-prio-metric"><b>-</b></div>
-                        </div>
-                        """
+                        bottleneck_sentence = "."
+                        if not pd.isna(bottleneck_value):
+                            bottleneck_sentence = f" dengan rata-rata {trx_fmt_hari(bottleneck_value)}."
 
-                    bottleneck_sentence = "."
-                    if not pd.isna(bottleneck_value):
-                        bottleneck_sentence = f" dengan rata-rata {trx_fmt_hari(bottleneck_value)}."
+                        exec_height = 790 + (len(priority_df_exec.head(5)) * 12)
 
-                    exec_height = 790 + (len(priority_df_exec.head(5)) * 12)
+                        exec_fastest_name = html.escape(trx_safe_text(fastest_exec["JENIS TRANSAKSI"]))
+                        exec_slowest_name = html.escape(trx_safe_text(slowest_exec["JENIS TRANSAKSI"]))
+                        exec_biggest_name = html.escape(trx_safe_text(biggest_exec["JENIS TRANSAKSI"]))
 
-                    exec_fastest_name = html.escape(trx_safe_text(fastest_exec["JENIS TRANSAKSI"]))
-                    exec_slowest_name = html.escape(trx_safe_text(slowest_exec["JENIS TRANSAKSI"]))
-                    exec_biggest_name = html.escape(trx_safe_text(biggest_exec["JENIS TRANSAKSI"]))
+                        logo_src = trx_logo_data_uri()
 
-                    logo_src = trx_logo_data_uri()
-                    if logo_src:
-                        logo_html = f'<img src="{logo_src}" class="trx-exec-logo" />'
-                    else:
-                        logo_html = '<div class="trx-exec-logo-fallback">ASDP</div>'
+                        if logo_src:
+                            logo_html = f'<img src="{logo_src}" class="trx-exec-logo" />'
+                        else:
+                            logo_html = '<div class="trx-exec-logo-fallback">ASDP</div>'
 
-                    exec_html = f"""
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                    <style>
-                    body {{
-                        margin: 0;
-                        padding: 0;
-                        background: transparent;
-                        font-family: Segoe UI, sans-serif;
-                    }}
+                        exec_html = f"""
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                        <style>
+                        body {{
+                            margin: 0;
+                            padding: 0;
+                            background: transparent;
+                            font-family: Segoe UI, sans-serif;
+                        }}
 
-                    .trx-exec-wrap {{
-                        width: 100%;
-                        box-sizing: border-box;
-                        background:
-                            radial-gradient(circle at top left, rgba(0, 234, 255, 0.34), transparent 25%),
-                            radial-gradient(circle at bottom right, rgba(56, 239, 125, 0.22), transparent 30%),
-                            linear-gradient(135deg, #061126 0%, #102a58 50%, #034e62 100%);
-                        border: 1px solid rgba(255,255,255,0.18);
-                        border-radius: 28px;
-                        padding: 24px;
-                        color: white;
-                        box-shadow: 0 22px 58px rgba(0,0,0,0.38);
-                        overflow: hidden;
-                    }}
+                        .trx-exec-wrap {{
+                            width: 100%;
+                            box-sizing: border-box;
+                            background:
+                                radial-gradient(circle at top left, rgba(0, 234, 255, 0.34), transparent 25%),
+                                radial-gradient(circle at bottom right, rgba(56, 239, 125, 0.22), transparent 30%),
+                                linear-gradient(135deg, #061126 0%, #102a58 50%, #034e62 100%);
+                            border: 1px solid rgba(255,255,255,0.18);
+                            border-radius: 28px;
+                            padding: 24px;
+                            color: white;
+                            box-shadow: 0 22px 58px rgba(0,0,0,0.38);
+                            overflow: hidden;
+                        }}
 
-                    .trx-exec-header {{
-                        display: flex;
-                        flex-wrap: wrap;
-                        justify-content: space-between;
-                        align-items: flex-start;
-                        gap: 14px;
-                        margin-bottom: 18px;
-                    }}
+                        .trx-exec-header {{
+                            display: flex;
+                            flex-wrap: wrap;
+                            justify-content: space-between;
+                            align-items: flex-start;
+                            gap: 14px;
+                            margin-bottom: 18px;
+                        }}
 
-                    .trx-exec-brand {{
-                        display: flex;
-                        align-items: center;
-                        gap: 18px;
-                    }}
+                        .trx-exec-brand {{
+                            display: flex;
+                            align-items: center;
+                            gap: 18px;
+                        }}
 
-                    .trx-exec-logo {{
-                        max-width: 150px;
-                        max-height: 58px;
-                        object-fit: contain;
-                        background: rgba(255,255,255,0.92);
-                        padding: 8px 12px;
-                        border-radius: 14px;
-                    }}
+                        .trx-exec-logo {{
+                            max-width: 150px;
+                            max-height: 58px;
+                            object-fit: contain;
+                            background: rgba(255,255,255,0.92);
+                            padding: 8px 12px;
+                            border-radius: 14px;
+                        }}
 
-                    .trx-exec-logo-fallback {{
-                        width: 120px;
-                        height: 46px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        background: rgba(255,255,255,0.92);
-                        color: #005577;
-                        font-weight: 950;
-                        border-radius: 14px;
-                    }}
+                        .trx-exec-logo-fallback {{
+                            width: 120px;
+                            height: 46px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            background: rgba(255,255,255,0.92);
+                            color: #005577;
+                            font-weight: 950;
+                            border-radius: 14px;
+                        }}
 
-                    .trx-exec-title {{
-                        font-size: 34px;
-                        font-weight: 950;
-                        letter-spacing: 0.2px;
-                        line-height: 1.08;
-                    }}
+                        .trx-exec-title {{
+                            font-size: 34px;
+                            font-weight: 950;
+                            letter-spacing: 0.2px;
+                            line-height: 1.08;
+                        }}
 
-                    .trx-exec-subtitle {{
-                        margin-top: 8px;
-                        opacity: 0.82;
-                        font-size: 14px;
-                        line-height: 1.35;
-                    }}
+                        .trx-exec-subtitle {{
+                            margin-top: 8px;
+                            opacity: 0.82;
+                            font-size: 14px;
+                            line-height: 1.35;
+                        }}
 
-                    .trx-exec-status {{
-                        padding: 12px 16px;
-                        border-radius: 999px;
-                        font-size: 13px;
-                        font-weight: 950;
-                        letter-spacing: 0.7px;
-                        border: 1px solid rgba(255,255,255,0.22);
-                    }}
+                        .trx-exec-status {{
+                            padding: 12px 16px;
+                            border-radius: 999px;
+                            font-size: 13px;
+                            font-weight: 950;
+                            letter-spacing: 0.7px;
+                            border: 1px solid rgba(255,255,255,0.22);
+                        }}
 
-                    .trx-exec-headline {{
-                        background: rgba(10,25,55,0.76);
-                        border: 1px solid rgba(0,234,255,0.40);
-                        border-radius: 22px;
-                        padding: 18px 20px;
-                        font-size: 18px;
-                        font-weight: 760;
-                        line-height: 1.48;
-                        margin-bottom: 18px;
-                    }}
+                        .trx-exec-headline {{
+                            background: rgba(10,25,55,0.76);
+                            border: 1px solid rgba(0,234,255,0.40);
+                            border-radius: 22px;
+                            padding: 18px 20px;
+                            font-size: 18px;
+                            font-weight: 760;
+                            line-height: 1.48;
+                            margin-bottom: 18px;
+                        }}
 
-                    .trx-exec-kpi-grid {{
-                        display: grid;
-                        grid-template-columns: repeat(4, 1fr);
-                        gap: 14px;
-                        margin-bottom: 18px;
-                    }}
-
-                    .trx-exec-kpi {{
-                        background: rgba(10,25,55,0.74);
-                        border: 1px solid rgba(255,255,255,0.16);
-                        border-radius: 20px;
-                        padding: 16px;
-                        min-height: 110px;
-                    }}
-
-                    .trx-exec-kpi-label {{
-                        font-size: 12px;
-                        opacity: 0.78;
-                        text-transform: uppercase;
-                        letter-spacing: 0.6px;
-                        color: #84eaff;
-                    }}
-
-                    .trx-exec-kpi-value {{
-                        margin-top: 8px;
-                        font-size: 24px;
-                        font-weight: 950;
-                        color: #ffffff;
-                    }}
-
-                    .trx-exec-kpi-sub {{
-                        margin-top: 6px;
-                        font-size: 11.5px;
-                        opacity: 0.76;
-                        line-height: 1.28;
-                    }}
-
-                    .trx-exec-main-grid {{
-                        display: grid;
-                        grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
-                        gap: 16px;
-                    }}
-
-                    .trx-exec-box {{
-                        background: rgba(10,25,55,0.74);
-                        border: 1px solid rgba(255,255,255,0.14);
-                        border-radius: 22px;
-                        padding: 18px;
-                    }}
-
-                    .trx-exec-box h4 {{
-                        margin: 0 0 12px 0;
-                        font-size: 16px;
-                    }}
-
-                    .trx-exec-box ul {{
-                        margin: 0;
-                        padding-left: 20px;
-                    }}
-
-                    .trx-exec-box li {{
-                        margin-bottom: 9px;
-                        line-height: 1.42;
-                        font-size: 13.5px;
-                        color: rgba(255,255,255,0.91);
-                    }}
-
-                    .trx-exec-prio-row {{
-                        display: flex;
-                        justify-content: space-between;
-                        gap: 12px;
-                        padding: 12px 0;
-                        border-bottom: 1px solid rgba(255,255,255,0.14);
-                    }}
-
-                    .trx-exec-prio-name {{
-                        font-size: 13.5px;
-                        font-weight: 850;
-                        line-height: 1.25;
-                    }}
-
-                    .trx-exec-prio-sub {{
-                        font-size: 11px;
-                        opacity: 0.76;
-                        margin-top: 4px;
-                        line-height: 1.25;
-                    }}
-
-                    .trx-exec-prio-metric {{
-                        text-align: right;
-                        font-size: 12px;
-                        min-width: 108px;
-                    }}
-
-                    .trx-exec-prio-metric span {{
-                        opacity: 0.72;
-                    }}
-
-                    .trx-exec-note {{
-                        margin-top: 14px;
-                        font-size: 11.5px;
-                        opacity: 0.62;
-                        text-align: right;
-                    }}
-
-                    .trx-status-critical {{
-                        background: rgba(255,65,108,0.24);
-                        color: #ffdce5;
-                    }}
-
-                    .trx-status-watch {{
-                        background: rgba(254,225,64,0.22);
-                        color: #fff4b0;
-                    }}
-
-                    .trx-status-good {{
-                        background: rgba(56,239,125,0.20);
-                        color: #d9ffe9;
-                    }}
-
-                    @media (max-width: 950px) {{
                         .trx-exec-kpi-grid {{
-                            grid-template-columns: repeat(2, 1fr);
+                            display: grid;
+                            grid-template-columns: repeat(4, 1fr);
+                            gap: 14px;
+                            margin-bottom: 18px;
                         }}
-                        .trx-exec-main-grid {{
-                            grid-template-columns: 1fr;
-                        }}
-                    }}
-                    </style>
-                    </head>
 
-                    <body>
-                    <div class="trx-exec-wrap">
-                        <div class="trx-exec-header">
-                            <div class="trx-exec-brand">
-                                {logo_html}
-                                <div>
-                                    <div class="trx-exec-title">Executive Summary<br>SLA Jenis Transaksi</div>
-                                    <div class="trx-exec-subtitle">
-                                        Periode {html.escape(str(start_periode))} s.d. {html.escape(str(end_periode))}
-                                        • Acuan: {html.escape(str(sla_utama_label))}
+                        .trx-exec-kpi {{
+                            background: rgba(10,25,55,0.74);
+                            border: 1px solid rgba(255,255,255,0.16);
+                            border-radius: 20px;
+                            padding: 16px;
+                            min-height: 110px;
+                        }}
+
+                        .trx-exec-kpi-label {{
+                            font-size: 12px;
+                            opacity: 0.78;
+                            text-transform: uppercase;
+                            letter-spacing: 0.6px;
+                            color: #84eaff;
+                        }}
+
+                        .trx-exec-kpi-value {{
+                            margin-top: 8px;
+                            font-size: 24px;
+                            font-weight: 950;
+                            color: #ffffff;
+                        }}
+
+                        .trx-exec-kpi-sub {{
+                            margin-top: 6px;
+                            font-size: 11.5px;
+                            opacity: 0.76;
+                            line-height: 1.28;
+                        }}
+
+                        .trx-exec-main-grid {{
+                            display: grid;
+                            grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+                            gap: 16px;
+                        }}
+
+                        .trx-exec-box {{
+                            background: rgba(10,25,55,0.74);
+                            border: 1px solid rgba(255,255,255,0.14);
+                            border-radius: 22px;
+                            padding: 18px;
+                        }}
+
+                        .trx-exec-box h4 {{
+                            margin: 0 0 12px 0;
+                            font-size: 16px;
+                        }}
+
+                        .trx-exec-box ul {{
+                            margin: 0;
+                            padding-left: 20px;
+                        }}
+
+                        .trx-exec-box li {{
+                            margin-bottom: 9px;
+                            line-height: 1.42;
+                            font-size: 13.5px;
+                            color: rgba(255,255,255,0.91);
+                        }}
+
+                        .trx-exec-prio-row {{
+                            display: flex;
+                            justify-content: space-between;
+                            gap: 12px;
+                            padding: 12px 0;
+                            border-bottom: 1px solid rgba(255,255,255,0.14);
+                        }}
+
+                        .trx-exec-prio-name {{
+                            font-size: 13.5px;
+                            font-weight: 850;
+                            line-height: 1.25;
+                        }}
+
+                        .trx-exec-prio-sub {{
+                            font-size: 11px;
+                            opacity: 0.76;
+                            margin-top: 4px;
+                            line-height: 1.25;
+                        }}
+
+                        .trx-exec-prio-metric {{
+                            text-align: right;
+                            font-size: 12px;
+                            min-width: 108px;
+                        }}
+
+                        .trx-exec-prio-metric span {{
+                            opacity: 0.72;
+                        }}
+
+                        .trx-exec-note {{
+                            margin-top: 14px;
+                            font-size: 11.5px;
+                            opacity: 0.62;
+                            text-align: right;
+                        }}
+
+                        .trx-status-critical {{
+                            background: rgba(255,65,108,0.24);
+                            color: #ffdce5;
+                        }}
+
+                        .trx-status-watch {{
+                            background: rgba(254,225,64,0.22);
+                            color: #fff4b0;
+                        }}
+
+                        .trx-status-good {{
+                            background: rgba(56,239,125,0.20);
+                            color: #d9ffe9;
+                        }}
+
+                        .trx-status-neutral {{
+                            background: rgba(255,255,255,0.14);
+                            color: #ffffff;
+                        }}
+
+                        @media (max-width: 950px) {{
+                            .trx-exec-kpi-grid {{
+                                grid-template-columns: repeat(2, 1fr);
+                            }}
+
+                            .trx-exec-main-grid {{
+                                grid-template-columns: 1fr;
+                            }}
+                        }}
+                        </style>
+                        </head>
+
+                        <body>
+                        <div class="trx-exec-wrap">
+                            <div class="trx-exec-header">
+                                <div class="trx-exec-brand">
+                                    {logo_html}
+                                    <div>
+                                        <div class="trx-exec-title">Executive Summary<br>SLA Jenis Transaksi</div>
+                                        <div class="trx-exec-subtitle">
+                                            Periode {html.escape(str(start_periode))} s.d. {html.escape(str(end_periode))}
+                                            • Acuan: {html.escape(str(sla_utama_label))}
+                                        </div>
                                     </div>
                                 </div>
+
+                                <div class="trx-exec-status {status_class}">{html.escape(status_label)}</div>
                             </div>
-                            <div class="trx-exec-status {status_class}">{html.escape(status_label)}</div>
+
+                            <div class="trx-exec-headline">
+                                {html.escape(str(ai_result.get("headline", "-")))}
+                            </div>
+
+                            <div class="trx-exec-kpi-grid">
+                                <div class="trx-exec-kpi">
+                                    <div class="trx-exec-kpi-label">Total Transaksi</div>
+                                    <div class="trx-exec-kpi-value">{trx_fmt_int(total_trx_exec)}</div>
+                                    <div class="trx-exec-kpi-sub">Jumlah transaksi pada filter jenis transaksi aktif</div>
+                                </div>
+
+                                <div class="trx-exec-kpi">
+                                    <div class="trx-exec-kpi-label">Jenis Transaksi</div>
+                                    <div class="trx-exec-kpi-value">{trx_fmt_int(total_jenis_exec)}</div>
+                                    <div class="trx-exec-kpi-sub">Kategori transaksi dianalisis</div>
+                                </div>
+
+                                <div class="trx-exec-kpi">
+                                    <div class="trx-exec-kpi-label">Rata-rata SLA</div>
+                                    <div class="trx-exec-kpi-value">{trx_fmt_hari(avg_sla_exec)}</div>
+                                    <div class="trx-exec-kpi-sub">Rata-rata SLA utama</div>
+                                </div>
+
+                                <div class="trx-exec-kpi">
+                                    <div class="trx-exec-kpi-label">Prioritas Tinggi</div>
+                                    <div class="trx-exec-kpi-value">{trx_fmt_int(p1_count)}</div>
+                                    <div class="trx-exec-kpi-sub">{html.escape(status_desc)}</div>
+                                </div>
+                            </div>
+
+                            <div class="trx-exec-main-grid">
+                                <div class="trx-exec-box">
+                                    <h4>📌 Executive Notes</h4>
+                                    <ul>
+                                        <li>Jenis tercepat: <b>{exec_fastest_name}</b> dengan SLA {trx_fmt_hari(fastest_exec["SLA Utama (hari)"])}.</li>
+                                        <li>Jenis terlama: <b>{exec_slowest_name}</b> dengan SLA {trx_fmt_hari(slowest_exec["SLA Utama (hari)"])}.</li>
+                                        <li>Volume terbesar: <b>{exec_biggest_name}</b> sebanyak {trx_fmt_int(biggest_exec["Jumlah Transaksi"])} transaksi.</li>
+                                        <li>Bottleneck proses: <b>{html.escape(str(bottleneck_proses))}</b>{bottleneck_sentence}</li>
+                                    </ul>
+
+                                    <h4 style="margin-top:18px;">✅ Recommended Actions</h4>
+                                    <ul>{trx_html_list(ai_result.get("recommendations", []), max_items=3)}</ul>
+                                </div>
+
+                                <div class="trx-exec-box">
+                                    <h4>🔥 Top Priority Transactions</h4>
+                                    {top_priority_html}
+                                </div>
+                            </div>
+
+                            <div class="trx-exec-note">
+                                Executive summary otomatis mengikuti filter jenis transaksi aktif.
+                            </div>
                         </div>
+                        </body>
+                        </html>
+                        """
 
-                        <div class="trx-exec-headline">
-                            {html.escape(str(ai_result.get("headline", "-")))}
-                        </div>
+                        components.html(exec_html, height=exec_height, scrolling=False)
 
-                        <div class="trx-exec-kpi-grid">
-                            <div class="trx-exec-kpi">
-                                <div class="trx-exec-kpi-label">Total Transaksi</div>
-                                <div class="trx-exec-kpi-value">{trx_fmt_int(total_trx_exec)}</div>
-                                <div class="trx-exec-kpi-sub">Jumlah transaksi pada filter aktif</div>
-                            </div>
-                            <div class="trx-exec-kpi">
-                                <div class="trx-exec-kpi-label">Jenis Transaksi</div>
-                                <div class="trx-exec-kpi-value">{trx_fmt_int(total_jenis_exec)}</div>
-                                <div class="trx-exec-kpi-sub">Kategori transaksi dianalisis</div>
-                            </div>
-                            <div class="trx-exec-kpi">
-                                <div class="trx-exec-kpi-label">Rata-rata SLA</div>
-                                <div class="trx-exec-kpi-value">{trx_fmt_hari(avg_sla_exec)}</div>
-                                <div class="trx-exec-kpi-sub">Rata-rata SLA utama</div>
-                            </div>
-                            <div class="trx-exec-kpi">
-                                <div class="trx-exec-kpi-label">Prioritas Tinggi</div>
-                                <div class="trx-exec-kpi-value">{trx_fmt_int(p1_count)}</div>
-                                <div class="trx-exec-kpi-sub">{html.escape(status_desc)}</div>
-                            </div>
-                        </div>
+                        # =====================================================
+                        # DETAIL DEFAULT UNTUK PDF
+                        # Dropdown drilldown tetap ditampilkan di bawah agar tidak membuat
+                        # seluruh grafik utama muncul setelah widget drilldown.
+                        # =====================================================
+                        def trx_get_detail_objects(selected_name):
+                            detail_df_local = df_trx[
+                                df_trx["JENIS TRANSAKSI"] == selected_name
+                            ].copy()
 
-                        <div class="trx-exec-main-grid">
-                            <div class="trx-exec-box">
-                                <h4>📌 Executive Notes</h4>
-                                <ul>
-                                    <li>Jenis tercepat: <b>{exec_fastest_name}</b> dengan SLA {trx_fmt_hari(fastest_exec["SLA Utama (hari)"])}.</li>
-                                    <li>Jenis terlama: <b>{exec_slowest_name}</b> dengan SLA {trx_fmt_hari(slowest_exec["SLA Utama (hari)"])}.</li>
-                                    <li>Volume terbesar: <b>{exec_biggest_name}</b> sebanyak {trx_fmt_int(biggest_exec["Jumlah Transaksi"])} transaksi.</li>
-                                    <li>Bottleneck proses: <b>{html.escape(str(bottleneck_proses))}</b>{bottleneck_sentence}</li>
-                                </ul>
+                            detail_mean_local = trx_summary[
+                                trx_summary["JENIS TRANSAKSI"] == selected_name
+                            ].copy()
 
-                                <h4 style="margin-top:18px;">✅ Recommended Actions</h4>
-                                <ul>{trx_html_list(ai_result.get("recommendations", []), max_items=3)}</ul>
-                            </div>
+                            detail_chart_local = pd.DataFrame()
 
-                            <div class="trx-exec-box">
-                                <h4>🔥 Top Priority Transactions</h4>
-                                {top_priority_html}
-                            </div>
-                        </div>
+                            if not detail_mean_local.empty:
+                                detail_row_local = detail_mean_local.iloc[0]
 
-                        <div class="trx-exec-note">
-                            Executive summary otomatis mengikuti filter Jenis Transaksi, Top N, dan sorting yang sedang aktif.
-                        </div>
-                    </div>
-                    </body>
-                    </html>
-                    """
+                                detail_chart_local = pd.DataFrame({
+                                    "Proses": chart_proses_cols,
+                                    "Rata-rata SLA (hari)": [
+                                        detail_row_local[f"{p} (hari)"]
+                                        for p in chart_proses_cols
+                                        if f"{p} (hari)" in detail_row_local.index
+                                    ],
+                                })
 
-                    components.html(exec_html, height=exec_height, scrolling=False)
+                            return detail_df_local, detail_mean_local, detail_chart_local
 
-                    # =====================================================
-                    # DRILLDOWN SELECT — DIPAKAI UNTUK UI DAN PDF
-                    # =====================================================
-                    st.markdown("### 🔍 Drilldown Detail Jenis Transaksi")
+                        detail_options = trx_view["JENIS TRANSAKSI"].tolist()
+                        previous_detail = st.session_state.get("trx_detail_select_wow", None)
 
-                    selected_detail = st.selectbox(
-                        "Pilih jenis transaksi untuk drilldown",
-                        options=trx_view["JENIS TRANSAKSI"].tolist(),
-                        key="trx_detail_select_wow",
-                    )
+                        if previous_detail in detail_options:
+                            pdf_selected_detail = previous_detail
+                        else:
+                            pdf_selected_detail = detail_options[0]
 
-                    detail_df = df_trx[
-                        df_trx["JENIS TRANSAKSI"] == selected_detail
-                    ].copy()
+                        detail_df_for_pdf, detail_mean_for_pdf, detail_chart_for_pdf = trx_get_detail_objects(
+                            pdf_selected_detail
+                        )
 
-                    detail_mean = trx_summary[
-                        trx_summary["JENIS TRANSAKSI"] == selected_detail
-                    ].copy()
+                        # =====================================================
+                        # GENERATE + DOWNLOAD PNG/PDF LENGKAP
+                        # Perbaikan:
+                        # - PNG disimpan dulu.
+                        # - Jika PDF gagal, PNG tetap muncul.
+                        # =====================================================
+                        st.markdown("### 📥 Download Executive Pack")
 
-                    detail_chart = pd.DataFrame()
+                        col_down1, col_down2, col_down3 = st.columns([1, 1, 1.25])
 
-                    if not detail_mean.empty:
-                        detail_row = detail_mean.iloc[0]
-                        detail_chart = pd.DataFrame({
-                            "Proses": proses_cols,
-                            "Rata-rata SLA (hari)": [
-                                detail_row[f"{p} (hari)"]
-                                for p in proses_cols
-                            ],
-                        })
+                        with col_down1:
+                            if st.button("🎨 Generate Executive Pack", key="generate_exec_summary_trx"):
+                                try:
+                                    transaksi_display_pdf = trx_view.copy()
 
-                    # =====================================================
-                    # GENERATE + DOWNLOAD PNG/PDF LENGKAP
-                    # =====================================================
-                    st.markdown("### 📥 Download Executive Pack")
+                                    for col in chart_proses_cols:
+                                        if col in transaksi_display_pdf.columns:
+                                            transaksi_display_pdf[f"{col} (Rata-rata)"] = (
+                                                transaksi_display_pdf[col].apply(seconds_to_sla_format)
+                                            )
 
-                    col_down1, col_down2, col_down3 = st.columns([1, 1, 1.25])
+                                    display_cols_pdf = (
+                                        ["JENIS TRANSAKSI", "Jumlah Transaksi"]
+                                        + [
+                                            f"{col} (Rata-rata)"
+                                            for col in chart_proses_cols
+                                            if f"{col} (Rata-rata)" in transaksi_display_pdf.columns
+                                        ]
+                                    )
 
-                    with col_down1:
-                        if st.button("🎨 Generate Executive Pack", key="generate_exec_summary_trx"):
-                            transaksi_display_pdf = trx_summary.copy()
+                                    transaksi_display_pdf = transaksi_display_pdf[display_cols_pdf]
 
-                            for col in proses_cols:
-                                transaksi_display_pdf[f"{col} (Rata-rata)"] = (
-                                    transaksi_display_pdf[col].apply(seconds_to_sla_format)
+                                    summary_img = make_trx_exec_summary_image(
+                                        trx_exec_base=trx_ai_base,
+                                        ai_result=ai_result,
+                                        sla_utama_label=sla_utama_label,
+                                        start_periode=start_periode,
+                                        end_periode=end_periode,
+                                    )
+
+                                    png_bytes = trx_image_to_png_bytes(summary_img)
+                                    st.session_state["trx_exec_summary_png"] = png_bytes
+
+                                    try:
+                                        pdf_bytes = trx_make_full_pdf_report(
+                                            summary_img=summary_img,
+                                            trx_view=trx_view,
+                                            trx_long_view=trx_long_view,
+                                            chart_proses_cols=chart_proses_cols,
+                                            sla_utama_label=sla_utama_label,
+                                            priority_df=ai_result.get("priority_df", pd.DataFrame()),
+                                            transaksi_display=transaksi_display_pdf,
+                                            detail_df=detail_df_for_pdf,
+                                            detail_chart=detail_chart_for_pdf,
+                                            selected_detail=pdf_selected_detail,
+                                        )
+
+                                        st.session_state["trx_exec_report_pdf"] = pdf_bytes
+                                        st.success("Executive Pack berhasil dibuat. PNG dan PDF lengkap siap di-download.")
+
+                                    except Exception as e_pdf:
+                                        if "trx_exec_report_pdf" in st.session_state:
+                                            del st.session_state["trx_exec_report_pdf"]
+
+                                        st.warning(
+                                            "PNG berhasil dibuat, tetapi PDF gagal dibuat. "
+                                            "Pastikan dependency 'kaleido' sudah ada di requirements.txt."
+                                        )
+                                        st.exception(e_pdf)
+
+                                except Exception as e:
+                                    st.error("Executive Pack gagal dibuat.")
+                                    st.exception(e)
+
+                        with col_down2:
+                            if "trx_exec_summary_png" in st.session_state:
+                                st.download_button(
+                                    "⬇️ Download PNG Summary",
+                                    data=st.session_state["trx_exec_summary_png"],
+                                    file_name="Executive_Summary_Tab_Transaksi.png",
+                                    mime="image/png",
+                                    key="download_exec_summary_png",
                                 )
 
-                            display_cols_pdf = (
-                                ["JENIS TRANSAKSI", "Jumlah Transaksi"]
-                                + [f"{col} (Rata-rata)" for col in proses_cols]
-                            )
+                        with col_down3:
+                            if "trx_exec_report_pdf" in st.session_state:
+                                st.download_button(
+                                    "⬇️ Download PDF Lengkap",
+                                    data=st.session_state["trx_exec_report_pdf"],
+                                    file_name="Executive_Report_Tab_Transaksi_Lengkap.pdf",
+                                    mime="application/pdf",
+                                    key="download_exec_report_pdf",
+                                )
 
-                            transaksi_display_pdf = transaksi_display_pdf[display_cols_pdf]
-
-                            summary_img = make_trx_exec_summary_image(
-                                trx_view=trx_view,
-                                ai_result=ai_result,
-                                sla_utama_label=sla_utama_label,
-                                start_periode=start_periode,
-                                end_periode=end_periode,
-                            )
-
-                            png_bytes = trx_image_to_png_bytes(summary_img)
-
-                            pdf_bytes = trx_make_full_pdf_report(
-                                summary_img=summary_img,
-                                trx_view=trx_view,
-                                trx_long_view=trx_long_view,
-                                proses_cols=proses_cols,
-                                sla_utama_label=sla_utama_label,
-                                priority_df=ai_result.get("priority_df", pd.DataFrame()),
-                                transaksi_display=transaksi_display_pdf,
-                                detail_df=detail_df,
-                                detail_chart=detail_chart,
-                                selected_detail=selected_detail,
-                            )
-
-                            st.session_state["trx_exec_summary_png"] = png_bytes
-                            st.session_state["trx_exec_report_pdf"] = pdf_bytes
-
-                            st.success("Executive Pack berhasil dibuat. PNG dan PDF lengkap siap di-download.")
-
-                    with col_down2:
                         if "trx_exec_summary_png" in st.session_state:
-                            st.download_button(
-                                "⬇️ Download PNG Summary",
-                                data=st.session_state["trx_exec_summary_png"],
-                                file_name="Executive_Summary_Tab_Transaksi.png",
-                                mime="image/png",
-                                key="download_exec_summary_png",
-                            )
-
-                    with col_down3:
-                        if "trx_exec_report_pdf" in st.session_state:
-                            st.download_button(
-                                "⬇️ Download PDF Lengkap",
-                                data=st.session_state["trx_exec_report_pdf"],
-                                file_name="Executive_Report_Tab_Transaksi_Lengkap.pdf",
-                                mime="application/pdf",
-                                key="download_exec_report_pdf",
-                            )
-
-                    if "trx_exec_summary_png" in st.session_state:
-                        with st.expander("👀 Preview Executive Summary 16:9", expanded=True):
-                            st.image(
-                                st.session_state["trx_exec_summary_png"],
-                                caption="Preview Executive Summary 16:9",
-                                use_container_width=True,
-                            )
-
-                    # =====================================================
-                    # GRAFIK 1: RANKING SLA UTAMA
-                    # =====================================================
-                    st.markdown("### 🏆 Ranking SLA per Jenis Transaksi")
-
-                    fig_rank = trx_build_rank_fig(trx_view, sla_utama_label)
-                    st.plotly_chart(fig_rank, use_container_width=True)
-
-                    # =====================================================
-                    # GRAFIK 2: HEATMAP SLA PROSES X JENIS TRANSAKSI
-                    # =====================================================
-                    st.markdown("### 🔥 Heatmap SLA per Proses")
-
-                    fig_heat = trx_build_heat_fig(trx_view, proses_cols)
-                    st.plotly_chart(fig_heat, use_container_width=True)
-
-                    # =====================================================
-                    # GRAFIK 3: GROUPED BAR PER PROSES
-                    # =====================================================
-                    st.markdown("### 📊 Perbandingan SLA Masing-masing Proses")
-
-                    fig_group = trx_build_group_fig(trx_long_view)
-                    st.plotly_chart(fig_group, use_container_width=True)
-
-                    # =====================================================
-                    # GRAFIK 4: BUBBLE MATRIX VOLUME VS SLA
-                    # =====================================================
-                    st.markdown("### 🫧 Bubble Matrix: Volume vs SLA")
-
-                    fig_bubble = trx_build_bubble_fig(trx_view)
-                    st.plotly_chart(fig_bubble, use_container_width=True)
-
-                    # =====================================================
-                    # GRAFIK 5: DONUT KOMPOSISI JUMLAH TRANSAKSI
-                    # =====================================================
-                    st.markdown("### 🍩 Komposisi Jumlah Transaksi")
-
-                    fig_donut = trx_build_donut_fig(trx_view)
-                    st.plotly_chart(fig_donut, use_container_width=True)
-
-                    # =====================================================
-                    # GRAFIK 6: MASING-MASING PROSES
-                    # =====================================================
-                    st.markdown("### ⚙️ Grafik Masing-masing Proses")
-
-                    cols_per_row = 2
-                    proses_chunks = [
-                        proses_cols[i:i + cols_per_row]
-                        for i in range(0, len(proses_cols), cols_per_row)
-                    ]
-
-                    for chunk in proses_chunks:
-                        chart_cols = st.columns(len(chunk))
-
-                        for i, proses in enumerate(chunk):
-                            with chart_cols[i]:
-                                col_hari = f"{proses} (hari)"
-                                data_proses = trx_view.sort_values(
-                                    col_hari,
-                                    ascending=True,
+                            with st.expander("👀 Preview Executive Summary 16:9", expanded=True):
+                                st.image(
+                                    st.session_state["trx_exec_summary_png"],
+                                    caption="Preview Executive Summary 16:9",
+                                    use_container_width=True,
                                 )
 
-                                fig_each = trx_build_process_fig(data_proses, proses)
-                                st.plotly_chart(fig_each, use_container_width=True)
+                        # =====================================================
+                        # GRAFIK 1: RANKING SLA UTAMA
+                        # =====================================================
+                        st.markdown("### 🏆 Ranking SLA per Jenis Transaksi")
 
-                    # =====================================================
-                    # DRILLDOWN DETAIL DISPLAY
-                    # =====================================================
-                    if not detail_mean.empty:
-                        detail_row = detail_mean.iloc[0]
+                        fig_rank = trx_build_rank_fig(trx_view, sla_utama_label)
+                        st.plotly_chart(fig_rank, use_container_width=True)
 
-                        d1, d2, d3 = st.columns(3)
+                        # =====================================================
+                        # GRAFIK 2: HEATMAP SLA PROSES X JENIS TRANSAKSI
+                        # =====================================================
+                        st.markdown("### 🔥 Heatmap SLA per Proses")
 
-                        d1.metric(
-                            "Jumlah Transaksi",
-                            trx_fmt_int(detail_row["Jumlah Transaksi"]),
-                        )
+                        fig_heat = trx_build_heat_fig(trx_view, chart_proses_cols)
+                        st.plotly_chart(fig_heat, use_container_width=True)
 
-                        d2.metric(
-                            "SLA Utama",
-                            trx_fmt_hari(detail_row["SLA Utama (hari)"]),
-                        )
+                        # =====================================================
+                        # GRAFIK 3: GROUPED BAR PER PROSES
+                        # =====================================================
+                        st.markdown("### 📊 Perbandingan SLA Masing-masing Proses")
 
-                        d3.metric(
-                            "Acuan SLA",
-                            sla_utama_label,
-                        )
+                        fig_group = trx_build_group_fig(trx_long_view)
+                        st.plotly_chart(fig_group, use_container_width=True)
 
-                        fig_detail = trx_build_detail_fig(detail_chart, selected_detail)
-                        st.plotly_chart(fig_detail, use_container_width=True)
+                        # =====================================================
+                        # GRAFIK 4: BUBBLE MATRIX VOLUME VS SLA
+                        # =====================================================
+                        st.markdown("### 🫧 Bubble Matrix: Volume vs SLA")
 
-                    with st.expander(
-                        "📋 Tabel Detail Rata-rata SLA per Jenis Transaksi",
-                        expanded=False,
-                    ):
-                        transaksi_display = trx_summary.copy()
+                        fig_bubble = trx_build_bubble_fig(trx_view)
+                        st.plotly_chart(fig_bubble, use_container_width=True)
 
-                        for col in proses_cols:
-                            transaksi_display[f"{col} (Rata-rata)"] = (
-                                transaksi_display[col].apply(seconds_to_sla_format)
+                        # =====================================================
+                        # GRAFIK 5: DONUT KOMPOSISI JUMLAH TRANSAKSI
+                        # =====================================================
+                        st.markdown("### 🍩 Komposisi Jumlah Transaksi")
+
+                        fig_donut = trx_build_donut_fig(trx_view)
+                        st.plotly_chart(fig_donut, use_container_width=True)
+
+                        # =====================================================
+                        # GRAFIK 6: MASING-MASING PROSES
+                        # =====================================================
+                        st.markdown("### ⚙️ Grafik Masing-masing Proses")
+
+                        cols_per_row = 2
+
+                        proses_chunks = [
+                            chart_proses_cols[i:i + cols_per_row]
+                            for i in range(0, len(chart_proses_cols), cols_per_row)
+                        ]
+
+                        for chunk in proses_chunks:
+                            chart_cols = st.columns(len(chunk))
+
+                            for i, proses in enumerate(chunk):
+                                with chart_cols[i]:
+                                    col_hari = f"{proses} (hari)"
+
+                                    if col_hari not in trx_view.columns:
+                                        continue
+
+                                    data_proses = trx_view.sort_values(
+                                        col_hari,
+                                        ascending=True,
+                                    )
+
+                                    fig_each = trx_build_process_fig(data_proses, proses)
+                                    st.plotly_chart(fig_each, use_container_width=True)
+
+                        # =====================================================
+                        # TABEL RATA-RATA SLA
+                        # =====================================================
+                        with st.expander(
+                            "📋 Tabel Detail Rata-rata SLA per Jenis Transaksi",
+                            expanded=False,
+                        ):
+                            transaksi_display = trx_view.copy()
+
+                            for col in chart_proses_cols:
+                                if col in transaksi_display.columns:
+                                    transaksi_display[f"{col} (Rata-rata)"] = (
+                                        transaksi_display[col].apply(seconds_to_sla_format)
+                                    )
+
+                            display_cols = (
+                                ["JENIS TRANSAKSI", "Jumlah Transaksi"]
+                                + [
+                                    f"{col} (Rata-rata)"
+                                    for col in chart_proses_cols
+                                    if f"{col} (Rata-rata)" in transaksi_display.columns
+                                ]
                             )
 
-                        display_cols = (
-                            ["JENIS TRANSAKSI", "Jumlah Transaksi"]
-                            + [f"{col} (Rata-rata)" for col in proses_cols]
-                        )
+                            st.dataframe(
+                                transaksi_display[display_cols],
+                                use_container_width=True,
+                                hide_index=True,
+                            )
 
-                        st.dataframe(
-                            transaksi_display[display_cols],
-                            use_container_width=True,
-                            hide_index=True,
-                        )
+                        # =====================================================
+                        # DRILLDOWN DETAIL DISPLAY
+                        # Dipindahkan ke PALING BAWAH agar saat dropdown diganti,
+                        # tidak terasa seolah seluruh tab muncul ulang di bawah dropdown.
+                        # =====================================================
+                        st.markdown("### 🔍 Drilldown Detail Jenis Transaksi")
 
-                    with st.expander("🔎 Lihat Data Baris Detail", expanded=False):
-                        st.dataframe(detail_df, use_container_width=True)
+                        if detail_options:
+                            if st.session_state.get("trx_detail_select_wow") not in detail_options:
+                                st.session_state["trx_detail_select_wow"] = detail_options[0]
+
+                            selected_detail = st.selectbox(
+                                "Pilih jenis transaksi untuk drilldown",
+                                options=detail_options,
+                                key="trx_detail_select_wow",
+                            )
+
+                            detail_df, detail_mean, detail_chart = trx_get_detail_objects(selected_detail)
+
+                            if not detail_mean.empty:
+                                detail_row = detail_mean.iloc[0]
+
+                                d1, d2, d3 = st.columns(3)
+
+                                d1.metric(
+                                    "Jumlah Transaksi",
+                                    trx_fmt_int(detail_row["Jumlah Transaksi"]),
+                                )
+
+                                d2.metric(
+                                    "SLA Utama",
+                                    trx_fmt_hari(detail_row["SLA Utama (hari)"]),
+                                )
+
+                                d3.metric(
+                                    "Acuan SLA",
+                                    sla_utama_label,
+                                )
+
+                                if not detail_chart.empty:
+                                    fig_detail = trx_build_detail_fig(detail_chart, selected_detail)
+                                    st.plotly_chart(fig_detail, use_container_width=True)
+
+                            with st.expander("🔎 Lihat Data Baris Detail", expanded=False):
+                                st.dataframe(detail_df, use_container_width=True)
+
+                        else:
+                            st.info("Tidak ada jenis transaksi yang dapat ditampilkan untuk drilldown.")
 
     else:
         st.info(
