@@ -4981,7 +4981,7 @@ if active_tab == "💰 Nilai Transaksi":
 if active_tab == "📥 Download Report":
     tab_poster, tab_pdf = st.tabs(["🎨 Poster", "📄 PDF"])
 
-with tab_poster:
+    with tab_poster:
     st.subheader("📥 Download Poster")
 
     if st.button("🎨 Generate Poster A4"):
