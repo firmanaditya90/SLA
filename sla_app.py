@@ -895,15 +895,487 @@ with tab_proses:
             st.pyplot(fig2)
 
 with tab_transaksi:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    import streamlit.components.v1 as components
+    import html
+
+    st.subheader("🧾 Analisis SLA per Jenis Transaksi")
+
     if "JENIS TRANSAKSI" in df_filtered.columns and available_sla_cols:
-        st.subheader("📌 Rata-rata SLA per Jenis Transaksi (dengan jumlah transaksi)")
-        transaksi_group = df_filtered.groupby("JENIS TRANSAKSI")[available_sla_cols].agg(['mean', 'count']).reset_index()
-        transaksi_display = pd.DataFrame()
-        transaksi_display["JENIS TRANSAKSI"] = transaksi_group["JENIS TRANSAKSI"]
-        for col in available_sla_cols:
-            transaksi_display[f"{col} (Rata-rata)"] = transaksi_group[(col, 'mean')].apply(seconds_to_sla_format)
-            transaksi_display[f"{col} (Jumlah)"] = transaksi_group[(col, 'count')]
-        st.dataframe(transaksi_display, use_container_width=True)
+
+        # =====================================================
+        # PREP DATA
+        # =====================================================
+        df_trx = df_filtered.copy()
+        df_trx["JENIS TRANSAKSI"] = df_trx["JENIS TRANSAKSI"].fillna("TIDAK TERDETEKSI").astype(str)
+
+        # SLA proses yang tersedia
+        proses_cols = [c for c in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"] if c in available_sla_cols]
+
+        if not proses_cols:
+            st.info("Tidak ada kolom SLA yang dapat dianalisis.")
+        else:
+            # Aggregasi rata-rata detik per jenis transaksi
+            trx_mean_sec = (
+                df_trx
+                .groupby("JENIS TRANSAKSI")[proses_cols]
+                .mean()
+                .reset_index()
+            )
+
+            trx_count = (
+                df_trx
+                .groupby("JENIS TRANSAKSI")
+                .size()
+                .reset_index(name="Jumlah Transaksi")
+            )
+
+            trx_summary = trx_mean_sec.merge(trx_count, on="JENIS TRANSAKSI", how="left")
+
+            # Konversi ke hari untuk grafik
+            for col in proses_cols:
+                trx_summary[f"{col} (hari)"] = trx_summary[col] / 86400
+
+            # Kolom rata-rata keseluruhan untuk sorting/leaderboard
+            if "TOTAL WAKTU" in proses_cols:
+                trx_summary["SLA Utama (detik)"] = trx_summary["TOTAL WAKTU"]
+                trx_summary["SLA Utama (hari)"] = trx_summary["TOTAL WAKTU (hari)"]
+                sla_utama_label = "TOTAL WAKTU"
+            else:
+                trx_summary["SLA Utama (detik)"] = trx_summary[proses_cols].mean(axis=1)
+                trx_summary["SLA Utama (hari)"] = trx_summary["SLA Utama (detik)"] / 86400
+                sla_utama_label = "RATA-RATA PROSES"
+
+            trx_summary = trx_summary.sort_values("SLA Utama (hari)", ascending=True)
+
+            # Data long format untuk beberapa grafik
+            trx_long = trx_summary.melt(
+                id_vars=["JENIS TRANSAKSI", "Jumlah Transaksi"],
+                value_vars=[f"{c} (hari)" for c in proses_cols],
+                var_name="Proses",
+                value_name="Rata-rata SLA (hari)"
+            )
+            trx_long["Proses"] = trx_long["Proses"].str.replace(" (hari)", "", regex=False)
+
+            # =====================================================
+            # KPI DIGITAL CARDS
+            # =====================================================
+            total_jenis = trx_summary["JENIS TRANSAKSI"].nunique()
+            total_transaksi_trx = int(trx_summary["Jumlah Transaksi"].sum())
+            avg_sla_hari = float(trx_summary["SLA Utama (hari)"].mean()) if len(trx_summary) > 0 else 0
+            fastest_row = trx_summary.sort_values("SLA Utama (hari)", ascending=True).iloc[0]
+            slowest_row = trx_summary.sort_values("SLA Utama (hari)", ascending=False).iloc[0]
+
+            fastest_name = html.escape(str(fastest_row["JENIS TRANSAKSI"]))
+            slowest_name = html.escape(str(slowest_row["JENIS TRANSAKSI"]))
+
+            card_html = f"""
+            <style>
+            .trx-grid {{
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                gap: 16px;
+                margin: 12px 0 24px 0;
+            }}
+            .trx-card {{
+                border-radius: 18px;
+                padding: 18px 16px;
+                color: white;
+                min-height: 125px;
+                box-shadow: 0 10px 28px rgba(0,0,0,0.22);
+                transition: all 0.25s ease;
+                overflow: hidden;
+                position: relative;
+            }}
+            .trx-card:hover {{
+                transform: translateY(-5px);
+                box-shadow: 0 14px 36px rgba(0,0,0,0.34);
+            }}
+            .trx-card::after {{
+                content: "";
+                position: absolute;
+                right: -30px;
+                top: -30px;
+                width: 110px;
+                height: 110px;
+                border-radius: 50%;
+                background: rgba(255,255,255,0.18);
+            }}
+            .trx-icon {{
+                font-size: 28px;
+                margin-bottom: 8px;
+            }}
+            .trx-label {{
+                font-size: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.6px;
+                opacity: 0.88;
+                margin-bottom: 4px;
+            }}
+            .trx-value {{
+                font-size: 24px;
+                font-weight: 850;
+                line-height: 1.1;
+            }}
+            .trx-sub {{
+                margin-top: 6px;
+                font-size: 11px;
+                opacity: 0.82;
+                line-height: 1.25;
+            }}
+            .trx-blue {{ background: linear-gradient(135deg, #0072ff, #00c6ff); }}
+            .trx-green {{ background: linear-gradient(135deg, #11998e, #38ef7d); }}
+            .trx-purple {{ background: linear-gradient(135deg, #7f00ff, #e100ff); }}
+            .trx-red {{ background: linear-gradient(135deg, #ff416c, #ff4b2b); }}
+            </style>
+
+            <div class="trx-grid">
+                <div class="trx-card trx-blue">
+                    <div class="trx-icon">🧾</div>
+                    <div class="trx-label">Total Jenis Transaksi</div>
+                    <div class="trx-value">{total_jenis}</div>
+                    <div class="trx-sub">Kategori transaksi terdeteksi</div>
+                </div>
+                <div class="trx-card trx-green">
+                    <div class="trx-icon">📄</div>
+                    <div class="trx-label">Total Transaksi</div>
+                    <div class="trx-value">{total_transaksi_trx:,}</div>
+                    <div class="trx-sub">Dalam periode terpilih</div>
+                </div>
+                <div class="trx-card trx-purple">
+                    <div class="trx-icon">⚡</div>
+                    <div class="trx-label">Jenis Tercepat</div>
+                    <div class="trx-value" style="font-size:18px;">{fastest_name}</div>
+                    <div class="trx-sub">{fastest_row["SLA Utama (hari)"]:.2f} hari berdasarkan {sla_utama_label}</div>
+                </div>
+                <div class="trx-card trx-red">
+                    <div class="trx-icon">🚨</div>
+                    <div class="trx-label">Jenis Terlama</div>
+                    <div class="trx-value" style="font-size:18px;">{slowest_name}</div>
+                    <div class="trx-sub">{slowest_row["SLA Utama (hari)"]:.2f} hari berdasarkan {sla_utama_label}</div>
+                </div>
+            </div>
+            """
+
+            components.html(card_html, height=185)
+
+            # =====================================================
+            # FILTER DISPLAY
+            # =====================================================
+            st.markdown("### 🔎 Filter Visualisasi")
+
+            c_filter1, c_filter2, c_filter3 = st.columns([1.4, 1.2, 1.2])
+
+            with c_filter1:
+                jenis_options = trx_summary["JENIS TRANSAKSI"].tolist()
+                selected_jenis = st.multiselect(
+                    "Pilih Jenis Transaksi",
+                    options=["ALL"] + jenis_options,
+                    default=["ALL"],
+                    key="trx_filter_jenis_wow"
+                )
+
+            with c_filter2:
+                top_n = st.slider(
+                    "Top N ditampilkan",
+                    min_value=5,
+                    max_value=max(5, min(30, len(trx_summary))),
+                    value=min(10, max(5, len(trx_summary))),
+                    step=1,
+                    key="trx_top_n_wow"
+                )
+
+            with c_filter3:
+                sort_mode = st.selectbox(
+                    "Urutkan berdasarkan",
+                    ["SLA tercepat", "SLA terlama", "Jumlah transaksi terbesar"],
+                    key="trx_sort_mode_wow"
+                )
+
+            if "ALL" in selected_jenis or not selected_jenis:
+                trx_view = trx_summary.copy()
+            else:
+                trx_view = trx_summary[trx_summary["JENIS TRANSAKSI"].isin(selected_jenis)].copy()
+
+            if sort_mode == "SLA tercepat":
+                trx_view = trx_view.sort_values("SLA Utama (hari)", ascending=True)
+            elif sort_mode == "SLA terlama":
+                trx_view = trx_view.sort_values("SLA Utama (hari)", ascending=False)
+            else:
+                trx_view = trx_view.sort_values("Jumlah Transaksi", ascending=False)
+
+            trx_view = trx_view.head(top_n)
+
+            trx_long_view = trx_view.melt(
+                id_vars=["JENIS TRANSAKSI", "Jumlah Transaksi"],
+                value_vars=[f"{c} (hari)" for c in proses_cols],
+                var_name="Proses",
+                value_name="Rata-rata SLA (hari)"
+            )
+            trx_long_view["Proses"] = trx_long_view["Proses"].str.replace(" (hari)", "", regex=False)
+
+            # =====================================================
+            # GRAFIK 1: RANKING SLA UTAMA
+            # =====================================================
+            st.markdown("### 🏆 Ranking SLA per Jenis Transaksi")
+
+            fig_rank = px.bar(
+                trx_view.sort_values("SLA Utama (hari)", ascending=True),
+                x="SLA Utama (hari)",
+                y="JENIS TRANSAKSI",
+                orientation="h",
+                text="SLA Utama (hari)",
+                color="SLA Utama (hari)",
+                color_continuous_scale="Tealrose",
+                hover_data={
+                    "Jumlah Transaksi": True,
+                    "SLA Utama (hari)": ":.2f"
+                },
+                title=f"Ranking Rata-rata SLA — Acuan: {sla_utama_label}"
+            )
+            fig_rank.update_traces(
+                texttemplate="%{text:.2f} hari",
+                textposition="outside",
+                marker_line_width=0
+            )
+            fig_rank.update_layout(
+                height=max(430, 38 * len(trx_view)),
+                xaxis_title="Rata-rata SLA (hari)",
+                yaxis_title="Jenis Transaksi",
+                coloraxis_showscale=False,
+                margin=dict(l=20, r=40, t=70, b=30),
+                title_font=dict(size=20),
+            )
+            st.plotly_chart(fig_rank, use_container_width=True)
+
+            # =====================================================
+            # GRAFIK 2: HEATMAP SLA PROSES X JENIS TRANSAKSI
+            # =====================================================
+            st.markdown("### 🔥 Heatmap SLA per Proses")
+
+            heatmap_data = trx_view.set_index("JENIS TRANSAKSI")[[f"{c} (hari)" for c in proses_cols]]
+            heatmap_data.columns = proses_cols
+
+            fig_heat = px.imshow(
+                heatmap_data,
+                text_auto=".2f",
+                aspect="auto",
+                color_continuous_scale="Turbo",
+                title="Peta Panas Rata-rata SLA: Jenis Transaksi vs Proses"
+            )
+            fig_heat.update_layout(
+                height=max(430, 34 * len(heatmap_data)),
+                xaxis_title="Proses",
+                yaxis_title="Jenis Transaksi",
+                margin=dict(l=20, r=20, t=70, b=40),
+                title_font=dict(size=20)
+            )
+            fig_heat.update_traces(
+                hovertemplate="<b>%{y}</b><br>Proses: %{x}<br>SLA: %{z:.2f} hari<extra></extra>"
+            )
+            st.plotly_chart(fig_heat, use_container_width=True)
+
+            # =====================================================
+            # GRAFIK 3: GROUPED BAR PER PROSES
+            # =====================================================
+            st.markdown("### 📊 Perbandingan SLA Masing-masing Proses")
+
+            fig_group = px.bar(
+                trx_long_view,
+                x="JENIS TRANSAKSI",
+                y="Rata-rata SLA (hari)",
+                color="Proses",
+                barmode="group",
+                text="Rata-rata SLA (hari)",
+                title="Rata-rata SLA Masing-masing Proses per Jenis Transaksi",
+                hover_data={
+                    "Jumlah Transaksi": True,
+                    "Rata-rata SLA (hari)": ":.2f"
+                }
+            )
+            fig_group.update_traces(
+                texttemplate="%{text:.1f}",
+                textposition="outside"
+            )
+            fig_group.update_layout(
+                height=520,
+                xaxis_title="Jenis Transaksi",
+                yaxis_title="Rata-rata SLA (hari)",
+                legend_title="Proses",
+                margin=dict(l=20, r=20, t=70, b=120),
+                title_font=dict(size=20),
+                xaxis_tickangle=-35
+            )
+            st.plotly_chart(fig_group, use_container_width=True)
+
+            # =====================================================
+            # GRAFIK 4: BUBBLE CHART - JUMLAH VS SLA
+            # =====================================================
+            st.markdown("### 🫧 Bubble Matrix: Volume vs SLA")
+
+            fig_bubble = px.scatter(
+                trx_view,
+                x="Jumlah Transaksi",
+                y="SLA Utama (hari)",
+                size="Jumlah Transaksi",
+                color="SLA Utama (hari)",
+                color_continuous_scale="Plasma",
+                hover_name="JENIS TRANSAKSI",
+                text="JENIS TRANSAKSI",
+                size_max=55,
+                title="Peta Prioritas: Jenis Transaksi dengan Volume Besar dan SLA Tinggi"
+            )
+            fig_bubble.update_traces(
+                textposition="top center",
+                marker=dict(opacity=0.78, line=dict(width=1, color="white"))
+            )
+            fig_bubble.update_layout(
+                height=560,
+                xaxis_title="Jumlah Transaksi",
+                yaxis_title="Rata-rata SLA (hari)",
+                coloraxis_colorbar_title="SLA Hari",
+                margin=dict(l=20, r=20, t=70, b=40),
+                title_font=dict(size=20)
+            )
+            st.plotly_chart(fig_bubble, use_container_width=True)
+
+            # =====================================================
+            # GRAFIK 5: DONUT KOMPOSISI JUMLAH TRANSAKSI
+            # =====================================================
+            st.markdown("### 🍩 Komposisi Jumlah Transaksi")
+
+            fig_donut = px.pie(
+                trx_view,
+                values="Jumlah Transaksi",
+                names="JENIS TRANSAKSI",
+                hole=0.55,
+                title="Komposisi Transaksi berdasarkan Jenis Transaksi"
+            )
+            fig_donut.update_traces(
+                textposition="inside",
+                textinfo="percent+label",
+                pull=[0.03] * len(trx_view)
+            )
+            fig_donut.update_layout(
+                height=520,
+                margin=dict(l=20, r=20, t=70, b=30),
+                title_font=dict(size=20),
+                legend_title="Jenis Transaksi"
+            )
+            st.plotly_chart(fig_donut, use_container_width=True)
+
+            # =====================================================
+            # GRAFIK 6: SMALL MULTIPLE / MASING-MASING PROSES
+            # =====================================================
+            st.markdown("### ⚙️ Grafik Masing-masing Proses")
+
+            cols_per_row = 2
+            proses_chunks = [proses_cols[i:i + cols_per_row] for i in range(0, len(proses_cols), cols_per_row)]
+
+            for chunk in proses_chunks:
+                chart_cols = st.columns(len(chunk))
+                for i, proses in enumerate(chunk):
+                    with chart_cols[i]:
+                        col_hari = f"{proses} (hari)"
+                        data_proses = trx_view.sort_values(col_hari, ascending=True)
+
+                        fig_each = px.bar(
+                            data_proses,
+                            x=col_hari,
+                            y="JENIS TRANSAKSI",
+                            orientation="h",
+                            text=col_hari,
+                            color=col_hari,
+                            color_continuous_scale="Blues",
+                            title=f"SLA {proses}"
+                        )
+                        fig_each.update_traces(
+                            texttemplate="%{text:.2f}",
+                            textposition="outside",
+                            marker_line_width=0
+                        )
+                        fig_each.update_layout(
+                            height=max(360, 28 * len(data_proses)),
+                            xaxis_title="Hari",
+                            yaxis_title="",
+                            coloraxis_showscale=False,
+                            margin=dict(l=10, r=30, t=55, b=25),
+                            title_font=dict(size=16)
+                        )
+                        st.plotly_chart(fig_each, use_container_width=True)
+
+            # =====================================================
+            # DRILLDOWN DETAIL
+            # =====================================================
+            st.markdown("### 🔍 Drilldown Detail Jenis Transaksi")
+
+            selected_detail = st.selectbox(
+                "Pilih jenis transaksi untuk drilldown",
+                options=trx_view["JENIS TRANSAKSI"].tolist(),
+                key="trx_detail_select_wow"
+            )
+
+            detail_df = df_trx[df_trx["JENIS TRANSAKSI"] == selected_detail].copy()
+
+            detail_mean = trx_summary[trx_summary["JENIS TRANSAKSI"] == selected_detail].copy()
+
+            if not detail_mean.empty:
+                detail_row = detail_mean.iloc[0]
+
+                d1, d2, d3 = st.columns(3)
+                d1.metric("Jumlah Transaksi", f"{int(detail_row['Jumlah Transaksi']):,}")
+                d2.metric("SLA Utama", f"{detail_row['SLA Utama (hari)']:.2f} hari")
+                d3.metric("Acuan SLA", sla_utama_label)
+
+                detail_chart = pd.DataFrame({
+                    "Proses": proses_cols,
+                    "Rata-rata SLA (hari)": [detail_row[f"{p} (hari)"] for p in proses_cols]
+                })
+
+                fig_detail = go.Figure()
+
+                fig_detail.add_trace(go.Bar(
+                    x=detail_chart["Proses"],
+                    y=detail_chart["Rata-rata SLA (hari)"],
+                    text=detail_chart["Rata-rata SLA (hari)"],
+                    texttemplate="%{text:.2f} hari",
+                    textposition="outside",
+                    marker=dict(
+                        color=detail_chart["Rata-rata SLA (hari)"],
+                        colorscale="Viridis",
+                        line=dict(width=0)
+                    )
+                ))
+
+                fig_detail.update_layout(
+                    title=f"Profil SLA per Proses — {selected_detail}",
+                    height=460,
+                    xaxis_title="Proses",
+                    yaxis_title="Rata-rata SLA (hari)",
+                    margin=dict(l=20, r=20, t=70, b=40),
+                    title_font=dict(size=20)
+                )
+
+                st.plotly_chart(fig_detail, use_container_width=True)
+
+            with st.expander("📋 Tabel Detail Rata-rata SLA per Jenis Transaksi", expanded=False):
+                transaksi_display = trx_summary.copy()
+
+                for col in proses_cols:
+                    transaksi_display[f"{col} (Rata-rata)"] = transaksi_display[col].apply(seconds_to_sla_format)
+
+                display_cols = ["JENIS TRANSAKSI", "Jumlah Transaksi"] + [f"{col} (Rata-rata)" for col in proses_cols]
+
+                st.dataframe(
+                    transaksi_display[display_cols],
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+            with st.expander("🔎 Lihat Data Baris Detail", expanded=False):
+                st.dataframe(detail_df, use_container_width=True)
+
     else:
         st.info("Kolom 'JENIS TRANSAKSI' tidak ditemukan atau tidak ada kolom SLA yang tersedia.")
    
