@@ -605,7 +605,7 @@ with st.sidebar:
     st.markdown("### 🤖 Tanya SELA")
     if st.button("💬 Buka / Tutup SELA"):
         st.session_state["show_sela"] = not st.session_state["show_sela"]
-    st.caption("SELA Natural Voice aktif saat dibuka; tanpa model AI browser berat agar dashboard tetap ringan.")
+    st.caption("SELA v6 ringan: voice assistant + jawaban berbasis data aktif. Jika mic diblokir browser, gunakan input teks fallback.")
 
 
 # ==============================
@@ -2475,10 +2475,9 @@ with tab_transaksi:
                     ].copy()
 
                 with c_filter2:
-                    max_top_n = max(0, min(30, len(trx_ai_base)))
+                    # Safe slider: Streamlit error jika min_value == max_value.
+                    max_top_n = min(30, len(trx_ai_base))
 
-                    # Streamlit slider akan error jika min_value == max_value.
-                    # Karena itu, saat hasil filter hanya 0 atau 1 baris, tampilkan metric saja.
                     if max_top_n <= 0:
                         top_n = 0
                         st.info("Tidak ada data untuk Top N.")
@@ -2487,14 +2486,15 @@ with tab_transaksi:
                         st.metric("Top N ditampilkan", "1")
                         st.caption("Hanya ada 1 jenis transaksi pada filter aktif.")
                     else:
-                        prev_top_n = st.session_state.get("trx_top_n_wow", min(10, max_top_n))
-                        safe_default_top_n = min(max(int(prev_top_n), 1), max_top_n)
-
+                        default_top_n = min(10, max_top_n)
+                        prev_top_n = st.session_state.get("trx_top_n_wow", default_top_n)
+                        if prev_top_n > max_top_n:
+                            st.session_state["trx_top_n_wow"] = default_top_n
                         top_n = st.slider(
                             "Top N ditampilkan",
                             min_value=1,
                             max_value=max_top_n,
-                            value=safe_default_top_n,
+                            value=min(default_top_n, max_top_n),
                             step=1,
                             key="trx_top_n_wow",
                         )
@@ -6579,1104 +6579,462 @@ with tab_pdf:
 
 
 # ==========================================================
-#  SELA v5 — Natural Female Voice Data Copilot
-#  Revisi:
-#  - Menghapus total model AI browser berat agar tidak hang.
-#  - Tidak mengirim seluruh dataframe ke browser; hanya ringkasan kecil.
-#  - Avatar 3D-style ringan berbasis CSS, dengan blink, glow, listening pulse,
-#    mouth movement saat berbicara, dan suara wanita via browser SpeechSynthesis.
-#  - Mic memakai Web Speech API. Jika browser tidak support, tetap bisa ketik.
+#  SELA v6 — Natural Female Voice Data Copilot
+#  - Tidak memakai WebLLM / model AI browser berat
+#  - Mic memakai Web Speech API browser (Chrome/Edge + HTTPS + izin mic)
+#  - Fallback input teks selalu tersedia
+#  - Jawaban analitis berbasis ringkasan data aktif dashboard
 # ==========================================================
 import streamlit.components.v1 as components
-import json
-import re
-import math
-import pandas as pd
-import numpy as np
+import json as _sela_json
+import re as _sela_re
+import math as _sela_math
+import pandas as _sela_pd
 
 
-def _sela_seconds_to_text(seconds):
-    """Format detik ke teks Indonesia yang ringkas."""
+def _sela_safe_float(x):
     try:
-        if seconds is None or pd.isna(seconds):
-            return "-"
-        seconds = int(round(float(seconds)))
-        days = seconds // 86400
-        seconds %= 86400
-        hours = seconds // 3600
-        seconds %= 3600
-        minutes = seconds // 60
-        secs = seconds % 60
-
-        parts = []
-        if days > 0:
-            parts.append(f"{days} hari")
-        if hours > 0 or days > 0:
-            parts.append(f"{hours} jam")
-        if minutes > 0 or hours > 0 or days > 0:
-            parts.append(f"{minutes} menit")
-        if not parts:
-            parts.append(f"{secs} detik")
-        return " ".join(parts)
+        if x is None or _sela_pd.isna(x):
+            return None
+        v = float(x)
+        if _sela_math.isnan(v) or _sela_math.isinf(v):
+            return None
+        return v
     except Exception:
-        return "-"
+        return None
 
 
 def _sela_fmt_int(x):
     try:
-        return f"{int(x):,}".replace(",", ".")
+        return f"{int(round(float(x))):,}".replace(",", ".")
     except Exception:
         return "-"
+
+
+def _sela_days(x):
+    v = _sela_safe_float(x)
+    if v is None:
+        return None
+    return v / 86400.0
 
 
 def _sela_fmt_days(x):
-    try:
-        if x is None or pd.isna(x):
-            return "-"
-        return f"{float(x):.2f} hari"
-    except Exception:
+    v = _sela_safe_float(x)
+    if v is None:
         return "-"
+    return f"{v:.2f} hari"
 
 
-def _sela_find_col(df, patterns):
-    """Cari nama kolom secara fleksibel berdasarkan daftar regex/potongan kata."""
-    if df is None or not isinstance(df, pd.DataFrame):
+def _sela_detect_col(df, patterns):
+    if df is None or df.empty:
         return None
-
     for col in df.columns:
-        norm = re.sub(r"[^A-Z0-9]+", " ", str(col).upper()).strip()
-        if all(re.search(pat, norm) for pat in patterns):
+        norm = _sela_re.sub(r"[^A-Z0-9]+", " ", str(col).upper()).strip()
+        for p in patterns:
+            if p in norm:
+                return col
+    return None
+
+
+def _sela_detect_nomor_permohonan_col(df):
+    if df is None or df.empty:
+        return None
+    exact_candidates = {
+        "NOMOR PERMOHONAN", "NO PERMOHONAN", "NO PERMOHONAN DOKUMEN",
+        "NOMOR PERMINTAAN", "NO PERMINTAAN", "NO REQUEST", "REQUEST NUMBER",
+        "NOMOR DOKUMEN", "NO DOKUMEN"
+    }
+    for col in df.columns:
+        norm = _sela_re.sub(r"[^A-Z0-9]+", " ", str(col).upper()).strip()
+        if norm in exact_candidates:
+            return col
+    for col in df.columns:
+        norm = _sela_re.sub(r"[^A-Z0-9]+", " ", str(col).upper()).strip()
+        has_number = any(t in norm.split() for t in ["NO", "NOMOR", "NUMBER"])
+        has_req = any(t in norm for t in ["PERMOHONAN", "PERMINTAAN", "REQUEST", "DOKUMEN"])
+        if has_number and has_req:
             return col
     return None
 
 
-def _sela_natural_key(x):
-    return [int(t) if str(t).isdigit() else str(t).lower() for t in re.split(r"(\d+)", str(x))]
-
-
-def _sela_safe_top_records(df, name_col, value_col, count_col=None, n=5, ascending=False):
-    if df is None or df.empty or name_col not in df.columns or value_col not in df.columns:
+def _sela_series_top(df, group_col, value_col, topn=8, mode="slow"):
+    if group_col not in df.columns or value_col not in df.columns:
         return []
-
-    d = df.dropna(subset=[name_col, value_col]).copy()
+    d = df[[group_col, value_col]].copy()
+    d[group_col] = d[group_col].fillna("TIDAK TERDETEKSI").astype(str)
+    d[value_col] = _sela_pd.to_numeric(d[value_col], errors="coerce")
+    d = d.dropna(subset=[value_col])
     if d.empty:
         return []
-
-    d = d.sort_values(value_col, ascending=ascending).head(n)
-
+    g = d.groupby(group_col)[value_col].agg(["count", "mean", "sum"]).reset_index()
+    g["days"] = g["mean"] / 86400.0
+    g = g.sort_values("days", ascending=(mode != "slow"))
     out = []
-    for _, row in d.iterrows():
-        item = {
-            "name": str(row[name_col]),
-            "value": float(row[value_col]) if pd.notna(row[value_col]) else None,
-            "value_text": _sela_fmt_days(row[value_col]),
-        }
-        if count_col and count_col in d.columns:
-            try:
-                item["count"] = int(row[count_col])
-                item["count_text"] = _sela_fmt_int(row[count_col])
-            except Exception:
-                item["count"] = None
-                item["count_text"] = "-"
-        out.append(item)
-
+    for _, r in g.head(topn).iterrows():
+        out.append({
+            "name": str(r[group_col]),
+            "count": int(r["count"]),
+            "avg_days": _sela_safe_float(r["days"]),
+            "avg_text": _sela_fmt_days(r["days"]),
+        })
     return out
 
 
-def build_sela_context(df_active, periode_col, available_sla_cols=None, selected_periode=None):
-    """Bangun ringkasan kecil untuk SELA. Jangan kirim dataframe mentah ke browser."""
+def _sela_make_context(df_filtered, periode_col, available_sla_cols=None, selected_periode=None):
     ctx = {
-        "ok": False,
-        "period_start": "-",
-        "period_end": "-",
-        "period_count": 0,
+        "app": "SLA Payment Analyzer",
         "total_rows": 0,
-        "total_rows_text": "0",
-        "avg_total_days": None,
-        "avg_total_text": "-",
-        "avg_keuangan_days": None,
-        "avg_keuangan_text": "-",
-        "bottleneck_process": "-",
-        "bottleneck_days": None,
-        "bottleneck_text": "-",
-        "growth_latest_pct": None,
-        "growth_latest_text": "-",
-        "avg_growth_pct": None,
-        "avg_growth_text": "-",
-        "last_period": "-",
-        "last_period_count": None,
-        "previous_period": "-",
-        "previous_period_count": None,
-        "process_means": [],
-        "volume_by_period": [],
-        "top_slowest_transactions": [],
-        "top_fastest_transactions": [],
-        "top_vendors": [],
-        "top_permohonan": [],
-        "data_scope": "Data aktif mengikuti filter periode dashboard.",
+        "periode_col": str(periode_col) if periode_col else "PERIODE",
+        "periode_range": "-",
+        "selected_periode": [str(x) for x in (selected_periode or [])],
+        "columns": [],
+        "sla_main_col": None,
+        "avg_sla_days": None,
+        "avg_sla_text": "-",
+        "quality_ratio": None,
+        "periods": [],
+        "growth": [],
+        "process_avg": [],
+        "top_slow_jenis": [],
+        "top_fast_jenis": [],
+        "top_slow_vendor": [],
+        "top_slow_permohonan": [],
+        "top_volume_jenis": [],
+        "top_volume_vendor": [],
+        "value_summary": None,
+        "nomor_permohonan_col": None,
+        "vendor_col": "NAMA VENDOR",
+        "jenis_col": "JENIS TRANSAKSI",
+        "executive_summary": "Data belum tersedia.",
+        "recommendations": [],
+        "data_scope": "Data aktif mengikuti filter periode pada sidebar.",
     }
 
-    if df_active is None or not isinstance(df_active, pd.DataFrame) or df_active.empty:
+    if df_filtered is None or not isinstance(df_filtered, _sela_pd.DataFrame) or df_filtered.empty:
         return ctx
 
-    if not periode_col or periode_col not in df_active.columns:
-        return ctx
-
-    df = df_active.copy()
-    ctx["ok"] = True
+    df = df_filtered.copy()
     ctx["total_rows"] = int(len(df))
-    ctx["total_rows_text"] = _sela_fmt_int(len(df))
+    ctx["columns"] = [str(c) for c in df.columns]
 
-    # Periode aktif
-    try:
-        if selected_periode:
-            periods = [str(x) for x in selected_periode if str(x).strip()]
+    if periode_col in df.columns:
+        try:
+            period_values = df[periode_col].dropna().astype(str).tolist()
+            unique_periods = list(dict.fromkeys(period_values))
+            if selected_periode:
+                ordered = [str(x) for x in selected_periode if str(x) in set(unique_periods)]
+                if ordered:
+                    unique_periods = ordered
+            ctx["selected_periode"] = unique_periods
+            if unique_periods:
+                ctx["periode_range"] = f"{unique_periods[0]} sampai {unique_periods[-1]}" if len(unique_periods) > 1 else unique_periods[0]
+        except Exception:
+            pass
+
+    sla_candidates = ["TOTAL WAKTU", "KEUANGAN", "PERBENDAHARAAN", "VENDOR", "FUNGSIONAL"]
+    if available_sla_cols:
+        sla_candidates = [c for c in sla_candidates if c in available_sla_cols] + [c for c in available_sla_cols if c not in sla_candidates]
+    sla_main = next((c for c in sla_candidates if c in df.columns), None)
+    ctx["sla_main_col"] = sla_main
+
+    if sla_main:
+        sec = _sela_pd.to_numeric(df[sla_main], errors="coerce")
+        if sec.notna().any():
+            avg_days = float(sec.mean()) / 86400.0
+            ctx["avg_sla_days"] = avg_days
+            ctx["avg_sla_text"] = _sela_fmt_days(avg_days)
+
+    if periode_col in df.columns:
+        ctx["quality_ratio"] = float(df[periode_col].notna().mean() * 100.0)
+
+    # Period summary and growth
+    if periode_col in df.columns:
+        work = df.copy()
+        work["__PERIODE_STR__"] = work[periode_col].astype(str)
+        if sla_main:
+            work["__SLA_SEC__"] = _sela_pd.to_numeric(work[sla_main], errors="coerce")
         else:
-            periods = sorted(df[periode_col].dropna().astype(str).unique().tolist(), key=_sela_natural_key)
-
-        if periods:
-            ctx["period_start"] = str(periods[0])
-            ctx["period_end"] = str(periods[-1])
-            ctx["period_count"] = len(periods)
-    except Exception:
-        periods = sorted(df[periode_col].dropna().astype(str).unique().tolist(), key=_sela_natural_key)
-
-    # SLA columns
-    available_sla_cols = available_sla_cols or []
-    sla_candidates = [c for c in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"] if c in df.columns]
-    if not sla_candidates and available_sla_cols:
-        sla_candidates = [c for c in available_sla_cols if c in df.columns]
-
-    def mean_days(col):
-        if col not in df.columns:
-            return None
-        s = pd.to_numeric(df[col], errors="coerce").dropna()
-        if s.empty:
-            return None
-        return float(s.mean() / 86400)
-
-    total_days = mean_days("TOTAL WAKTU")
-    if total_days is not None:
-        ctx["avg_total_days"] = total_days
-        ctx["avg_total_text"] = _sela_fmt_days(total_days)
-
-    keu_days = mean_days("KEUANGAN")
-    if keu_days is not None:
-        ctx["avg_keuangan_days"] = keu_days
-        ctx["avg_keuangan_text"] = _sela_fmt_days(keu_days)
-
-    process_rows = []
-    for col in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN"]:
-        d = mean_days(col)
-        if d is not None:
-            process_rows.append({"process": col, "days": d, "days_text": _sela_fmt_days(d)})
-
-    process_rows = sorted(process_rows, key=lambda x: x["days"], reverse=True)
-    ctx["process_means"] = process_rows
-
-    if process_rows:
-        top = process_rows[0]
-        ctx["bottleneck_process"] = top["process"]
-        ctx["bottleneck_days"] = top["days"]
-        ctx["bottleneck_text"] = top["days_text"]
-
-    # Volume & growth by period
-    try:
-        vol = (
-            df.groupby(df[periode_col].astype(str))
-            .size()
-            .reset_index(name="Jumlah")
-        )
-        order = periods if periods else sorted(vol[periode_col].astype(str).unique().tolist(), key=_sela_natural_key)
-        vol["_ORDER"] = pd.Categorical(vol[periode_col].astype(str), categories=order, ordered=True)
-        vol = vol.sort_values("_ORDER").drop(columns=["_ORDER"])
-
-        vol["Growth"] = vol["Jumlah"].pct_change() * 100
-
-        ctx["volume_by_period"] = [
-            {
-                "period": str(r[periode_col]),
-                "count": int(r["Jumlah"]),
-                "count_text": _sela_fmt_int(r["Jumlah"]),
-                "growth": None if pd.isna(r["Growth"]) else float(r["Growth"]),
-                "growth_text": "-" if pd.isna(r["Growth"]) else f"{float(r['Growth']):+.2f}%",
+            work["__SLA_SEC__"] = _sela_pd.NA
+        grp = work.groupby("__PERIODE_STR__").agg(
+            count=("__PERIODE_STR__", "size"),
+            avg_sec=("__SLA_SEC__", "mean")
+        ).reset_index()
+        if ctx["selected_periode"]:
+            order_map = {p: i for i, p in enumerate(ctx["selected_periode"])}
+            grp["__ORDER__"] = grp["__PERIODE_STR__"].map(order_map).fillna(999999)
+            grp = grp.sort_values(["__ORDER__", "__PERIODE_STR__"])
+        else:
+            grp = grp.sort_values("__PERIODE_STR__")
+        prev = None
+        for _, r in grp.iterrows():
+            p = str(r["__PERIODE_STR__"])
+            cnt = int(r["count"])
+            avgd = _sela_days(r["avg_sec"])
+            dt = _sela_pd.to_datetime(p, errors="coerce")
+            meta = {
+                "periode": p,
+                "count": cnt,
+                "avg_sla_days": avgd,
+                "avg_sla_text": _sela_fmt_days(avgd),
+                "year": int(dt.year) if not _sela_pd.isna(dt) else None,
+                "month": int(dt.month) if not _sela_pd.isna(dt) else None,
             }
-            for _, r in vol.iterrows()
-        ]
+            ctx["periods"].append(meta)
+            growth_pct = None
+            delta = None
+            if prev is not None and prev != 0:
+                delta = cnt - prev
+                growth_pct = (delta / prev) * 100.0
+            ctx["growth"].append({
+                "periode": p,
+                "count": cnt,
+                "delta": delta,
+                "growth_pct": growth_pct,
+                "growth_text": "baseline" if growth_pct is None else f"{growth_pct:.2f}%",
+            })
+            prev = cnt
 
-        if len(vol) >= 1:
-            last = vol.iloc[-1]
-            ctx["last_period"] = str(last[periode_col])
-            ctx["last_period_count"] = int(last["Jumlah"])
+    # Process averages
+    for c in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]:
+        if c in df.columns:
+            s = _sela_pd.to_numeric(df[c], errors="coerce")
+            if s.notna().any():
+                d = float(s.mean()) / 86400.0
+                ctx["process_avg"].append({"process": c, "avg_days": d, "avg_text": _sela_fmt_days(d)})
+    ctx["process_avg"] = sorted(ctx["process_avg"], key=lambda x: (x["avg_days"] is None, x["avg_days"] if x["avg_days"] is not None else -1), reverse=True)
 
-        if len(vol) >= 2:
-            prev = vol.iloc[-2]
-            last = vol.iloc[-1]
-            ctx["previous_period"] = str(prev[periode_col])
-            ctx["previous_period_count"] = int(prev["Jumlah"])
-            if pd.notna(last["Growth"]):
-                ctx["growth_latest_pct"] = float(last["Growth"])
-                ctx["growth_latest_text"] = f"{float(last['Growth']):+.2f}%"
+    # Group summaries
+    if sla_main:
+        if "JENIS TRANSAKSI" in df.columns:
+            ctx["top_slow_jenis"] = _sela_series_top(df, "JENIS TRANSAKSI", sla_main, 10, "slow")
+            ctx["top_fast_jenis"] = _sela_series_top(df, "JENIS TRANSAKSI", sla_main, 10, "fast")
+            vol = df.groupby(df["JENIS TRANSAKSI"].fillna("TIDAK TERDETEKSI").astype(str)).size().sort_values(ascending=False).head(10)
+            ctx["top_volume_jenis"] = [{"name": str(k), "count": int(v)} for k, v in vol.items()]
+        if "NAMA VENDOR" in df.columns:
+            # Untuk vendor, gunakan SLA Vendor jika tersedia; fallback ke SLA utama.
+            vendor_sla = "VENDOR" if "VENDOR" in df.columns else sla_main
+            ctx["top_slow_vendor"] = _sela_series_top(df, "NAMA VENDOR", vendor_sla, 10, "slow")
+            vv = df.groupby(df["NAMA VENDOR"].fillna("TIDAK TERDETEKSI").astype(str)).size().sort_values(ascending=False).head(10)
+            ctx["top_volume_vendor"] = [{"name": str(k), "count": int(v)} for k, v in vv.items()]
+        nomor_col = _sela_detect_nomor_permohonan_col(df)
+        ctx["nomor_permohonan_col"] = str(nomor_col) if nomor_col else None
+        if nomor_col:
+            ctx["top_slow_permohonan"] = _sela_series_top(df, nomor_col, sla_main, 10, "slow")
 
-        valid_growth = vol["Growth"].dropna()
-        if not valid_growth.empty:
-            ctx["avg_growth_pct"] = float(valid_growth.mean())
-            ctx["avg_growth_text"] = f"{float(valid_growth.mean()):+.2f}%"
-    except Exception:
-        pass
+    # Nilai transaksi if exists
+    value_col = _sela_detect_col(df, ["NILAI TRANSAKSI", "NOMINAL", "TOTAL NILAI", "AMOUNT", "VALUE"])
+    if value_col:
+        val = df[value_col].astype(str).str.replace(r"[^0-9,.-]", "", regex=True).str.replace(",", ".", regex=False)
+        val = _sela_pd.to_numeric(val, errors="coerce")
+        if val.notna().any():
+            ctx["value_summary"] = {
+                "column": str(value_col),
+                "total": float(val.sum()),
+                "avg": float(val.mean()),
+                "max": float(val.max()),
+                "valid_count": int(val.notna().sum()),
+            }
 
-    # Top jenis transaksi
-    if "JENIS TRANSAKSI" in df.columns:
-        sla_col_for_trx = "TOTAL WAKTU" if "TOTAL WAKTU" in df.columns else ("KEUANGAN" if "KEUANGAN" in df.columns else None)
-        if sla_col_for_trx:
-            trx = (
-                df.groupby("JENIS TRANSAKSI", dropna=False)
-                .agg(
-                    Jumlah=("JENIS TRANSAKSI", "size"),
-                    SLA_Detik=(sla_col_for_trx, lambda s: pd.to_numeric(s, errors="coerce").mean()),
-                )
-                .reset_index()
-            )
-            trx["SLA_Hari"] = trx["SLA_Detik"] / 86400
+    # Recommendations and executive summary
+    slow_jenis = ctx["top_slow_jenis"][0] if ctx["top_slow_jenis"] else None
+    bottleneck = ctx["process_avg"][0] if ctx["process_avg"] else None
+    growth_last = ctx["growth"][-1] if ctx["growth"] else None
 
-            ctx["top_slowest_transactions"] = _sela_safe_top_records(
-                trx, "JENIS TRANSAKSI", "SLA_Hari", "Jumlah", n=5, ascending=False
-            )
-            ctx["top_fastest_transactions"] = _sela_safe_top_records(
-                trx, "JENIS TRANSAKSI", "SLA_Hari", "Jumlah", n=5, ascending=True
-            )
+    recommendations = []
+    if slow_jenis:
+        recommendations.append(f"Prioritaskan evaluasi jenis transaksi {slow_jenis['name']} karena memiliki rata-rata SLA tertinggi ({slow_jenis['avg_text']}).")
+    if bottleneck:
+        recommendations.append(f"Lakukan pendalaman pada proses {bottleneck['process']} karena menjadi bottleneck terbesar ({bottleneck['avg_text']}).")
+    if growth_last and growth_last.get("growth_pct") is not None and growth_last["growth_pct"] > 20:
+        recommendations.append(f"Siapkan kapasitas verifikasi tambahan karena growth terakhir naik {growth_last['growth_pct']:.2f}%.")
+    if not recommendations:
+        recommendations.append("Pertahankan monitoring berkala dan gunakan drilldown vendor/jenis transaksi untuk menemukan outlier SLA.")
+    ctx["recommendations"] = recommendations
 
-    # Top vendor/cabang
-    if "NAMA VENDOR" in df.columns:
-        vendor_sla_col = "TOTAL WAKTU" if "TOTAL WAKTU" in df.columns else ("VENDOR" if "VENDOR" in df.columns else None)
-        if vendor_sla_col:
-            vd = (
-                df.groupby("NAMA VENDOR", dropna=False)
-                .agg(
-                    Jumlah=("NAMA VENDOR", "size"),
-                    SLA_Detik=(vendor_sla_col, lambda s: pd.to_numeric(s, errors="coerce").mean()),
-                )
-                .reset_index()
-            )
-            vd["SLA_Hari"] = vd["SLA_Detik"] / 86400
-            ctx["top_vendors"] = _sela_safe_top_records(
-                vd, "NAMA VENDOR", "SLA_Hari", "Jumlah", n=5, ascending=False
-            )
-
-    # Top nomor permohonan
-    nomor_col = (
-        _sela_find_col(df, [r"(NO|NOMOR|NUMBER)", r"(PERMOHONAN|PERMINTAAN|REQUEST)"])
-        or _sela_find_col(df, [r"(NO|NOMOR)", r"(DOKUMEN)"])
-    )
-
-    if nomor_col:
-        perm_sla_col = "TOTAL WAKTU" if "TOTAL WAKTU" in df.columns else ("KEUANGAN" if "KEUANGAN" in df.columns else None)
-        if perm_sla_col:
-            pm = (
-                df.groupby(nomor_col, dropna=False)
-                .agg(
-                    Jumlah=(nomor_col, "size"),
-                    SLA_Detik=(perm_sla_col, lambda s: pd.to_numeric(s, errors="coerce").mean()),
-                )
-                .reset_index()
-            )
-            pm["SLA_Hari"] = pm["SLA_Detik"] / 86400
-            top_pm = _sela_safe_top_records(pm, nomor_col, "SLA_Hari", "Jumlah", n=5, ascending=False)
-            ctx["top_permohonan"] = top_pm
-            ctx["nomor_permohonan_col"] = str(nomor_col)
+    exec_parts = [
+        f"Pada periode aktif {ctx['periode_range']}, data memuat {ctx['total_rows']} transaksi.",
+    ]
+    if ctx["avg_sla_text"] != "-":
+        exec_parts.append(f"Rata-rata SLA utama ({ctx['sla_main_col']}) berada pada {ctx['avg_sla_text']}.")
+    if slow_jenis:
+        exec_parts.append(f"Jenis transaksi yang perlu perhatian adalah {slow_jenis['name']} dengan SLA {slow_jenis['avg_text']}.")
+    if bottleneck:
+        exec_parts.append(f"Bottleneck terbesar berada pada proses {bottleneck['process']}.")
+    if growth_last and growth_last.get("growth_pct") is not None:
+        arah = "naik" if growth_last["growth_pct"] > 0 else "turun"
+        exec_parts.append(f"Growth transaksi terakhir {arah} {abs(growth_last['growth_pct']):.2f}% dibanding periode sebelumnya.")
+    ctx["executive_summary"] = " ".join(exec_parts)
 
     return ctx
 
 
-def render_sela_natural_voice(df_filtered, periode_col, available_sla_cols=None, selected_periode=None):
-    ctx = build_sela_context(
-        df_active=df_filtered,
-        periode_col=periode_col,
-        available_sla_cols=available_sla_cols,
-        selected_periode=selected_periode,
-    )
+def render_sela_widget(df_filtered, periode_col: str, available_sla_cols=None, selected_periode=None):
+    """Render SELA voice assistant berbasis ringkasan data aktif, bukan raw dataframe besar."""
+    ctx = _sela_make_context(df_filtered, periode_col, available_sla_cols, selected_periode)
+    context_json = _sela_json.dumps(ctx, ensure_ascii=False).replace("</", "<\\/")
 
-    ctx_json = json.dumps(ctx, ensure_ascii=False).replace("</", "<\\/")
-
-    html_template = r"""
+    html = r"""
 <!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <style>
-:root {
-  --bg0:#07111f;
-  --bg1:#0b1f3a;
-  --cyan:#00eaff;
-  --green:#38ef7d;
-  --purple:#9b5cff;
-  --pink:#ff6aa2;
-  --text:#eef8ff;
-  --muted:#9fb6c9;
-}
-* { box-sizing: border-box; }
-body {
-  margin:0;
-  background:transparent;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-}
-.sela-shell {
-  width:100%;
-  max-width:760px;
-  margin: 0 auto;
-  border-radius:28px;
-  overflow:hidden;
-  color:var(--text);
-  background:
-    radial-gradient(circle at 15% 5%, rgba(0,234,255,.28), transparent 28%),
-    radial-gradient(circle at 90% 20%, rgba(255,106,162,.20), transparent 28%),
-    linear-gradient(145deg, rgba(7,17,31,.98), rgba(9,35,69,.96) 55%, rgba(3,79,98,.94));
-  border:1px solid rgba(255,255,255,.16);
-  box-shadow:0 24px 65px rgba(0,0,0,.45);
-}
-.sela-header {
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:14px;
-  padding:18px 20px;
-  border-bottom:1px solid rgba(255,255,255,.12);
-}
-.brand {
-  display:flex;
-  gap:13px;
-  align-items:center;
-}
-.brand-dot {
-  width:44px;height:44px;border-radius:50%;
-  background:linear-gradient(135deg,var(--cyan),var(--green));
-  display:grid;place-items:center;
-  color:#062032;font-weight:950;font-size:20px;
-  box-shadow:0 0 25px rgba(0,234,255,.32);
-}
-.title { font-size:20px; font-weight:950; letter-spacing:.2px; }
-.subtitle { font-size:12px; color:var(--muted); margin-top:3px; line-height:1.35; }
-.badges { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
-.badge {
-  border:1px solid rgba(255,255,255,.16);
-  background:rgba(255,255,255,.08);
-  color:#dffcff;
-  padding:7px 10px;
-  border-radius:999px;
-  font-size:11px;
-  font-weight:800;
-}
-.sela-main {
-  display:grid;
-  grid-template-columns: 290px minmax(0,1fr);
-  gap:0;
-  min-height:540px;
-}
-.avatar-zone {
-  position:relative;
-  min-height:540px;
-  background:
-    radial-gradient(circle at 50% 18%, rgba(255,255,255,.18), transparent 22%),
-    linear-gradient(180deg, rgba(255,255,255,.96), rgba(225,246,255,.90));
-  overflow:hidden;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  perspective:1000px;
-}
-.holo-ring {
-  position:absolute;
-  width:230px;height:230px;
-  border-radius:50%;
-  border:2px solid rgba(0,234,255,.34);
-  box-shadow:0 0 35px rgba(0,234,255,.32), inset 0 0 25px rgba(155,92,255,.18);
-  transform: rotateX(72deg) translateY(130px);
-  bottom:30px;
-  animation:ringPulse 3s infinite ease-in-out;
-}
-.avatar {
-  width:205px;height:305px;
-  position:relative;
-  transform-style:preserve-3d;
-  animation:floaty 4.4s ease-in-out infinite;
-}
-.hair-back {
-  position:absolute;left:45px;top:28px;width:115px;height:170px;
-  background:linear-gradient(135deg,#111827,#020617);
-  border-radius:58px 58px 52px 52px;
-  box-shadow: inset -18px 0 22px rgba(255,255,255,.05);
-}
-.neck {
-  position:absolute;left:88px;top:162px;width:38px;height:45px;
-  background:linear-gradient(180deg,#d49a7d,#b97863);
-  border-radius:14px;
-  z-index:2;
-}
-.face {
-  position:absolute;left:48px;top:42px;width:112px;height:135px;
-  background:linear-gradient(145deg,#e7b394,#c8846e 78%);
-  border-radius:49% 49% 46% 46%;
-  box-shadow: inset -10px -8px 18px rgba(73,33,24,.16), inset 8px 7px 14px rgba(255,255,255,.18), 0 14px 22px rgba(0,0,0,.22);
-  z-index:3;
-}
-.bangs {
-  position:absolute;left:47px;top:33px;width:116px;height:52px;
-  background:linear-gradient(135deg,#0b0f1a,#020617);
-  border-radius:60px 60px 25px 20px;
-  z-index:5;
-  clip-path:polygon(0 0,100% 0,100% 67%,78% 52%,63% 85%,43% 54%,25% 82%,10% 52%,0 70%);
-}
-.hair-left,.hair-right {
-  position:absolute;top:80px;width:34px;height:145px;background:#050814;z-index:4;
-  border-radius:24px;
-}
-.hair-left { left:31px; transform:rotate(7deg); }
-.hair-right{ right:31px; transform:rotate(-7deg); }
-.eye {
-  position:absolute;top:88px;width:29px;height:18px;border-radius:50%;
-  background:#f8fafc;z-index:6;
-  box-shadow: inset 0 0 5px rgba(0,0,0,.25);
-}
-.eye.left { left:70px; }
-.eye.right{ left:112px; }
-.pupil {
-  position:absolute;left:9px;top:4px;width:10px;height:10px;border-radius:50%;
-  background:#243045;
-}
-.eye::after {
-  content:"";position:absolute;inset:0;background:#c8846e;border-radius:50%;
-  transform:scaleY(0);transform-origin:center;
-  animation:blink 4.8s infinite;
-}
-.glasses {
-  position:absolute;left:63px;top:83px;width:90px;height:30px;z-index:8;
-}
-.glass {
-  position:absolute;top:0;width:37px;height:26px;border:4px solid #0f172a;border-radius:10px;
-  background:rgba(255,255,255,.03);
-}
-.glass.l{left:0}.glass.r{right:0}
-.bridge { position:absolute;left:38px;top:12px;width:17px;height:4px;background:#0f172a;border-radius:3px; }
-.nose {
-  position:absolute;left:100px;top:106px;width:12px;height:25px;border-radius:50%;
-  border-right:3px solid rgba(88,43,32,.28);z-index:7;
-}
-.mouth {
-  position:absolute;left:86px;top:140px;width:38px;height:10px;
-  background:#7d3247;border-radius:4px 4px 18px 18px;z-index:8;
-  transform-origin:center top;
-}
-.speaking .mouth { animation:mouthTalk .18s infinite alternate; }
-.listening .holo-ring { border-color:rgba(56,239,125,.62); box-shadow:0 0 50px rgba(56,239,125,.52); }
-.thinking .avatar { animation:floaty 1.4s ease-in-out infinite; }
-.body {
-  position:absolute;left:34px;top:190px;width:142px;height:118px;
-  background:linear-gradient(135deg,#273348,#111827);
-  border-radius:38px 38px 16px 16px;
-  z-index:1;box-shadow:0 14px 26px rgba(0,0,0,.24);
-}
-.badge-s {
-  position:absolute;left:82px;top:217px;width:44px;height:44px;border-radius:50%;
-  background:linear-gradient(135deg,var(--cyan),var(--purple));display:grid;place-items:center;
-  color:white;font-weight:950;z-index:2;box-shadow:0 0 18px rgba(0,234,255,.35);
-}
-.wave {
-  position:absolute;bottom:18px;display:flex;gap:5px;align-items:flex-end;
-}
-.wave span {
-  width:6px;height:10px;border-radius:999px;background:linear-gradient(180deg,var(--cyan),var(--green));
-  opacity:.45;
-}
-.speaking .wave span, .listening .wave span { animation:wave 0.55s infinite ease-in-out; opacity:1; }
-.wave span:nth-child(2){animation-delay:.08s}.wave span:nth-child(3){animation-delay:.16s}.wave span:nth-child(4){animation-delay:.24s}.wave span:nth-child(5){animation-delay:.32s}
-
-.chat-zone {
-  padding:18px;
-  display:flex;
-  flex-direction:column;
-  gap:12px;
-  min-width:0;
-}
-.status {
-  border:1px solid rgba(255,255,255,.14);
-  background:rgba(255,255,255,.08);
-  border-radius:18px;
-  padding:12px 14px;
-  font-size:12.5px;
-  line-height:1.42;
-  color:#dbeafe;
-}
-.kpi-mini {
-  display:grid;
-  grid-template-columns:repeat(3,1fr);
-  gap:9px;
-}
-.kpi {
-  border:1px solid rgba(255,255,255,.12);
-  background:rgba(255,255,255,.08);
-  border-radius:16px;
-  padding:11px;
-}
-.kpi-label { font-size:10px; color:#a9c3d9; text-transform:uppercase; letter-spacing:.5px; }
-.kpi-value { font-size:18px; font-weight:950; margin-top:3px; }
-.chat-log {
-  height:184px;
-  overflow-y:auto;
-  padding:10px;
-  border-radius:18px;
-  border:1px solid rgba(255,255,255,.12);
-  background:rgba(3,10,24,.38);
-}
-.msg {
-  max-width:92%;
-  padding:10px 12px;
-  border-radius:16px;
-  margin-bottom:9px;
-  font-size:13px;
-  line-height:1.42;
-}
-.msg.sela {
-  background:linear-gradient(135deg,rgba(0,234,255,.16),rgba(56,239,125,.10));
-  border:1px solid rgba(0,234,255,.22);
-  margin-right:auto;
-}
-.msg.user {
-  background:rgba(255,255,255,.13);
-  border:1px solid rgba(255,255,255,.12);
-  margin-left:auto;
-}
-.controls {
-  display:grid;
-  grid-template-columns:1fr auto;
-  gap:8px;
-}
-.input {
-  width:100%;
-  border:1px solid rgba(255,255,255,.15);
-  background:rgba(255,255,255,.09);
-  color:white;
-  outline:none;
-  border-radius:999px;
-  padding:12px 14px;
-  font-size:13px;
-}
-.btn-row { display:flex; gap:8px; }
-.btn {
-  border:0;cursor:pointer;border-radius:999px;
-  padding:11px 13px;font-weight:900;
-  color:#062032;background:linear-gradient(135deg,var(--cyan),var(--green));
-  box-shadow:0 10px 24px rgba(0,234,255,.22);
-}
-.btn.secondary {
-  background:rgba(255,255,255,.12);
-  color:#e5f6ff;
-  border:1px solid rgba(255,255,255,.14);
-  box-shadow:none;
-}
-.chips {
-  display:flex;flex-wrap:wrap;gap:8px;
-}
-.chip {
-  border:1px solid rgba(255,255,255,.14);
-  background:rgba(255,255,255,.08);
-  color:#e5f6ff;
-  padding:8px 10px;
-  border-radius:999px;
-  font-size:11px;
-  cursor:pointer;
-}
-.voice-select {
-  width:100%;
-  background:rgba(255,255,255,.09);
-  color:#e5f6ff;
-  border:1px solid rgba(255,255,255,.14);
-  border-radius:12px;
-  padding:8px 10px;
-  font-size:12px;
-}
-.voice-select option { color:#111827; }
-.foot {
-  color:#9fb6c9;
-  font-size:10.8px;
-  line-height:1.35;
-}
-@keyframes floaty {
-  0%,100% { transform: translateY(0) rotateY(-5deg); }
-  50% { transform: translateY(-10px) rotateY(5deg); }
-}
-@keyframes blink {
-  0%, 92%, 100% { transform:scaleY(0); }
-  95% { transform:scaleY(1); }
-}
-@keyframes mouthTalk {
-  from { transform:scaleY(.65); }
-  to   { transform:scaleY(1.85); }
-}
-@keyframes wave {
-  0%,100%{height:10px}
-  50%{height:34px}
-}
-@keyframes ringPulse {
-  0%,100%{transform:rotateX(72deg) translateY(130px) scale(.95);opacity:.65}
-  50%{transform:rotateX(72deg) translateY(130px) scale(1.08);opacity:1}
-}
-@media(max-width:760px){
-  .sela-main{grid-template-columns:1fr}
-  .avatar-zone{min-height:360px}
-  .kpi-mini{grid-template-columns:1fr}
-}
+  :root{
+    --bg1:#07111f; --bg2:#0f2a44; --cyan:#22d3ee; --green:#22c55e; --pink:#f472b6; --text:#f8fafc; --muted:#b6c5d5;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:transparent;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text)}
+  .sela-shell{width:100%;max-width:540px;margin:0 auto;border-radius:28px;overflow:hidden;background:radial-gradient(circle at 18% 0%,rgba(34,211,238,.35),transparent 32%),radial-gradient(circle at 95% 90%,rgba(244,114,182,.22),transparent 30%),linear-gradient(140deg,rgba(7,17,31,.98),rgba(12,35,61,.98));border:1px solid rgba(255,255,255,.16);box-shadow:0 22px 55px rgba(0,0,0,.48)}
+  .sela-head{display:flex;align-items:center;gap:14px;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.12)}
+  .logo{width:46px;height:46px;border-radius:17px;background:linear-gradient(135deg,#60a5fa,#22c55e);display:flex;align-items:center;justify-content:center;font-weight:900;box-shadow:0 0 28px rgba(34,211,238,.45)}
+  .title{font-weight:950;font-size:17px;line-height:1.15}.subtitle{font-size:12px;color:var(--muted);margin-top:3px}.pillrow{margin-left:auto;display:flex;flex-direction:column;gap:5px;align-items:flex-end}.pill{font-size:10px;font-weight:850;padding:5px 8px;border-radius:999px;background:rgba(34,211,238,.13);border:1px solid rgba(34,211,238,.35);color:#dffcff}
+  .stage{display:grid;grid-template-columns:205px 1fr;gap:14px;padding:16px}.avatar-card{min-height:250px;border-radius:24px;background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.04));border:1px solid rgba(255,255,255,.13);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}.avatar-card:before{content:"";position:absolute;width:190px;height:190px;border-radius:50%;background:radial-gradient(circle,rgba(34,211,238,.45),transparent 68%);filter:blur(8px);animation:pulse 2.5s infinite}.avatar{position:relative;width:146px;height:205px;transform-style:preserve-3d;animation:float 3.3s ease-in-out infinite}.hair{position:absolute;left:24px;top:3px;width:100px;height:118px;border-radius:49% 49% 38% 38%;background:linear-gradient(145deg,#111827,#030712);box-shadow:inset -10px -10px 18px rgba(255,255,255,.05)}.face{position:absolute;left:31px;top:38px;width:84px;height:101px;border-radius:46% 46% 44% 44%;background:linear-gradient(145deg,#d7a58f,#f1c2aa 45%,#bb7b67);box-shadow:inset -10px -8px 16px rgba(91,33,28,.22),0 15px 24px rgba(0,0,0,.30)}.bang{position:absolute;left:33px;top:18px;width:82px;height:41px;border-radius:50% 50% 20% 20%;background:#05070c}.eye{position:absolute;top:42px;width:16px;height:9px;border-radius:50%;background:#111827;box-shadow:0 0 0 4px rgba(255,255,255,.55)}.eye.l{left:17px}.eye.r{right:17px}.glass{position:absolute;top:36px;left:11px;width:62px;height:23px;border:3px solid #0f172a;border-radius:11px}.mouth{position:absolute;left:31px;top:75px;width:24px;height:8px;border-radius:0 0 14px 14px;background:#8f3547;transition:.08s}.speaking .mouth{animation:talk .18s infinite}.body{position:absolute;left:18px;top:135px;width:110px;height:78px;border-radius:36px 36px 12px 12px;background:linear-gradient(145deg,#475569,#1e293b)}.neck{position:absolute;left:57px;top:124px;width:31px;height:29px;background:#c98d79;border-radius:0 0 12px 12px}.wave{position:absolute;bottom:14px;display:flex;gap:4px;height:28px;align-items:end}.bar{width:5px;height:8px;border-radius:99px;background:#22d3ee;opacity:.45}.speaking ~ .wave .bar,.listening ~ .wave .bar{animation:wave 1s infinite ease-in-out}.bar:nth-child(2){animation-delay:.1s}.bar:nth-child(3){animation-delay:.2s}.bar:nth-child(4){animation-delay:.3s}.bar:nth-child(5){animation-delay:.4s}
+  @keyframes pulse{50%{transform:scale(1.08);opacity:.55}}@keyframes float{50%{transform:translateY(-8px) rotateY(4deg)}}@keyframes talk{50%{height:17px;top:72px}}@keyframes wave{50%{height:26px;opacity:1}}
+  .info-card{border-radius:24px;background:rgba(255,255,255,.075);border:1px solid rgba(255,255,255,.13);padding:14px;min-height:250px}.status{font-size:12px;line-height:1.35;color:#dce9f6;padding:10px 12px;border-radius:16px;background:rgba(15,23,42,.65);border:1px solid rgba(255,255,255,.10);min-height:50px}.kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-top:11px}.kpi{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.11);border-radius:15px;padding:10px}.kpi label{display:block;font-size:10px;color:#a9bed3;text-transform:uppercase}.kpi b{font-size:16px}.quick{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}.chip{border:1px solid rgba(34,211,238,.35);background:rgba(34,211,238,.11);color:#e8fbff;padding:8px 9px;border-radius:999px;font-size:11px;font-weight:780;cursor:pointer}.chip:hover{background:rgba(34,211,238,.22)}
+  .chat{padding:0 16px 16px}.chatlog{height:170px;overflow-y:auto;padding:12px;border-radius:20px;background:rgba(2,6,23,.46);border:1px solid rgba(255,255,255,.10)}.msg{margin-bottom:10px;display:flex}.bubble{max-width:88%;padding:10px 12px;border-radius:16px;font-size:13px;line-height:1.42}.user{justify-content:flex-end}.user .bubble{background:linear-gradient(135deg,#2563eb,#06b6d4)}.bot .bubble{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.11)}.controls{display:grid;grid-template-columns:1fr auto auto;gap:8px;margin-top:11px}.input{border:none;outline:none;border-radius:999px;padding:12px 14px;background:rgba(255,255,255,.11);color:white;border:1px solid rgba(255,255,255,.14)}.btn{border:none;border-radius:999px;padding:11px 14px;font-weight:900;cursor:pointer;color:#061126;background:linear-gradient(135deg,#22c55e,#86efac)}.btn.secondary{background:linear-gradient(135deg,#38bdf8,#a78bfa);color:white}.smallnote{font-size:11px;color:#a9bed3;margin-top:9px;line-height:1.35}.voice-select{width:100%;margin-top:8px;background:rgba(255,255,255,.10);color:#e5eef7;border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:8px;font-size:11px}.voice-select option{color:#111827}.listening-dot{display:inline-block;width:8px;height:8px;background:#22c55e;border-radius:999px;margin-left:6px;box-shadow:0 0 15px #22c55e;animation:pulseDot 1s infinite}@keyframes pulseDot{50%{transform:scale(1.45)}}
+  @media(max-width:620px){.stage{grid-template-columns:1fr}.avatar-card{min-height:230px}.controls{grid-template-columns:1fr}.pillrow{display:none}}
 </style>
 </head>
 <body>
-<div id="selaShell" class="sela-shell">
-  <div class="sela-header">
-    <div class="brand">
-      <div class="brand-dot">S</div>
-      <div>
-        <div class="title">SELA v5 • Natural Female Voice</div>
-        <div class="subtitle">Asisten suara untuk membaca data SLA aktif, menjawab pertanyaan, dan memberi insight seperti analis pribadi.</div>
+<div class="sela-shell">
+  <div class="sela-head">
+    <div class="logo">S</div>
+    <div><div class="title">SELA v6 • Natural Female Voice</div><div class="subtitle">Asisten wanita virtual berbasis data aktif SLA Payment Analyzer</div></div>
+    <div class="pillrow"><div class="pill">DATA CONNECTED</div><div class="pill">VOICE MODE</div></div>
+  </div>
+  <div class="stage">
+    <div class="avatar-card">
+      <div id="avatar" class="avatar">
+        <div class="hair"></div><div class="bang"></div><div class="neck"></div><div class="face"><div class="glass"></div><div class="eye l"></div><div class="eye r"></div><div class="mouth"></div></div><div class="body"></div>
       </div>
+      <div class="wave"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>
     </div>
-    <div class="badges">
-      <div class="badge">DATA CONNECTED</div>
-      <div class="badge">LIGHT VOICE</div>
-      <div class="badge">VOICE READY</div>
+    <div class="info-card">
+      <div id="status" class="status">SELA siap. Klik mic untuk bicara, atau ketik pertanyaan. Jika mic tidak masuk, gunakan tombol cek mic dan pastikan izin microphone sudah Allow.</div>
+      <div class="kpis"><div class="kpi"><label>Transaksi aktif</label><b id="kpiTrx">-</b></div><div class="kpi"><label>Rata-rata SLA</label><b id="kpiSla">-</b></div><div class="kpi"><label>Periode</label><b id="kpiPeriode">-</b></div><div class="kpi"><label>Bottleneck</label><b id="kpiBottle">-</b></div></div>
+      <select id="voiceSelect" class="voice-select"><option value="">Memuat pilihan suara...</option></select>
+      <div class="quick"><button class="chip" data-q="Buatkan ringkasan direksi">Ringkasan Direksi</button><button class="chip" data-q="Apa jenis transaksi paling lambat?">Top SLA</button><button class="chip" data-q="Bagaimana growth transaksi?">Growth</button><button class="chip" data-q="Bottleneck utamanya dimana?">Bottleneck</button><button class="chip" data-q="Vendor mana yang paling lambat?">Vendor Lambat</button><button class="chip" data-q="Apa rekomendasi perbaikannya?">Rekomendasi</button></div>
     </div>
   </div>
-
-  <div class="sela-main">
-    <div id="avatarZone" class="avatar-zone">
-      <div class="holo-ring"></div>
-      <div class="avatar">
-        <div class="hair-back"></div>
-        <div class="neck"></div>
-        <div class="body"></div>
-        <div class="badge-s">S</div>
-        <div class="face"></div>
-        <div class="bangs"></div>
-        <div class="hair-left"></div>
-        <div class="hair-right"></div>
-        <div class="eye left"><div class="pupil"></div></div>
-        <div class="eye right"><div class="pupil"></div></div>
-        <div class="glasses"><div class="glass l"></div><div class="bridge"></div><div class="glass r"></div></div>
-        <div class="nose"></div>
-        <div class="mouth"></div>
-      </div>
-      <div class="wave"><span></span><span></span><span></span><span></span><span></span></div>
-    </div>
-
-    <div class="chat-zone">
-      <div id="status" class="status">SELA sedang menyiapkan mode suara...</div>
-
-      <div class="kpi-mini">
-        <div class="kpi">
-          <div class="kpi-label">Transaksi</div>
-          <div id="kpiTransaksi" class="kpi-value">-</div>
-        </div>
-        <div class="kpi">
-          <div class="kpi-label">Avg SLA</div>
-          <div id="kpiSla" class="kpi-value">-</div>
-        </div>
-        <div class="kpi">
-          <div class="kpi-label">Growth</div>
-          <div id="kpiGrowth" class="kpi-value">-</div>
-        </div>
-      </div>
-
-      <div id="chatLog" class="chat-log"></div>
-
-      <select id="voiceSelect" class="voice-select">
-        <option>Memuat daftar suara...</option>
-      </select>
-
-      <div class="controls">
-        <input id="userInput" class="input" placeholder="Tulis pertanyaan atau klik mic untuk bicara..." />
-        <div class="btn-row">
-          <button id="sendBtn" class="btn">Kirim</button>
-          <button id="micBtn" class="btn secondary">🎙️</button>
-          <button id="testBtn" class="btn secondary">🔊</button>
-        </div>
-      </div>
-
-      <div class="chips">
-        <button class="chip" data-q="Buatkan ringkasan direksi">Ringkasan Direksi</button>
-        <button class="chip" data-q="Jenis transaksi apa yang paling lambat?">Top SLA</button>
-        <button class="chip" data-q="Bagaimana growth transaksi?">Growth</button>
-        <button class="chip" data-q="Bottleneck utama ada di mana?">Bottleneck</button>
-        <button class="chip" data-q="Vendor mana yang paling lambat?">Vendor Lambat</button>
-        <button class="chip" data-q="Nomor permohonan mana yang perlu dipantau?">Nomor Permohonan</button>
-      </div>
-
-      <div class="foot">
-        SELA v5 memakai ringkasan data aktif dashboard. Mic dan suara bergantung izin browser/HTTPS. Jika mic tidak aktif, gunakan kolom ketik.
-      </div>
-    </div>
+  <div class="chat">
+    <div id="chatlog" class="chatlog"></div>
+    <div class="controls"><input id="textInput" class="input" placeholder="Tanya SELA, misal: kenapa SLA lambat?"/><button id="sendBtn" class="btn secondary">Kirim</button><button id="micBtn" class="btn">🎙️ Mic</button></div>
+    <div class="controls" style="grid-template-columns:auto auto 1fr"><button id="testMicBtn" class="btn secondary">Cek Mic</button><button id="testVoiceBtn" class="btn secondary">Uji Suara</button><button id="stopVoiceBtn" class="btn secondary">Stop Suara</button></div>
+    <div class="smallnote">Catatan: mic browser biasanya hanya aktif di Chrome/Edge melalui HTTPS dan setelah izin microphone diaktifkan. Jika diblokir oleh browser/iframe, SELA tetap bisa menjawab natural melalui input teks.</div>
   </div>
 </div>
-
 <script>
-const SELA_CONTEXT = __SELA_CONTEXT_JSON__;
-
-const shell = document.getElementById("selaShell");
-const avatarZone = document.getElementById("avatarZone");
-const statusEl = document.getElementById("status");
-const chatLog = document.getElementById("chatLog");
-const userInput = document.getElementById("userInput");
-const sendBtn = document.getElementById("sendBtn");
-const micBtn = document.getElementById("micBtn");
-const testBtn = document.getElementById("testBtn");
-const voiceSelect = document.getElementById("voiceSelect");
-const kpiTransaksi = document.getElementById("kpiTransaksi");
-const kpiSla = document.getElementById("kpiSla");
-const kpiGrowth = document.getElementById("kpiGrowth");
-
-let voices = [];
-let recognition = null;
+const ctx = ___SELA_CONTEXT___;
+const $ = (id)=>document.getElementById(id);
+const chatlog = $('chatlog'), statusEl = $('status'), avatar = $('avatar'), input = $('textInput');
+let lastAnswer = '';
 let recognizing = false;
-
-function escapeHtml(str) {
-  return String(str || "").replace(/[&<>"']/g, m => ({
-    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
-  }[m]));
+let recognition = null;
+let voices = [];
+function fmtInt(n){ try{return Math.round(Number(n)).toLocaleString('id-ID')}catch(e){return '-'} }
+function fmtPct(n){ if(n===null||n===undefined||Number.isNaN(Number(n))) return '-'; return Number(n).toFixed(2)+'%'; }
+function fmtMoney(n){ if(n===null||n===undefined||Number.isNaN(Number(n))) return '-'; return 'Rp'+Math.round(Number(n)).toLocaleString('id-ID'); }
+function normalize(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim(); }
+function includesAny(t, arr){ return arr.some(a => t.includes(a)); }
+function topList(arr, n=3){ return (arr||[]).slice(0,n).map((x,i)=>`${i+1}. ${x.name} (${x.avg_text || fmtInt(x.count)+' transaksi'})`).join('; '); }
+function addMsg(role, text){ const wrap=document.createElement('div'); wrap.className='msg '+(role==='user'?'user':'bot'); const b=document.createElement('div'); b.className='bubble'; b.textContent=text; wrap.appendChild(b); chatlog.appendChild(wrap); chatlog.scrollTop=chatlog.scrollHeight; }
+function setStatus(text, listening=false){ statusEl.innerHTML = text + (listening ? '<span class="listening-dot"></span>' : ''); }
+function setSpeaking(on){ avatar.classList.toggle('speaking', !!on); }
+function setListening(on){ avatar.classList.toggle('listening', !!on); }
+function pickVoice(){ const sel=$('voiceSelect'); const idx = Number(sel.value); if(!Number.isNaN(idx) && voices[idx]) return voices[idx]; const preferred = voices.find(v => /gadis|female|zira|susan|cortana|indonesia|bahasa/i.test(v.name + ' ' + v.lang)); return preferred || voices[0] || null; }
+function loadVoices(){ voices = speechSynthesis.getVoices() || []; const sel=$('voiceSelect'); sel.innerHTML=''; if(!voices.length){ sel.innerHTML='<option value="">Suara browser belum tersedia</option>'; return; } voices.forEach((v,i)=>{ const opt=document.createElement('option'); opt.value=i; opt.textContent=`${v.name} (${v.lang})`; if(/gadis|female|indonesia|bahasa/i.test(v.name+' '+v.lang)) opt.selected=true; sel.appendChild(opt); }); }
+if('speechSynthesis' in window){ loadVoices(); window.speechSynthesis.onvoiceschanged = loadVoices; }
+function speak(text){ lastAnswer=text; if(!('speechSynthesis' in window)){ return; } try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); u.lang='id-ID'; u.rate=0.96; u.pitch=1.12; u.volume=1; const v=pickVoice(); if(v) u.voice=v; u.onstart=()=>setSpeaking(true); u.onend=()=>setSpeaking(false); u.onerror=()=>setSpeaking(false); speechSynthesis.speak(u); }catch(e){ setSpeaking(false); } }
+function answerPeriodQuery(qn){
+  const periods = ctx.periods || [];
+  const months = {januari:1,jan:1,februari:2,feb:2,maret:3,mar:3,april:4,apr:4,mei:5,juni:6,jun:6,juli:7,jul:7,agustus:8,agu:8,aug:8,september:9,sep:9,oktober:10,okt:10,november:11,nov:11,desember:12,des:12};
+  const years = [...qn.matchAll(/20\d{2}/g)].map(m=>Number(m[0]));
+  const monthHits = Object.entries(months).filter(([name])=>qn.includes(name)).map(([,m])=>m);
+  let filtered = periods;
+  if(years.length){ filtered = filtered.filter(p => years.includes(p.year) || years.some(y => String(p.periode).includes(String(y)))); }
+  if(monthHits.length){
+    if(monthHits.length>=2){ const lo=Math.min(...monthHits), hi=Math.max(...monthHits); filtered = filtered.filter(p => p.month>=lo && p.month<=hi); }
+    else { filtered = filtered.filter(p => p.month===monthHits[0]); }
+  }
+  if(filtered.length && (years.length || monthHits.length)){
+    const total = filtered.reduce((a,b)=>a+(b.count||0),0);
+    const avgSla = filtered.map(p=>p.avg_sla_days).filter(x=>x!==null&&x!==undefined);
+    const avg = avgSla.length ? avgSla.reduce((a,b)=>a+b,0)/avgSla.length : null;
+    const range = filtered.length===1 ? filtered[0].periode : `${filtered[0].periode} sampai ${filtered[filtered.length-1].periode}`;
+    return `Untuk ${range}, jumlah transaksi yang terbaca adalah ${fmtInt(total)} transaksi${avg!==null ? ` dengan rata-rata SLA sekitar ${avg.toFixed(2)} hari` : ''}. Ini dihitung dari ${filtered.length} periode yang cocok dengan pertanyaanmu.`;
+  }
+  return null;
 }
-
-function addMessage(role, text) {
-  const div = document.createElement("div");
-  div.className = "msg " + (role === "user" ? "user" : "sela");
-  div.innerHTML = escapeHtml(text).replace(/\n/g, "<br>");
-  chatLog.appendChild(div);
-  chatLog.scrollTop = chatLog.scrollHeight;
+function buildAnswer(q){
+  const qn = normalize(q);
+  if(!qn) return 'Boleh, silakan tanyakan data SLA yang ingin dianalisis.';
+  if(includesAny(qn,['halo','hai','hello','selamat pagi','selamat siang','selamat sore'])) return `Halo, saya SELA. Saya sedang membaca data aktif periode ${ctx.periode_range}. Silakan tanya soal jumlah transaksi, growth, SLA, vendor, bottleneck, nomor permohonan, atau ringkasan direksi.`;
+  if(includesAny(qn,['kolom apa','data apa saja','bisa baca apa','apa saja yang bisa'])) return `Saya bisa membaca ${ctx.total_rows ? fmtInt(ctx.total_rows) : '-'} baris data aktif. Kolom yang tersedia antara lain: ${(ctx.columns||[]).slice(0,14).join(', ')}${(ctx.columns||[]).length>14 ? ', dan lainnya' : ''}.`;
+  if(includesAny(qn,['ringkasan','direksi','executive','summary','kesimpulan'])) return `${ctx.executive_summary} Rekomendasi utama: ${(ctx.recommendations||[]).join(' ')}`;
+  if(includesAny(qn,['jumlah','berapa transaksi','total transaksi','transaksi tahun','transaksi dari'])){ const periodAns = answerPeriodQuery(qn); if(periodAns) return periodAns; return `Jumlah transaksi pada data aktif periode ${ctx.periode_range} adalah ${fmtInt(ctx.total_rows)} transaksi. Jika ingin lebih spesifik, tanyakan misalnya transaksi Januari sampai November 2025 atau transaksi tahun 2025.`; }
+  if(includesAny(qn,['growth','tumbuh','kenaikan','penurunan','naik','turun','bertambah','berkurang'])){ const g=(ctx.growth||[]).filter(x=>x.growth_pct!==null&&x.growth_pct!==undefined); if(!g.length) return 'Growth belum bisa dihitung karena data aktif hanya memiliki satu periode atau periode pembanding belum tersedia.'; const last=g[g.length-1]; const maxUp=[...g].sort((a,b)=>b.growth_pct-a.growth_pct)[0]; const maxDown=[...g].sort((a,b)=>a.growth_pct-b.growth_pct)[0]; const arah = last.growth_pct>=0?'naik':'turun'; return `Growth terakhir pada periode ${last.periode} ${arah} ${Math.abs(last.growth_pct).toFixed(2)}% dengan jumlah ${fmtInt(last.count)} transaksi. Kenaikan tertinggi terjadi pada ${maxUp.periode} sebesar ${fmtPct(maxUp.growth_pct)}, sedangkan penurunan terdalam terjadi pada ${maxDown.periode} sebesar ${fmtPct(maxDown.growth_pct)}.`; }
+  if(includesAny(qn,['sla','lambat','terlama','paling lama','top sla','outlier'])){ const slow=(ctx.top_slow_jenis||[])[0]; const b=(ctx.process_avg||[])[0]; if(!slow) return `Rata-rata SLA utama data aktif adalah ${ctx.avg_sla_text}. Saya belum menemukan kolom jenis transaksi untuk membuat ranking terlama.`; return `Jenis transaksi dengan SLA paling lama adalah ${slow.name}, rata-rata ${slow.avg_text} dari ${fmtInt(slow.count)} transaksi. Secara proses, bottleneck terbesar terlihat pada ${b ? b.process + ' dengan rata-rata ' + b.avg_text : 'data proses belum tersedia'}.`; }
+  if(includesAny(qn,['tercepat','paling cepat','fastest'])){ const fast=(ctx.top_fast_jenis||[])[0]; if(!fast) return 'Saya belum menemukan data SLA valid untuk menghitung transaksi tercepat.'; return `Jenis transaksi tercepat adalah ${fast.name} dengan rata-rata SLA ${fast.avg_text} dari ${fmtInt(fast.count)} transaksi. Ini bisa menjadi benchmark proses yang lebih efisien.`; }
+  if(includesAny(qn,['bottleneck','hambatan','proses mana','kenapa lambat','penyebab lambat','masalah utama'])){ const b=(ctx.process_avg||[])[0]; const slow=(ctx.top_slow_jenis||[])[0]; if(!b) return 'Saya belum menemukan kolom SLA per proses untuk membaca bottleneck.'; return `Bottleneck utama berada pada proses ${b.process} dengan rata-rata ${b.avg_text}. Jika dikaitkan dengan jenis transaksi, area yang paling perlu dipantau adalah ${slow ? slow.name + ' karena SLA-nya ' + slow.avg_text : 'kategori transaksi dengan SLA tertinggi'}. Saran saya, cek antrean approval, kelengkapan dokumen, dan pola vendor/unit pada proses tersebut.`; }
+  if(includesAny(qn,['vendor','cabang','rekanan'])){ const v=(ctx.top_slow_vendor||[])[0]; const vol=(ctx.top_volume_vendor||[])[0]; if(!v) return 'Kolom vendor belum terbaca pada data aktif, jadi saya belum bisa membuat analisis vendor.'; return `Vendor/cabang dengan SLA paling lama adalah ${v.name}, rata-rata ${v.avg_text} dari ${fmtInt(v.count)} transaksi. Dari sisi volume, yang paling besar adalah ${vol ? vol.name + ' sebanyak ' + fmtInt(vol.count) + ' transaksi' : 'belum tersedia'}.`; }
+  if(includesAny(qn,['jenis transaksi','kategori transaksi','tipe transaksi'])){ const slow=topList(ctx.top_slow_jenis,3); const vol=(ctx.top_volume_jenis||[]).slice(0,3).map((x,i)=>`${i+1}. ${x.name} (${fmtInt(x.count)} transaksi)`).join('; '); if(!slow) return 'Kolom jenis transaksi belum tersedia pada data aktif.'; return `Untuk jenis transaksi, SLA terlama adalah: ${slow}. Dari sisi volume terbesar: ${vol || 'belum tersedia'}.`; }
+  if(includesAny(qn,['nomor permohonan','no permohonan','permohonan','nomor dokumen','request'])){ const p=(ctx.top_slow_permohonan||[])[0]; if(!p) return 'Saya belum menemukan kolom nomor permohonan pada data aktif, jadi analisis per nomor permohonan belum bisa dibuat.'; return `Nomor permohonan yang paling perlu dipantau adalah ${p.name}, dengan rata-rata SLA ${p.avg_text} dari ${fmtInt(p.count)} baris transaksi. Gunakan filter Nomor Permohonan di tab transaksi untuk drilldown lebih detail.`; }
+  if(includesAny(qn,['nilai transaksi','nominal','rupiah','amount','value'])){ const v=ctx.value_summary; if(!v) return 'Saya belum menemukan kolom nilai/nominal transaksi pada data aktif.'; return `Kolom nilai yang terbaca adalah ${v.column}. Total nilai transaksi sekitar ${fmtMoney(v.total)}, rata-rata ${fmtMoney(v.avg)}, dan nilai tertinggi ${fmtMoney(v.max)} dari ${fmtInt(v.valid_count)} data valid.`; }
+  if(includesAny(qn,['rekomendasi','saran','apa yang harus','perbaikan','tindak lanjut'])) return `Rekomendasi saya: ${(ctx.recommendations||[]).join(' ')} Tambahan: gunakan drilldown per vendor, jenis transaksi, dan nomor permohonan untuk menemukan akar masalah paling spesifik.`;
+  if(includesAny(qn,['bandingkan','compare','perbandingan'])){ const g=(ctx.growth||[]).filter(x=>x.growth_pct!==null&&x.growth_pct!==undefined); if(g.length) { const last=g[g.length-1]; return `Perbandingan periode terakhir menunjukkan transaksi ${last.growth_pct>=0?'meningkat':'menurun'} ${Math.abs(last.growth_pct).toFixed(2)}% pada ${last.periode}. Untuk perbandingan yang lebih spesifik, sebutkan tahun atau rentang bulan yang ingin dibandingkan.`; } return 'Saya bisa membandingkan periode jika data aktif memiliki lebih dari satu periode. Saat ini growth pembanding belum cukup terbaca.'; }
+  return `Aku belum melihat pertanyaan itu secara spesifik di pola data yang tersedia. Namun berdasarkan data aktif: ${ctx.executive_summary} Kamu bisa tanya lebih spesifik, misalnya “vendor mana paling lambat”, “growth transaksi”, “nomor permohonan paling lama”, atau “kenapa SLA lambat”.`;
 }
-
-function setMode(mode, text) {
-  avatarZone.classList.remove("speaking","listening","thinking");
-  if (mode) avatarZone.classList.add(mode);
-  if (text) statusEl.textContent = text;
+function ask(q, speakIt=true){ addMsg('user', q); setStatus('SELA sedang menganalisis data aktif...'); const ans = buildAnswer(q); addMsg('bot', ans); setStatus('SELA sudah menjawab. Saya siap menerima pertanyaan berikutnya.'); if(speakIt) speak(ans); }
+function setupKpis(){ $('kpiTrx').textContent=fmtInt(ctx.total_rows); $('kpiSla').textContent=ctx.avg_sla_text||'-'; $('kpiPeriode').textContent=ctx.periode_range||'-'; $('kpiBottle').textContent=(ctx.process_avg&&ctx.process_avg[0])?ctx.process_avg[0].process:'-'; }
+setupKpis(); addMsg('bot', `Halo, saya SELA. Saya sudah membaca data aktif periode ${ctx.periode_range} dengan ${fmtInt(ctx.total_rows)} transaksi. Mau saya bantu analisis apa?`);
+$('sendBtn').onclick=()=>{ const q=input.value.trim(); if(q){ input.value=''; ask(q,true); } };
+input.addEventListener('keydown', (e)=>{ if(e.key==='Enter') $('sendBtn').click(); });
+document.querySelectorAll('.chip').forEach(btn=>btn.onclick=()=>ask(btn.dataset.q,true));
+$('testVoiceBtn').onclick=()=>speak('Halo, saya SELA. Suara saya aktif. Silakan bertanya tentang data SLA.');
+$('stopVoiceBtn').onclick=()=>{ if('speechSynthesis' in window) speechSynthesis.cancel(); setSpeaking(false); };
+async function checkMic(){
+  if(!window.isSecureContext){ setStatus('Mic tidak aktif karena halaman tidak berada pada secure context. Buka aplikasi melalui HTTPS Streamlit Cloud.'); return false; }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ setStatus('Browser ini tidak mendukung akses microphone. Gunakan Chrome atau Edge terbaru.'); return false; }
+  try{ const stream = await navigator.mediaDevices.getUserMedia({audio:true}); stream.getTracks().forEach(t=>t.stop()); setStatus('Mic terdeteksi dan permission berhasil. Silakan klik tombol Mic lalu bicara.', false); return true; }
+  catch(e){ setStatus('Mic belum bisa diakses: '+(e.message||e.name)+'. Klik ikon gembok di address bar, pilih Site settings, lalu Allow Microphone. Jika tetap gagal, gunakan input teks.'); return false; }
 }
-
-function formatPct(x) {
-  if (x === null || x === undefined || isNaN(x)) return "-";
-  const sign = Number(x) > 0 ? "+" : "";
-  return sign + Number(x).toFixed(2) + "%";
-}
-
-function topList(items, prefix) {
-  if (!items || !items.length) return "Belum ada data yang cukup untuk bagian ini.";
-  return items.map((it, idx) => `${idx+1}. ${it.name}: ${it.value_text}${it.count_text ? ` (${it.count_text} transaksi)` : ""}`).join("\n");
-}
-
-function initKpi() {
-  kpiTransaksi.textContent = SELA_CONTEXT.total_rows_text || "-";
-  kpiSla.textContent = SELA_CONTEXT.avg_total_text || SELA_CONTEXT.avg_keuangan_text || "-";
-  kpiGrowth.textContent = SELA_CONTEXT.growth_latest_text || "-";
-}
-
-function summarizeForDirector() {
-  if (!SELA_CONTEXT.ok) {
-    return "Maaf, saya belum menemukan data aktif untuk diringkas. Silakan pastikan file SLA sudah dimuat dan periode sudah dipilih.";
-  }
-
-  let s = `Baik, saya buatkan ringkasan singkat untuk Direksi. Pada periode ${SELA_CONTEXT.period_start} sampai ${SELA_CONTEXT.period_end}, terdapat ${SELA_CONTEXT.total_rows_text} transaksi.`;
-
-  if (SELA_CONTEXT.avg_total_text && SELA_CONTEXT.avg_total_text !== "-") {
-    s += ` Rata-rata SLA total tercatat ${SELA_CONTEXT.avg_total_text}.`;
-  } else if (SELA_CONTEXT.avg_keuangan_text && SELA_CONTEXT.avg_keuangan_text !== "-") {
-    s += ` Rata-rata SLA Keuangan tercatat ${SELA_CONTEXT.avg_keuangan_text}.`;
-  }
-
-  if (SELA_CONTEXT.bottleneck_process && SELA_CONTEXT.bottleneck_process !== "-") {
-    s += ` Bottleneck utama terindikasi pada proses ${SELA_CONTEXT.bottleneck_process} dengan rata-rata ${SELA_CONTEXT.bottleneck_text}.`;
-  }
-
-  if (SELA_CONTEXT.growth_latest_text && SELA_CONTEXT.growth_latest_text !== "-") {
-    const arah = Number(SELA_CONTEXT.growth_latest_pct) >= 0 ? "meningkat" : "menurun";
-    s += ` Jumlah transaksi periode terakhir ${arah} ${SELA_CONTEXT.growth_latest_text} dibanding periode sebelumnya.`;
-  }
-
-  if (SELA_CONTEXT.top_slowest_transactions && SELA_CONTEXT.top_slowest_transactions.length) {
-    const top = SELA_CONTEXT.top_slowest_transactions[0];
-    s += ` Jenis transaksi yang perlu menjadi perhatian utama adalah ${top.name}, dengan SLA rata-rata ${top.value_text}.`;
-  }
-
-  s += " Rekomendasi saya: fokuskan monitoring pada transaksi ber-SLA tinggi, proses bottleneck, serta kategori dengan volume besar agar perbaikan berdampak langsung ke SLA keseluruhan.";
-  return s;
-}
-
-function answerQuestion(q) {
-  const query = (q || "").toLowerCase();
-
-  if (!SELA_CONTEXT.ok) {
-    return "Maaf, saya belum menemukan data aktif. Pastikan data SLA sudah berhasil dimuat, lalu pilih periode yang ingin dianalisis.";
-  }
-
-  if (/(halo|hai|hello|pagi|siang|sore|malam|apa kabar)/.test(query)) {
-    return `Halo, saya SELA. Saya siap membantu membaca data SLA periode ${SELA_CONTEXT.period_start} sampai ${SELA_CONTEXT.period_end}. Mau saya buatkan ringkasan Direksi atau cek bottleneck terlebih dahulu?`;
-  }
-
-  if (/(siapa kamu|kamu siapa|perkenalkan|fungsi kamu|bisa apa)/.test(query)) {
-    return "Saya SELA, asisten suara di SLA Payment Analyzer. Saya bisa membantu menjelaskan jumlah transaksi, growth, SLA tertinggi, bottleneck proses, vendor yang perlu dipantau, nomor permohonan, dan ringkasan untuk Direksi berdasarkan data aktif dashboard.";
-  }
-
-  if (/(ringkasan|direksi|executive|resume|summary|kesimpulan)/.test(query)) {
-    return summarizeForDirector();
-  }
-
-  if (/(jumlah|total).*(transaksi)|transaksi.*(berapa|jumlah|total)/.test(query)) {
-    let s = `Pada filter aktif, jumlah transaksi adalah ${SELA_CONTEXT.total_rows_text} transaksi untuk periode ${SELA_CONTEXT.period_start} sampai ${SELA_CONTEXT.period_end}.`;
-    if (SELA_CONTEXT.last_period_count !== null && SELA_CONTEXT.last_period_count !== undefined) {
-      s += ` Periode terakhir, yaitu ${SELA_CONTEXT.last_period}, berisi ${Number(SELA_CONTEXT.last_period_count).toLocaleString("id-ID")} transaksi.`;
-    }
-    return s;
-  }
-
-  if (/(growth|pertumbuhan|naik|turun|kenaikan|penurunan|dibanding)/.test(query)) {
-    if (SELA_CONTEXT.growth_latest_text && SELA_CONTEXT.growth_latest_text !== "-") {
-      const arah = Number(SELA_CONTEXT.growth_latest_pct) >= 0 ? "naik" : "turun";
-      let s = `Growth transaksi terakhir ${arah} ${SELA_CONTEXT.growth_latest_text}, dari periode ${SELA_CONTEXT.previous_period} ke ${SELA_CONTEXT.last_period}.`;
-      if (SELA_CONTEXT.avg_growth_text && SELA_CONTEXT.avg_growth_text !== "-") {
-        s += ` Rata-rata growth antar-periode pada filter aktif adalah ${SELA_CONTEXT.avg_growth_text}.`;
-      }
-      if (Math.abs(Number(SELA_CONTEXT.growth_latest_pct)) >= 20) {
-        s += " Perubahan ini cukup signifikan, sehingga sebaiknya dipantau dampaknya terhadap beban verifikasi dan SLA.";
-      } else {
-        s += " Pergerakannya masih relatif terkendali, namun tetap perlu dimonitor.";
-      }
-      return s;
-    }
-    return "Growth belum dapat dihitung karena periode aktif hanya satu atau data periode sebelumnya tidak tersedia.";
-  }
-
-  if (/(bottleneck|hambatan|penyebab|proses.*lambat|lambat.*proses|terlambat)/.test(query)) {
-    if (SELA_CONTEXT.bottleneck_process && SELA_CONTEXT.bottleneck_process !== "-") {
-      let s = `Bottleneck utama berada pada proses ${SELA_CONTEXT.bottleneck_process}, dengan rata-rata SLA ${SELA_CONTEXT.bottleneck_text}.`;
-      if (SELA_CONTEXT.process_means && SELA_CONTEXT.process_means.length > 1) {
-        s += " Ranking rata-rata SLA proses adalah: " + SELA_CONTEXT.process_means.map(x => `${x.process} ${x.days_text}`).join(", ") + ".";
-      }
-      s += " Saya sarankan dilakukan pengecekan antrean dokumen, approval, kelengkapan dokumen, dan pola keterlambatan pada proses tersebut.";
-      return s;
-    }
-    return "Saya belum menemukan kolom proses SLA yang cukup untuk menentukan bottleneck.";
-  }
-
-  if (/(terlama|paling lambat|sla tertinggi|top sla|lama)/.test(query)) {
-    if (SELA_CONTEXT.top_slowest_transactions && SELA_CONTEXT.top_slowest_transactions.length) {
-      return "Jenis transaksi dengan SLA paling lama adalah:\n" + topList(SELA_CONTEXT.top_slowest_transactions);
-    }
-    return "Saya belum menemukan data jenis transaksi dan SLA yang cukup untuk membuat ranking SLA terlama.";
-  }
-
-  if (/(tercepat|paling cepat|sla terendah|cepat)/.test(query)) {
-    if (SELA_CONTEXT.top_fastest_transactions && SELA_CONTEXT.top_fastest_transactions.length) {
-      return "Jenis transaksi dengan SLA tercepat adalah:\n" + topList(SELA_CONTEXT.top_fastest_transactions);
-    }
-    return "Saya belum menemukan data jenis transaksi dan SLA yang cukup untuk membuat ranking SLA tercepat.";
-  }
-
-  if (/(vendor|cabang|pihak|supplier)/.test(query)) {
-    if (SELA_CONTEXT.top_vendors && SELA_CONTEXT.top_vendors.length) {
-      return "Vendor atau cabang yang perlu dipantau berdasarkan SLA terlama adalah:\n" + topList(SELA_CONTEXT.top_vendors);
-    }
-    return "Saya belum menemukan kolom NAMA VENDOR atau data SLA vendor yang cukup untuk dianalisis.";
-  }
-
-  if (/(nomor|no\.?|permohonan|request|dokumen)/.test(query)) {
-    if (SELA_CONTEXT.top_permohonan && SELA_CONTEXT.top_permohonan.length) {
-      return "Nomor permohonan yang perlu dipantau berdasarkan SLA terlama adalah:\n" + topList(SELA_CONTEXT.top_permohonan);
-    }
-    return "Saya belum menemukan kolom Nomor Permohonan atau data SLA per nomor yang cukup. Pastikan nama kolom mengandung Nomor/No dan Permohonan/Request.";
-  }
-
-  if (/(rekomendasi|saran|perbaikan|tindak lanjut|action)/.test(query)) {
-    let s = "Rekomendasi utama saya: ";
-    if (SELA_CONTEXT.bottleneck_process && SELA_CONTEXT.bottleneck_process !== "-") {
-      s += `pertama, fokus pada proses ${SELA_CONTEXT.bottleneck_process} karena menjadi bottleneck terbesar. `;
-    }
-    if (SELA_CONTEXT.top_slowest_transactions && SELA_CONTEXT.top_slowest_transactions.length) {
-      s += `Kedua, lakukan review khusus pada jenis transaksi ${SELA_CONTEXT.top_slowest_transactions[0].name}. `;
-    }
-    s += "Ketiga, buat monitoring transaksi aging dan alert untuk nomor permohonan yang melewati threshold SLA.";
-    return s;
-  }
-
-  if (/(nilai|nominal|rupiah|amount)/.test(query)) {
-    return "Untuk analisis nilai transaksi, saya bisa bantu jika kolom nominal/nilai transaksi tersedia dan sudah diproses di tab Nilai Transaksi. Pada mode suara ini, saya terutama membaca volume, SLA, vendor, jenis transaksi, dan nomor permohonan dari data aktif.";
-  }
-
-  return `Saya bisa bantu jawab berdasarkan data aktif. Saat ini saya membaca ${SELA_CONTEXT.total_rows_text} transaksi periode ${SELA_CONTEXT.period_start} sampai ${SELA_CONTEXT.period_end}. Pertanyaan yang paling akurat untuk saya misalnya: growth transaksi, SLA paling lama, bottleneck proses, vendor lambat, nomor permohonan, atau ringkasan Direksi.`;
-}
-
-function populateVoices() {
-  voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
-  voiceSelect.innerHTML = "";
-
-  if (!voices.length) {
-    const opt = document.createElement("option");
-    opt.textContent = "Voice browser belum tersedia";
-    voiceSelect.appendChild(opt);
-    return;
-  }
-
-  const scored = voices.map((v, i) => {
-    const name = (v.name || "").toLowerCase();
-    const lang = (v.lang || "").toLowerCase();
-    let score = 0;
-    if (lang.includes("id")) score += 20;
-    if (lang.includes("en")) score += 4;
-    if (/female|woman|zira|aria|susan|samantha|google|natural|neural|indonesia/.test(name)) score += 8;
-    return {v, i, score};
-  }).sort((a,b)=>b.score-a.score);
-
-  scored.forEach(({v, i}) => {
-    const opt = document.createElement("option");
-    opt.value = String(i);
-    opt.textContent = `${v.name} (${v.lang})`;
-    voiceSelect.appendChild(opt);
-  });
-
-  if (scored.length) voiceSelect.value = String(scored[0].i);
-}
-
-function speak(text) {
-  if (!window.speechSynthesis) {
-    setMode("", "Browser tidak mendukung text-to-speech. Jawaban tetap tampil sebagai teks.");
-    return;
-  }
-
-  window.speechSynthesis.cancel();
-  const utt = new SpeechSynthesisUtterance(text);
-  utt.lang = "id-ID";
-
-  const idx = Number(voiceSelect.value);
-  if (!isNaN(idx) && voices[idx]) utt.voice = voices[idx];
-
-  utt.rate = 0.95;
-  utt.pitch = 1.12;
-  utt.volume = 1.0;
-
-  utt.onstart = () => setMode("speaking", "SELA sedang menjawab dengan suara...");
-  utt.onend = () => setMode("", "SELA siap menerima pertanyaan berikutnya.");
-  utt.onerror = () => setMode("", "Suara gagal diputar oleh browser. Jawaban tetap tersedia dalam teks.");
-
-  window.speechSynthesis.speak(utt);
-}
-
-function handleQuestion(q) {
-  const question = String(q || "").trim();
-  if (!question) return;
-
-  addMessage("user", question);
-  userInput.value = "";
-  setMode("thinking", "SELA sedang menganalisis data aktif...");
-
-  setTimeout(() => {
-    const ans = answerQuestion(question);
-    addMessage("sela", ans);
-    speak(ans);
-  }, 280);
-}
-
-function initRecognition() {
+$('testMicBtn').onclick=checkMic;
+function initRecognition(){
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) {
-    micBtn.disabled = false;
-    micBtn.title = "Browser tidak mendukung speech recognition. Gunakan input teks.";
-    return null;
-  }
-
-  const rec = new SR();
-  rec.lang = "id-ID";
-  rec.interimResults = false;
-  rec.continuous = false;
-
-  rec.onstart = () => {
-    recognizing = true;
-    micBtn.textContent = "🛑";
-    setMode("listening", "SELA sedang mendengarkan... silakan bicara.");
-  };
-
-  rec.onend = () => {
-    recognizing = false;
-    micBtn.textContent = "🎙️";
-    if (!avatarZone.classList.contains("speaking")) {
-      setMode("", "SELA siap. Klik mic atau ketik pertanyaan.");
-    }
-  };
-
-  rec.onerror = (event) => {
-    recognizing = false;
-    micBtn.textContent = "🎙️";
-    const msg = "Mic tidak dapat digunakan: " + (event.error || "izin browser belum diberikan") + ". Silakan gunakan input teks.";
-    setMode("", msg);
-    addMessage("sela", msg);
-  };
-
-  rec.onresult = (event) => {
-    let transcript = "";
-    try {
-      transcript = event.results[0][0].transcript;
-    } catch(e) {}
-    if (transcript) handleQuestion(transcript);
-  };
-
+  if(!SR){ setStatus('Speech recognition tidak tersedia di browser ini. Gunakan Chrome/Edge, atau ketik pertanyaan pada kolom teks.'); return null; }
+  const rec = new SR(); rec.lang='id-ID'; rec.continuous=false; rec.interimResults=true; rec.maxAlternatives=1;
+  rec.onstart=()=>{ recognizing=true; setListening(true); setStatus('Saya sedang mendengarkan. Silakan bicara...', true); };
+  rec.onresult=(event)=>{ let interim='', finalText=''; for(let i=event.resultIndex;i<event.results.length;i++){ const txt=event.results[i][0].transcript; if(event.results[i].isFinal) finalText+=txt; else interim+=txt; } if(interim) setStatus('Mendengar: '+interim, true); if(finalText){ input.value=finalText; } };
+  rec.onerror=(e)=>{ recognizing=false; setListening(false); setStatus('Mic/Speech error: '+(e.error||'unknown')+'. Biasanya karena izin microphone belum Allow, browser bukan Chrome/Edge, atau fitur speech diblokir iframe. Coba input teks sebagai fallback.'); };
+  rec.onend=()=>{ const q=input.value.trim(); recognizing=false; setListening(false); if(q){ input.value=''; ask(q,true); } else { setStatus('Saya belum menangkap suara. Coba klik Mic lagi, bicara lebih dekat, atau gunakan input teks.'); } };
   return rec;
 }
-
-sendBtn.addEventListener("click", () => handleQuestion(userInput.value));
-userInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") handleQuestion(userInput.value);
-});
-
-micBtn.addEventListener("click", () => {
-  if (!recognition) {
-    const msg = "Browser ini belum mendukung speech recognition, atau akses mic dibatasi. Silakan ketik pertanyaan di kolom input.";
-    setMode("", msg);
-    addMessage("sela", msg);
-    speak(msg);
-    return;
-  }
-  if (!recognizing) recognition.start();
-  else recognition.stop();
-});
-
-testBtn.addEventListener("click", () => {
-  const text = "Halo, saya SELA. Suara saya sudah aktif. Silakan tanyakan data SLA, growth transaksi, bottleneck, vendor, atau ringkasan Direksi.";
-  addMessage("sela", text);
-  speak(text);
-});
-
-document.querySelectorAll(".chip").forEach(btn => {
-  btn.addEventListener("click", () => handleQuestion(btn.getAttribute("data-q")));
-});
-
-if (window.speechSynthesis) {
-  populateVoices();
-  window.speechSynthesis.onvoiceschanged = populateVoices;
-}
-
-recognition = initRecognition();
-initKpi();
-
-const greeting = `Halo, saya SELA. Saya sudah membaca ${SELA_CONTEXT.total_rows_text || "0"} transaksi dari periode ${SELA_CONTEXT.period_start || "-"} sampai ${SELA_CONTEXT.period_end || "-"}. Silakan bicara atau ketik pertanyaan.`;
-addMessage("sela", greeting);
-setMode("", recognition ? "SELA siap. Klik mic untuk berbicara, atau ketik pertanyaan." : "SELA siap dalam mode ketik. Browser tidak mendukung mic.");
+$('micBtn').onclick=async()=>{
+  if(recognizing && recognition){ try{ recognition.stop(); }catch(e){} return; }
+  const ok = await checkMic();
+  if(!ok) return;
+  recognition = initRecognition();
+  if(!recognition) return;
+  try{ recognition.start(); }
+  catch(e){ setStatus('Mic belum bisa dimulai: '+(e.message||e.name)+'. Coba refresh halaman atau gunakan input teks.'); }
+};
 </script>
 </body>
 </html>
-    """
-
+"""
     components.html(
-        html_template.replace("__SELA_CONTEXT_JSON__", ctx_json),
-        height=780,
+        html.replace("___SELA_CONTEXT___", context_json),
+        height=760,
         scrolling=False,
     )
 
 
 # PANGGIL SELA HANYA JIKA USER MINTA
 if st.session_state.get("show_sela", False):
-    render_sela_natural_voice(
+    render_sela_widget(
         df_filtered=df_filtered,
         periode_col=periode_col,
         available_sla_cols=available_sla_cols,
-        selected_periode=selected_periode if "selected_periode" in globals() else None,
+        selected_periode=selected_periode,
     )
