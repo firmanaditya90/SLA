@@ -960,6 +960,83 @@ with tab_transaksi:
             items = items[:max_items]
         return "".join([f"<li>{html.escape(str(x))}</li>" for x in items])
 
+
+    def trx_norm_col_name(col):
+        """Normalisasi nama kolom agar deteksi kolom tahan terhadap spasi/titik/underscore."""
+        s = str(col).upper()
+        s = re.sub(r"[^A-Z0-9]+", " ", s)
+        return re.sub(r"\s+", " ", s).strip()
+
+    def trx_detect_permohonan_col(df):
+        """Deteksi kolom Nomor Permohonan secara fleksibel."""
+        exact_candidates = {
+            "NOMOR PERMOHONAN",
+            "NO PERMOHONAN",
+            "NO PERMOHONAN DOKUMEN",
+            "NOMOR PERMINTAAN",
+            "NO PERMINTAAN",
+            "NO REQUEST",
+            "REQUEST NUMBER",
+        }
+
+        for col in df.columns:
+            norm = trx_norm_col_name(col)
+            if norm in exact_candidates:
+                return col
+
+        for col in df.columns:
+            norm = trx_norm_col_name(col)
+            has_number_hint = any(token in norm.split() for token in ["NO", "NOMOR", "NUMBER"])
+            has_request_hint = any(token in norm for token in ["PERMOHONAN", "PERMINTAAN", "REQUEST"])
+            if has_number_hint and has_request_hint:
+                return col
+
+        return None
+
+    def trx_sorted_unique(series):
+        """Ambil unique value sebagai string, urut natural, dan tetap aman untuk NaN."""
+        values = (
+            series
+            .dropna()
+            .astype(str)
+            .map(str.strip)
+        )
+        values = [v for v in values.unique().tolist() if v and v.upper() not in ["NAN", "NONE"]]
+
+        def natural_key(x):
+            return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", str(x))]
+
+        return sorted(values, key=natural_key)
+
+    def trx_apply_main_filters(df_input, nomor_col, selected_permohonan, selected_jenis_data):
+        """Filter utama berbasis baris transaksi, sebelum proses agregasi jenis transaksi."""
+        df_out = df_input.copy()
+
+        if nomor_col and selected_permohonan and "ALL" not in selected_permohonan:
+            df_out = df_out[
+                df_out[nomor_col]
+                .astype(str)
+                .str.strip()
+                .isin([str(x).strip() for x in selected_permohonan])
+            ].copy()
+
+        if selected_jenis_data and "ALL" not in selected_jenis_data:
+            df_out = df_out[
+                df_out["JENIS TRANSAKSI"]
+                .astype(str)
+                .str.strip()
+                .isin([str(x).strip() for x in selected_jenis_data])
+            ].copy()
+
+        return df_out
+
+    def trx_filter_label(selected_values, all_label="ALL"):
+        if not selected_values or all_label in selected_values:
+            return "ALL"
+        if len(selected_values) <= 3:
+            return ", ".join([str(x) for x in selected_values])
+        return f"{len(selected_values)} pilihan"
+
     def trx_get_font(size=28, bold=False):
         candidates = []
         if bold:
@@ -2039,6 +2116,63 @@ with tab_transaksi:
             st.info("Tidak ada kolom SLA yang dapat dianalisis.")
 
         else:
+            # =====================================================
+            # FILTER DATA UTAMA — sebelum agregasi
+            # =====================================================
+            # Catatan penting:
+            # Filter Nomor Permohonan dan Jenis Transaksi harus dilakukan di level baris
+            # sebelum groupby, agar seluruh KPI, AI Insight, Executive Summary, grafik,
+            # PDF, dan drilldown membaca subset data yang sama.
+            nomor_permohonan_col = trx_detect_permohonan_col(df_trx)
+
+            st.markdown("### 🎛️ Filter Data Transaksi")
+
+            fcol1, fcol2 = st.columns([1.35, 1.25])
+
+            with fcol1:
+                if nomor_permohonan_col:
+                    nomor_options = trx_sorted_unique(df_trx[nomor_permohonan_col])
+                    selected_permohonan = st.multiselect(
+                        "Filter Nomor Permohonan",
+                        options=["ALL"] + nomor_options,
+                        default=["ALL"],
+                        help="Bisa pilih 1 atau lebih Nomor Permohonan. Pilih ALL untuk menampilkan seluruh nomor.",
+                        key="trx_filter_nomor_permohonan_main",
+                    )
+                else:
+                    selected_permohonan = ["ALL"]
+                    st.warning(
+                        "Kolom Nomor Permohonan tidak terdeteksi. "
+                        "Pastikan nama kolom mengandung kata 'Nomor/No' dan 'Permohonan/Permintaan/Request'."
+                    )
+
+            with fcol2:
+                jenis_options_data = trx_sorted_unique(df_trx["JENIS TRANSAKSI"])
+                selected_jenis_data = st.multiselect(
+                    "Filter Jenis Transaksi",
+                    options=["ALL"] + jenis_options_data,
+                    default=["ALL"],
+                    help="Bisa pilih 1 atau lebih jenis transaksi. Filter ini bekerja sebelum agregasi SLA.",
+                    key="trx_filter_jenis_data_main",
+                )
+
+            df_trx_before_filter = df_trx.copy()
+            df_trx = trx_apply_main_filters(
+                df_input=df_trx_before_filter,
+                nomor_col=nomor_permohonan_col,
+                selected_permohonan=selected_permohonan,
+                selected_jenis_data=selected_jenis_data,
+            )
+
+            kf1, kf2, kf3, kf4 = st.columns(4)
+            kf1.metric("Baris Awal", trx_fmt_int(len(df_trx_before_filter)))
+            kf2.metric("Baris Terfilter", trx_fmt_int(len(df_trx)))
+            kf3.metric("Nomor Dipilih", trx_filter_label(selected_permohonan))
+            kf4.metric("Jenis Dipilih", trx_filter_label(selected_jenis_data))
+
+            if df_trx.empty:
+                st.warning("Tidak ada data untuk kombinasi filter Nomor Permohonan dan Jenis Transaksi yang dipilih.")
+
             trx_mean_sec = (
                 df_trx
                 .groupby("JENIS TRANSAKSI")[proses_cols]
@@ -2078,6 +2212,115 @@ with tab_transaksi:
 
             else:
                 trx_summary = trx_summary.sort_values("SLA Utama (hari)", ascending=True)
+
+                # =====================================================
+                # SLA TRANSAKSIONAL DAN KUMULATIF
+                # =====================================================
+                st.markdown("### 🔬 SLA Transaksional & Kumulatif atas Filter Aktif")
+
+                with st.expander("📄 Lihat SLA Transaksional per Baris / Nomor Permohonan", expanded=False):
+                    detail_transaksional = df_trx.copy()
+
+                    # Format kolom SLA agar mudah dibaca user. Kolom asli detik tetap tidak diubah.
+                    for col in chart_proses_cols:
+                        if col in detail_transaksional.columns:
+                            detail_transaksional[f"{col} (SLA)"] = detail_transaksional[col].apply(trx_seconds_to_text)
+
+                    base_detail_cols = []
+                    for candidate_col in [
+                        periode_col,
+                        nomor_permohonan_col,
+                        "JENIS TRANSAKSI",
+                        "NAMA VENDOR",
+                        "NILAI TRANSAKSI",
+                        "NOMINAL",
+                        "TOTAL NILAI",
+                    ]:
+                        if candidate_col and candidate_col in detail_transaksional.columns and candidate_col not in base_detail_cols:
+                            base_detail_cols.append(candidate_col)
+
+                    sla_detail_cols = [
+                        f"{col} (SLA)"
+                        for col in chart_proses_cols
+                        if f"{col} (SLA)" in detail_transaksional.columns
+                    ]
+
+                    detail_cols_show = base_detail_cols + sla_detail_cols
+
+                    if detail_cols_show:
+                        st.dataframe(
+                            detail_transaksional[detail_cols_show],
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+                    else:
+                        st.dataframe(detail_transaksional, use_container_width=True, hide_index=True)
+
+                kumulatif_rows = []
+                for col in chart_proses_cols:
+                    if col in df_trx.columns:
+                        sec_series = pd.to_numeric(df_trx[col], errors="coerce").dropna()
+                        if not sec_series.empty:
+                            kumulatif_rows.append({
+                                "Proses": col,
+                                "Jumlah Data Valid": int(sec_series.count()),
+                                "Rata-rata SLA": trx_seconds_to_text(sec_series.mean()),
+                                "Rata-rata SLA (hari)": round(float(sec_series.mean()) / 86400, 2),
+                                "Akumulasi SLA": trx_seconds_to_text(sec_series.sum()),
+                                "Akumulasi SLA (hari)": round(float(sec_series.sum()) / 86400, 2),
+                            })
+
+                kumulatif_df = pd.DataFrame(kumulatif_rows)
+
+                if not kumulatif_df.empty:
+                    st.dataframe(kumulatif_df, use_container_width=True, hide_index=True)
+                    st.caption(
+                        "Catatan: Akumulasi SLA adalah penjumlahan durasi SLA seluruh baris transaksi terfilter. "
+                        "Untuk evaluasi performa proses, kolom rata-rata SLA biasanya lebih representatif."
+                    )
+
+                if nomor_permohonan_col and nomor_permohonan_col in df_trx.columns:
+                    with st.expander("🧮 Ringkasan Kumulatif per Nomor Permohonan", expanded=False):
+                        group_cols_permohonan = [nomor_permohonan_col, "JENIS TRANSAKSI"]
+
+                        permohonan_summary = (
+                            df_trx
+                            .groupby(group_cols_permohonan, dropna=False)[proses_cols]
+                            .mean()
+                            .reset_index()
+                        )
+
+                        permohonan_count = (
+                            df_trx
+                            .groupby(group_cols_permohonan, dropna=False)
+                            .size()
+                            .reset_index(name="Jumlah Baris")
+                        )
+
+                        permohonan_summary = permohonan_summary.merge(
+                            permohonan_count,
+                            on=group_cols_permohonan,
+                            how="left",
+                        )
+
+                        for col in proses_cols:
+                            permohonan_summary[f"{col} (Rata-rata)"] = permohonan_summary[col].apply(trx_seconds_to_text)
+
+                        permohonan_display_cols = (
+                            group_cols_permohonan
+                            + ["Jumlah Baris"]
+                            + [
+                                f"{col} (Rata-rata)"
+                                for col in proses_cols
+                                if f"{col} (Rata-rata)" in permohonan_summary.columns
+                            ]
+                        )
+
+                        st.dataframe(
+                            permohonan_summary[permohonan_display_cols],
+                            use_container_width=True,
+                            hide_index=True,
+                        )
 
                 # =====================================================
                 # KPI DIGITAL CARDS
@@ -2218,7 +2461,7 @@ with tab_transaksi:
                     jenis_options = trx_summary["JENIS TRANSAKSI"].tolist()
 
                     selected_jenis = st.multiselect(
-                        "Pilih Jenis Transaksi",
+                        "Pilih Jenis Transaksi untuk visualisasi",
                         options=["ALL"] + jenis_options,
                         default=["ALL"],
                         key="trx_filter_jenis_wow",
