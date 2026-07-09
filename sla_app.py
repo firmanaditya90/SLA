@@ -2475,34 +2475,17 @@ with tab_transaksi:
                     ].copy()
 
                 with c_filter2:
-                    # FIX STREAMLIT SLIDER:
-                    # st.slider akan error jika min_value == max_value,
-                    # misalnya ketika hasil filter hanya menyisakan 1 jenis transaksi.
-                    max_top_n = int(min(30, len(trx_ai_base)))
+                    max_top_n = max(1, min(30, len(trx_ai_base)))
+                    default_top_n = min(10, max_top_n)
 
-                    if max_top_n <= 0:
-                        top_n = 0
-                        st.info("Tidak ada data untuk Top N.")
-                    elif max_top_n == 1:
-                        top_n = 1
-                        st.metric("Top N ditampilkan", "1")
-                        st.caption("Hanya ada 1 jenis transaksi pada filter aktif.")
-                    else:
-                        default_top_n = min(10, max_top_n)
-
-                        # Reset nilai lama session_state jika sebelumnya lebih besar dari max_top_n.
-                        # Ini mencegah error saat user mengganti filter dari banyak data ke sedikit data.
-                        if st.session_state.get("trx_top_n_wow", default_top_n) > max_top_n:
-                            st.session_state["trx_top_n_wow"] = default_top_n
-
-                        top_n = st.slider(
-                            "Top N ditampilkan",
-                            min_value=1,
-                            max_value=max_top_n,
-                            value=default_top_n,
-                            step=1,
-                            key="trx_top_n_wow",
-                        )
+                    top_n = st.slider(
+                        "Top N ditampilkan",
+                        min_value=1,
+                        max_value=max_top_n,
+                        value=default_top_n,
+                        step=1,
+                        key="trx_top_n_wow",
+                    )
 
                 with c_filter3:
                     sort_mode = st.selectbox(
