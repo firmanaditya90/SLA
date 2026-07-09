@@ -6566,7 +6566,7 @@ with tab_pdf:
         traceback.print_exc()
 
 # ==========================================================
-#  SELA v9 — Virtual Human Lip Sync Data Analyst
+#  SELA v10 — Smooth Lip-Sync Smart Period Analyst
 #  - Avatar wanita natural (ringan, CSS/SVG)
 #  - Voice input via Web Speech API
 #  - Voice output via Speech Synthesis
@@ -6629,11 +6629,62 @@ def _choose_col(cols, candidates):
     return None
 
 
+def _sela_month_year_from_period(value):
+    """Parse periode string into {year, month, month_name, month_key}; supports Januari 2023, Jan-2023, 2023-01, 01/2023."""
+    s = str(value or "").strip().lower()
+    year_match = re.search(r"(20\d{2})", s)
+    if not year_match:
+        return {"year": None, "month": None, "month_name": None, "month_key": None}
+    year = year_match.group(1)
+    month_map = {
+        "januari": 1, "jan": 1, "january": 1,
+        "februari": 2, "feb": 2, "february": 2,
+        "maret": 3, "mar": 3, "march": 3,
+        "april": 4, "apr": 4,
+        "mei": 5, "may": 5,
+        "juni": 6, "jun": 6, "june": 6,
+        "juli": 7, "jul": 7, "july": 7,
+        "agustus": 8, "agus": 8, "agt": 8, "agu": 8, "aug": 8, "august": 8,
+        "september": 9, "sep": 9, "sept": 9,
+        "oktober": 10, "okt": 10, "oct": 10, "october": 10,
+        "november": 11, "nov": 11,
+        "desember": 12, "des": 12, "dec": 12, "december": 12,
+    }
+    month = None
+    # match longest labels first so "maret" is preferred over "mar"
+    for label, num in sorted(month_map.items(), key=lambda kv: len(kv[0]), reverse=True):
+        if re.search(r"(^|[^a-z])" + re.escape(label) + r"([^a-z]|$)", s):
+            month = num
+            break
+    if month is None:
+        # numeric patterns such as 2024-04, 04/2024, 04.2024
+        pats = [
+            r"20\d{2}[^0-9]([01]?\d)",
+            r"([01]?\d)[^0-9]20\d{2}",
+        ]
+        for pat in pats:
+            m = re.search(pat, s)
+            if m:
+                cand = int(m.group(1))
+                if 1 <= cand <= 12:
+                    month = cand
+                    break
+    month_names = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+    if month is None:
+        return {"year": year, "month": None, "month_name": None, "month_key": None}
+    return {
+        "year": year,
+        "month": int(month),
+        "month_name": month_names[int(month)-1],
+        "month_key": f"{year}-{int(month):02d}",
+    }
+
+
 def build_sela_payload(df_filtered, periode_col: str):
     payload = {
         "meta": {
             "assistant_name": "SELA",
-            "version": "v9",
+            "version": "v10",
         },
         "metrics": {},
         "period_stats": [],
@@ -6643,9 +6694,12 @@ def build_sela_payload(df_filtered, periode_col: str):
         "nomor_stats": [],
         "proses_stats": [],
         "process_year_stats": [],
+        "process_month_stats": [],
         "process_period_stats": [],
         "process_transaction_year_stats": [],
+        "process_transaction_month_stats": [],
         "process_vendor_year_stats": [],
+        "process_vendor_month_stats": [],
         "sample_records": [],
     }
 
@@ -6687,6 +6741,8 @@ def build_sela_payload(df_filtered, periode_col: str):
                 "periode": str(p),
                 "count": int(len(g)),
             }
+            _my = _sela_month_year_from_period(p)
+            row.update(_my)
             if "TOTAL WAKTU" in g.columns:
                 row["avg_sla_days"] = round(float(pd.to_numeric(g["TOTAL WAKTU"], errors="coerce").mean() / 86400.0), 2) if len(g) else 0
             period_rows.append(row)
@@ -6722,6 +6778,10 @@ def build_sela_payload(df_filtered, periode_col: str):
 
         tmp_proc = df.copy()
         tmp_proc["_year_sela"] = tmp_proc[periode_col].astype(str).str.extract(r"(20\d{2})")
+        _my_df = tmp_proc[periode_col].astype(str).apply(_sela_month_year_from_period).apply(pd.Series)
+        tmp_proc["_month_key_sela"] = _my_df.get("month_key")
+        tmp_proc["_month_name_sela"] = _my_df.get("month_name")
+        tmp_proc["_month_num_sela"] = _my_df.get("month")
 
         process_year_rows = []
         for y, g in tmp_proc.dropna(subset=["_year_sela"]).groupby("_year_sela"):
@@ -6733,9 +6793,25 @@ def build_sela_payload(df_filtered, periode_col: str):
         process_period_rows = []
         for p, g in df.groupby(periode_col, dropna=False):
             item = {"periode": str(p)}
+            item.update(_sela_month_year_from_period(p))
             item.update(_sela_process_avg_row(g))
             process_period_rows.append(item)
         payload["process_period_stats"] = process_period_rows
+
+        process_month_rows = []
+        month_ready = tmp_proc.dropna(subset=["_month_key_sela"]).copy()
+        if not month_ready.empty:
+            for mk, g in month_ready.groupby("_month_key_sela", dropna=False):
+                item = {
+                    "month_key": str(mk),
+                    "year": str(g["_year_sela"].dropna().iloc[0]) if g["_year_sela"].notna().any() else None,
+                    "month": int(g["_month_num_sela"].dropna().iloc[0]) if g["_month_num_sela"].notna().any() else None,
+                    "month_name": str(g["_month_name_sela"].dropna().iloc[0]) if g["_month_name_sela"].notna().any() else None,
+                    "periode": str(g[periode_col].dropna().astype(str).iloc[0]) if g[periode_col].notna().any() else str(mk),
+                }
+                item.update(_sela_process_avg_row(g))
+                process_month_rows.append(item)
+        payload["process_month_stats"] = sorted(process_month_rows, key=lambda x: x.get("month_key") or "")
 
         if trx_col and trx_col in tmp_proc.columns:
             process_trx_year_rows = []
@@ -6745,6 +6821,20 @@ def build_sela_payload(df_filtered, periode_col: str):
                 process_trx_year_rows.append(item)
             payload["process_transaction_year_stats"] = sorted(process_trx_year_rows, key=lambda x: x.get("count", 0), reverse=True)[:500]
 
+            process_trx_month_rows = []
+            trx_month_ready = tmp_proc.dropna(subset=["_month_key_sela"])
+            for (mk, k), g in trx_month_ready.groupby(["_month_key_sela", trx_col], dropna=False):
+                item = {
+                    "month_key": str(mk),
+                    "year": str(g["_year_sela"].dropna().iloc[0]) if g["_year_sela"].notna().any() else None,
+                    "month": int(g["_month_num_sela"].dropna().iloc[0]) if g["_month_num_sela"].notna().any() else None,
+                    "month_name": str(g["_month_name_sela"].dropna().iloc[0]) if g["_month_name_sela"].notna().any() else None,
+                    "name": str(k),
+                }
+                item.update(_sela_process_avg_row(g))
+                process_trx_month_rows.append(item)
+            payload["process_transaction_month_stats"] = sorted(process_trx_month_rows, key=lambda x: x.get("count", 0), reverse=True)[:800]
+
         if vendor_col and vendor_col in tmp_proc.columns:
             process_vendor_year_rows = []
             for (y, k), g in tmp_proc.dropna(subset=["_year_sela"]).groupby(["_year_sela", vendor_col], dropna=False):
@@ -6752,6 +6842,20 @@ def build_sela_payload(df_filtered, periode_col: str):
                 item.update(_sela_process_avg_row(g))
                 process_vendor_year_rows.append(item)
             payload["process_vendor_year_stats"] = sorted(process_vendor_year_rows, key=lambda x: x.get("count", 0), reverse=True)[:500]
+
+            process_vendor_month_rows = []
+            vendor_month_ready = tmp_proc.dropna(subset=["_month_key_sela"])
+            for (mk, k), g in vendor_month_ready.groupby(["_month_key_sela", vendor_col], dropna=False):
+                item = {
+                    "month_key": str(mk),
+                    "year": str(g["_year_sela"].dropna().iloc[0]) if g["_year_sela"].notna().any() else None,
+                    "month": int(g["_month_num_sela"].dropna().iloc[0]) if g["_month_num_sela"].notna().any() else None,
+                    "month_name": str(g["_month_name_sela"].dropna().iloc[0]) if g["_month_name_sela"].notna().any() else None,
+                    "name": str(k),
+                }
+                item.update(_sela_process_avg_row(g))
+                process_vendor_month_rows.append(item)
+            payload["process_vendor_month_stats"] = sorted(process_vendor_month_rows, key=lambda x: x.get("count", 0), reverse=True)[:800]
 
     # top transaksi
     if trx_col and trx_col in df.columns:
@@ -6909,10 +7013,11 @@ def render_sela_widget(df_filtered, periode_col: str):
     .avatar-halo{position:absolute;inset:auto 50% 12px auto;transform:translateX(50%);width:230px;height:230px;border-radius:50%;background:radial-gradient(circle, rgba(52,211,153,.16), transparent 68%);filter:blur(10px);animation:pulse 3.8s ease-in-out infinite}
     .avatar-card{position:relative;width:100%;height:100%;border-radius:28px;overflow:hidden;background:linear-gradient(180deg, rgba(7,17,31,.85), rgba(9,20,37,.98));box-shadow:0 18px 50px rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.08)}
     .avatar-photo{width:100%;height:100%;object-fit:cover;display:block;filter:saturate(1.05) contrast(1.04) brightness(1.01)}
-    .lip-sync-mouth{position:absolute;left:50%;top:49.7%;transform:translate(-50%,-50%);width:42px;height:8px;border-radius:0 0 26px 26px;background:linear-gradient(180deg,#b64a64,#7f1d3b);box-shadow:0 2px 8px rgba(0,0,0,.28), inset 0 -1px 2px rgba(255,255,255,.18);opacity:.78;z-index:3;transition:all .12s ease}
-    .lip-sync-mouth::after{content:"";position:absolute;left:7px;right:7px;top:2px;height:2px;border-radius:999px;background:rgba(255,210,220,.44)}
-    .female-avatar.speaking .lip-sync-mouth{animation:talkMouth .34s infinite ease-in-out;opacity:.96}
-    .female-avatar.listening .lip-sync-mouth{width:39px;height:7px;opacity:.72}
+    .lip-sync-mouth{position:absolute;left:50%;top:49.7%;transform:translate(-50%,-50%) scaleY(var(--mouth-open,.20)) scaleX(var(--mouth-wide,1));width:43px;height:20px;border-radius:0 0 26px 26px;background:radial-gradient(ellipse at 50% 16%,#f2a0b2 0 8%,#b94b66 22%,#64172d 72%);box-shadow:0 2px 8px rgba(0,0,0,.30), inset 0 3px 2px rgba(255,218,225,.34), inset 0 -7px 8px rgba(50,4,20,.55);opacity:.82;z-index:3;transition:transform .055s linear, width .08s linear, opacity .12s ease;will-change:transform,width}
+    .lip-sync-mouth::before{content:"";position:absolute;left:4px;right:4px;top:-2px;height:5px;border-radius:999px;background:linear-gradient(90deg,transparent,#c9697c,transparent);opacity:.82}
+    .lip-sync-mouth::after{content:"";position:absolute;left:9px;right:9px;top:5px;height:3px;border-radius:999px;background:rgba(255,230,235,.55);filter:blur(.2px)}
+    .female-avatar.speaking .lip-sync-mouth{opacity:.97}
+    .female-avatar.listening .lip-sync-mouth{--mouth-open:.16;--mouth-wide:.92;opacity:.74}
     .avatar-overlay{position:absolute;inset:0;background:linear-gradient(180deg, rgba(7,17,31,.05) 0%, rgba(7,17,31,.00) 35%, rgba(7,17,31,.35) 100%)}
     .avatar-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(96,165,250,.07) 1px, transparent 1px),linear-gradient(90deg, rgba(96,165,250,.07) 1px, transparent 1px);background-size:28px 28px;mask-image:linear-gradient(to bottom, rgba(0,0,0,.0), rgba(0,0,0,.8) 25%, rgba(0,0,0,.9) 75%, rgba(0,0,0,0))}
     .avatar-label{position:absolute;left:16px;right:16px;bottom:16px;padding:11px 14px;border-radius:16px;background:rgba(9,20,37,.72);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.08);color:#dff3ff;font-size:13px;line-height:1.4}
@@ -6965,8 +7070,8 @@ def render_sela_widget(df_filtered, periode_col: str):
       <div class="brand">
         <div class="logo">S</div>
         <div>
-          <div class="title">SELA v9 • Smart Virtual Human</div>
-          <div class="subtitle">Asisten virtual human wanita dengan lip-sync, analisis data aktif, dan kemampuan menjawab pertanyaan SLA secara otomatis sesuai filter yang diminta.</div>
+          <div class="title">SELA v10 • Smart Virtual Human</div>
+          <div class="subtitle">Asisten virtual human wanita dengan lip-sync lebih halus, analisis periode sampai level bulan, dan kemampuan menjawab SLA otomatis sesuai filter yang diminta.</div>
         </div>
       </div>
       <div class="head-tags">
@@ -7047,9 +7152,12 @@ def render_sela_widget(df_filtered, periode_col: str):
     const nomorStats = payload.nomor_stats || [];
     const prosesStats = payload.proses_stats || [];
     const processYearStats = payload.process_year_stats || [];
+    const processMonthStats = payload.process_month_stats || [];
     const processPeriodStats = payload.process_period_stats || [];
     const processTransactionYearStats = payload.process_transaction_year_stats || [];
+    const processTransactionMonthStats = payload.process_transaction_month_stats || [];
     const processVendorYearStats = payload.process_vendor_year_stats || [];
+    const processVendorMonthStats = payload.process_vendor_month_stats || [];
     const records = payload.sample_records || [];
 
     const speechBubble = document.getElementById('speechBubble');
@@ -7063,6 +7171,7 @@ def render_sela_widget(df_filtered, periode_col: str):
     const testVoiceBtn = document.getElementById('testVoiceBtn');
     const stopVoiceBtn = document.getElementById('stopVoiceBtn');
     const femaleAvatar = document.getElementById('femaleAvatar');
+    const lipSyncMouth = document.querySelector('.lip-sync-mouth');
     const voiceSelect = document.getElementById('voiceSelect');
 
     function fmtNum(n){
@@ -7094,9 +7203,50 @@ def render_sela_widget(df_filtered, periode_col: str):
       chatbox.scrollTop = chatbox.scrollHeight;
     }
     function setBubble(text){ speechBubble.textContent = text; heroCaption.textContent = text; }
+    let mouthAnimFrame = null;
+    let mouthSpeaking = false;
+    let mouthOpen = 0.18;
+    let mouthTarget = 0.18;
+    let mouthWide = 1;
+    let mouthLastTargetAt = 0;
+
+    function startSmoothMouth(){
+      mouthSpeaking = true;
+      mouthLastTargetAt = 0;
+      if(!mouthAnimFrame) mouthAnimFrame = requestAnimationFrame(animateMouth);
+    }
+    function stopSmoothMouth(){
+      mouthSpeaking = false;
+      mouthTarget = 0.16;
+    }
+    function animateMouth(ts){
+      if(!lipSyncMouth){ mouthAnimFrame = null; return; }
+      if(mouthSpeaking && (!mouthLastTargetAt || ts - mouthLastTargetAt > 82)){
+        const vowelLike = 0.30 + Math.random() * 0.92;
+        mouthTarget = vowelLike;
+        mouthWide = 0.88 + Math.random() * 0.34;
+        mouthLastTargetAt = ts;
+      }
+      if(!mouthSpeaking){
+        mouthTarget = 0.14;
+        mouthWide = 0.94;
+      }
+      mouthOpen += (mouthTarget - mouthOpen) * 0.34;
+      const micro = mouthSpeaking ? Math.sin(ts / 38) * 0.035 : 0;
+      const open = Math.max(0.12, Math.min(1.28, mouthOpen + micro));
+      lipSyncMouth.style.setProperty('--mouth-open', open.toFixed(3));
+      lipSyncMouth.style.setProperty('--mouth-wide', mouthWide.toFixed(3));
+      if(mouthSpeaking || mouthOpen > 0.17){
+        mouthAnimFrame = requestAnimationFrame(animateMouth);
+      } else {
+        mouthAnimFrame = null;
+      }
+    }
     function setAvatarState(state){
       femaleAvatar.classList.remove('speaking','listening');
       if(state) femaleAvatar.classList.add(state);
+      if(state === 'speaking') startSmoothMouth();
+      else stopSmoothMouth();
     }
 
     function populateMetrics(){
@@ -7153,7 +7303,15 @@ def render_sela_widget(df_filtered, periode_col: str):
       utt.pitch = 1.12;
       utt.volume = 1;
       utt.onstart = () => { setAvatarState('speaking'); statusLine.textContent = 'Status: SELA sedang menjawab.'; };
+      utt.onboundary = (event) => {
+        if(event && (event.name === 'word' || event.charIndex >= 0)){
+          mouthTarget = 0.46 + Math.random() * 0.72;
+          mouthWide = 0.9 + Math.random() * 0.28;
+        }
+      };
+      utt.onpause = () => { mouthTarget = 0.18; };
       utt.onend = () => { setAvatarState(''); statusLine.textContent = 'Status: SELA siap membantu pertanyaan berikutnya.'; };
+      utt.onerror = () => { setAvatarState(''); statusLine.textContent = 'Status: suara berhenti atau tidak tersedia.'; };
       window.speechSynthesis.speak(utt);
     }
 
@@ -7164,10 +7322,43 @@ def render_sela_widget(df_filtered, periode_col: str):
       return periodStats.find(x => normalize(x.periode) === normalize(name));
     }
     function extractYear(text){ const m = String(text).match(/(20\d{2})/); return m ? m[1] : null; }
+    const MONTH_DEFS = [
+      ['januari','jan','january'], ['februari','feb','february'], ['maret','mar','march'], ['april','apr'], ['mei','may'], ['juni','jun','june'],
+      ['juli','jul','july'], ['agustus','agus','agt','agu','august','aug'], ['september','sep','sept'], ['oktober','okt','october','oct'], ['november','nov'], ['desember','des','december','dec']
+    ];
+    const MONTH_NAMES_ID = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+    function extractMonthYear(text){
+      const lower = normalize(text);
+      const year = extractYear(text);
+      if(!year) return null;
+      let month = null;
+      for(let i=0;i<MONTH_DEFS.length;i++){
+        for(const label of MONTH_DEFS[i]){
+          const re = new RegExp('(^|[^a-z])' + label + '([^a-z]|$)', 'i');
+          if(re.test(lower)){ month = i + 1; break; }
+        }
+        if(month) break;
+      }
+      if(!month){
+        const patterns = [/20\d{2}[^0-9]([01]?\d)/, /([01]?\d)[^0-9]20\d{2}/];
+        for(const pat of patterns){
+          const m = lower.match(pat);
+          if(m){ const cand = Number(m[1]); if(cand >= 1 && cand <= 12){ month = cand; break; } }
+        }
+      }
+      if(!month) return null;
+      return {year: String(year), month, monthName: MONTH_NAMES_ID[month-1], monthKey: `${year}-${String(month).padStart(2,'0')}`};
+    }
     function findMentionedPeriod(text){
       const lower = normalize(text);
       const item = periodStats.find(p => lower.includes(normalize(p.periode)));
       return item || null;
+    }
+    function findNaturalMonthRow(text, source){
+      const my = extractMonthYear(text);
+      if(!my) return null;
+      const arr = source || processMonthStats;
+      return arr.find(p => p.month_key === my.monthKey) || arr.find(p => String(p.year) === my.year && Number(p.month) === Number(my.month)) || null;
     }
     function findMentionedTransaction(text){
       const lower = normalize(text);
@@ -7196,21 +7387,49 @@ def render_sela_widget(df_filtered, periode_col: str):
       return p.replace('TOTAL WAKTU','Total Waktu').replace('PERBENDAHARAAN','Perbendaharaan').replace('KEUANGAN','Keuangan').replace('FUNGSIONAL','Fungsional').replace('VENDOR','Vendor');
     }
     function findMonthYearPeriod(text){
-      const lower = normalize(text);
-      const months = ['januari','februari','maret','april','mei','juni','juli','agustus','september','oktober','november','desember'];
-      const year = extractYear(text);
-      if(!year) return null;
-      const month = months.find(m => lower.includes(m));
-      if(!month) return null;
-      return processPeriodStats.find(p => normalize(p.periode).includes(month) && normalize(p.periode).includes(year)) || periodStats.find(p => normalize(p.periode).includes(month) && normalize(p.periode).includes(year)) || null;
+      const explicit = findMentionedPeriod(text);
+      if(explicit) return explicit;
+      return findNaturalMonthRow(text, processMonthStats) || findNaturalMonthRow(text, processPeriodStats) || null;
+    }
+    function describeMonth(myRow){
+      if(!myRow) return '';
+      if(myRow.month_name && myRow.year) return `${myRow.month_name} ${myRow.year}`;
+      return myRow.periode || myRow.month_key || 'periode yang diminta';
     }
     function answerProcessSLA(q){
       const process = detectProcess(q);
       if(!process || !/sla|berapa|rata|waktu|durasi/.test(q)) return null;
       const year = extractYear(q);
-      const periodObj = findMentionedPeriod(q) || findMonthYearPeriod(q);
+      const monthInfo = extractMonthYear(q);
+      const monthRow = findMonthYearPeriod(q);
       const trxObj = findMentionedTransaction(q);
       const vendorObj = findMentionedVendor(q);
+
+      // Month-level answer takes priority over year-level answer.
+      if(monthInfo && trxObj){
+        const row = processTransactionMonthStats.find(x => x.month_key === monthInfo.monthKey && normalize(x.name) === normalize(trxObj.name));
+        if(row && row[process] !== undefined && row[process] !== null){
+          return `${naturalLead()} Untuk jenis transaksi ${trxObj.name} pada ${monthInfo.monthName} ${monthInfo.year}, rata-rata SLA ${prettyProcessName(process)} adalah ${fmtDays(row[process])} dari ${fmtNum(row.count)} transaksi.`;
+        }
+      }
+      if(monthInfo && vendorObj && !/sla\s+vendor/.test(q)){
+        const row = processVendorMonthStats.find(x => x.month_key === monthInfo.monthKey && normalize(x.name) === normalize(vendorObj.name));
+        if(row && row[process] !== undefined && row[process] !== null){
+          return `${naturalLead()} Untuk vendor ${vendorObj.name} pada ${monthInfo.monthName} ${monthInfo.year}, rata-rata SLA ${prettyProcessName(process)} adalah ${fmtDays(row[process])} dari ${fmtNum(row.count)} transaksi.`;
+        }
+      }
+      if(monthInfo || monthRow){
+        const row = monthRow || processMonthStats.find(x => x.month_key === monthInfo.monthKey);
+        if(row && row[process] !== undefined && row[process] !== null){
+          const periodLabel = monthInfo ? `${monthInfo.monthName} ${monthInfo.year}` : describeMonth(row);
+          const extra = row['TOTAL WAKTU'] !== undefined && process !== 'TOTAL WAKTU' ? ` Sebagai pembanding, rata-rata Total Waktu pada periode tersebut adalah ${fmtDays(row['TOTAL WAKTU'])}.` : '';
+          return `${naturalLead()} Rata-rata SLA ${prettyProcessName(process)} untuk periode ${periodLabel} adalah ${fmtDays(row[process])}, dihitung dari ${fmtNum(row.count)} transaksi.${extra}`;
+        }
+        if(monthInfo){
+          return `Saya belum menemukan data SLA ${prettyProcessName(process)} untuk periode ${monthInfo.monthName} ${monthInfo.year} pada filter aktif.`;
+        }
+      }
+
       if(year && trxObj){
         const row = processTransactionYearStats.find(x => String(x.year) === String(year) && normalize(x.name) === normalize(trxObj.name));
         if(row && row[process] !== undefined && row[process] !== null){
@@ -7231,6 +7450,7 @@ def render_sela_widget(df_filtered, periode_col: str):
         }
         return `Saya belum menemukan data SLA ${prettyProcessName(process)} untuk tahun ${year} pada filter aktif.`;
       }
+      const periodObj = findMentionedPeriod(q);
       if(periodObj){
         const row = processPeriodStats.find(x => normalize(x.periode) === normalize(periodObj.periode)) || periodObj;
         if(row && row[process] !== undefined && row[process] !== null){
@@ -7311,9 +7531,9 @@ def render_sela_widget(df_filtered, periode_col: str):
         return ans;
       }
       if(/berapa jumlah transaksi|total transaksi|jumlah transaksi/.test(q)){
-        const p = findMentionedPeriod(q);
+        const p = findMentionedPeriod(q) || findMonthYearPeriod(q);
         const year = extractYear(q);
-        if(p) return `${naturalLead()} Pada periode ${p.periode}, jumlah transaksinya sebanyak ${fmtNum(p.count)} transaksi.`;
+        if(p) return `${naturalLead()} Pada periode ${describeMonth(p)}, jumlah transaksinya sebanyak ${fmtNum(p.count)} transaksi.`;
         if(year){
           const y = yearStats.find(x => String(x.year) === String(year));
           if(y) return `${naturalLead()} Untuk tahun ${year}, total transaksi yang tercatat sebanyak ${fmtNum(y.count)} transaksi dengan rata-rata SLA ${fmtDays(y.avg_sla_days || 0)}.`;
@@ -7321,11 +7541,11 @@ def render_sela_widget(df_filtered, periode_col: str):
         return `${naturalLead()} Total transaksi aktif saat ini adalah ${fmtNum(metrics.transaction_count || 0)} transaksi, dengan cakupan periode ${metrics.period_first || '-'} sampai ${metrics.period_last || '-'}.`;
       }
       if(/sla total|rata-rata sla|sla keseluruhan|berapa sla/.test(q)){
-        const p = findMentionedPeriod(q);
+        const p = findMentionedPeriod(q) || findMonthYearPeriod(q);
         const tr = findMentionedTransaction(q);
         const vd = findMentionedVendor(q);
         const nm = findMentionedNomor(q);
-        if(p && p.avg_sla_days !== undefined) return `${naturalLead()} Pada periode ${p.periode}, rata-rata SLA totalnya adalah ${fmtDays(p.avg_sla_days)}.`;
+        if(p && p.avg_sla_days !== undefined) return `${naturalLead()} Pada periode ${describeMonth(p)}, rata-rata SLA totalnya adalah ${fmtDays(p.avg_sla_days)}.`;
         if(tr) return `${naturalLead()} Untuk jenis transaksi ${tr.name}, rata-rata SLA totalnya adalah ${fmtDays(tr.avg_sla_days || 0)} dengan volume ${fmtNum(tr.count || 0)} transaksi.`;
         if(vd) return `${naturalLead()} Untuk vendor ${vd.name}, rata-rata SLA totalnya adalah ${fmtDays(vd.avg_sla_days || 0)} dari ${fmtNum(vd.count || 0)} transaksi.`;
         if(nm) return `${naturalLead()} Untuk nomor permohonan ${nm.name}, rata-rata SLA totalnya adalah ${fmtDays(nm.avg_sla_days || 0)} dari ${fmtNum(nm.count || 0)} transaksi.`;
