@@ -8227,4 +8227,3 @@ if st.session_state.get("show_sela", False):
     render_sela_widget(df_filtered, periode_col)
 
 
-
