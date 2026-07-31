@@ -6217,10 +6217,57 @@ import io, matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 
-# ====================== LOGO ASSET ======================
-LOGO_LEFT_URL  = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/Danantara.png"
-LOGO_RIGHT_URL = "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png"
-LOGO_ASDP_URL  = LOGO_RIGHT_URL  # cover logo center
+# ====================== LOGO ASSET PDF (LOCAL) ======================
+# Logo PDF dibaca langsung dari folder yang sama dengan app.py.
+# Resolver juga memeriksa current working directory dan nama file secara
+# case-insensitive agar tetap stabil saat dijalankan lokal maupun Streamlit Cloud.
+try:
+    PDF_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+except Exception:
+    PDF_APP_DIR = os.getcwd()
+
+PDF_LOGO_DANANTARA_NAME = "danantara.png"
+PDF_LOGO_ASDP_NAME = "asdp_logo.png"
+
+
+def _resolve_pdf_asset(filename):
+    """Cari file aset PDF secara aman dan kembalikan absolute path-nya."""
+    search_dirs = []
+    for directory in (PDF_APP_DIR, os.getcwd()):
+        directory = os.path.abspath(directory)
+        if directory not in search_dirs:
+            search_dirs.append(directory)
+
+    # Pencarian nama persis terlebih dahulu.
+    for directory in search_dirs:
+        candidate = os.path.join(directory, filename)
+        if os.path.isfile(candidate):
+            return candidate
+
+    # Fallback case-insensitive untuk Linux/Streamlit Cloud.
+    target_lower = filename.lower()
+    for directory in search_dirs:
+        try:
+            for entry in os.listdir(directory):
+                if entry.lower() == target_lower:
+                    candidate = os.path.join(directory, entry)
+                    if os.path.isfile(candidate):
+                        return candidate
+        except OSError:
+            continue
+
+    searched = ", ".join(search_dirs)
+    raise FileNotFoundError(
+        f"Aset PDF '{filename}' tidak ditemukan. Folder yang diperiksa: {searched}"
+    )
+
+
+def _validate_pdf_logo_assets():
+    """Pastikan kedua logo tersedia sebelum laporan PDF dibuat."""
+    return {
+        "danantara": _resolve_pdf_asset(PDF_LOGO_DANANTARA_NAME),
+        "asdp": _resolve_pdf_asset(PDF_LOGO_ASDP_NAME),
+    }
 
 # ====================== STYLES ======================
 _styles = getSampleStyleSheet()
@@ -6233,9 +6280,33 @@ _styles.add(ParagraphStyle(name="KPI", fontName="Helvetica-Bold", fontSize=12, l
 _styles.add(ParagraphStyle(name="SmallRight", fontName="Helvetica", fontSize=9, alignment=2))
 
 # ====================== HELPERS ======================
-def _img_reader(url):
-    try: return ImageReader(url)
-    except: return None
+def _img_reader(image_source):
+    """Buat ImageReader ReportLab dari local path/bytes tanpa menelan error."""
+    if isinstance(image_source, (bytes, bytearray)):
+        return ImageReader(io.BytesIO(image_source))
+    return ImageReader(str(image_source))
+
+
+def _draw_pdf_logo(canvas, image_path, x, y, width, height, label="Logo"):
+    """Gambar logo dengan aspect ratio terjaga dan error yang informatif."""
+    try:
+        canvas.drawImage(
+            _img_reader(image_path),
+            x,
+            y,
+            width=width,
+            height=height,
+            preserveAspectRatio=True,
+            anchor="c",
+            mask="auto",
+        )
+        return True
+    except Exception as exc:
+        print(
+            f"[PDF LOGO ERROR] {label} gagal dimuat dari '{image_path}': "
+            f"{type(exc).__name__}: {exc}"
+        )
+        return False
 
 def _plot_to_rlimage(fig, w_cm=11, h_cm=6, dpi=150):
     buf = io.BytesIO()
@@ -6311,23 +6382,89 @@ def _narasi_transaksi(trans_df):
 
 # ====================== HEADER & FOOTER ======================
 def _first_page(canvas, doc):
+    """Logo cover PDF: Danantara kiri, ASDP kanan, dan ASDP utama di tengah."""
+    canvas.saveState()
     pw, ph = landscape(A4)
+
     try:
-        canvas.drawImage(_img_reader(LOGO_ASDP_URL), pw/2 - 3*cm, ph - 10*cm,
-                         width=6*cm, height=6*cm, mask='auto')
-    except: pass
+        logos = _validate_pdf_logo_assets()
+
+        _draw_pdf_logo(
+            canvas,
+            logos["danantara"],
+            1.5 * cm,
+            ph - 3.45 * cm,
+            4.8 * cm,
+            1.55 * cm,
+            "Danantara - Cover",
+        )
+
+        _draw_pdf_logo(
+            canvas,
+            logos["asdp"],
+            pw - 5.0 * cm,
+            ph - 3.65 * cm,
+            3.2 * cm,
+            2.15 * cm,
+            "ASDP - Cover Header",
+        )
+
+        _draw_pdf_logo(
+            canvas,
+            logos["asdp"],
+            (pw - 5.4 * cm) / 2,
+            ph - 9.35 * cm,
+            5.4 * cm,
+            4.0 * cm,
+            "ASDP - Cover Center",
+        )
+    finally:
+        canvas.restoreState()
+
 
 def _later_pages(canvas, doc):
+    """Logo header dan nomor halaman untuk seluruh halaman setelah cover."""
+    canvas.saveState()
     pw, ph = landscape(A4)
-    try: canvas.drawImage(_img_reader(LOGO_LEFT_URL), 1.5*cm, ph - 3.6*cm, width=4.5*cm, height=1.6*cm, mask='auto')
-    except: pass
-    try: canvas.drawImage(_img_reader(LOGO_RIGHT_URL), pw - 5.1*cm, ph - 3.6*cm, width=3*cm, height=3*cm, mask='auto')
-    except: pass
-    canvas.setFont("Helvetica", 9)
-    canvas.drawRightString(pw - 1.6*cm, 1.05*cm, f"Halaman {doc.page}")
+
+    try:
+        logos = _validate_pdf_logo_assets()
+
+        _draw_pdf_logo(
+            canvas,
+            logos["danantara"],
+            1.5 * cm,
+            ph - 3.45 * cm,
+            4.8 * cm,
+            1.55 * cm,
+            "Danantara - Header",
+        )
+
+        _draw_pdf_logo(
+            canvas,
+            logos["asdp"],
+            pw - 5.0 * cm,
+            ph - 3.65 * cm,
+            3.2 * cm,
+            2.15 * cm,
+            "ASDP - Header",
+        )
+
+        canvas.setFont("Helvetica", 9)
+        canvas.setFillColor(colors.HexColor("#475569"))
+        canvas.drawRightString(
+            pw - 1.6 * cm,
+            1.05 * cm,
+            f"Halaman {doc.page}",
+        )
+    finally:
+        canvas.restoreState()
 
 # ====================== MAIN FUNCTION ======================
 def generate_pdf_report_v6(df_ord, selected_periode, periode_col, available_sla_cols, proses_cols, kpi_target_days=None):
+    # Fail-fast dengan pesan jelas jika file logo belum ikut ter-deploy.
+    _validate_pdf_logo_assets()
+
     df = df_ord.copy()
     df[periode_col] = df[periode_col].astype(str)
     categories = [str(p) for p in selected_periode]
@@ -7321,7 +7458,7 @@ def render_sela_widget(df_filtered, periode_col: str):
     function periodByName(name){
       return periodStats.find(x => normalize(x.periode) === normalize(name));
     }
-    function extractYear(text){ const m = String(text).match(/(20\d{2})/); return m ? m[1] : null; }
+    function extractYear(text){ const m = String(text).match(/(20\\d{2})/); return m ? m[1] : null; }
     const MONTH_DEFS = [
       ['januari','jan','january'], ['februari','feb','february'], ['maret','mar','march'], ['april','apr'], ['mei','may'], ['juni','jun','june'],
       ['juli','jul','july'], ['agustus','agus','agt','agu','august','aug'], ['september','sep','sept'], ['oktober','okt','october','oct'], ['november','nov'], ['desember','des','december','dec']
@@ -7340,7 +7477,7 @@ def render_sela_widget(df_filtered, periode_col: str):
         if(month) break;
       }
       if(!month){
-        const patterns = [/20\d{2}[^0-9]([01]?\d)/, /([01]?\d)[^0-9]20\d{2}/];
+        const patterns = [/20\\d{2}[^0-9]([01]?\\d)/, /([01]?\\d)[^0-9]20\\d{2}/];
         for(const pat of patterns){
           const m = lower.match(pat);
           if(m){ const cand = Number(m[1]); if(cand >= 1 && cand <= 12){ month = cand; break; } }
@@ -7375,11 +7512,11 @@ def render_sela_widget(df_filtered, periode_col: str):
 
     function detectProcess(text){
       const q = normalize(text);
-      if(/total\s*waktu|sla\s*total|total sla|keseluruhan/.test(q)) return 'TOTAL WAKTU';
+      if(/total\\s*waktu|sla\\s*total|total sla|keseluruhan/.test(q)) return 'TOTAL WAKTU';
       if(/perbendaharaan|treasury/.test(q)) return 'PERBENDAHARAAN';
       if(/keuangan|finance/.test(q)) return 'KEUANGAN';
       if(/fungsional|fungsi|user/.test(q)) return 'FUNGSIONAL';
-      if(/sla\s+vendor|proses\s+vendor|vendor\s+periode|vendor\s+tahun|vendor\s+20\d{2}/.test(q)) return 'VENDOR';
+      if(/sla\\s+vendor|proses\\s+vendor|vendor\\s+periode|vendor\\s+tahun|vendor\\s+20\\d{2}/.test(q)) return 'VENDOR';
       return null;
     }
     function prettyProcessName(p){
@@ -7412,7 +7549,7 @@ def render_sela_widget(df_filtered, periode_col: str):
           return `${naturalLead()} Untuk jenis transaksi ${trxObj.name} pada ${monthInfo.monthName} ${monthInfo.year}, rata-rata SLA ${prettyProcessName(process)} adalah ${fmtDays(row[process])} dari ${fmtNum(row.count)} transaksi.`;
         }
       }
-      if(monthInfo && vendorObj && !/sla\s+vendor/.test(q)){
+      if(monthInfo && vendorObj && !/sla\\s+vendor/.test(q)){
         const row = processVendorMonthStats.find(x => x.month_key === monthInfo.monthKey && normalize(x.name) === normalize(vendorObj.name));
         if(row && row[process] !== undefined && row[process] !== null){
           return `${naturalLead()} Untuk vendor ${vendorObj.name} pada ${monthInfo.monthName} ${monthInfo.year}, rata-rata SLA ${prettyProcessName(process)} adalah ${fmtDays(row[process])} dari ${fmtNum(row.count)} transaksi.`;
@@ -7436,7 +7573,7 @@ def render_sela_widget(df_filtered, periode_col: str):
           return `${naturalLead()} Untuk jenis transaksi ${trxObj.name} pada tahun ${year}, rata-rata SLA ${prettyProcessName(process)} adalah ${fmtDays(row[process])} dari ${fmtNum(row.count)} transaksi.`;
         }
       }
-      if(year && vendorObj && !/sla\s+vendor/.test(q)){
+      if(year && vendorObj && !/sla\\s+vendor/.test(q)){
         const row = processVendorYearStats.find(x => String(x.year) === String(year) && normalize(x.name) === normalize(vendorObj.name));
         if(row && row[process] !== undefined && row[process] !== null){
           return `${naturalLead()} Untuk vendor ${vendorObj.name} pada tahun ${year}, rata-rata SLA ${prettyProcessName(process)} adalah ${fmtDays(row[process])} dari ${fmtNum(row.count)} transaksi.`;
@@ -7575,8 +7712,8 @@ def render_sela_widget(df_filtered, periode_col: str):
         }
         return 'Saat ini saya belum dapat menentukan bottleneck karena data SLA proses belum lengkap.';
       }
-      if(/bandingkan.*20\d{2}.*20\d{2}|perbandingan.*20\d{2}.*20\d{2}/.test(q)){
-        const years = text.match(/20\d{2}/g) || [];
+      if(/bandingkan.*20\\d{2}.*20\\d{2}|perbandingan.*20\\d{2}.*20\\d{2}/.test(q)){
+        const years = text.match(/20\\d{2}/g) || [];
         if(years.length >= 2){
           const y1 = yearStats.find(y => String(y.year) === years[0]);
           const y2 = yearStats.find(y => String(y.year) === years[1]);
