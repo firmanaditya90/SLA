@@ -2591,17 +2591,51 @@ with tab_transaksi:
                     ].copy()
 
                 with c_filter2:
-                    max_top_n = max(1, min(30, len(trx_ai_base)))
-                    default_top_n = min(10, max_top_n)
+                    # =====================================================
+                    # FIX: slider tidak boleh memiliki min_value == max_value
+                    # =====================================================
+                    # Kondisi ini terjadi ketika filter utama menyisakan hanya
+                    # 1 jenis transaksi. Streamlit melempar StreamlitAPIException
+                    # jika st.slider dibuat dengan min=1 dan max=1.
+                    max_top_n = min(30, len(trx_ai_base))
 
-                    top_n = st.slider(
-                        "Top N ditampilkan",
-                        min_value=1,
-                        max_value=max_top_n,
-                        value=default_top_n,
-                        step=1,
-                        key="trx_top_n_wow",
-                    )
+                    if max_top_n <= 0:
+                        top_n = 0
+                        st.metric("Top N ditampilkan", "0")
+                    elif max_top_n == 1:
+                        top_n = 1
+                        # Tetap tampilkan kontrol di posisi yang sama, namun
+                        # nonaktif karena hanya ada satu kategori yang tersedia.
+                        st.selectbox(
+                            "Top N ditampilkan",
+                            options=[1],
+                            index=0,
+                            disabled=True,
+                            key="trx_top_n_wow_single",
+                            help="Hanya ada 1 jenis transaksi pada filter aktif.",
+                        )
+                    else:
+                        default_top_n = min(10, max_top_n)
+
+                        # Bersihkan state slider lama jika nilainya berada di
+                        # luar range baru setelah user mempersempit filter.
+                        old_top_n = st.session_state.get("trx_top_n_wow")
+                        if old_top_n is not None:
+                            try:
+                                old_top_n_int = int(old_top_n)
+                            except Exception:
+                                old_top_n_int = default_top_n
+                            if old_top_n_int < 1 or old_top_n_int > max_top_n:
+                                st.session_state.pop("trx_top_n_wow", None)
+
+                        top_n = st.slider(
+                            "Top N ditampilkan",
+                            min_value=1,
+                            max_value=max_top_n,
+                            value=default_top_n,
+                            step=1,
+                            key="trx_top_n_wow",
+                        )
 
                 with c_filter3:
                     sort_mode = st.selectbox(
