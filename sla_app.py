@@ -2132,13 +2132,129 @@ with tab_transaksi:
             with fcol1:
                 if nomor_permohonan_col:
                     nomor_options = trx_sorted_unique(df_trx[nomor_permohonan_col])
-                    selected_permohonan = st.multiselect(
-                        "Filter Nomor Permohonan",
-                        options=["ALL"] + nomor_options,
-                        default=["ALL"],
-                        help="Bisa pilih 1 atau lebih Nomor Permohonan. Pilih ALL untuk menampilkan seluruh nomor.",
-                        key="trx_filter_nomor_permohonan_main",
-                    )
+
+                    # =====================================================
+                    # FIX HIGH-CARDINALITY MULTISELECT
+                    # =====================================================
+                    # Streamlit/React Multiselect dapat mengalami
+                    # ``RangeError: Maximum call stack size exceeded`` jika
+                    # puluhan ribu opsi dikirim sekaligus ke browser.
+                    #
+                    # Untuk dataset kecil, perilaku lama DIPERTAHANKAN.
+                    # Untuk dataset besar, filter otomatis beralih ke mode
+                    # pencarian server-side sehingga widget hanya menerima
+                    # sebagian kecil opsi. Downstream tetap menerima format
+                    # selected_permohonan yang sama: ["ALL"] atau list nomor.
+                    TRX_NOMOR_DIRECT_LIMIT = 800
+                    TRX_NOMOR_SEARCH_LIMIT = 250
+
+                    if len(nomor_options) <= TRX_NOMOR_DIRECT_LIMIT:
+                        selected_permohonan = st.multiselect(
+                            "Filter Nomor Permohonan",
+                            options=["ALL"] + nomor_options,
+                            default=["ALL"],
+                            help=(
+                                "Bisa pilih 1 atau lebih Nomor Permohonan. "
+                                "Pilih ALL untuk menampilkan seluruh nomor."
+                            ),
+                            key="trx_filter_nomor_permohonan_main",
+                        )
+                    else:
+                        st.markdown("**Filter Nomor Permohonan**")
+                        st.caption(
+                            f"Terdeteksi {trx_fmt_int(len(nomor_options))} Nomor Permohonan unik. "
+                            "Mode pencarian aman diaktifkan agar dashboard tetap ringan dan tidak error."
+                        )
+
+                        use_all_nomor = st.checkbox(
+                            "Gunakan seluruh Nomor Permohonan (ALL)",
+                            value=True,
+                            key="trx_filter_nomor_all_safe_v1",
+                            help=(
+                                "Aktifkan untuk menganalisis seluruh Nomor Permohonan. "
+                                "Nonaktifkan jika ingin mencari dan memilih nomor tertentu."
+                            ),
+                        )
+
+                        if use_all_nomor:
+                            selected_permohonan = ["ALL"]
+                        else:
+                            nomor_query = st.text_input(
+                                "Cari Nomor Permohonan",
+                                value="",
+                                placeholder="Ketik nomor / sebagian nomor. Bisa beberapa, pisahkan dengan koma.",
+                                key="trx_filter_nomor_search_safe_v1",
+                                help=(
+                                    "Pencarian dilakukan sebelum opsi dikirim ke multiselect. "
+                                    "Gunakan koma, titik koma, atau baris baru untuk mencari beberapa nomor sekaligus."
+                                ),
+                            )
+
+                            search_terms = [
+                                token.strip().casefold()
+                                for token in re.split(r"[,;\n]+", nomor_query or "")
+                                if token.strip()
+                            ]
+
+                            matched_nomor = []
+                            if search_terms:
+                                matched_nomor = [
+                                    value
+                                    for value in nomor_options
+                                    if any(term in str(value).casefold() for term in search_terms)
+                                ]
+
+                            safe_key = "trx_filter_nomor_permohonan_safe_v1"
+                            if safe_key not in st.session_state:
+                                st.session_state[safe_key] = []
+
+                            # Opsi yang sudah dipilih tetap dipertahankan walau
+                            # user mengganti kata pencarian, sehingga pilihan
+                            # beberapa nomor dapat dikumpulkan bertahap.
+                            previous_selected = [
+                                str(v) for v in st.session_state.get(safe_key, [])
+                                if str(v) in set(nomor_options)
+                            ]
+
+                            matched_limited = matched_nomor[:TRX_NOMOR_SEARCH_LIMIT]
+                            safe_options = list(dict.fromkeys(previous_selected + matched_limited))
+
+                            # Pastikan state widget tidak membawa value yang
+                            # sudah tidak tersedia setelah periode/filter berubah.
+                            if st.session_state.get(safe_key, []) != previous_selected:
+                                st.session_state[safe_key] = previous_selected
+
+                            selected_permohonan = st.multiselect(
+                                "Pilih Nomor Permohonan hasil pencarian",
+                                options=safe_options,
+                                key=safe_key,
+                                help=(
+                                    "Pilih satu atau lebih nomor dari hasil pencarian. "
+                                    "Pilihan yang sudah dipilih tetap tersimpan saat kata pencarian diganti."
+                                ),
+                            )
+
+                            if not search_terms and not selected_permohonan:
+                                st.info(
+                                    "Ketik Nomor Permohonan pada kolom pencarian di atas. "
+                                    "Selama belum ada nomor yang dipilih, filter Nomor Permohonan dianggap ALL."
+                                )
+                                selected_permohonan = ["ALL"]
+                            elif search_terms and not matched_nomor and not selected_permohonan:
+                                st.warning("Nomor Permohonan yang dicari tidak ditemukan pada periode aktif.")
+                                # Gunakan sentinel agar hasil benar-benar kosong,
+                                # bukan tanpa sengaja kembali ke ALL.
+                                selected_permohonan = ["__NO_MATCH__"]
+                            elif len(matched_nomor) > TRX_NOMOR_SEARCH_LIMIT:
+                                st.caption(
+                                    f"Ditemukan {trx_fmt_int(len(matched_nomor))} hasil. "
+                                    f"Hanya {trx_fmt_int(TRX_NOMOR_SEARCH_LIMIT)} hasil pertama ditampilkan; "
+                                    "ketik pencarian yang lebih spesifik untuk mempersempit hasil."
+                                )
+                            elif search_terms:
+                                st.caption(
+                                    f"Ditemukan {trx_fmt_int(len(matched_nomor))} hasil pencarian."
+                                )
                 else:
                     selected_permohonan = ["ALL"]
                     st.warning(
