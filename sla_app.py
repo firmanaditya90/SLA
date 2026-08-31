@@ -1,5 +1,6 @@
+# -*- coding: utf-8 -*-
 # =========================================
-# app.py â€” SLA Payment Analyzer + Poster A4
+# app.py \u2014 SLA Payment Analyzer + Poster A4
 # =========================================
 
 import streamlit as st
@@ -174,27 +175,27 @@ df_raw = None
 
 # coba ambil dari GitHub
 if GITHUB_TOKEN and GITHUB_REPO:
-    with st.spinner("ðŸ”„ Mengambil data dari GitHub..."):
+    with st.spinner("\U0001f504 Mengambil data dari GitHub..."):
         content = download_file_from_github()
         if content:
             df_raw = pd.read_excel(BytesIO(content), header=[0, 1])
-            st.info("âœ… Data dimuat dari GitHub.")
+            st.info("\u2705 Data dimuat dari GitHub.")
 
 # fallback lokal
 if df_raw is None and os.path.exists(DATA_PATH):
-    with st.spinner("ðŸ”„ Membaca data terakhir (lokal)..."):
+    with st.spinner("\U0001f504 Membaca data terakhir (lokal)..."):
         stat = os.stat(DATA_PATH)
         df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
-        st.info("â„¹ï¸ Menampilkan data dari upload terakhir (lokal).")
+        st.info("\u2139\ufe0f Menampilkan data dari upload terakhir (lokal).")
 
 if df_raw is None:
-    st.warning("âš ï¸ Belum ada file yang diunggah.")
+    st.warning("\u26a0\ufe0f Belum ada file yang diunggah.")
     df_raw = None
 
 # ==============================
 # Konfigurasi Halaman (TIDAK DIUBAH)
 # ==============================
-st.set_page_config(page_title="SLA Payment Analyzer", layout="wide", page_icon="ðŸš¢")
+st.set_page_config(page_title="SLA Payment Analyzer", layout="wide", page_icon="\U0001f6a2")
 
 # ------------------------------
 # (Opsional) Pakai tema dark:
@@ -374,7 +375,7 @@ hr.soft { border: none; height: 1px; background: linear-gradient(90deg, transpar
 
 st.markdown("""
 <div class="hero">
-<h1 class="hero">ðŸš¢ SLA Payment Analyzer</h1>
+<h1 class="hero">\U0001f6a2 SLA Payment Analyzer</h1>
   <p>Dashboard modern untuk melihat & menganalisis SLA dokumen penagihan</p>
 </div>
 """, unsafe_allow_html=True)
@@ -387,7 +388,7 @@ with st.sidebar:
         "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png",
         width=180
     )
-    st.markdown("<h3 style='text-align: center;'>ðŸš€ SLA Payment Analyzer</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center;'>\U0001f680 SLA Payment Analyzer</h3>", unsafe_allow_html=True)
 
 # ==============================
 # Path & Assets (TIDAK DIUBAH)
@@ -414,7 +415,7 @@ try:
 except Exception:
     ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", None)
 
-st.sidebar.markdown("### ðŸ” Admin")
+st.sidebar.markdown("### \U0001f510 Admin")
 if ADMIN_PASSWORD:
     password_input = st.sidebar.text_input("Password admin (untuk upload)", type="password")
     is_admin = password_input == ADMIN_PASSWORD
@@ -464,7 +465,7 @@ def seconds_to_sla_format(total_seconds):
 # ==============================
 # Upload (hanya admin) (TIDAK DIUBAH)
 # ==============================
-with st.sidebar.expander("ðŸ“¤ Upload Data (Admin Only)", expanded=is_admin):
+with st.sidebar.expander("\U0001f4e4 Upload Data (Admin Only)", expanded=is_admin):
     uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx") if is_admin else None
 
 # ==============================
@@ -472,7 +473,7 @@ with st.sidebar.expander("ðŸ“¤ Upload Data (Admin Only)", expanded=is_admin
 # ==============================
 load_status = st.empty()
 if uploaded_file is not None and is_admin:
-    with st.spinner("ðŸš€ Mengunggah & menyiapkan data..."):
+    with st.spinner("\U0001f680 Mengunggah & menyiapkan data..."):
         if rocket_b64:
             st.markdown(
                 f'<div style="text-align:center;"><img src="{rocket_b64}" width="160"/></div>',
@@ -488,14 +489,14 @@ if uploaded_file is not None and is_admin:
         # Upload juga ke GitHub agar semua user sinkron
         result = upload_file_to_github(file_bytes, path=GITHUB_PATH, message="Update SLA data (via app)")
         if result:
-            st.success("âœ… Data baru berhasil diunggah & disinkronkan ke GitHub!")
+            st.success("\u2705 Data baru berhasil diunggah & disinkronkan ke GitHub!")
         else:
-            st.warning("âš ï¸ Data tersimpan lokal, tapi gagal update ke GitHub.")
+            st.warning("\u26a0\ufe0f Data tersimpan lokal, tapi gagal update ke GitHub.")
 
 # Jika ada file data, baca & tampilkan
 if os.path.exists(DATA_PATH):
     # Progress & spinner saat baca file
-    with st.spinner("ðŸ”„ Membaca data terakhir..."):
+    with st.spinner("\U0001f504 Membaca data terakhir..."):
         if rocket_b64:
             st.markdown(
                 f'<div style="text-align:center;"><img src="{rocket_b64}" width="120"/></div>',
@@ -509,24 +510,24 @@ if os.path.exists(DATA_PATH):
 
         stat = os.stat(DATA_PATH)
         df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
-        st.info("â„¹ï¸ Menampilkan data dari upload terakhir.")
+        st.info("\u2139\ufe0f Menampilkan data dari upload terakhir.")
 else:
-    st.warning("âš ï¸ Belum ada file yang diunggah.")
+    st.warning("\u26a0\ufe0f Belum ada file yang diunggah.")
     st.stop()
 
 # Tombol reset (hanya admin) (TIDAK DIUBAH + FIX sinkron GitHub)
-with st.sidebar.expander("ðŸ› ï¸ Admin Tools", expanded=False):
+with st.sidebar.expander("\U0001f6e0\ufe0f Admin Tools", expanded=False):
     if is_admin and os.path.exists(DATA_PATH):
-        if st.button("ðŸ—‘ï¸ Reset Data (hapus data terakhir)"):
+        if st.button("\U0001f5d1\ufe0f Reset Data (hapus data terakhir)"):
             # Hapus lokal
             os.remove(DATA_PATH)
             
             # Hapus juga di GitHub
             result = delete_file_from_github(path=GITHUB_PATH, message="Reset SLA data (via app)")
             if result:
-                st.success("âœ… Data berhasil dihapus dari lokal & GitHub.")
+                st.success("\u2705 Data berhasil dihapus dari lokal & GitHub.")
             else:
-                st.warning("âš ï¸ Data lokal terhapus, tapi gagal menghapus dari GitHub.")
+                st.warning("\u26a0\ufe0f Data lokal terhapus, tapi gagal menghapus dari GitHub.")
 
             st.rerun()
 
@@ -549,7 +550,7 @@ rename_map = {
 df_raw.rename(columns=rename_map, inplace=True)
 
 # Panel: daftar kolom
-with st.expander("ðŸ§¾ Kolom yang terdeteksi di file"):
+with st.expander("\U0001f9fe Kolom yang terdeteksi di file"):
     st.write(list(df_raw.columns))
 
 # Deteksi kolom periode
@@ -572,7 +573,7 @@ except Exception:
 # ==============================
 with st.sidebar:
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("ðŸ“… Filter Rentang Periode")
+    st.subheader("\U0001f4c5 Filter Rentang Periode")
     periode_list = sorted(
         df_raw[periode_col].dropna().astype(str).unique().tolist(),
         key=lambda x: pd.to_datetime(x, errors='coerce')
@@ -589,7 +590,7 @@ if idx_start > idx_end:
 selected_periode = periode_list[idx_start:idx_end+1]
 df_filtered = df_raw[df_raw[periode_col].astype(str).isin(selected_periode)].copy()
 
-st.markdown(f'<div class="small">Menampilkan data periode dari <b>{start_periode}</b> sampai <b>{end_periode}</b> â€” total baris: <b>{len(df_filtered)}</b></div>', unsafe_allow_html=True)
+st.markdown(f'<div class="small">Menampilkan data periode dari <b>{start_periode}</b> sampai <b>{end_periode}</b> \u2014 total baris: <b>{len(df_filtered)}</b></div>', unsafe_allow_html=True)
 
 available_sla_cols = [col for col in sla_cols if col in df_filtered.columns]
 proses_grafik_cols = [c for c in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN"] if c in available_sla_cols]
@@ -602,8 +603,8 @@ st.sidebar.markdown(
 
 # Tombol "Tanya SELA" di sidebar
 with st.sidebar:
-    st.markdown("### ðŸ¤– Tanya SELA")
-    if st.button("ðŸ’¬ Buka / Tutup SELA"):
+    st.markdown("### \U0001f916 Tanya SELA")
+    if st.button("\U0001f4ac Buka / Tutup SELA"):
         st.session_state["show_sela"] = not st.session_state["show_sela"]
     st.caption("SELA 3D + AI hanya di-load saat Anda membukanya, supaya dashboard tetap ringan.")
 
@@ -611,10 +612,10 @@ with st.sidebar:
 # ==============================
 # Parsing SLA setelah filter (TIDAK DIUBAH)
 # ==============================
-with st.status("â±ï¸ Memproses kolom SLA setelah filter...", expanded=False) as status:
+with st.status("\u23f1\ufe0f Memproses kolom SLA setelah filter...", expanded=False) as status:
     for col in available_sla_cols:
         df_filtered[col] = df_filtered[col].apply(parse_sla)
-    status.update(label="âœ… Parsing SLA selesai", state="complete")
+    status.update(label="\u2705 Parsing SLA selesai", state="complete")
 
 import io, base64
 
@@ -637,7 +638,7 @@ import streamlit.components.v1 as components
 # ==============================
 # KPI Ringkasan (2x2 Digital Cards + Count-Up FIX)
 # ==============================
-st.markdown("## ðŸ“ˆ Ringkasan")
+st.markdown("## \U0001f4c8 Ringkasan")
 
 jumlah_transaksi = len(df_filtered)
 if "TOTAL WAKTU" in available_sla_cols and len(df_filtered) > 0:
@@ -683,22 +684,22 @@ html_code = f"""
 
 <div class="summary-grid">
   <div class="summary-card card-1">
-    <div class="summary-icon">ðŸ§¾</div>
+    <div class="summary-icon">\U0001f9fe</div>
     <div class="summary-label">Jumlah Transaksi</div>
     <div id="val1" class="summary-value">0</div>
   </div>
   <div class="summary-card card-2">
-    <div class="summary-icon">â±ï¸</div>
+    <div class="summary-icon">\u23f1\ufe0f</div>
     <div class="summary-label">Rata-rata TOTAL Waktu</div>
     <div id="val2" class="summary-value">0</div>
   </div>
   <div class="summary-card card-3">
-    <div class="summary-icon">âš¡</div>
+    <div class="summary-icon">\u26a1</div>
     <div class="summary-label">Proses Tercepat</div>
     <div class="summary-value">{fastest_process}</div>
   </div>
   <div class="summary-card card-4">
-    <div class="summary-icon">âœ…</div>
+    <div class="summary-icon">\u2705</div>
     <div class="summary-label">Kualitas Data</div>
     <div id="val4" class="summary-value">0</div>
   </div>
@@ -734,11 +735,11 @@ components.html(html_code, height=350)
 # Tabs untuk konten (TIDAK DIUBAH)
 # ==============================
 tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_nilai, tab_report, tab_analisis = st.tabs(
-    ["ðŸ” Overview", "ðŸ§® Per Proses", "ðŸ§¾ Jenis Transaksi", "ðŸ·ï¸ Vendor", "ðŸ“ˆ Tren", "ðŸ“Š Jumlah Transaksi", "ðŸ’° Nilai Transaksi", "ðŸ“¥ Download Report", "ðŸ§  Analisis Data"]
+    ["\U0001f50d Overview", "\U0001f9ee Per Proses", "\U0001f9fe Jenis Transaksi", "\U0001f3f7\ufe0f Vendor", "\U0001f4c8 Tren", "\U0001f4ca Jumlah Transaksi", "\U0001f4b0 Nilai Transaksi", "\U0001f4e5 Download Report", "\U0001f9e0 Analisis Data"]
 )
 
 with tab_overview:
-    st.subheader("ðŸ“Š KPI Verifikasi Dokumen Penagihan")
+    st.subheader("\U0001f4ca KPI Verifikasi Dokumen Penagihan")
 
     # Hitung rata-rata SLA Keuangan
     if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
@@ -755,14 +756,14 @@ with tab_overview:
 
     # Input Target KPI (hanya admin)
     if is_admin:
-        st.markdown("### ðŸŽ¯ Atur Target KPI (Admin Only)")
+        st.markdown("### \U0001f3af Atur Target KPI (Admin Only)")
         new_kpi = st.number_input(
             "Target KPI (hari, desimal)", 
             min_value=0.0, step=0.1,
             value=saved_kpi if saved_kpi else 1.5,
             key="target_kpi_input"
         )
-        if st.button("ðŸ’¾ Simpan Target KPI"):
+        if st.button("\U0001f4be Simpan Target KPI"):
             save_kpi(new_kpi)
             st.success(f"Target KPI berhasil disimpan: {new_kpi} hari")
             saved_kpi = new_kpi
@@ -796,14 +797,14 @@ with tab_overview:
                 st.markdown("""
                     <div class="kpi-card">
                         <div class="kpi-label">Status</div>
-                        <div class="kpi-status-on">âœ… ON TARGET</div>
+                        <div class="kpi-status-on">\u2705 ON TARGET</div>
                     </div>
                 """, unsafe_allow_html=True)
             else:
                 st.markdown("""
                     <div class="kpi-card">
                         <div class="kpi-label">Status</div>
-                        <div class="kpi-status-off">âŒ NOT ON TARGET</div>
+                        <div class="kpi-status-off">\u274c NOT ON TARGET</div>
                     </div>
                 """, unsafe_allow_html=True)
         else:
@@ -819,7 +820,7 @@ with tab_overview:
     # ==============================
     if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
         st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
-        st.subheader("ðŸ“Š Tabel Rata-rata SLA Keuangan (Hari) per Periode")
+        st.subheader("\U0001f4ca Tabel Rata-rata SLA Keuangan (Hari) per Periode")
 
         # Hitung rata-rata per periode
         trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
@@ -844,7 +845,7 @@ with tab_overview:
     # ==============================
     if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
         st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
-        st.subheader("ðŸ“ˆ Trend Rata-rata SLA Keuangan per Periode")
+        st.subheader("\U0001f4c8 Trend Rata-rata SLA Keuangan per Periode")
 
         # Hitung rata-rata per periode
         trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
@@ -877,7 +878,7 @@ with tab_overview:
 
 with tab_proses:
     if available_sla_cols:
-        st.subheader("ðŸ“Œ Rata-rata SLA per Proses (format hari jam menit detik)")
+        st.subheader("\U0001f4cc Rata-rata SLA per Proses (format hari jam menit detik)")
         rata_proses_seconds = df_filtered[available_sla_cols].mean()
         rata_proses = rata_proses_seconds.reset_index()
         rata_proses.columns = ["Proses", "Rata-rata (detik)"]
@@ -906,7 +907,7 @@ with tab_transaksi:
     import streamlit.components.v1 as components
     from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
-    st.subheader("ðŸ§¾ Analisis SLA per Jenis Transaksi")
+    st.subheader("\U0001f9fe Analisis SLA per Jenis Transaksi")
 
     # =====================================================
     # LOCAL HELPERS
@@ -1215,20 +1216,20 @@ with tab_transaksi:
             high_vol = row["Jumlah Transaksi"] >= volume_threshold
 
             if high_sla and high_vol:
-                return "Prioritas 1 â€” SLA tinggi & volume besar"
+                return "Prioritas 1 \u2014 SLA tinggi & volume besar"
             elif high_sla and not high_vol:
-                return "Prioritas 2 â€” SLA tinggi"
+                return "Prioritas 2 \u2014 SLA tinggi"
             elif not high_sla and high_vol:
-                return "Prioritas 3 â€” Volume besar"
+                return "Prioritas 3 \u2014 Volume besar"
             else:
                 return "Normal"
 
         df_ai["Prioritas AI"] = df_ai.apply(priority_label, axis=1)
 
         priority_order = {
-            "Prioritas 1 â€” SLA tinggi & volume besar": 1,
-            "Prioritas 2 â€” SLA tinggi": 2,
-            "Prioritas 3 â€” Volume besar": 3,
+            "Prioritas 1 \u2014 SLA tinggi & volume besar": 1,
+            "Prioritas 2 \u2014 SLA tinggi": 2,
+            "Prioritas 3 \u2014 Volume besar": 3,
             "Normal": 4,
         }
 
@@ -1272,22 +1273,22 @@ with tab_transaksi:
 
             headline = (
                 f"Fokus utama perbaikan adalah jenis transaksi "
-                f"â€œ{trx_safe_text(top_priority['JENIS TRANSAKSI'])}â€ karena memiliki kombinasi "
+                f"\u201c{trx_safe_text(top_priority['JENIS TRANSAKSI'])}\u201d karena memiliki kombinasi "
                 f"SLA relatif tinggi ({trx_fmt_hari(top_priority['SLA Utama (hari)'])}) "
                 f"dan volume transaksi besar ({trx_fmt_int(top_priority['Jumlah Transaksi'])} transaksi)."
             )
         else:
             headline = (
                 f"Secara umum, SLA jenis transaksi relatif terkendali. "
-                f"Namun jenis transaksi â€œ{trx_safe_text(slowest['JENIS TRANSAKSI'])}â€ tetap perlu dimonitor "
+                f"Namun jenis transaksi \u201c{trx_safe_text(slowest['JENIS TRANSAKSI'])}\u201d tetap perlu dimonitor "
                 f"karena menjadi kategori dengan SLA paling lama, yaitu "
                 f"{trx_fmt_hari(slowest['SLA Utama (hari)'])}."
             )
 
         summary = [
-            f"Jenis transaksi tercepat adalah â€œ{trx_safe_text(fastest['JENIS TRANSAKSI'])}â€ dengan SLA rata-rata {trx_fmt_hari(fastest['SLA Utama (hari)'])}.",
-            f"Jenis transaksi terlama adalah â€œ{trx_safe_text(slowest['JENIS TRANSAKSI'])}â€ dengan SLA rata-rata {trx_fmt_hari(slowest['SLA Utama (hari)'])}.",
-            f"Jenis transaksi dengan volume terbesar adalah â€œ{trx_safe_text(biggest['JENIS TRANSAKSI'])}â€ sebanyak {trx_fmt_int(biggest['Jumlah Transaksi'])} transaksi.",
+            f"Jenis transaksi tercepat adalah \u201c{trx_safe_text(fastest['JENIS TRANSAKSI'])}\u201d dengan SLA rata-rata {trx_fmt_hari(fastest['SLA Utama (hari)'])}.",
+            f"Jenis transaksi terlama adalah \u201c{trx_safe_text(slowest['JENIS TRANSAKSI'])}\u201d dengan SLA rata-rata {trx_fmt_hari(slowest['SLA Utama (hari)'])}.",
+            f"Jenis transaksi dengan volume terbesar adalah \u201c{trx_safe_text(biggest['JENIS TRANSAKSI'])}\u201d sebanyak {trx_fmt_int(biggest['Jumlah Transaksi'])} transaksi.",
             f"Bottleneck proses terbesar terindikasi pada proses {bottleneck_text}.",
         ]
 
@@ -1295,7 +1296,7 @@ with tab_transaksi:
 
         if pd.notna(avg_sla) and avg_sla > 0 and pd.notna(max_sla) and max_sla > avg_sla * 1.5:
             risks.append(
-                f"Terdapat outlier SLA: kategori â€œ{trx_safe_text(slowest['JENIS TRANSAKSI'])}â€ jauh di atas rata-rata keseluruhan."
+                f"Terdapat outlier SLA: kategori \u201c{trx_safe_text(slowest['JENIS TRANSAKSI'])}\u201d jauh di atas rata-rata keseluruhan."
             )
 
         if p1_count > 0:
@@ -1320,7 +1321,7 @@ with tab_transaksi:
             ).head(3)
 
             focus_names = ", ".join(
-                [f"â€œ{trx_safe_text(x)}â€" for x in top3["JENIS TRANSAKSI"].tolist()]
+                [f"\u201c{trx_safe_text(x)}\u201d" for x in top3["JENIS TRANSAKSI"].tolist()]
             )
 
             recommendations.append(
@@ -1328,7 +1329,7 @@ with tab_transaksi:
             )
         else:
             recommendations.append(
-                f"Fokus monitoring cukup diarahkan pada kategori dengan SLA tertinggi, yaitu â€œ{trx_safe_text(slowest['JENIS TRANSAKSI'])}â€."
+                f"Fokus monitoring cukup diarahkan pada kategori dengan SLA tertinggi, yaitu \u201c{trx_safe_text(slowest['JENIS TRANSAKSI'])}\u201d."
             )
 
         if bottleneck_proses != "-":
@@ -1366,7 +1367,7 @@ with tab_transaksi:
             color="SLA Utama (hari)",
             color_continuous_scale="Tealrose",
             hover_data={"Jumlah Transaksi": True, "SLA Utama (hari)": ":.2f"},
-            title=f"Ranking Rata-rata SLA â€” Acuan: {sla_utama_label}",
+            title=f"Ranking Rata-rata SLA \u2014 Acuan: {sla_utama_label}",
         )
 
         fig.update_traces(
@@ -1573,7 +1574,7 @@ with tab_transaksi:
         )
 
         fig.update_layout(
-            title=f"Profil SLA per Proses â€” {selected_detail}",
+            title=f"Profil SLA per Proses \u2014 {selected_detail}",
             height=470,
             xaxis_title="Proses",
             yaxis_title="Rata-rata SLA (hari)",
@@ -1722,7 +1723,7 @@ with tab_transaksi:
         y = 585
 
         for note in notes:
-            draw.text((112, y), "â€¢", font=font_body_bold, fill=(0, 234, 255, 255))
+            draw.text((112, y), "\u2022", font=font_body_bold, fill=(0, 234, 255, 255))
             y = trx_draw_wrapped_text(
                 draw,
                 note,
@@ -1742,7 +1743,7 @@ with tab_transaksi:
             reco_items = ["Lakukan monitoring berkala terhadap jenis transaksi dengan SLA tertinggi."]
 
         for reco in reco_items:
-            draw.text((112, y), "âœ“", font=font_body_bold, fill=(56, 239, 125, 255))
+            draw.text((112, y), "\u2713", font=font_body_bold, fill=(56, 239, 125, 255))
             y = trx_draw_wrapped_text(
                 draw,
                 reco,
@@ -2005,7 +2006,7 @@ with tab_transaksi:
         if detail_chart is not None and not detail_chart.empty:
             chart_pages.append(
                 (
-                    f"Drilldown SLA â€” {selected_detail}",
+                    f"Drilldown SLA \u2014 {selected_detail}",
                     trx_build_detail_fig(detail_chart, selected_detail),
                 )
             )
@@ -2055,7 +2056,7 @@ with tab_transaksi:
             pages.extend(
                 trx_table_pages(
                     detail_pdf_df,
-                    f"Tabel Detail Data â€” {selected_detail}",
+                    f"Tabel Detail Data \u2014 {selected_detail}",
                     "Menampilkan maksimum 120 baris pertama agar ukuran PDF tetap stabil.",
                     rows_per_page=20,
                     max_pages=6,
@@ -2117,7 +2118,7 @@ with tab_transaksi:
 
         else:
             # =====================================================
-            # FILTER DATA UTAMA â€” sebelum agregasi
+            # FILTER DATA UTAMA \u2014 sebelum agregasi
             # =====================================================
             # Catatan penting:
             # Filter Nomor Permohonan dan Jenis Transaksi harus dilakukan di level baris
@@ -2125,7 +2126,7 @@ with tab_transaksi:
             # PDF, dan drilldown membaca subset data yang sama.
             nomor_permohonan_col = trx_detect_permohonan_col(df_trx)
 
-            st.markdown("### ðŸŽ›ï¸ Filter Data Transaksi")
+            st.markdown("### \U0001f39b\ufe0f Filter Data Transaksi")
 
             fcol1, fcol2 = st.columns([1.35, 1.25])
 
@@ -2332,9 +2333,9 @@ with tab_transaksi:
                 # =====================================================
                 # SLA TRANSAKSIONAL DAN KUMULATIF
                 # =====================================================
-                st.markdown("### ðŸ”¬ SLA Transaksional & Kumulatif atas Filter Aktif")
+                st.markdown("### \U0001f52c SLA Transaksional & Kumulatif atas Filter Aktif")
 
-                with st.expander("ðŸ“„ Lihat SLA Transaksional per Baris / Nomor Permohonan", expanded=False):
+                with st.expander("\U0001f4c4 Lihat SLA Transaksional per Baris / Nomor Permohonan", expanded=False):
                     detail_transaksional = df_trx.copy()
 
                     # Format kolom SLA agar mudah dibaca user. Kolom asli detik tetap tidak diubah.
@@ -2396,7 +2397,7 @@ with tab_transaksi:
                     )
 
                 if nomor_permohonan_col and nomor_permohonan_col in df_trx.columns:
-                    with st.expander("ðŸ§® Ringkasan Kumulatif per Nomor Permohonan", expanded=False):
+                    with st.expander("\U0001f9ee Ringkasan Kumulatif per Nomor Permohonan", expanded=False):
                         group_cols_permohonan = [nomor_permohonan_col, "JENIS TRANSAKSI"]
 
                         permohonan_summary = (
@@ -2533,28 +2534,28 @@ with tab_transaksi:
                 <body>
                 <div class="trx-kpi-grid">
                     <div class="trx-kpi-card trx-blue">
-                        <div class="trx-kpi-icon">ðŸ§¾</div>
+                        <div class="trx-kpi-icon">\U0001f9fe</div>
                         <div class="trx-kpi-label">Total Jenis Transaksi</div>
                         <div class="trx-kpi-value">{trx_fmt_int(total_jenis)}</div>
                         <div class="trx-kpi-sub">Kategori transaksi terdeteksi</div>
                     </div>
 
                     <div class="trx-kpi-card trx-green">
-                        <div class="trx-kpi-icon">ðŸ“„</div>
+                        <div class="trx-kpi-icon">\U0001f4c4</div>
                         <div class="trx-kpi-label">Total Transaksi</div>
                         <div class="trx-kpi-value">{trx_fmt_int(total_transaksi_trx)}</div>
                         <div class="trx-kpi-sub">Dalam periode terpilih</div>
                     </div>
 
                     <div class="trx-kpi-card trx-purple">
-                        <div class="trx-kpi-icon">âš¡</div>
+                        <div class="trx-kpi-icon">\u26a1</div>
                         <div class="trx-kpi-label">Jenis Tercepat</div>
                         <div class="trx-kpi-value" style="font-size:18px;">{fastest_name}</div>
                         <div class="trx-kpi-sub">{trx_fmt_hari(fastest_row["SLA Utama (hari)"])} berdasarkan {sla_utama_label}</div>
                     </div>
 
                     <div class="trx-kpi-card trx-red">
-                        <div class="trx-kpi-icon">ðŸš¨</div>
+                        <div class="trx-kpi-icon">\U0001f6a8</div>
                         <div class="trx-kpi-label">Jenis Terlama</div>
                         <div class="trx-kpi-value" style="font-size:18px;">{slowest_name}</div>
                         <div class="trx-kpi-sub">{trx_fmt_hari(slowest_row["SLA Utama (hari)"])} berdasarkan {sla_utama_label}</div>
@@ -2569,7 +2570,7 @@ with tab_transaksi:
                 # =====================================================
                 # FILTER VISUALISASI
                 # =====================================================
-                st.markdown("### ðŸ”Ž Filter Visualisasi")
+                st.markdown("### \U0001f50e Filter Visualisasi")
 
                 c_filter1, c_filter2, c_filter3 = st.columns([1.4, 1.2, 1.2])
 
@@ -2691,7 +2692,7 @@ with tab_transaksi:
                         # =====================================================
                         # AI EXECUTIVE INSIGHT
                         # =====================================================
-                        st.markdown("### ðŸ¤– AI Executive Insight")
+                        st.markdown("### \U0001f916 AI Executive Insight")
 
                         ai_result = trx_generate_ai_insight(
                             trx_ai_base,
@@ -2868,7 +2869,7 @@ with tab_transaksi:
                         <body>
                         <div class="trx-ai-wrap">
                             <div class="trx-ai-header">
-                                <div class="trx-ai-title">ðŸ¤– AI Executive Insight</div>
+                                <div class="trx-ai-title">\U0001f916 AI Executive Insight</div>
                                 <div class="trx-ai-badge-row">
                                     <div class="trx-ai-status {status_class}">{html.escape(status_label)}</div>
                                     <div class="trx-ai-badge">Auto-generated from filtered transaction type</div>
@@ -2881,17 +2882,17 @@ with tab_transaksi:
 
                             <div class="trx-ai-grid">
                                 <div class="trx-ai-box">
-                                    <h4>ðŸ“Œ Key Findings</h4>
+                                    <h4>\U0001f4cc Key Findings</h4>
                                     <ul>{summary_html}</ul>
                                 </div>
 
                                 <div class="trx-ai-box">
-                                    <h4>ðŸš¨ Risk Signals</h4>
+                                    <h4>\U0001f6a8 Risk Signals</h4>
                                     <ul>{risk_html}</ul>
                                 </div>
 
                                 <div class="trx-ai-box">
-                                    <h4>âœ… Recommended Actions</h4>
+                                    <h4>\u2705 Recommended Actions</h4>
                                     <ul>{reco_html}</ul>
                                 </div>
                             </div>
@@ -2909,7 +2910,7 @@ with tab_transaksi:
                         # =====================================================
                         # PRIORITY MATRIX TABLE
                         # =====================================================
-                        with st.expander("ðŸ§  Lihat Matriks Prioritas AI", expanded=False):
+                        with st.expander("\U0001f9e0 Lihat Matriks Prioritas AI", expanded=False):
                             priority_show = ai_result.get("priority_df", pd.DataFrame()).copy()
 
                             if not priority_show.empty:
@@ -2944,7 +2945,7 @@ with tab_transaksi:
                         # =====================================================
                         # EXECUTIVE SUMMARY DIREKSI
                         # =====================================================
-                        st.markdown("### ðŸŽ¯ Executive Summary Direksi")
+                        st.markdown("### \U0001f3af Executive Summary Direksi")
 
                         exec_df = trx_ai_base.copy()
 
@@ -3264,7 +3265,7 @@ with tab_transaksi:
                                         <div class="trx-exec-title">Executive Summary<br>SLA Jenis Transaksi</div>
                                         <div class="trx-exec-subtitle">
                                             Periode {html.escape(str(start_periode))} s.d. {html.escape(str(end_periode))}
-                                            â€¢ Acuan: {html.escape(str(sla_utama_label))}
+                                            \u2022 Acuan: {html.escape(str(sla_utama_label))}
                                         </div>
                                     </div>
                                 </div>
@@ -3304,7 +3305,7 @@ with tab_transaksi:
 
                             <div class="trx-exec-main-grid">
                                 <div class="trx-exec-box">
-                                    <h4>ðŸ“Œ Executive Notes</h4>
+                                    <h4>\U0001f4cc Executive Notes</h4>
                                     <ul>
                                         <li>Jenis tercepat: <b>{exec_fastest_name}</b> dengan SLA {trx_fmt_hari(fastest_exec["SLA Utama (hari)"])}.</li>
                                         <li>Jenis terlama: <b>{exec_slowest_name}</b> dengan SLA {trx_fmt_hari(slowest_exec["SLA Utama (hari)"])}.</li>
@@ -3312,12 +3313,12 @@ with tab_transaksi:
                                         <li>Bottleneck proses: <b>{html.escape(str(bottleneck_proses))}</b>{bottleneck_sentence}</li>
                                     </ul>
 
-                                    <h4 style="margin-top:18px;">âœ… Recommended Actions</h4>
+                                    <h4 style="margin-top:18px;">\u2705 Recommended Actions</h4>
                                     <ul>{trx_html_list(ai_result.get("recommendations", []), max_items=3)}</ul>
                                 </div>
 
                                 <div class="trx-exec-box">
-                                    <h4>ðŸ”¥ Top Priority Transactions</h4>
+                                    <h4>\U0001f525 Top Priority Transactions</h4>
                                     {top_priority_html}
                                 </div>
                             </div>
@@ -3382,12 +3383,12 @@ with tab_transaksi:
                         # =====================================================
                         # DOWNLOAD EXECUTIVE PACK
                         # =====================================================
-                        st.markdown("### ðŸ“¥ Download Executive Pack")
+                        st.markdown("### \U0001f4e5 Download Executive Pack")
 
                         col_down1, col_down2, col_down3 = st.columns([1, 1, 1.25])
 
                         with col_down1:
-                            if st.button("ðŸŽ¨ Generate Executive Pack", key="generate_exec_summary_trx"):
+                            if st.button("\U0001f3a8 Generate Executive Pack", key="generate_exec_summary_trx"):
                                 try:
                                     transaksi_display_pdf = trx_view.copy()
 
@@ -3453,7 +3454,7 @@ with tab_transaksi:
                         with col_down2:
                             if "trx_exec_summary_png" in st.session_state:
                                 st.download_button(
-                                    "â¬‡ï¸ Download PNG Summary",
+                                    "\u2b07\ufe0f Download PNG Summary",
                                     data=st.session_state["trx_exec_summary_png"],
                                     file_name="Executive_Summary_Tab_Transaksi.png",
                                     mime="image/png",
@@ -3463,7 +3464,7 @@ with tab_transaksi:
                         with col_down3:
                             if "trx_exec_report_pdf" in st.session_state:
                                 st.download_button(
-                                    "â¬‡ï¸ Download PDF Lengkap",
+                                    "\u2b07\ufe0f Download PDF Lengkap",
                                     data=st.session_state["trx_exec_report_pdf"],
                                     file_name="Executive_Report_Tab_Transaksi_Lengkap.pdf",
                                     mime="application/pdf",
@@ -3471,7 +3472,7 @@ with tab_transaksi:
                                 )
 
                         if "trx_exec_summary_png" in st.session_state:
-                            with st.expander("ðŸ‘€ Preview Executive Summary 16:9", expanded=True):
+                            with st.expander("\U0001f440 Preview Executive Summary 16:9", expanded=True):
                                 st.image(
                                     st.session_state["trx_exec_summary_png"],
                                     caption="Preview Executive Summary 16:9",
@@ -3481,11 +3482,11 @@ with tab_transaksi:
                         # =====================================================
                         # MAIN CHARTS
                         # =====================================================
-                        st.markdown("### ðŸ† Ranking SLA per Jenis Transaksi")
+                        st.markdown("### \U0001f3c6 Ranking SLA per Jenis Transaksi")
                         fig_rank = trx_build_rank_fig(trx_view, sla_utama_label)
                         st.plotly_chart(fig_rank, use_container_width=True)
 
-                        st.markdown("### ðŸ”¥ Heatmap SLA per Proses")
+                        st.markdown("### \U0001f525 Heatmap SLA per Proses")
                         fig_heat = trx_build_heat_fig(trx_view, chart_proses_cols)
 
                         if fig_heat is not None:
@@ -3493,7 +3494,7 @@ with tab_transaksi:
                         else:
                             st.info("Tidak ada kolom proses yang dapat ditampilkan pada heatmap.")
 
-                        st.markdown("### ðŸ“Š Perbandingan SLA Masing-masing Proses")
+                        st.markdown("### \U0001f4ca Perbandingan SLA Masing-masing Proses")
 
                         if not trx_long_view.empty:
                             fig_group = trx_build_group_fig(trx_long_view)
@@ -3501,15 +3502,15 @@ with tab_transaksi:
                         else:
                             st.info("Tidak ada data SLA proses yang valid untuk grafik perbandingan.")
 
-                        st.markdown("### ðŸ«§ Bubble Matrix: Volume vs SLA")
+                        st.markdown("### \U0001fae7 Bubble Matrix: Volume vs SLA")
                         fig_bubble = trx_build_bubble_fig(trx_view)
                         st.plotly_chart(fig_bubble, use_container_width=True)
 
-                        st.markdown("### ðŸ© Komposisi Jumlah Transaksi")
+                        st.markdown("### \U0001f369 Komposisi Jumlah Transaksi")
                         fig_donut = trx_build_donut_fig(trx_view)
                         st.plotly_chart(fig_donut, use_container_width=True)
 
-                        st.markdown("### âš™ï¸ Grafik Masing-masing Proses")
+                        st.markdown("### \u2699\ufe0f Grafik Masing-masing Proses")
 
                         cols_per_row = 2
                         proses_chunks = [
@@ -3541,7 +3542,7 @@ with tab_transaksi:
                         # =====================================================
                         # TABEL RATA-RATA SLA
                         # =====================================================
-                        with st.expander("ðŸ“‹ Tabel Detail Rata-rata SLA per Jenis Transaksi", expanded=False):
+                        with st.expander("\U0001f4cb Tabel Detail Rata-rata SLA per Jenis Transaksi", expanded=False):
                             transaksi_display = trx_view.copy()
 
                             for col in chart_proses_cols:
@@ -3568,7 +3569,7 @@ with tab_transaksi:
                         # =====================================================
                         # DRILLDOWN DETAIL - SAFE MODE TANPA st.fragment
                         # =====================================================
-                        st.markdown("### ðŸ” Drilldown Detail Jenis Transaksi")
+                        st.markdown("### \U0001f50d Drilldown Detail Jenis Transaksi")
 
                         # Catatan:
                         # Jangan gunakan st.fragment di dalam st.tabs untuk kasus ini.
@@ -3630,7 +3631,7 @@ with tab_transaksi:
                             else:
                                 st.warning("Detail transaksi tidak ditemukan untuk pilihan ini.")
 
-                            with st.expander("ðŸ”Ž Lihat Data Baris Detail", expanded=False):
+                            with st.expander("\U0001f50e Lihat Data Baris Detail", expanded=False):
                                 st.dataframe(
                                     detail_df,
                                     use_container_width=True,
@@ -3736,13 +3737,13 @@ with tab_vendor:
             </style>
             <div class="card-container">
               <div class="card" style="background:linear-gradient(135deg,#00eaff,#007bff);">
-                <div class="card-icon">ðŸ¢</div><div class="card-title">Total Vendor</div><div id="vendorCount" class="card-value">0</div>
+                <div class="card-icon">\U0001f3e2</div><div class="card-title">Total Vendor</div><div id="vendorCount" class="card-value">0</div>
               </div>
               <div class="card" style="background:linear-gradient(135deg,#ff9a9e,#ff4f70);">
-                <div class="card-icon">ðŸ“„</div><div class="card-title">Total Transaksi</div><div id="trxCount" class="card-value">0</div>
+                <div class="card-icon">\U0001f4c4</div><div class="card-title">Total Transaksi</div><div id="trxCount" class="card-value">0</div>
               </div>
               <div class="card" style="background:linear-gradient(135deg,#42e695,#3bb2b8);">
-                <div class="card-icon">â±ï¸</div><div class="card-title">Rata-rata SLA (Hari)</div><div id="slaCount" class="card-value">0.00</div>
+                <div class="card-icon">\u23f1\ufe0f</div><div class="card-title">Rata-rata SLA (Hari)</div><div id="slaCount" class="card-value">0.00</div>
               </div>
             </div>
             <script>
@@ -3766,7 +3767,7 @@ with tab_vendor:
             # 4) Tabel Data Detail
             # ==============================
             if df_vendor_filtered.shape[0] > 0:
-                st.subheader("ðŸ“‹ Data Terfilter")
+                st.subheader("\U0001f4cb Data Terfilter")
                 st.dataframe(df_vendor_filtered, use_container_width=True)
 
                 # ==============================
@@ -3785,7 +3786,7 @@ with tab_vendor:
                 # ==============================
                 # 6) Leaderboard Vendor
                 # ==============================
-                st.subheader("âš¡ Leaderboard SLA Vendor")
+                st.subheader("\u26a1 Leaderboard SLA Vendor")
                 lb = rata_vendor.dropna(subset=["SLA_USED"]).copy()
 
                 if not lb.empty:
@@ -3799,7 +3800,7 @@ with tab_vendor:
                         sla_used = float(row["SLA_USED"])
                         sla_hari = sla_used / 86400.0
 
-                        badge = "ðŸ¥‡" if i == 0 else "ðŸ¥ˆ" if i == 1 else "ðŸ¥‰" if i == 2 else "ðŸš¨" if i == len(lb_sorted)-1 else ""
+                        badge = "\U0001f947" if i == 0 else "\U0001f948" if i == 1 else "\U0001f949" if i == 2 else "\U0001f6a8" if i == len(lb_sorted)-1 else ""
 
                         ratio = (sla_used - min_sla) / (max_sla - min_sla + 1e-9)
                         red = int(255 * ratio)
@@ -3829,7 +3830,7 @@ with tab_vendor:
                 # ==============================
                 # 7) Grafik & Drilldown
                 # ==============================
-                st.subheader("ðŸ“Š Interaktif SLA per Vendor")
+                st.subheader("\U0001f4ca Interaktif SLA per Vendor")
                 if not rata_vendor.empty and rata_vendor["SLA (hari)"].notna().any():
                     fig = px.bar(
                         rata_vendor, x="NAMA VENDOR", y="SLA (hari)",
@@ -3838,12 +3839,12 @@ with tab_vendor:
                     )
                     st.plotly_chart(fig, use_container_width=True)
 
-                clicked_vendor = st.selectbox("ðŸ” Pilih vendor untuk drill-down detail:",
+                clicked_vendor = st.selectbox("\U0001f50d Pilih vendor untuk drill-down detail:",
                                               rata_vendor["NAMA VENDOR"].tolist() if not rata_vendor.empty else [])
                 if clicked_vendor:
                     df_vendor_detail = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"] == clicked_vendor]
                     if "JENIS TRANSAKSI" in df_vendor_detail.columns and not df_vendor_detail.empty:
-                        st.markdown(f"### ðŸ“Š Detail SLA â€” {clicked_vendor}")
+                        st.markdown(f"### \U0001f4ca Detail SLA \u2014 {clicked_vendor}")
 
                         transaksi_group = (
                             df_vendor_detail
@@ -3872,7 +3873,7 @@ with tab_vendor:
                 # 8) Distribusi Multi Vendor
                 # ==============================
                 if len(selected_vendors) > 1 and "JENIS TRANSAKSI" in df_vendor_filtered.columns:
-                    st.subheader(f"ðŸ“Š Distribusi Transaksi â€” {len(selected_vendors)} Vendor")
+                    st.subheader(f"\U0001f4ca Distribusi Transaksi \u2014 {len(selected_vendors)} Vendor")
                     jumlah_multi = (
                         df_vendor_filtered.groupby(["NAMA VENDOR","JENIS TRANSAKSI"])
                         .size()
@@ -3888,7 +3889,7 @@ with tab_vendor:
 
 with tab_tren:
     if available_sla_cols:
-        st.subheader("ðŸ“ˆ Trend Rata-rata SLA per Periode")
+        st.subheader("\U0001f4c8 Trend Rata-rata SLA per Periode")
         
         # Hitung rata-rata per periode
         trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[available_sla_cols].mean().reset_index()
@@ -3968,7 +3969,7 @@ with tab_tren:
 
 
 with tab_jumlah:
-    st.subheader("ðŸ“Š Jumlah Transaksi per Periode")
+    st.subheader("\U0001f4ca Jumlah Transaksi per Periode")
     jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name='Jumlah')
     jumlah_transaksi = jumlah_transaksi.sort_values(
         by=periode_col,
@@ -3998,7 +3999,7 @@ with tab_jumlah:
     st.pyplot(fig_trans)
 
 # ==========================================================
-#            FITUR BARU: ðŸ“¥ DOWNLOAD POSTER (A4)
+#            FITUR BARU: \U0001f4e5 DOWNLOAD POSTER (A4)
 # ==========================================================
 
 # ==========================================================
@@ -4023,7 +4024,7 @@ def seconds_to_sla_format(seconds):
     return f"{days}d {hours}h {minutes}m"
 
 # ==============================
-# ðŸ‘‰ Tambahan: simpan teks periode untuk Poster (global scope)
+# \U0001f449 Tambahan: simpan teks periode untuk Poster (global scope)
 periode_info_text = f"Periode dari {start_periode} sampai {end_periode}"
 
 # ==========================================================
@@ -4036,11 +4037,11 @@ def generate_poster_A4(
 ):
     W, H = 2480, 3508
 
-    # ---------- Gradient Background (biru â†’ putih) ----------
+    # ---------- Gradient Background (biru \u2192 putih) ----------
     bg = Image.new("RGB", (W, H))
     draw_bg = ImageDraw.Draw(bg)
     for y in range(H):
-        r = int(255 - (y / H) * 55)   # putih â†’ biru lembut
+        r = int(255 - (y / H) * 55)   # putih \u2192 biru lembut
         g = int(255 - (y / H) * 100)
         b = int(255 - (y / H) * 155)
         draw_bg.line([(0, y), (W, y)], fill=(r, g, b))
@@ -4261,7 +4262,7 @@ def generate_poster_A4(
             pos_x = 150
             bg.paste(trans_img, (pos_x, pos_y_trans), trans_img)
         except Exception as e:
-            print("âš ï¸ Gagal render grafik jumlah transaksi:", e)
+            print("\u26a0\ufe0f Gagal render grafik jumlah transaksi:", e)
 
         # 2b. Tabel jumlah transaksi (lebih keren, dinaikkan sedikit)
         try:
@@ -4318,7 +4319,7 @@ def generate_poster_A4(
                 pos_y = pos_y_trans
             bg.paste(tbl_img, (pos_x, pos_y), tbl_img)
         except Exception as e:
-            print("âš ï¸ Gagal render tabel jumlah transaksi:", e)
+            print("\u26a0\ufe0f Gagal render tabel jumlah transaksi:", e)
 
         # 3. Footer
         bg.paste(footer_img, (0, footer_y), footer_img)
@@ -4342,7 +4343,7 @@ def generate_poster_A4(
         bg.paste(Transformation_img, (pos_x, pos_y), Transformation_img)
 
     except Exception as e:
-        print("âš ï¸ Gagal render Footer/Ferizy/Transformation:", e)
+        print("\u26a0\ufe0f Gagal render Footer/Ferizy/Transformation:", e)
 
     out = io.BytesIO()
     bg.save(out, format="PNG")
@@ -4487,7 +4488,7 @@ with tab_nilai:
 
     os.makedirs("data", exist_ok=True)
 
-    st.subheader("ðŸ’° Nilai Transaksi â€” Direksi Dashboard")
+    st.subheader("\U0001f4b0 Nilai Transaksi \u2014 Direksi Dashboard")
 
     # =========================
     # FORMATTERS
@@ -4610,7 +4611,7 @@ with tab_nilai:
 
     # =========================
     # BUCKETS (dynamic thresholds)
-    # thresholds: [t1,t2,...] => 0â€“t1, t1â€“t2, ..., >tN
+    # thresholds: [t1,t2,...] => 0\u2013t1, t1\u2013t2, ..., >tN
     # =========================
     def build_edges(thresholds: List[float]) -> List[float]:
         t = [float(x) for x in thresholds if x is not None and not math.isnan(float(x))]
@@ -4624,7 +4625,7 @@ with tab_nilai:
             if math.isinf(hi):
                 labs.append(f"> {lo:,.0f}".replace(",", "."))
             else:
-                labs.append(f"{lo:,.0f} â€“ {hi:,.0f}".replace(",", "."))
+                labs.append(f"{lo:,.0f} \u2013 {hi:,.0f}".replace(",", "."))
         return labs
 
     def load_bucket_cfg() -> Dict:
@@ -4672,7 +4673,7 @@ with tab_nilai:
     # =========================
     left, right = st.columns([2, 1])
     with left:
-        with st.expander("ðŸ“¤ Upload Data Nilai Transaksi (Admin Only)", expanded=is_admin):
+        with st.expander("\U0001f4e4 Upload Data Nilai Transaksi (Admin Only)", expanded=is_admin):
             if not is_admin:
                 st.info("Hanya admin yang dapat upload.")
                 uploaded = None
@@ -4683,7 +4684,7 @@ with tab_nilai:
                 try:
                     df_now = read_excel_bytes(b)
                     st.session_state["nilai_raw_df"] = df_now
-                    st.success(f"âœ… Upload terbaca: {fmt_int(len(df_now))} baris")
+                    st.success(f"\u2705 Upload terbaca: {fmt_int(len(df_now))} baris")
                     st.dataframe(df_now.head(20), use_container_width=True)
                 except Exception as e:
                     st.error(f"Gagal baca Excel: {e}")
@@ -4696,19 +4697,19 @@ with tab_nilai:
                     with st.spinner("Sync ke GitHub..."):
                         ok = github_put_bytes(DATA_GITHUB_PATH, b, "Update Nilai Transaksi (tab Nilai)")
                     if ok:
-                        st.success("âœ… Tersimpan lokal & tersinkron ke GitHub.")
+                        st.success("\u2705 Tersimpan lokal & tersinkron ke GitHub.")
                     else:
-                        st.warning("âš ï¸ Tersimpan lokal, tapi gagal upload ke GitHub.")
+                        st.warning("\u26a0\ufe0f Tersimpan lokal, tapi gagal upload ke GitHub.")
                 else:
-                    st.success("âœ… Tersimpan lokal (GitHub tidak dikonfigurasi).")
+                    st.success("\u2705 Tersimpan lokal (GitHub tidak dikonfigurasi).")
 
                 st.cache_data.clear()
                 st.rerun()
 
     with right:
-        st.caption("âš¡ Fast mode: load local-first. GitHub sync manual.")
+        st.caption("\u26a1 Fast mode: load local-first. GitHub sync manual.")
         if is_admin and (GITHUB_TOKEN and GITHUB_REPO):
-            if st.button("ðŸ”„ Sync dari GitHub", key="nilai_sync_rewrite_v1"):
+            if st.button("\U0001f504 Sync dari GitHub", key="nilai_sync_rewrite_v1"):
                 with st.spinner("Mengambil file dari GitHub..."):
                     xlsx = github_get_bytes(DATA_GITHUB_PATH)
                     cfgb = github_get_bytes(BUCKET_GITHUB_PATH)
@@ -4728,7 +4729,7 @@ with tab_nilai:
                         pass
 
                 st.cache_data.clear()
-                st.success("âœ… Sync selesai.")
+                st.success("\u2705 Sync selesai.")
                 st.rerun()
 
     # =========================
@@ -4758,7 +4759,7 @@ with tab_nilai:
     auto_vendor = detect_col(df_raw, ["VENDOR"]) or detect_col(df_raw, ["NAMA", "VENDOR"])
     auto_jenis = detect_col(df_raw, ["JENIS", "TRANSAKSI"]) or detect_col(df_raw, ["TRANSAKSI"])
 
-    with st.expander("âš™ï¸ Mapping Kolom", expanded=False):
+    with st.expander("\u2699\ufe0f Mapping Kolom", expanded=False):
         col_periode = st.selectbox("Kolom PERIODE", cols, index=cols.index(auto_periode), key="map_periode_rewrite_v1")
         col_nilai = st.selectbox("Kolom NILAI", cols, index=cols.index(auto_nilai), key="map_nilai_rewrite_v1")
         col_vendor = st.selectbox(
@@ -4788,7 +4789,7 @@ with tab_nilai:
     # =========================
     # GLOBAL FILTERS (apply to all)
     # =========================
-    st.markdown("### ðŸ”Ž Filter Global (berlaku untuk semua tab)")
+    st.markdown("### \U0001f50e Filter Global (berlaku untuk semua tab)")
     gf1, gf2 = st.columns([1.2, 2.0])
 
     with gf1:
@@ -4829,14 +4830,14 @@ with tab_nilai:
     # SUB-TABS
     # =========================
     tab_nilai_exec, tab_nilai_yoy, tab_nilai_vendor = st.tabs(
-        ["ðŸ Executive Summary", "ðŸ“Š YoY Buckets & Analysis", "ðŸ·ï¸ Vendor & Drilldown"]
+        ["\U0001f3c1 Executive Summary", "\U0001f4ca YoY Buckets & Analysis", "\U0001f3f7\ufe0f Vendor & Drilldown"]
     )
 
     # =====================================================
     # TAB 1: EXECUTIVE SUMMARY (Bucket multi OR Custom Range multi)
     # =====================================================
     with tab_nilai_exec:
-        st.markdown("### ðŸŽ¯ Executive Snapshot")
+        st.markdown("### \U0001f3af Executive Snapshot")
 
         cfg0 = load_bucket_cfg()
         thresholds0 = cfg0.get("thresholds", [10e6, 50e6, 500e6])
@@ -4892,8 +4893,8 @@ with tab_nilai:
             focus_title = " + ".join([str(x) for x in focus_buckets])
 
         else:
-            st.markdown("#### ðŸŽšï¸ Sorot Range Custom (multi)")
-            st.caption("Isi minâ€“max sendiri. Jika max âˆž â†’ tanpa batas atas.")
+            st.markdown("#### \U0001f39a\ufe0f Sorot Range Custom (multi)")
+            st.caption("Isi min\u2013max sendiri. Jika max \u221e \u2192 tanpa batas atas.")
 
             _default_ranges = [
                 {"min": 0.0, "max": 10_000_000.0},
@@ -4905,10 +4906,10 @@ with tab_nilai:
 
             r1, r2, r3 = st.columns([1, 1, 2])
             with r1:
-                if st.button("âž• Tambah range", key="exec_add_range_rewrite_v1"):
+                if st.button("\u2795 Tambah range", key="exec_add_range_rewrite_v1"):
                     st.session_state["exec_custom_ranges_rewrite_v1"].append({"min": 0.0, "max": None})
             with r2:
-                if st.button("âž– Hapus terakhir", key="exec_del_range_rewrite_v1"):
+                if st.button("\u2796 Hapus terakhir", key="exec_del_range_rewrite_v1"):
                     if st.session_state["exec_custom_ranges_rewrite_v1"]:
                         st.session_state["exec_custom_ranges_rewrite_v1"] = st.session_state["exec_custom_ranges_rewrite_v1"][:-1]
             with r3:
@@ -4927,19 +4928,19 @@ with tab_nilai:
                 cmin, cmax, cen = st.columns([1, 1, 1.1])
                 with cmin:
                     vmin = st.number_input(
-                        f"Range {i} â€” Min (Rp)",
+                        f"Range {i} \u2014 Min (Rp)",
                         min_value=0.0,
                         value=float(rr.get("min") or 0.0),
                         step=1e6,
                         key=f"exec_rmin_rewrite_{i}_v1",
                     )
                 with cmax:
-                    inf = st.checkbox("âˆž (tanpa max)", value=(rr.get("max") is None), key=f"exec_rinf_rewrite_{i}_v1")
+                    inf = st.checkbox("\u221e (tanpa max)", value=(rr.get("max") is None), key=f"exec_rinf_rewrite_{i}_v1")
                     if inf:
                         vmax = None
                     else:
                         vmax = st.number_input(
-                            f"Range {i} â€” Max (Rp)",
+                            f"Range {i} \u2014 Max (Rp)",
                             min_value=0.0,
                             value=float(rr.get("max") or 0.0),
                             step=1e6,
@@ -4982,7 +4983,7 @@ with tab_nilai:
                 if hi is None:
                     parts.append(f">= {fmt_rp(lo)}")
                 else:
-                    parts.append(f"{fmt_rp(lo)} â€” {fmt_rp(hi)}")
+                    parts.append(f"{fmt_rp(lo)} \u2014 {fmt_rp(hi)}")
             focus_title = " + ".join(parts)
 
         st.markdown(f"**Sorotan aktif:** {focus_title}")
@@ -5007,13 +5008,13 @@ with tab_nilai:
         prev_total = float(ov.loc[prev_year, "Total"]) if (prev_year in ov.index) else None
         prev_avg = float(ov.loc[prev_year, "Rata2"]) if (prev_year in ov.index) else None
 
-        st.markdown("#### ðŸ§¾ KPI Utama (All Transactions)")
+        st.markdown("#### \U0001f9fe KPI Utama (All Transactions)")
         k1, k2, k3 = st.columns(3)
         k1.metric(f"Jumlah Transaksi ({last_year})", fmt_int(cur_tx), delta=pct_delta(cur_tx, prev_tx))
         k2.metric(f"Total Nilai ({last_year})", fmt_rp(cur_total), delta=pct_delta(cur_total, prev_total))
         k3.metric(f"Rata-rata ({last_year})", fmt_rp(cur_avg), delta=pct_delta(cur_avg, prev_avg))
 
-        st.markdown(f"#### ðŸ”¥ KPI Sorotan: **{focus_title}**")
+        st.markdown(f"#### \U0001f525 KPI Sorotan: **{focus_title}**")
         if focus_df.empty:
             st.info("Tidak ada data pada sorotan untuk filter global saat ini.")
         else:
@@ -5040,13 +5041,13 @@ with tab_nilai:
             b3.metric("Rata-rata (sorotan)", fmt_rp(cur_f_avg) if not pd.isna(cur_f_avg) else "-", delta=pct_delta(cur_f_avg, prev_f_avg))
             b4.metric("% share transaksi", fmt_pct((cur_f_tx / cur_tx * 100.0) if cur_tx else float("nan")))
 
-            with st.expander("ðŸ“‹ Tabel KPI Sorotan (YoY)", expanded=False):
+            with st.expander("\U0001f4cb Tabel KPI Sorotan (YoY)", expanded=False):
                 show_focus = focus_kpi.copy()
                 show_focus["Total"] = show_focus["Total"].apply(lambda x: fmt_rp(float(x)))
                 show_focus["Rata2"] = show_focus["Rata2"].apply(lambda x: fmt_rp(float(x)) if not pd.isna(x) else "-")
                 st.dataframe(show_focus, use_container_width=True)
 
-        st.markdown("#### ðŸ“ˆ Tren YoY")
+        st.markdown("#### \U0001f4c8 Tren YoY")
         fig1, ax1 = plt.subplots(figsize=(10, 4))
         ax1.plot(overall["Tahun"].astype(str), overall["Total"], marker="o")
         ax1.set_title("Total Nilai per Tahun")
@@ -5064,14 +5065,14 @@ with tab_nilai:
         st.pyplot(fig2)
 
         if show_insight and len(overall) >= 2:
-            st.markdown("#### ðŸ§  Insight Otomatis")
+            st.markdown("#### \U0001f9e0 Insight Otomatis")
             top_year = overall.sort_values("Total", ascending=False).iloc[0]
             st.write(
                 f"- Tahun tertinggi (Total Nilai): **{int(top_year['Tahun'])}** ({fmt_rp(float(top_year['Total']))}).\n"
                 f"- Tahun terakhir **{last_year}**: Total {pct_delta(cur_total, prev_total) or 'n/a'} | Qty {pct_delta(cur_tx, prev_tx) or 'n/a'}."
             )
 
-        with st.expander("ðŸ“‹ Tabel KPI YoY (All)", expanded=False):
+        with st.expander("\U0001f4cb Tabel KPI YoY (All)", expanded=False):
             show_overall = overall.copy()
             show_overall["Total"] = show_overall["Total"].apply(lambda x: fmt_rp(float(x)))
             show_overall["Rata2"] = show_overall["Rata2"].apply(lambda x: fmt_rp(float(x)))
@@ -5081,7 +5082,7 @@ with tab_nilai:
     # TAB 2: YOY BUCKETS & ANALYSIS (uses global filters too)
     # =====================================================
     with tab_nilai_yoy:
-        st.markdown("### ðŸ“Š Analisis YoY per Range Nilai (Custom)")
+        st.markdown("### \U0001f4ca Analisis YoY per Range Nilai (Custom)")
 
         cfg = load_bucket_cfg()
         base_thresholds = cfg.get("thresholds", [10e6, 50e6, 500e6])
@@ -5089,19 +5090,19 @@ with tab_nilai:
         if "dyn_thresholds_yoy_rewrite_v1" not in st.session_state:
             st.session_state["dyn_thresholds_yoy_rewrite_v1"] = [float(x) for x in base_thresholds]
 
-        with st.expander("ðŸ§© Editor Range (Tambah/Kurangi) + Simpan", expanded=True):
-            st.caption("Threshold membentuk bucket: 0â€“t1, t1â€“t2, ..., >tN.")
+        with st.expander("\U0001f9e9 Editor Range (Tambah/Kurangi) + Simpan", expanded=True):
+            st.caption("Threshold membentuk bucket: 0\u2013t1, t1\u2013t2, ..., >tN.")
 
             a1, a2, a3, a4 = st.columns([1, 1, 1.2, 1.8])
-            if a1.button("âž• Tambah threshold", key="yoy_add_thr_rewrite_v1"):
+            if a1.button("\u2795 Tambah threshold", key="yoy_add_thr_rewrite_v1"):
                 last = st.session_state["dyn_thresholds_yoy_rewrite_v1"][-1] if st.session_state["dyn_thresholds_yoy_rewrite_v1"] else 10e6
                 st.session_state["dyn_thresholds_yoy_rewrite_v1"].append(float(last * 2))
 
-            if a2.button("âž– Hapus terakhir", key="yoy_del_thr_rewrite_v1"):
+            if a2.button("\u2796 Hapus terakhir", key="yoy_del_thr_rewrite_v1"):
                 if st.session_state["dyn_thresholds_yoy_rewrite_v1"]:
                     st.session_state["dyn_thresholds_yoy_rewrite_v1"] = st.session_state["dyn_thresholds_yoy_rewrite_v1"][:-1]
 
-            if a3.button("â†© Reset default", key="yoy_reset_thr_rewrite_v1"):
+            if a3.button("\u21a9 Reset default", key="yoy_reset_thr_rewrite_v1"):
                 st.session_state["dyn_thresholds_yoy_rewrite_v1"] = [float(x) for x in base_thresholds]
 
             thresholds_ui: List[float] = []
@@ -5124,10 +5125,10 @@ with tab_nilai:
             st.write(labs)
 
             if is_admin:
-                if a4.button("ðŸ’¾ Simpan Bucket (Persisten)", key="yoy_save_thr_rewrite_v1"):
+                if a4.button("\U0001f4be Simpan Bucket (Persisten)", key="yoy_save_thr_rewrite_v1"):
                     save_bucket_cfg(thresholds_norm)
                     st.session_state["dyn_thresholds_yoy_rewrite_v1"] = thresholds_norm
-                    st.success("âœ… Bucket tersimpan.")
+                    st.success("\u2705 Bucket tersimpan.")
             else:
                 st.info("Hanya admin yang bisa menyimpan. Anda tetap bisa mencoba sementara.")
 
@@ -5145,23 +5146,23 @@ with tab_nilai:
         pivot_cnt = grp.pivot_table(index="Bucket", columns="Tahun", values="Jumlah", fill_value=0).reindex(labs)
         pivot_total = grp.pivot_table(index="Bucket", columns="Tahun", values="Total", fill_value=0.0).reindex(labs)
 
-        st.markdown("#### âœ… Jumlah Transaksi per Range (per Tahun)")
+        st.markdown("#### \u2705 Jumlah Transaksi per Range (per Tahun)")
         st.dataframe(pivot_cnt, use_container_width=True)
 
-        st.markdown("#### âœ… Total Nilai per Range (per Tahun)")
+        st.markdown("#### \u2705 Total Nilai per Range (per Tahun)")
         pivot_total_fmt = pivot_total.copy()
         for c in pivot_total_fmt.columns:
             pivot_total_fmt[c] = pivot_total_fmt[c].apply(lambda x: fmt_rp(float(x)))
         st.dataframe(pivot_total_fmt, use_container_width=True)
 
-        st.markdown("#### ðŸ“Œ % Share Quantity (per Range, per Tahun)")
+        st.markdown("#### \U0001f4cc % Share Quantity (per Range, per Tahun)")
         qty_share = pivot_cnt.div(pivot_cnt.sum(axis=0).replace(0, float("nan")), axis=1) * 100.0
         qty_share_fmt = qty_share.copy()
         for c in qty_share_fmt.columns:
             qty_share_fmt[c] = qty_share_fmt[c].apply(lambda x: fmt_pct(float(x)) if not pd.isna(x) else "-")
         st.dataframe(qty_share_fmt, use_container_width=True)
 
-        st.markdown("#### ðŸ“Œ % Share Nilai (per Range, per Tahun)")
+        st.markdown("#### \U0001f4cc % Share Nilai (per Range, per Tahun)")
         val_share = pivot_total.div(pivot_total.sum(axis=0).replace(0, float("nan")), axis=1) * 100.0
         val_share_fmt = val_share.copy()
         for c in val_share_fmt.columns:
@@ -5171,7 +5172,7 @@ with tab_nilai:
         years_sorted = sorted(pivot_cnt.columns.tolist())
         x = list(range(len(years_sorted)))
 
-        st.markdown("#### ðŸ“Š 100% Stacked â€” Komposisi Quantity")
+        st.markdown("#### \U0001f4ca 100% Stacked \u2014 Komposisi Quantity")
         label_pct_qty = st.toggle("Tampilkan label % (Quantity)", value=False, key="yoy_label_qty_rewrite_v1")
 
         figq, axq = plt.subplots(figsize=(10, 5))
@@ -5198,7 +5199,7 @@ with tab_nilai:
         axq.legend(title="Bucket", bbox_to_anchor=(1.02, 1), loc="upper left")
         st.pyplot(figq)
 
-        st.markdown("#### ðŸ’° 100% Stacked â€” Komposisi Nilai")
+        st.markdown("#### \U0001f4b0 100% Stacked \u2014 Komposisi Nilai")
         label_pct_val = st.toggle("Tampilkan label % (Nilai)", value=False, key="yoy_label_val_rewrite_v1")
 
         figv, axv = plt.subplots(figsize=(10, 5))
@@ -5225,7 +5226,7 @@ with tab_nilai:
         axv.legend(title="Bucket", bbox_to_anchor=(1.02, 1), loc="upper left")
         st.pyplot(figv)
 
-        st.markdown("#### ðŸ§  Insight Bucket (ringkas)")
+        st.markdown("#### \U0001f9e0 Insight Bucket (ringkas)")
         try:
             last_y = max(years_sorted)
             top_qty_bucket = pivot_cnt[last_y].idxmax()
@@ -5241,14 +5242,14 @@ with tab_nilai:
         except Exception:
             pass
 
-        with st.expander("ðŸ”Ž Detail groupby (opsional)", expanded=False):
+        with st.expander("\U0001f50e Detail groupby (opsional)", expanded=False):
             st.dataframe(grp.sort_values(["Tahun", "Bucket"]), use_container_width=True)
 
     # =====================================================
     # TAB 3: VENDOR (also uses global filters)
     # =====================================================
     with tab_nilai_vendor:
-        st.markdown("### ðŸ·ï¸ Vendor Spotlight")
+        st.markdown("### \U0001f3f7\ufe0f Vendor Spotlight")
 
         if col_vendor == "(none)":
             st.info("Pilih kolom vendor di Mapping Kolom untuk membuka analisis vendor.")
@@ -5285,7 +5286,7 @@ with tab_nilai:
 
         fig, ax = plt.subplots(figsize=(10, 4))
         ax.bar(top_vendor[col_vendor].astype(str), top_vendor["Transaksi"])
-        ax.set_title(f"Top Vendor â€” Jumlah Transaksi (Bucket {bucket_pick})")
+        ax.set_title(f"Top Vendor \u2014 Jumlah Transaksi (Bucket {bucket_pick})")
         ax.set_xlabel("Vendor")
         ax.set_ylabel("Jumlah")
         ax.grid(axis="y", linestyle="--", alpha=0.35)
@@ -5299,7 +5300,7 @@ with tab_nilai:
         st.dataframe(show_vendor, use_container_width=True)
 
         if show_detail:
-            st.markdown("#### ðŸ”Ž Detail Baris (Filtered)")
+            st.markdown("#### \U0001f50e Detail Baris (Filtered)")
             detail_cols = [c for c in [col_periode, col_vendor, col_nilai] if c in dv.columns]
             if col_jenis != "(none)" and col_jenis in dv.columns:
                 detail_cols.insert(1, col_jenis)
@@ -5311,12 +5312,12 @@ with tab_nilai:
 # Tab Report (Poster & PDF)
 # ==========================================================
 with tab_report:
-    tab_poster, tab_pdf = st.tabs(["ðŸŽ¨ Poster", "ðŸ“„ PDF"])
+    tab_poster, tab_pdf = st.tabs(["\U0001f3a8 Poster", "\U0001f4c4 PDF"])
 
 with tab_poster:
-    st.subheader("ðŸ“¥ Download Poster")
+    st.subheader("\U0001f4e5 Download Poster")
 
-    if st.button("ðŸŽ¨ Generate Poster A4"):
+    if st.button("\U0001f3a8 Generate Poster A4"):
         rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
         
         df_proses = pd.DataFrame({
@@ -5359,7 +5360,7 @@ with tab_poster:
             width="stretch",
         )
         st.download_button(
-            "ðŸ’¾ Download Poster (PNG, A4 - 300 DPI)",
+            "\U0001f4be Download Poster (PNG, A4 - 300 DPI)",
             data=st.session_state.poster_buf,
             file_name="Poster_SLA_A4.png",
             mime="image/png"
@@ -5389,7 +5390,7 @@ def render_tab_analisis_data_v1(df_source: pd.DataFrame, periode_col="PERIODE_DA
             df[col] = df[sla_col].apply(parse_sla)
         return df, col
 
-    st.subheader("ðŸ“Š Analisis Data (Perbandingan 2 Periode)")
+    st.subheader("\U0001f4ca Analisis Data (Perbandingan 2 Periode)")
 
     if df_source is None or df_source.empty:
         st.warning("Data kosong.")
@@ -5446,7 +5447,7 @@ def render_tab_analisis_data_v1(df_source: pd.DataFrame, periode_col="PERIODE_DA
 
     # ===== SLA COMPARISON =====
     if sla_col not in df_base.columns:
-        st.info(f"Kolom SLA '{sla_col}' tidak ada â†’ analisis SLA tidak ditampilkan (hanya volume transaksi).")
+        st.info(f"Kolom SLA '{sla_col}' tidak ada \u2192 analisis SLA tidak ditampilkan (hanya volume transaksi).")
         return
 
     dfA, sla_sec_col = ensure_sla_seconds_local(dfA)
@@ -5471,12 +5472,12 @@ def render_tab_analisis_data_v1(df_source: pd.DataFrame, periode_col="PERIODE_DA
     summary = pd.DataFrame([
         ["Transaksi", totalA, totalB, d_total, p_total],
         ["Mean SLA (detik)", meanA, meanB, d_mean, p_mean],
-    ], columns=["Metrik", "A", "B", "Î” (B-A)", "Î” %"])
+    ], columns=["Metrik", "A", "B", "\u0394 (B-A)", "\u0394 %"])
 
     st.dataframe(summary, use_container_width=True)
 
 # =========================
-# TAB ANALISIS DATA â€” FAST + EXECUTIVE DASHBOARD (Direksi)
+# TAB ANALISIS DATA \u2014 FAST + EXECUTIVE DASHBOARD (Direksi)
 # Update:
 # - Warna font lebih kontras (lebih "kelihatan")
 # - SLA ringkas: 2 desimal -> "3,22 hari"
@@ -5583,7 +5584,7 @@ def build_auto_headline(totalA, totalB, meanA, meanB, p_total, d_total):
         imp = (meanA - meanB) / meanA * 100 if meanA else np.nan
         sla_part = f"SLA {sla_dir} {_id_num(abs(imp),2,'%')}" if np.isfinite(imp) else f"SLA {sla_dir}"
 
-    return f"{sla_part} â€¢ {vol_part}"
+    return f"{sla_part} \u2022 {vol_part}"
 
 def make_exec_poster_png_v3(
     *,
@@ -5613,7 +5614,7 @@ def make_exec_poster_png_v3(
     import textwrap
 
     dpi = 200
-    W, H = int(11.69 * dpi), int(8.27 * dpi)   # A4 landscape @200dpi â‰ˆ 2338x1654
+    W, H = int(11.69 * dpi), int(8.27 * dpi)   # A4 landscape @200dpi \u2248 2338x1654
     fig = plt.figure(figsize=(W/dpi, H/dpi), dpi=dpi)
     fig.patch.set_facecolor("white")
 
@@ -5699,7 +5700,7 @@ def make_exec_poster_png_v3(
     # =======================
     vol_badge = f"{_id_int(d_total)} ({_id_num(p_total,2,'%')})" if np.isfinite(p_total) else _id_int(d_total)
     d_sla = (meanB - meanA) if (np.isfinite(meanA) and np.isfinite(meanB)) else np.nan
-    d_sla_badge = (("âˆ’" if d_sla < 0 else "+") + _sla_short_days(abs(d_sla),2)) if np.isfinite(d_sla) else "-"
+    d_sla_badge = (("\u2212" if d_sla < 0 else "+") + _sla_short_days(abs(d_sla),2)) if np.isfinite(d_sla) else "-"
     good_sla = True if (not np.isfinite(d_sla)) else (d_sla < 0)
 
     comp_val = _id_num(complianceB,2,"%") if np.isfinite(complianceB) else "-"
@@ -5731,9 +5732,9 @@ def make_exec_poster_png_v3(
     # Row 2 (Executive Score cards)
     y2 = 0.52
     h2 = 0.12
-    card([xs[0], y2, w, h2], "Growth Volume", _id_num(p_total,2,"%") if np.isfinite(p_total) else "-", "Î” transaksi vs A", f"{_id_int(d_total)} trx", good=(d_total>=0))
+    card([xs[0], y2, w, h2], "Growth Volume", _id_num(p_total,2,"%") if np.isfinite(p_total) else "-", "\u0394 transaksi vs A", f"{_id_int(d_total)} trx", good=(d_total>=0))
     card([xs[1], y2, w, h2], "Perubahan SLA", sla_word, "Ringkas (hari)", d_sla_badge, good=good_sla)
-    card([xs[2], y2, w, h2], f"KPI Compliance â‰¤ {_id_num(kpi_days,2,' hari')}", comp_val, "Î” poin vs A", comp_badge, good=(d_comp>=0 if np.isfinite(d_comp) else True))
+    card([xs[2], y2, w, h2], f"KPI Compliance \u2264 {_id_num(kpi_days,2,' hari')}", comp_val, "\u0394 poin vs A", comp_badge, good=(d_comp>=0 if np.isfinite(d_comp) else True))
     card([xs[3], y2, w, h2], "Coverage SLA", cov_val, "Kualitas data SLA", cov_badge, good=(d_cov>=0 if np.isfinite(d_cov) else True))
 
     # =======================
@@ -5801,13 +5802,13 @@ def make_exec_poster_pdf_from_png(png_bytes):
 
 
 # ============================================================
-# TAB ANALISIS â€” FULL (tempel di: with tab_analisis:)
+# TAB ANALISIS \u2014 FULL (tempel di: with tab_analisis:)
 # ============================================================
 
 with tab_analisis:
     import plotly.express as px
 
-    st.markdown("## ðŸ“Š Analisis Data â€” Executive Dashboard")
+    st.markdown("## \U0001f4ca Analisis Data \u2014 Executive Dashboard")
     st.caption("Bandingkan **A vs B** (Tahun vs Tahun, Bulan vs Bulan, atau Rentang vs Rentang). Angka di sini mengikuti filter tab_analisis.")
 
     # Guard
@@ -5967,7 +5968,7 @@ with tab_analisis:
     # -------------------------
     # Mode Perbandingan
     # -------------------------
-    st.markdown("### âš™ï¸ Mode Perbandingan")
+    st.markdown("### \u2699\ufe0f Mode Perbandingan")
     mode = st.radio(
         "Pilih mode",
         ["Tahun vs Tahun", "Bulan vs Bulan (tahun bebas)", "Rentang (A) vs Rentang (B)"],
@@ -6007,9 +6008,9 @@ with tab_analisis:
 
     if mode == "Tahun vs Tahun":
         with colA:
-            yearA = st.selectbox("Periode A â€” Tahun", years, index=0, key="ana_yearA_v5")
+            yearA = st.selectbox("Periode A \u2014 Tahun", years, index=0, key="ana_yearA_v5")
         with colB:
-            yearB = st.selectbox("Periode B â€” Tahun", years, index=min(1, len(years) - 1), key="ana_yearB_v5")
+            yearB = st.selectbox("Periode B \u2014 Tahun", years, index=min(1, len(years) - 1), key="ana_yearB_v5")
 
         selA = [p for p in periods if int(p.year) == int(yearA)]
         selB = [p for p in periods if int(p.year) == int(yearB)]
@@ -6017,9 +6018,9 @@ with tab_analisis:
 
     elif mode == "Bulan vs Bulan (tahun bebas)":
         with colA:
-            mA = st.selectbox("Periode A â€” Bulan", period_labels, index=0, key="ana_monthA_v5")
+            mA = st.selectbox("Periode A \u2014 Bulan", period_labels, index=0, key="ana_monthA_v5")
         with colB:
-            mB = st.selectbox("Periode B â€” Bulan", period_labels, index=min(1, len(period_labels) - 1), key="ana_monthB_v5")
+            mB = st.selectbox("Periode B \u2014 Bulan", period_labels, index=min(1, len(period_labels) - 1), key="ana_monthB_v5")
 
         selA = [label_to_period[mA]]
         selB = [label_to_period[mB]]
@@ -6027,11 +6028,11 @@ with tab_analisis:
 
     else:  # range
         with colA:
-            startA = st.selectbox("Periode A â€” Mulai", period_labels, index=0, key="ana_startA_v5")
-            endA   = st.selectbox("Periode A â€” Sampai", period_labels, index=len(period_labels)-1, key="ana_endA_v5")
+            startA = st.selectbox("Periode A \u2014 Mulai", period_labels, index=0, key="ana_startA_v5")
+            endA   = st.selectbox("Periode A \u2014 Sampai", period_labels, index=len(period_labels)-1, key="ana_endA_v5")
         with colB:
-            startB = st.selectbox("Periode B â€” Mulai", period_labels, index=0, key="ana_startB_v5")
-            endB   = st.selectbox("Periode B â€” Sampai", period_labels, index=len(period_labels)-1, key="ana_endB_v5")
+            startB = st.selectbox("Periode B \u2014 Mulai", period_labels, index=0, key="ana_startB_v5")
+            endB   = st.selectbox("Periode B \u2014 Sampai", period_labels, index=len(period_labels)-1, key="ana_endB_v5")
 
         pA0 = label_to_period[startA]; pA1 = label_to_period[endA]
         pB0 = label_to_period[startB]; pB1 = label_to_period[endB]
@@ -6041,8 +6042,8 @@ with tab_analisis:
 
         selA = [p for p in periods if pA0 <= p <= pA1]
         selB = [p for p in periods if pB0 <= p <= pB1]
-        labelA = f"{period_label(selA[0])} â€“ {period_label(selA[-1])}" if selA else "Periode A"
-        labelB = f"{period_label(selB[0])} â€“ {period_label(selB[-1])}" if selB else "Periode B"
+        labelA = f"{period_label(selA[0])} \u2013 {period_label(selA[-1])}" if selA else "Periode A"
+        labelB = f"{period_label(selB[0])} \u2013 {period_label(selB[-1])}" if selB else "Periode B"
 
     if not selA or not selB:
         st.warning("Pilihan periode A/B kosong. Silakan ubah pilihan.")
@@ -6150,12 +6151,12 @@ with tab_analisis:
     p_comp = safe_pct(complianceA, complianceB) if (np.isfinite(complianceA) and np.isfinite(complianceB)) else np.nan
 
     badge_vol = f"{_id_int(d_total)} ({_id_num(p_total,2,'%')})" if np.isfinite(p_total) else _id_int(d_total)
-    badge_sla = (("âˆ’" if d_sla < 0 else "+") + _sla_short_days(abs(d_sla), 2) + (f" ({p_sla:+.1f}%)" if np.isfinite(p_sla) else "")) if np.isfinite(d_sla) else "-"
+    badge_sla = (("\u2212" if d_sla < 0 else "+") + _sla_short_days(abs(d_sla), 2) + (f" ({p_sla:+.1f}%)" if np.isfinite(p_sla) else "")) if np.isfinite(d_sla) else "-"
     badge_comp = (f"{d_comp:+.1f} pts" + (f" ({p_comp:+.1f}%)" if np.isfinite(p_comp) else "")) if np.isfinite(d_comp) else "-"
 
-    trx_sub = f"{labelA}: {_id_int(totalA)} â€¢ {labelB}: {_id_int(totalB)}"
+    trx_sub = f"{labelA}: {_id_int(totalA)} \u2022 {labelB}: {_id_int(totalB)}"
     if np.isfinite(p_total):
-        trx_sub += f" â€¢ Î”: {badge_vol}"
+        trx_sub += f" \u2022 \u0394: {badge_vol}"
 
     if has_sla and np.isfinite(meanA) and np.isfinite(meanB):
         sla_sub = (
@@ -6166,7 +6167,7 @@ with tab_analisis:
         sla_sub = "Data SLA tidak tersedia / belum terbaca (cek pilihan kolom SLA)."
 
     if kpi_days is not None and has_sla and np.isfinite(complianceB):
-        comp_sub = f"Target KPI {float(kpi_days):.2f} hari â€¢ {labelA}: {complianceA:.1f}% â€¢ {labelB}: {complianceB:.1f}%"
+        comp_sub = f"Target KPI {float(kpi_days):.2f} hari \u2022 {labelA}: {complianceA:.1f}% \u2022 {labelB}: {complianceB:.1f}%"
     elif kpi_days is not None:
         comp_sub = f"Target KPI {float(kpi_days):.2f} hari"
     else:
@@ -6200,16 +6201,16 @@ with tab_analisis:
 
     # Highlight ringkas
     vol_dir = "naik" if d_total > 0 else ("turun" if d_total < 0 else "stabil")
-    spot = f"â€¢ Volume transaksi <b>{vol_dir}</b>: {_id_int(totalA)} â†’ {_id_int(totalB)} (Î” {badge_vol})."
+    spot = f"\u2022 Volume transaksi <b>{vol_dir}</b>: {_id_int(totalA)} \u2192 {_id_int(totalB)} (\u0394 {badge_vol})."
     if has_sla and np.isfinite(d_sla):
         sla_dir = "membaik" if d_sla < 0 else ("memburuk" if d_sla > 0 else "stabil")
-        spot += f" â€¢ SLA <b>{sla_dir}</b>: <b>{_sla_short_days(meanA,2)}</b> â†’ <b>{_sla_short_days(meanB,2)}</b> (Î” {badge_sla})."
+        spot += f" \u2022 SLA <b>{sla_dir}</b>: <b>{_sla_short_days(meanA,2)}</b> \u2192 <b>{_sla_short_days(meanB,2)}</b> (\u0394 {badge_sla})."
     if kpi_days is not None and has_sla and np.isfinite(complianceB):
-        spot += f" â€¢ Dengan target KPI <b>{float(kpi_days):.2f} hari</b>, {labelB} memenuhi target sebesar <b>{complianceB:.1f}%</b>."
+        spot += f" \u2022 Dengan target KPI <b>{float(kpi_days):.2f} hari</b>, {labelB} memenuhi target sebesar <b>{complianceB:.1f}%</b>."
     st.markdown(f"<div class='hero'>{spot}</div>", unsafe_allow_html=True)
 
     # (opsional) debug SLA
-    with st.expander("ðŸ§ª Debug SLA (cek pembacaan detik)", expanded=False):
+    with st.expander("\U0001f9ea Debug SLA (cek pembacaan detik)", expanded=False):
         st.write("Kolom SLA dipilih:", sla_pick)
         if "__SLA_SECONDS_ANALYSIS__" in dfA.columns:
             st.write("Sample A (seconds):", dfA["__SLA_SECONDS_ANALYSIS__"].dropna().head(10).tolist())
@@ -6217,9 +6218,9 @@ with tab_analisis:
             st.write("Sample B (seconds):", dfB["__SLA_SECONDS_ANALYSIS__"].dropna().head(10).tolist())
 
     # -------------------------
-    # Diagram 1 & 2 (per bulan, sumbu X Janâ€“Des, warna = periode A vs B)
+    # Diagram 1 & 2 (per bulan, sumbu X Jan\u2013Des, warna = periode A vs B)
     # -------------------------
-    st.markdown("### ðŸ“ˆ Grafik Perbandingan (per Bulan)")
+    st.markdown("### \U0001f4c8 Grafik Perbandingan (per Bulan)")
 
     def year_or_label(sel_periods, fallback_tag):
         ys = sorted({int(p.year) for p in sel_periods})
@@ -6257,7 +6258,7 @@ with tab_analisis:
         color="Periode",
         barmode="group",
         category_orders={"Bulan": month_order},
-        title=f"Diagram 1 â€” Jumlah Transaksi per Bulan ({seriesA} vs {seriesB})"
+        title=f"Diagram 1 \u2014 Jumlah Transaksi per Bulan ({seriesA} vs {seriesB})"
     )
     fig_trx.update_layout(xaxis_title=None, yaxis_title="Jumlah Transaksi", legend_title=None, height=430)
     st.plotly_chart(fig_trx, use_container_width=True)
@@ -6291,7 +6292,7 @@ with tab_analisis:
             color="Periode",
             markers=True,
             category_orders={"Bulan": month_order},
-            title=f"Diagram 2 â€” Rata-rata SLA per Bulan ({seriesA} vs {seriesB})"
+            title=f"Diagram 2 \u2014 Rata-rata SLA per Bulan ({seriesA} vs {seriesB})"
         )
         fig_sla.update_layout(xaxis_title=None, yaxis_title="Rata-rata SLA (hari)", legend_title=None, height=430)
         st.plotly_chart(fig_sla, use_container_width=True)
@@ -6301,10 +6302,10 @@ with tab_analisis:
         sla_month[seriesB] = [np.nan] * 12
 
     # ============================================================
-    # BLOK POSTER EXECUTIVE SUMMARY â€” FIXED LAYOUT (NO OVERLAP)
+    # BLOK POSTER EXECUTIVE SUMMARY \u2014 FIXED LAYOUT (NO OVERLAP)
     # ============================================================
     st.markdown("---")
-    st.markdown("### ðŸ–¼ï¸ Poster Executive Summary (Analisis)")
+    st.markdown("### \U0001f5bc\ufe0f Poster Executive Summary (Analisis)")
 
     # (opsional) animasi di UI saja
     gif_url = "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif"
@@ -6353,7 +6354,7 @@ with tab_analisis:
     d1, d2 = st.columns(2)
     with d1:
         st.download_button(
-            "â¬‡ï¸ Download Poster PNG (WA)",
+            "\u2b07\ufe0f Download Poster PNG (WA)",
             data=png_bytes,
             file_name="Poster_Executive_Summary_Analisis.png",
             mime="image/png",
@@ -6361,7 +6362,7 @@ with tab_analisis:
         )
     with d2:
         st.download_button(
-            "â¬‡ï¸ Download Poster PDF (Email/Arsip)",
+            "\u2b07\ufe0f Download Poster PDF (Email/Arsip)",
             data=pdf_bytes,
             file_name="Poster_Executive_Summary_Analisis.pdf",
             mime="application/pdf",
@@ -6648,7 +6649,7 @@ def generate_pdf_report_v6(df_ord, selected_periode, periode_col, available_sla_
     story.append(Spacer(1, 7*cm))
     story.append(Paragraph("LAPORAN SLA VERIFIKASI DOKUMEN PENAGIHAN PT ASDP INDONESIA FERRY (PERSERO)", _styles["CoverTitle"]))
     if selected_periode:
-        story.append(Paragraph(f"PERIODE: {str(selected_periode[0]).upper()} â€“ {str(selected_periode[-1]).upper()}", _styles["CoverSub"]))
+        story.append(Paragraph(f"PERIODE: {str(selected_periode[0]).upper()} \u2013 {str(selected_periode[-1]).upper()}", _styles["CoverSub"]))
     story.append(PageBreak())
 
     # === TOC
@@ -6698,7 +6699,7 @@ def generate_pdf_report_v6(df_ord, selected_periode, periode_col, available_sla_
         ax.tick_params(axis="x",rotation=45)
         chart=_plot_to_rlimage(fig,w_cm=13,h_cm=7)
 
-        # Layout â†’ Grafik kiri, tabel kanan, sejajar atas
+        # Layout \u2192 Grafik kiri, tabel kanan, sejajar atas
         pair=Table([[chart,tbl]],colWidths=[13*cm,8*cm],hAlign="CENTER")
         pair.setStyle([
             ("LEFTPADDING",(0,0),(-1,-1),0),
@@ -6826,7 +6827,7 @@ def generate_pdf_report_v6(df_ord, selected_periode, periode_col, available_sla_
         "Evaluasi otomasi pada aktivitas manual."
     ]
     rec_tbl = _nice_table(
-        [["REKOMENDASI PRIORITAS"]] + [[f"â€¢ {r}"] for r in recs],
+        [["REKOMENDASI PRIORITAS"]] + [[f"\u2022 {r}"] for r in recs],
         colWidths=[25.5*cm],
         header_bg="#0ea5e9",
         align="CENTER"
@@ -6845,7 +6846,7 @@ def generate_pdf_report_v6(df_ord, selected_periode, periode_col, available_sla_
 
 # ====================== STREAMLIT TAB: PDF v6 ======================
 with tab_pdf:
-    st.subheader("ðŸ“‘ Laporan SLA")
+    st.subheader("\U0001f4d1 Laporan SLA")
 
     try:
         pdf_bytes = generate_pdf_report_v6(
@@ -6858,19 +6859,19 @@ with tab_pdf:
         )
 
         st.download_button(
-            "â¬‡ï¸ Download Laporan PDF",
+            "\u2b07\ufe0f Download Laporan PDF",
             data=pdf_bytes,
             file_name="LAPORAN_SLA_VERIFIKASI_DOKUMEN_PENAGIHAN.pdf",
             mime="application/pdf"
         )
-        st.success("PDF siap diunduh âœ…")
+        st.success("PDF siap diunduh \u2705")
     except Exception as e:
         import traceback
         st.error(f"Gagal membuat PDF: {type(e).__name__}: {e}")
         traceback.print_exc()
 
 # ==========================================================
-#  SELA v10 â€” Smooth Lip-Sync Smart Period Analyst
+#  SELA v10 \u2014 Smooth Lip-Sync Smart Period Analyst
 #  - Avatar wanita natural (ringan, CSS/SVG)
 #  - Voice input via Web Speech API
 #  - Voice output via Speech Synthesis
@@ -7203,7 +7204,7 @@ def build_sela_payload(df_filtered, periode_col: str):
     proses = sorted(proses, key=lambda x: x["avg_sla_days"], reverse=True)
     payload["proses_stats"] = proses
 
-    # sample records Ú©ÙˆÚ†Ú©
+    # sample records \u06a9\u0648\u0686\u06a9
     sample_cols = [c for c in [periode_col, nomor_col, trx_col, vendor_col, "FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU", nilai_col] if c]
     sample_cols = [c for c in sample_cols if c in df.columns]
     if sample_cols:
@@ -7374,7 +7375,7 @@ def render_sela_widget(df_filtered, periode_col: str):
       <div class="brand">
         <div class="logo">S</div>
         <div>
-          <div class="title">SELA v10 â€¢ Smart Virtual Human</div>
+          <div class="title">SELA v10 \u2022 Smart Virtual Human</div>
           <div class="subtitle">Asisten virtual human wanita dengan lip-sync lebih halus, analisis periode sampai level bulan, dan kemampuan menjawab SLA otomatis sesuai filter yang diminta.</div>
         </div>
       </div>
@@ -7397,7 +7398,7 @@ def render_sela_widget(df_filtered, periode_col: str):
                 <div class="lip-sync-mouth" aria-hidden="true"></div>
                 <div class="avatar-overlay"></div>
                 <div class="avatar-grid"></div>
-                <div class="avatar-label"><strong>SELA â€¢ Virtual Human</strong>Mulut bergerak saat berbicara, sekaligus menganalisis data SLA berdasarkan periode, proses, vendor, transaksi, dan nomor permohonan.</div>
+                <div class="avatar-label"><strong>SELA \u2022 Virtual Human</strong>Mulut bergerak saat berbicara, sekaligus menganalisis data SLA berdasarkan periode, proses, vendor, transaksi, dan nomor permohonan.</div>
               </div>
             </div>
           </div>
@@ -7437,7 +7438,7 @@ def render_sela_widget(df_filtered, periode_col: str):
 
         <div class="composer">
           <input id="textInput" class="chat-input" type="text" placeholder="Tanya apa saja tentang data SLA, transaksi, vendor, growth, atau nomor permohonan..." />
-          <button id="micBtn" class="btn primary">ðŸŽ™ï¸ Bicara</button>
+          <button id="micBtn" class="btn primary">\U0001f399\ufe0f Bicara</button>
           <button id="sendBtn" class="btn send secondary">Kirim</button>
         </div>
         <div class="statusline" id="statusLine">Status: SELA siap membantu. Anda bisa bicara atau mengetik.</div>
@@ -7562,7 +7563,7 @@ def render_sela_widget(df_filtered, periode_col: str):
       document.getElementById('metricTopTrx').textContent = (metrics.top_transaction && metrics.top_transaction.name) ? metrics.top_transaction.name : '-';
       document.getElementById('metricTopVendor').textContent = `Vendor: ${(metrics.top_vendor && metrics.top_vendor.name) ? metrics.top_vendor.name : '-'}`;
       if(metrics.latest_count && metrics.prev_count){
-        document.getElementById('metricGrowthSub').textContent = `${fmtNum(metrics.prev_count)} â†’ ${fmtNum(metrics.latest_count)} transaksi`;
+        document.getElementById('metricGrowthSub').textContent = `${fmtNum(metrics.prev_count)} \u2192 ${fmtNum(metrics.latest_count)} transaksi`;
       }
     }
 
@@ -7899,7 +7900,7 @@ def render_sela_widget(df_filtered, periode_col: str):
       if(/semua yang saya tanyakan|bisa jawab apa saja|apa yang bisa kamu jawab/.test(q)){
         return 'Saya bisa membantu menjawab pertanyaan terkait jumlah transaksi, perbandingan tahun atau periode, rata-rata SLA total, SLA per jenis transaksi, vendor/cabang paling lambat, nomor permohonan yang perlu dipantau, bottleneck proses, growth transaksi, nilai transaksi jika tersedia, serta membuat ringkasan Direksi dan rekomendasi perbaikan.';
       }
-      return `${naturalLead()} Berdasarkan data aktif, terdapat ${fmtNum(metrics.transaction_count || 0)} transaksi dengan rata-rata SLA total ${fmtDays(metrics.avg_sla_days || 0)}. ${metrics.top_transaction ? `Jenis transaksi prioritas saat ini adalah ${metrics.top_transaction.name}. ` : ''}${metrics.bottleneck ? `Bottleneck terbesarnya berada pada proses ${metrics.bottleneck.name}. ` : ''}Jika ingin, Anda bisa bertanya lebih spesifik seperti â€œberapa SLA Vendor tahun 2025â€, â€œSLA Keuangan Juni 2026â€, â€œvendor mana paling lambatâ€, atau â€œbuatkan ringkasan Direksiâ€.`;
+      return `${naturalLead()} Berdasarkan data aktif, terdapat ${fmtNum(metrics.transaction_count || 0)} transaksi dengan rata-rata SLA total ${fmtDays(metrics.avg_sla_days || 0)}. ${metrics.top_transaction ? `Jenis transaksi prioritas saat ini adalah ${metrics.top_transaction.name}. ` : ''}${metrics.bottleneck ? `Bottleneck terbesarnya berada pada proses ${metrics.bottleneck.name}. ` : ''}Jika ingin, Anda bisa bertanya lebih spesifik seperti \u201cberapa SLA Vendor tahun 2025\u201d, \u201cSLA Keuangan Juni 2026\u201d, \u201cvendor mana paling lambat\u201d, atau \u201cbuatkan ringkasan Direksi\u201d.`;
     }
 
     function handleQuestion(question){
@@ -7930,9 +7931,9 @@ def render_sela_widget(df_filtered, periode_col: str):
       recognizer.lang = 'id-ID';
       recognizer.interimResults = false;
       recognizer.maxAlternatives = 1;
-      recognizer.onstart = () => {recognizing = true; setAvatarState('listening'); micBtn.textContent='â¹ï¸ Stop'; statusLine.textContent='Status: SELA sedang mendengarkan...'; setBubble('Saya sedang mendengarkan. Silakan bicara dengan jelas ya.'); };
-      recognizer.onerror = (e) => {recognizing = false; micBtn.textContent='ðŸŽ™ï¸ Bicara'; setAvatarState(''); statusLine.textContent = 'Status: mic belum masuk. Pastikan izin microphone di browser sudah Allow, lalu coba lagi. Detail: ' + e.error; setBubble('Saya belum menangkap suara. Coba klik Mic lagi, izinkan microphone, atau gunakan input teks.'); };
-      recognizer.onend = () => {recognizing = false; micBtn.textContent='ðŸŽ™ï¸ Bicara'; if(!window.speechSynthesis.speaking){ setAvatarState(''); statusLine.textContent='Status: selesai mendengarkan, saya siap untuk pertanyaan berikutnya.'; } };
+      recognizer.onstart = () => {recognizing = true; setAvatarState('listening'); micBtn.textContent='\u23f9\ufe0f Stop'; statusLine.textContent='Status: SELA sedang mendengarkan...'; setBubble('Saya sedang mendengarkan. Silakan bicara dengan jelas ya.'); };
+      recognizer.onerror = (e) => {recognizing = false; micBtn.textContent='\U0001f399\ufe0f Bicara'; setAvatarState(''); statusLine.textContent = 'Status: mic belum masuk. Pastikan izin microphone di browser sudah Allow, lalu coba lagi. Detail: ' + e.error; setBubble('Saya belum menangkap suara. Coba klik Mic lagi, izinkan microphone, atau gunakan input teks.'); };
+      recognizer.onend = () => {recognizing = false; micBtn.textContent='\U0001f399\ufe0f Bicara'; if(!window.speechSynthesis.speaking){ setAvatarState(''); statusLine.textContent='Status: selesai mendengarkan, saya siap untuk pertanyaan berikutnya.'; } };
       recognizer.onresult = (event) => { const text = event.results && event.results[0] && event.results[0][0] ? event.results[0][0].transcript : ''; handleQuestion(text); };
       return recognizer;
     }
