@@ -550,7 +550,7 @@ rename_map = {
 df_raw.rename(columns=rename_map, inplace=True)
 
 # Panel: daftar kolom
-with st.expander("\U0001f9fe Kolom yang terdeteksi di file"):
+with st.expander("🧾 Kolom yang terdeteksi di file"):
     st.write(list(df_raw.columns))
 
 # Deteksi kolom periode
@@ -562,30 +562,172 @@ if not periode_col:
 # Parse SLA (tunda heavy parsing sampai setelah filter)
 sla_cols = ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]
 
-# Try parse periode ke datetime (tidak wajib)
+# Helper periode: sorting & default range yang konsisten di seluruh tab/laporan.
+MONTH_MAP_ID = {
+    "januari": 1, "jan": 1, "january": 1,
+    "februari": 2, "feb": 2, "february": 2,
+    "maret": 3, "mar": 3, "march": 3,
+    "april": 4, "apr": 4,
+    "mei": 5, "may": 5,
+    "juni": 6, "jun": 6, "june": 6,
+    "juli": 7, "jul": 7, "july": 7,
+    "agustus": 8, "agu": 8, "agus": 8, "agt": 8, "aug": 8, "august": 8,
+    "september": 9, "sep": 9, "sept": 9,
+    "oktober": 10, "okt": 10, "oct": 10, "october": 10,
+    "november": 11, "nov": 11,
+    "desember": 12, "des": 12, "dec": 12, "december": 12,
+}
+
+def parse_period_label_to_timestamp(value):
+    """Parse label periode menjadi timestamp awal bulan.
+    Mendukung format: Oktober 2026, Okt-2026, 2026-10, 10/2026, datetime, dll.
+    """
+    if value is None or pd.isna(value):
+        return pd.NaT
+
+    if isinstance(value, (pd.Timestamp, datetime)):
+        try:
+            return pd.Timestamp(year=value.year, month=value.month, day=1)
+        except Exception:
+            return pd.NaT
+
+    s = str(value).strip()
+    if not s:
+        return pd.NaT
+
+    # Coba parser umum terlebih dahulu untuk format numerik / ISO.
+    dt = pd.to_datetime(s, errors='coerce', dayfirst=True)
+    if pd.notna(dt):
+        return pd.Timestamp(year=dt.year, month=dt.month, day=1)
+
+    s_lower = s.lower()
+    year_match = re.search(r'(?:19|20)\d{2}', s_lower)
+    if not year_match:
+        return pd.NaT
+    year = int(year_match.group(0))
+
+    month = None
+    for label, month_num in sorted(MONTH_MAP_ID.items(), key=lambda kv: len(kv[0]), reverse=True):
+        if re.search(r'(^|[^a-z])' + re.escape(label) + r'([^a-z]|$)', s_lower):
+            month = month_num
+            break
+
+    if month is None:
+        patterns = [
+            r'((?:19|20)\d{2})[^0-9]([01]?\d)',
+            r'([01]?\d)[^0-9]((?:19|20)\d{2})',
+        ]
+        for pat in patterns:
+            m = re.search(pat, s_lower)
+            if m:
+                g1, g2 = m.groups()
+                cand = int(g2) if len(g1) == 4 else int(g1)
+                if 1 <= cand <= 12:
+                    month = cand
+                    break
+
+    if month is None:
+        return pd.NaT
+
+    try:
+        return pd.Timestamp(year=year, month=month, day=1)
+    except Exception:
+        return pd.NaT
+
+
+def build_sorted_period_list(series):
+    values = [str(v).strip() for v in series.dropna().tolist() if str(v).strip()]
+    unique_values = list(dict.fromkeys(values))
+    tagged = [(label, parse_period_label_to_timestamp(label)) for label in unique_values]
+    parsed = [(label, ts) for label, ts in tagged if pd.notna(ts)]
+    unparsed = [label for label, ts in tagged if pd.isna(ts)]
+    parsed_sorted = [label for label, _ in sorted(parsed, key=lambda item: (item[1], str(item[0]).lower()))]
+    return parsed_sorted + unparsed
+
+
+def get_default_period_range(periode_values):
+    if not periode_values:
+        return None, None
+
+    parsed = [(label, parse_period_label_to_timestamp(label)) for label in periode_values]
+    parsed = [(label, ts) for label, ts in parsed if pd.notna(ts)]
+
+    if not parsed:
+        return periode_values[0], periode_values[-1]
+
+    latest_label, latest_ts = max(parsed, key=lambda item: item[1])
+    target_year = latest_ts.year
+
+    same_year = [(label, ts) for label, ts in parsed if ts.year == target_year]
+    january_candidates = [label for label, ts in same_year if ts.month == 1]
+
+    if january_candidates:
+        default_start = january_candidates[0]
+    elif same_year:
+        default_start = min(same_year, key=lambda item: item[1])[0]
+    else:
+        default_start = periode_values[0]
+
+    return default_start, latest_label
+
+
+# Parse periode ke datetime agar sinkron untuk tab yang memakai kolom datetime.
 try:
-    df_raw['PERIODE_DATETIME'] = pd.to_datetime(df_raw[periode_col], errors='coerce')
+    df_raw['PERIODE_DATETIME'] = df_raw[periode_col].apply(parse_period_label_to_timestamp)
 except Exception:
-    df_raw['PERIODE_DATETIME'] = None
+    df_raw['PERIODE_DATETIME'] = pd.NaT
 
 # ==============================
-# Sidebar: filter periode (TIDAK DIUBAH)
+# Sidebar: filter periode (REVISI)
+# Default: Januari pada tahun dari periode terbaru s.d. periode upload terakhir.
+# Seluruh tab dan laporan memakai filter yang sama melalui df_filtered & selected_periode.
 # ==============================
+periode_list = build_sorted_period_list(df_raw[periode_col])
+if not periode_list:
+    st.error("Data periode tidak ditemukan pada file upload.")
+    st.stop()
+
+default_start_periode, default_end_periode = get_default_period_range(periode_list)
+period_signature = "||".join(periode_list)
+
+should_reset_period_state = (
+    st.session_state.get('_periode_options_signature') != period_signature
+    or st.session_state.get('periode_mulai') not in periode_list
+    or st.session_state.get('periode_akhir') not in periode_list
+)
+
+if should_reset_period_state:
+    st.session_state['periode_mulai'] = default_start_periode
+    st.session_state['periode_akhir'] = default_end_periode
+    st.session_state['_periode_options_signature'] = period_signature
+
 with st.sidebar:
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("\U0001f4c5 Filter Rentang Periode")
-    periode_list = sorted(
-        df_raw[periode_col].dropna().astype(str).unique().tolist(),
-        key=lambda x: pd.to_datetime(x, errors='coerce')
+    st.subheader("📅 Filter Rentang Periode")
+
+    start_periode = st.selectbox(
+        "Periode Mulai",
+        periode_list,
+        index=periode_list.index(st.session_state.get('periode_mulai', default_start_periode)),
+        key="periode_mulai",
     )
-    start_periode = st.selectbox("Periode Mulai", periode_list, index=0, key="periode_mulai")
-    end_periode = st.selectbox("Periode Akhir", periode_list, index=len(periode_list)-1, key="periode_akhir")
+    end_periode = st.selectbox(
+        "Periode Akhir",
+        periode_list,
+        index=periode_list.index(st.session_state.get('periode_akhir', default_end_periode)),
+        key="periode_akhir",
+    )
 
 idx_start = periode_list.index(start_periode)
 idx_end = periode_list.index(end_periode)
 if idx_start > idx_end:
-    st.error("Periode Mulai harus sebelum Periode Akhir.")
-    st.stop()
+    st.warning("Periode Mulai lebih besar dari Periode Akhir. Filter otomatis dikembalikan ke rentang default dataset aktif.")
+    start_periode = default_start_periode
+    end_periode = default_end_periode
+    st.session_state['periode_mulai'] = start_periode
+    st.session_state['periode_akhir'] = end_periode
+    idx_start = periode_list.index(start_periode)
+    idx_end = periode_list.index(end_periode)
 
 selected_periode = periode_list[idx_start:idx_end+1]
 df_filtered = df_raw[df_raw[periode_col].astype(str).isin(selected_periode)].copy()
