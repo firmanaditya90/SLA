@@ -22,6 +22,10 @@ from datetime import datetime
 from io import BytesIO   # << tambahkan ini
 import base64
 import streamlit.components.v1 as components
+import hashlib
+import inspect
+
+st.set_page_config(page_title="SLA Payment Analyzer", layout="wide", page_icon="\U0001f6a2")
 
 if "show_sela" not in st.session_state:
     st.session_state["show_sela"] = False
@@ -92,6 +96,7 @@ from io import BytesIO
 # KONFIGURASI
 # ============================
 DATA_PATH = os.path.join("data", "last_data.xlsx")
+SLA_DATA_PATH = DATA_PATH
 ROCKET_GIF_PATH = "rocket.gif"
 LOGO_PATH = "asdp_logo.png"
 
@@ -103,18 +108,45 @@ try:
     GITHUB_PATH = st.secrets.get("GITHUB_PATH", "data/last_data.xlsx")
 except Exception:
     GITHUB_TOKEN = GITHUB_REPO = None
+    GITHUB_BRANCH = "main"
+    GITHUB_PATH = "data/last_data.xlsx"
 
 _headers = {"Authorization": f"token {GITHUB_TOKEN}"} if GITHUB_TOKEN else {}
 
 # ============================
 # HELPER FUNCTIONS
 # ============================
-def github_get_file_info(path: str):
+@st.cache_data(ttl=45, max_entries=24, show_spinner=False)
+def _github_file_info_cached(repo: str, branch: str, path: str):
+    """GitHub version+content check, cached briefly between Streamlit reruns."""
+    if not (repo and GITHUB_TOKEN):
+        return None
+    url = f"https://api.github.com/repos/{repo}/contents/{path}"
+    try:
+        response = requests.get(
+            url, params={"ref": branch}, headers=_headers, timeout=(4, 12)
+        )
+        if response.status_code == 200:
+            return response.json()
+    except requests.RequestException:
+        pass
+    return None
+
+
+def github_get_file_info(path: str, use_cache: bool = True):
+    """Keep legacy helper interface; bypass cache for GitHub writes."""
     if not (GITHUB_TOKEN and GITHUB_REPO):
         return None
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}?ref={GITHUB_BRANCH}"
-    r = requests.get(url, headers=_headers)
-    return r.json() if r.status_code == 200 else None
+    if use_cache:
+        return _github_file_info_cached(GITHUB_REPO, GITHUB_BRANCH, path)
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+    try:
+        response = requests.get(
+            url, params={"ref": GITHUB_BRANCH}, headers=_headers, timeout=(4, 12)
+        )
+        return response.json() if response.status_code == 200 else None
+    except requests.RequestException:
+        return None
 
 def download_file_from_github(path: str = None) -> bytes | None:
     if not (GITHUB_TOKEN and GITHUB_REPO):
@@ -123,14 +155,24 @@ def download_file_from_github(path: str = None) -> bytes | None:
     info = github_get_file_info(path)
     if not info:
         return None
-    return base64.b64decode(info["content"].encode())
+    if info.get("content"):
+        return base64.b64decode(info["content"].encode())
+    download_url = info.get("download_url")
+    if download_url and str(download_url).startswith('https://'):
+        try:
+            response = requests.get(download_url, headers=_headers, timeout=(5, 40))
+            response.raise_for_status()
+            return response.content
+        except requests.RequestException:
+            return None
+    return None
 
 def upload_file_to_github(file_bytes: bytes, path: str = None, message="Update SLA data"):
     if not (GITHUB_TOKEN and GITHUB_REPO):
         return None
     path = path or GITHUB_PATH
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
-    info = github_get_file_info(path)
+    info = github_get_file_info(path, use_cache=False)
     sha = info.get("sha") if info else None
     data = {
         "message": message,
@@ -139,8 +181,14 @@ def upload_file_to_github(file_bytes: bytes, path: str = None, message="Update S
     }
     if sha:
         data["sha"] = sha
-    r = requests.put(url, headers=_headers, json=data)
-    return r.json() if r.status_code in (200, 201) else None
+    try:
+        r = requests.put(url, headers=_headers, json=data, timeout=(4, 25))
+        if r.status_code in (200, 201):
+            _github_file_info_cached.clear()
+            return r.json()
+    except requests.RequestException:
+        pass
+    return None
 
 @st.cache_data
 def read_excel_cached(path, size, mtime):
@@ -155,7 +203,7 @@ def delete_file_from_github(path: str = None, message="Delete SLA data"):
     if not (GITHUB_TOKEN and GITHUB_REPO):
         return None
     path = path or GITHUB_PATH
-    info = github_get_file_info(path)
+    info = github_get_file_info(path, use_cache=False)
     if not info or "sha" not in info:
         return None
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
@@ -164,38 +212,79 @@ def delete_file_from_github(path: str = None, message="Delete SLA data"):
         "sha": info["sha"],
         "branch": GITHUB_BRANCH
     }
-    r = requests.delete(url, headers=_headers, json=data)
-    return r.json() if r.status_code == 200 else None
+    try:
+        r = requests.delete(url, headers=_headers, json=data, timeout=(4, 15))
+        if r.status_code == 200:
+            _github_file_info_cached.clear()
+            return r.json()
+    except requests.RequestException:
+        pass
+    return None
 
 
 # ============================
-# LOAD DATA
+# SLA SMART DATA ENGINE -- deferred load (single pass, versioned cache).
+# Main dataset is loaded only once, AFTER any new upload is processed.
 # ============================
-df_raw = None
+@st.cache_data(show_spinner=False, max_entries=8)
+def _read_sla_excel_bytes_cached(file_version: str, _contents: bytes) -> pd.DataFrame:
+    """Read a newly uploaded Excel once by its SHA-256 content digest."""
+    return pd.read_excel(BytesIO(_contents), header=[0, 1])
 
-# coba ambil dari GitHub
-if GITHUB_TOKEN and GITHUB_REPO:
-    with st.spinner("\U0001f504 Mengambil data dari GitHub..."):
-        content = download_file_from_github()
-        if content:
-            df_raw = pd.read_excel(BytesIO(content), header=[0, 1])
-            st.info("\u2705 Data dimuat dari GitHub.")
 
-# fallback lokal
-if df_raw is None and os.path.exists(DATA_PATH):
-    with st.spinner("\U0001f504 Membaca data terakhir (lokal)..."):
-        stat = os.stat(DATA_PATH)
-        df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
-        st.info("\u2139\ufe0f Menampilkan data dari upload terakhir (lokal).")
+@st.cache_data(show_spinner=False, max_entries=8)
+def _read_sla_github_cached(file_version: str, _info: dict) -> pd.DataFrame:
+    """Parse a GitHub version once, including files >1MB with no inline content."""
+    content = _info.get('content')
+    if content:
+        data = base64.b64decode(content)
+    else:
+        download_url = _info.get('download_url')
+        if not download_url or not str(download_url).startswith('https://'):
+            raise ValueError('GitHub tidak menyediakan konten atau download_url')
+        response = requests.get(download_url, headers=_headers, timeout=(5, 40))
+        response.raise_for_status()
+        data = response.content
+    return pd.read_excel(BytesIO(data), header=[0, 1])
 
-if df_raw is None:
-    st.warning("\u26a0\ufe0f Belum ada file yang diunggah.")
-    df_raw = None
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _read_sla_local_cached(file_path: str, file_size: int, mtime_ns: int) -> pd.DataFrame:
+    """mtime_ns and size invalidate the cache when local source changes."""
+    return pd.read_excel(file_path, header=[0, 1])
+
+
+def _load_sla_dataset(prefer_uploaded: bytes | None = None):
+    """Choose one authoritative source (new upload / GitHub / local fallback)."""
+    if prefer_uploaded is not None:
+        digest = hashlib.sha256(prefer_uploaded).hexdigest()
+        return _read_sla_excel_bytes_cached('upload:' + digest, prefer_uploaded), 'upload:' + digest, 'upload'
+
+    # GitHub remains shared source when configured; metadata refreshes every 45 s.
+    if GITHUB_TOKEN and GITHUB_REPO:
+        info = github_get_file_info(GITHUB_PATH)
+        if info and (info.get('content') or info.get('download_url')):
+            sha = str(info.get('sha') or '')
+            try:
+                # Content is decoded/downloaded only when its version changes.
+                version = f'github:{GITHUB_REPO}:{GITHUB_BRANCH}:{GITHUB_PATH}:{sha}'
+                return _read_sla_github_cached(version, info), version, 'github'
+            except Exception:
+                # If GitHub is unavailable, retain the local fallback.
+                pass
+
+    if os.path.exists(SLA_DATA_PATH):
+        stat = os.stat(SLA_DATA_PATH)
+        version = f'local:{os.path.abspath(SLA_DATA_PATH)}:{stat.st_size}:{stat.st_mtime_ns}'
+        return _read_sla_local_cached(SLA_DATA_PATH, stat.st_size, stat.st_mtime_ns), version, 'local'
+
+    return None, None, None
+
 
 # ==============================
 # Konfigurasi Halaman (TIDAK DIUBAH)
 # ==============================
-st.set_page_config(page_title="SLA Payment Analyzer", layout="wide", page_icon="\U0001f6a2")
+# Page configuration initialized before any UI output (see startup block).
 
 # ------------------------------
 # (Opsional) Pakai tema dark:
@@ -466,61 +555,90 @@ def seconds_to_sla_format(total_seconds):
 # Upload (hanya admin) (TIDAK DIUBAH)
 # ==============================
 with st.sidebar.expander("\U0001f4e4 Upload Data (Admin Only)", expanded=is_admin):
-    uploaded_file = st.file_uploader("Upload file Excel (.xlsx)", type="xlsx") if is_admin else None
+    # A new widget identity after Reset ensures the previous upload is not
+    # submitted again automatically during st.rerun().
+    _sla_uploader_generation = st.session_state.setdefault('_sla_uploader_generation', 0)
+    uploaded_file = (
+        st.file_uploader(
+            "Upload file Excel (.xlsx)", type="xlsx",
+            key=f"sla_main_uploader_{_sla_uploader_generation}"
+        ) if is_admin else None
+    )
 
 # ==============================
-# Load data terakhir / simpan baru  (TIDAK DIUBAH + FIX: sinkronisasi GitHub)
+# SMART UPLOAD + SINGLE DATA LOAD (performance-safe revision)
+# Upload-once per file digest prevents uploading again on every widget rerun.
+# The GitHub remote file stays authoritative across users; local is fallback.
 # ==============================
 load_status = st.empty()
+_sla_just_uploaded_bytes = None
 if uploaded_file is not None and is_admin:
-    with st.spinner("\U0001f680 Mengunggah & menyiapkan data..."):
-        if rocket_b64:
-            st.markdown(
-                f'<div style="text-align:center;"><img src="{rocket_b64}" width="160"/></div>',
-                unsafe_allow_html=True
-            )
-        time.sleep(0.2)
+    # Compute digest using buffer without changing filename/format.
+    _sla_upload_buffer = uploaded_file.getvalue()
+    _sla_upload_digest = hashlib.sha256(_sla_upload_buffer).hexdigest()
+    if st.session_state.get('_sla_last_uploaded_digest') != _sla_upload_digest:
+        with st.spinner("\U0001f680 Mengunggah & menyiapkan data..."):
+            if rocket_b64:
+                st.markdown(
+                    f'<div style="text-align:center;"><img src="{rocket_b64}" width="160"/></div>',
+                    unsafe_allow_html=True
+                )
+            # Validate spreadsheet BEFORE replacing an existing good file.
+            try:
+                _sla_verified_upload = _read_sla_excel_bytes_cached(
+                    'upload:' + _sla_upload_digest, _sla_upload_buffer
+                )
+                if _sla_verified_upload.empty:
+                    raise ValueError("File Excel kosong.")
+            except Exception as exc:
+                st.error(f"File Excel tidak dapat dibaca; data lama dipertahankan: {exc}")
+            else:
+                with open(SLA_DATA_PATH, "wb") as f:
+                    f.write(_sla_upload_buffer)
+                _sla_just_uploaded_bytes = _sla_upload_buffer
+                _result = upload_file_to_github(
+                    _sla_upload_buffer, path=GITHUB_PATH,
+                    message="Update SLA data (via app)"
+                )
+                st.session_state['_sla_last_uploaded_digest'] = _sla_upload_digest
+                if _result:
+                    st.session_state['_sla_upload_prefer_local'] = False
+                    st.success("\u2705 Data baru berhasil diunggah & disinkronkan ke GitHub!")
+                else:
+                    st.session_state['_sla_upload_prefer_local'] = True
+                    st.warning("\u26a0\ufe0f Data tersimpan lokal, tapi gagal update ke GitHub.")
 
-        # Simpan ke lokal
-        file_bytes = uploaded_file.getbuffer()
-        with open(DATA_PATH, "wb") as f:
-            f.write(file_bytes)
+# If the current upload has not synced, use it in this session (no stale remote override).
+if _sla_just_uploaded_bytes is None and st.session_state.get('_sla_upload_prefer_local'):
+    if os.path.exists(SLA_DATA_PATH):
+        with open(SLA_DATA_PATH, 'rb') as f:
+            _sla_just_uploaded_bytes = f.read()
 
-        # Upload juga ke GitHub agar semua user sinkron
-        result = upload_file_to_github(file_bytes, path=GITHUB_PATH, message="Update SLA data (via app)")
-        if result:
-            st.success("\u2705 Data baru berhasil diunggah & disinkronkan ke GitHub!")
-        else:
-            st.warning("\u26a0\ufe0f Data tersimpan lokal, tapi gagal update ke GitHub.")
+with st.spinner("\U0001f504 Membaca data terakhir..."):
+    df_raw, _sla_source_version, _sla_source_kind = _load_sla_dataset(_sla_just_uploaded_bytes)
 
-# Jika ada file data, baca & tampilkan
-if os.path.exists(DATA_PATH):
-    # Progress & spinner saat baca file
-    with st.spinner("\U0001f504 Membaca data terakhir..."):
-        if rocket_b64:
-            st.markdown(
-                f'<div style="text-align:center;"><img src="{rocket_b64}" width="120"/></div>',
-                unsafe_allow_html=True
-            )
-
-        # Cache baca excel agar lebih cepat setelah refresh
-        @st.cache_data(show_spinner=False)
-        def read_excel_cached(path: str, size: int, mtime: float):
-            return pd.read_excel(path, header=[0, 1])
-
-        stat = os.stat(DATA_PATH)
-        df_raw = read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
-        st.info("\u2139\ufe0f Menampilkan data dari upload terakhir.")
-else:
-    st.warning("\u26a0\ufe0f Belum ada file yang diunggah.")
+if df_raw is None:
+    st.warning("\u26a0\ufe0f Belum ada file SLA yang diunggah atau sumber data tidak dapat diakses.")
     st.stop()
+
+if _sla_source_kind == 'github':
+    st.info("\u2705 Menampilkan data terbaru dari GitHub.")
+elif _sla_source_kind == 'local':
+    st.info("\u2139\ufe0f Menampilkan data dari upload terakhir (lokal).")
+else:
+    st.info("\u2139\ufe0f Menampilkan data dari upload terakhir.")
 
 # Tombol reset (hanya admin) (TIDAK DIUBAH + FIX sinkron GitHub)
 with st.sidebar.expander("\U0001f6e0\ufe0f Admin Tools", expanded=False):
     if is_admin and os.path.exists(DATA_PATH):
         if st.button("\U0001f5d1\ufe0f Reset Data (hapus data terakhir)"):
             # Hapus lokal
-            os.remove(DATA_PATH)
+            os.remove(SLA_DATA_PATH)
+            st.session_state.pop('_sla_last_uploaded_digest', None)
+            st.session_state.pop('_sla_upload_prefer_local', None)
+            st.session_state['_sla_uploader_generation'] = st.session_state.get('_sla_uploader_generation', 0) + 1
+            _read_sla_local_cached.clear()
+            _read_sla_excel_bytes_cached.clear()
             
             # Hapus juga di GitHub
             result = delete_file_from_github(path=GITHUB_PATH, message="Reset SLA data (via app)")
@@ -671,9 +789,16 @@ def get_default_period_range(periode_values):
     return default_start, latest_label
 
 
-# Parse periode ke datetime agar sinkron untuk tab yang memakai kolom datetime.
+# Parse only UNIQUE period labels (typically tens rather than 90k rows).
+# .map preserves source labels and yields same date values as the legacy .apply.
 try:
-    df_raw['PERIODE_DATETIME'] = df_raw[periode_col].apply(parse_period_label_to_timestamp)
+    _sla_period_labels = df_raw[periode_col].astype(str)
+    _sla_unique_labels = _sla_period_labels.unique().tolist()
+    _sla_period_lookup = {
+        label: parse_period_label_to_timestamp(label)
+        for label in _sla_unique_labels
+    }
+    df_raw['PERIODE_DATETIME'] = _sla_period_labels.map(_sla_period_lookup)
 except Exception:
     df_raw['PERIODE_DATETIME'] = pd.NaT
 
@@ -754,9 +879,21 @@ with st.sidebar:
 # ==============================
 # Parsing SLA setelah filter (TIDAK DIUBAH)
 # ==============================
+@st.cache_data(show_spinner=False, max_entries=12)
+def _parse_sla_filtered_cached(source_version: str, period_keys: tuple, _filtered_input: pd.DataFrame, sla_names: tuple):
+    """Reuse exact legacy parser result while version+period selection is unchanged."""
+    output = _filtered_input.copy()
+    for col in sla_names:
+        output[col] = output[col].apply(parse_sla)
+    return output
+
 with st.status("\u23f1\ufe0f Memproses kolom SLA setelah filter...", expanded=False) as status:
-    for col in available_sla_cols:
-        df_filtered[col] = df_filtered[col].apply(parse_sla)
+    df_filtered = _parse_sla_filtered_cached(
+        _sla_source_version,
+        tuple(selected_periode),
+        df_filtered,
+        tuple(available_sla_cols),
+    )
     status.update(label="\u2705 Parsing SLA selesai", state="complete")
 
 import io, base64
@@ -876,56 +1013,80 @@ components.html(html_code, height=350)
 # ==============================
 # Tabs untuk konten (TIDAK DIUBAH)
 # ==============================
-tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_nilai, tab_report, tab_analisis = st.tabs(
-    ["\U0001f50d Overview", "\U0001f9ee Per Proses", "\U0001f9fe Jenis Transaksi", "\U0001f3f7\ufe0f Vendor", "\U0001f4c8 Tren", "\U0001f4ca Jumlah Transaksi", "\U0001f4b0 Nilai Transaksi", "\U0001f4e5 Download Report", "\U0001f9e0 Analisis Data"]
-)
+_SLA_TAB_LABELS = [
+    "\U0001f50d Overview", "\U0001f9ee Per Proses", "\U0001f9fe Jenis Transaksi",
+    "\U0001f3f7\ufe0f Vendor", "\U0001f4c8 Tren", "\U0001f4ca Jumlah Transaksi",
+    "\U0001f4b0 Nilai Transaksi", "\U0001f4e5 Download Report", "\U0001f9e0 Analisis Data"
+]
+try:
+    _SLA_LAZY_TABS = "on_change" in inspect.signature(st.tabs).parameters
+except (ValueError, TypeError):
+    _SLA_LAZY_TABS = False
 
-with tab_overview:
-    st.subheader("\U0001f4ca KPI Verifikasi Dokumen Penagihan")
+# No UI changes: the original nine tab labels and their internal layout are preserved.
+if _SLA_LAZY_TABS:
+    _sla_main_tabs = st.tabs(_SLA_TAB_LABELS, on_change="rerun", key="sla_active_main_tab")
+else:
+    _sla_main_tabs = st.tabs(_SLA_TAB_LABELS)
 
-    # Hitung rata-rata SLA Keuangan
-    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
-        avg_keu_seconds = df_filtered["KEUANGAN"].mean()
-        avg_keu_days = round(avg_keu_seconds / 86400, 2)  # format desimal hari
-        avg_keu_text = seconds_to_sla_format(avg_keu_seconds)  # format hari jam menit detik
-    else:
-        avg_keu_seconds = None
-        avg_keu_days = None
-        avg_keu_text = "-"
+tab_overview, tab_proses, tab_transaksi, tab_vendor, tab_tren, tab_jumlah, tab_nilai, tab_report, tab_analisis = _sla_main_tabs
 
-    # Load target KPI dari file
-    saved_kpi = load_kpi()
+# Keep explicit-key widget selections across tab changes in lazy-render mode.
+# Streamlit normally cleans up widget state when its tab was not rendered.
+if _SLA_LAZY_TABS:
+    _sla_backup = st.session_state.setdefault('_sla_saved_widget_values', {})
+    for _sla_key, _sla_value in list(_sla_backup.items()):
+        if _sla_key not in st.session_state:
+            st.session_state[_sla_key] = _sla_value
 
-    # Input Target KPI (hanya admin)
-    if is_admin:
-        st.markdown("### \U0001f3af Atur Target KPI (Admin Only)")
-        new_kpi = st.number_input(
-            "Target KPI (hari, desimal)", 
-            min_value=0.0, step=0.1,
-            value=saved_kpi if saved_kpi else 1.5,
-            key="target_kpi_input"
-        )
-        if st.button("\U0001f4be Simpan Target KPI"):
-            save_kpi(new_kpi)
-            st.success(f"Target KPI berhasil disimpan: {new_kpi} hari")
-            saved_kpi = new_kpi
-    else:
-        if saved_kpi is None:
-            st.info("Belum ada Target KPI yang ditentukan admin.")
 
-    # Layout 3 kolom KPI
-    col1, col2, col3 = st.columns(3)
+if (not _SLA_LAZY_TABS) or bool(getattr(tab_overview, "open", False)):
+    with tab_overview:
+        st.subheader("\U0001f4ca KPI Verifikasi Dokumen Penagihan")
 
-    with col1:
-        st.markdown(f"""
+        # Hitung rata-rata SLA Keuangan
+        if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
+            avg_keu_seconds = df_filtered["KEUANGAN"].mean()
+            avg_keu_days = round(avg_keu_seconds / 86400, 2)  # format desimal hari
+            avg_keu_text = seconds_to_sla_format(avg_keu_seconds)  # format hari jam menit detik
+        else:
+            avg_keu_seconds = None
+            avg_keu_days = None
+            avg_keu_text = "-"
+
+        # Load target KPI dari file
+        saved_kpi = load_kpi()
+
+        # Input Target KPI (hanya admin)
+        if is_admin:
+            st.markdown("### \U0001f3af Atur Target KPI (Admin Only)")
+            new_kpi = st.number_input(
+                "Target KPI (hari, desimal)", 
+                min_value=0.0, step=0.1,
+                value=saved_kpi if saved_kpi else 1.5,
+                key="target_kpi_input"
+            )
+            if st.button("\U0001f4be Simpan Target KPI"):
+                save_kpi(new_kpi)
+                st.success(f"Target KPI berhasil disimpan: {new_kpi} hari")
+                saved_kpi = new_kpi
+        else:
+            if saved_kpi is None:
+                st.info("Belum ada Target KPI yang ditentukan admin.")
+
+        # Layout 3 kolom KPI
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.markdown(f"""
             <div class="kpi-card">
                 <div class="kpi-label">Target KPI Verifikasi Dokumen</div>
                 <div class="kpi-value">{saved_kpi if saved_kpi else "-" } hari</div>
             </div>
         """, unsafe_allow_html=True)
 
-    with col2:
-        st.markdown(f"""
+        with col2:
+            st.markdown(f"""
             <div class="kpi-card">
                 <div class="kpi-label">Pencapaian</div>
                 <div class="kpi-value">{avg_keu_text}</div>
@@ -933,1667 +1094,1669 @@ with tab_overview:
             </div>
         """, unsafe_allow_html=True)
 
-    with col3:
-        if saved_kpi and avg_keu_days is not None:
-            if avg_keu_days <= saved_kpi:
-                st.markdown("""
+        with col3:
+            if saved_kpi and avg_keu_days is not None:
+                if avg_keu_days <= saved_kpi:
+                    st.markdown("""
                     <div class="kpi-card">
                         <div class="kpi-label">Status</div>
                         <div class="kpi-status-on">\u2705 ON TARGET</div>
                     </div>
                 """, unsafe_allow_html=True)
-            else:
-                st.markdown("""
+                else:
+                    st.markdown("""
                     <div class="kpi-card">
                         <div class="kpi-label">Status</div>
                         <div class="kpi-status-off">\u274c NOT ON TARGET</div>
                     </div>
                 """, unsafe_allow_html=True)
-        else:
-            st.markdown("""
+            else:
+                st.markdown("""
                 <div class="kpi-card">
                     <div class="kpi-label">Status</div>
                     <div class="kpi-value">-</div>
                 </div>
             """, unsafe_allow_html=True)
 
-    # ==============================
-    # Tabel Rata-rata SLA Keuangan per Periode (wide format)
-    # ==============================
-    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
-        st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
-        st.subheader("\U0001f4ca Tabel Rata-rata SLA Keuangan (Hari) per Periode")
+        # ==============================
+        # Tabel Rata-rata SLA Keuangan per Periode (wide format)
+        # ==============================
+        if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
+            st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
+            st.subheader("\U0001f4ca Tabel Rata-rata SLA Keuangan (Hari) per Periode")
 
-        # Hitung rata-rata per periode
-        trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
-        trend_keu["PERIODE_SORTED"] = pd.Categorical(trend_keu[periode_col], categories=selected_periode, ordered=True)
-        trend_keu = trend_keu.sort_values("PERIODE_SORTED")
+            # Hitung rata-rata per periode
+            trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
+            trend_keu["PERIODE_SORTED"] = pd.Categorical(trend_keu[periode_col], categories=selected_periode, ordered=True)
+            trend_keu = trend_keu.sort_values("PERIODE_SORTED")
 
-        # Konversi ke hari desimal
-        trend_keu["Rata-rata SLA (hari)"] = (trend_keu["KEUANGAN"] / 86400).round(2)
+            # Konversi ke hari desimal
+            trend_keu["Rata-rata SLA (hari)"] = (trend_keu["KEUANGAN"] / 86400).round(2)
 
-        # Bentuk tabel wide format
-        table_data = pd.DataFrame(
-            [trend_keu["Rata-rata SLA (hari)"].tolist()],
-            columns=trend_keu[periode_col].tolist(),
-            index=["SLA Verifikasi Dokumen Penagihan"]
-        )
+            # Bentuk tabel wide format
+            table_data = pd.DataFrame(
+                [trend_keu["Rata-rata SLA (hari)"].tolist()],
+                columns=trend_keu[periode_col].tolist(),
+                index=["SLA Verifikasi Dokumen Penagihan"]
+            )
 
-        # Tampilkan tabel dengan styling
-        st.dataframe(table_data.style.format("{:.2f}"), use_container_width=True)
+            # Tampilkan tabel dengan styling
+            st.dataframe(table_data.style.format("{:.2f}"), use_container_width=True)
 
-    # ==============================
-    # Grafik SLA Keuangan per Periode (dengan label angka)
-    # ==============================
-    if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
-        st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
-        st.subheader("\U0001f4c8 Trend Rata-rata SLA Keuangan per Periode")
+        # ==============================
+        # Grafik SLA Keuangan per Periode (dengan label angka)
+        # ==============================
+        if "KEUANGAN" in df_filtered.columns and len(df_filtered) > 0:
+            st.markdown("<hr class='soft'/>", unsafe_allow_html=True)
+            st.subheader("\U0001f4c8 Trend Rata-rata SLA Keuangan per Periode")
 
-        # Hitung rata-rata per periode
-        trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
-        trend_keu["PERIODE_SORTED"] = pd.Categorical(trend_keu[periode_col], categories=selected_periode, ordered=True)
-        trend_keu = trend_keu.sort_values("PERIODE_SORTED")
+            # Hitung rata-rata per periode
+            trend_keu = df_filtered.groupby(df_filtered[periode_col].astype(str))["KEUANGAN"].mean().reset_index()
+            trend_keu["PERIODE_SORTED"] = pd.Categorical(trend_keu[periode_col], categories=selected_periode, ordered=True)
+            trend_keu = trend_keu.sort_values("PERIODE_SORTED")
 
-        # Konversi ke hari desimal
-        trend_keu["Rata-rata SLA (hari)"] = (trend_keu["KEUANGAN"] / 86400).round(2)
+            # Konversi ke hari desimal
+            trend_keu["Rata-rata SLA (hari)"] = (trend_keu["KEUANGAN"] / 86400).round(2)
 
-        # Plot line chart dengan label di dot
-        fig, ax = plt.subplots(figsize=(10, 5))
-        ax.plot(trend_keu[periode_col], trend_keu["Rata-rata SLA (hari)"], marker='o', color='#1f77b4')
+            # Plot line chart dengan label di dot
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.plot(trend_keu[periode_col], trend_keu["Rata-rata SLA (hari)"], marker='o', color='#1f77b4')
 
-        # Label angka
-        for i, val in enumerate(trend_keu["Rata-rata SLA (hari)"]):
-            ax.text(i, val, f"{val}", ha='center', va='bottom', fontsize=9, color="black", weight="bold")
+            # Label angka
+            for i, val in enumerate(trend_keu["Rata-rata SLA (hari)"]):
+                ax.text(i, val, f"{val}", ha='center', va='bottom', fontsize=9, color="black", weight="bold")
 
-        ax.set_title("Trend Rata-rata SLA Keuangan per Periode")
-        ax.set_xlabel("Periode")
-        ax.set_ylabel("Rata-rata SLA (hari)")
-        ax.grid(True, linestyle='--', alpha=0.7)
+            ax.set_title("Trend Rata-rata SLA Keuangan per Periode")
+            ax.set_xlabel("Periode")
+            ax.set_ylabel("Rata-rata SLA (hari)")
+            ax.grid(True, linestyle='--', alpha=0.7)
 
-        for label in ax.get_xticklabels():
-            label.set_rotation(45)
-            label.set_ha('right')
+            for label in ax.get_xticklabels():
+                label.set_rotation(45)
+                label.set_ha('right')
 
-        st.pyplot(fig)
-    else:
-        st.info("Tidak ada kolom SLA Keuangan yang bisa ditampilkan.")
-
-with tab_proses:
-    if available_sla_cols:
-        st.subheader("\U0001f4cc Rata-rata SLA per Proses (format hari jam menit detik)")
-        rata_proses_seconds = df_filtered[available_sla_cols].mean()
-        rata_proses = rata_proses_seconds.reset_index()
-        rata_proses.columns = ["Proses", "Rata-rata (detik)"]
-        rata_proses["Rata-rata SLA"] = rata_proses["Rata-rata (detik)"].apply(seconds_to_sla_format)
-        st.dataframe(rata_proses[["Proses", "Rata-rata SLA"]], use_container_width=True)
-
-        if proses_grafik_cols:
-            fig2, ax2 = plt.subplots(figsize=(8, 4))
-            values_hari = [rata_proses_seconds[col] / 86400 for col in proses_grafik_cols]
-            ax2.bar(proses_grafik_cols, values_hari, color='#75c8ff')
-            ax2.set_title("Rata-rata SLA per Proses (hari)")
-            ax2.set_ylabel("Rata-rata SLA (hari)")
-            ax2.set_xlabel("Proses")
-            ax2.grid(axis='y', linestyle='--', alpha=0.7)
-            st.pyplot(fig2)
-
-with tab_transaksi:
-    import os
-    import io
-    import html
-    import base64
-    import numpy as np
-    import pandas as pd
-    import plotly.express as px
-    import plotly.graph_objects as go
-    import streamlit.components.v1 as components
-    from PIL import Image, ImageDraw, ImageFont, ImageFilter
-
-    st.subheader("\U0001f9fe Analisis SLA per Jenis Transaksi")
-
-    # =====================================================
-    # LOCAL HELPERS
-    # =====================================================
-    def trx_fmt_int(x):
-        try:
-            return f"{int(x):,}".replace(",", ".")
-        except Exception:
-            return "-"
-
-    def trx_fmt_hari(x):
-        try:
-            if x is None or pd.isna(x):
-                return "-"
-            return f"{float(x):.2f} hari"
-        except Exception:
-            return "-"
-
-    def trx_seconds_to_text(seconds):
-        try:
-            if seconds is None or pd.isna(seconds):
-                return "-"
-            seconds = int(round(float(seconds)))
-            days = seconds // 86400
-            seconds %= 86400
-            hours = seconds // 3600
-            seconds %= 3600
-            minutes = seconds // 60
-            secs = seconds % 60
-
-            parts = []
-            if days > 0:
-                parts.append(f"{days} hari")
-            if hours > 0 or days > 0:
-                parts.append(f"{hours} jam")
-            if minutes > 0 or hours > 0 or days > 0:
-                parts.append(f"{minutes} menit")
-            parts.append(f"{secs} detik")
-            return " ".join(parts)
-        except Exception:
-            return "-"
-
-    def trx_safe_text(x, max_len=55):
-        x = str(x)
-        return x if len(x) <= max_len else x[:max_len] + "..."
-
-    def trx_html_list(items, max_items=None):
-        if not items:
-            return "<li>Belum ada insight yang dapat ditampilkan.</li>"
-        if max_items:
-            items = items[:max_items]
-        return "".join([f"<li>{html.escape(str(x))}</li>" for x in items])
-
-
-    def trx_norm_col_name(col):
-        """Normalisasi nama kolom agar deteksi kolom tahan terhadap spasi/titik/underscore."""
-        s = str(col).upper()
-        s = re.sub(r"[^A-Z0-9]+", " ", s)
-        return re.sub(r"\s+", " ", s).strip()
-
-    def trx_detect_permohonan_col(df):
-        """Deteksi kolom Nomor Permohonan secara fleksibel."""
-        exact_candidates = {
-            "NOMOR PERMOHONAN",
-            "NO PERMOHONAN",
-            "NO PERMOHONAN DOKUMEN",
-            "NOMOR PERMINTAAN",
-            "NO PERMINTAAN",
-            "NO REQUEST",
-            "REQUEST NUMBER",
-        }
-
-        for col in df.columns:
-            norm = trx_norm_col_name(col)
-            if norm in exact_candidates:
-                return col
-
-        for col in df.columns:
-            norm = trx_norm_col_name(col)
-            has_number_hint = any(token in norm.split() for token in ["NO", "NOMOR", "NUMBER"])
-            has_request_hint = any(token in norm for token in ["PERMOHONAN", "PERMINTAAN", "REQUEST"])
-            if has_number_hint and has_request_hint:
-                return col
-
-        return None
-
-    def trx_sorted_unique(series):
-        """Ambil unique value sebagai string, urut natural, dan tetap aman untuk NaN."""
-        values = (
-            series
-            .dropna()
-            .astype(str)
-            .map(str.strip)
-        )
-        values = [v for v in values.unique().tolist() if v and v.upper() not in ["NAN", "NONE"]]
-
-        def natural_key(x):
-            return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", str(x))]
-
-        return sorted(values, key=natural_key)
-
-    def trx_apply_main_filters(df_input, nomor_col, selected_permohonan, selected_jenis_data):
-        """Filter utama berbasis baris transaksi, sebelum proses agregasi jenis transaksi."""
-        df_out = df_input.copy()
-
-        if nomor_col and selected_permohonan and "ALL" not in selected_permohonan:
-            df_out = df_out[
-                df_out[nomor_col]
-                .astype(str)
-                .str.strip()
-                .isin([str(x).strip() for x in selected_permohonan])
-            ].copy()
-
-        if selected_jenis_data and "ALL" not in selected_jenis_data:
-            df_out = df_out[
-                df_out["JENIS TRANSAKSI"]
-                .astype(str)
-                .str.strip()
-                .isin([str(x).strip() for x in selected_jenis_data])
-            ].copy()
-
-        return df_out
-
-    def trx_filter_label(selected_values, all_label="ALL"):
-        if not selected_values or all_label in selected_values:
-            return "ALL"
-        if len(selected_values) <= 3:
-            return ", ".join([str(x) for x in selected_values])
-        return f"{len(selected_values)} pilihan"
-
-    def trx_get_font(size=28, bold=False):
-        candidates = []
-        if bold:
-            candidates = [
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-                "C:/Windows/Fonts/arialbd.ttf",
-                "arialbd.ttf",
-            ]
+            st.pyplot(fig)
         else:
-            candidates = [
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-                "C:/Windows/Fonts/arial.ttf",
-                "arial.ttf",
-            ]
+            st.info("Tidak ada kolom SLA Keuangan yang bisa ditampilkan.")
 
-        for path in candidates:
+if (not _SLA_LAZY_TABS) or bool(getattr(tab_proses, "open", False)):
+    with tab_proses:
+        if available_sla_cols:
+            st.subheader("\U0001f4cc Rata-rata SLA per Proses (format hari jam menit detik)")
+            rata_proses_seconds = df_filtered[available_sla_cols].mean()
+            rata_proses = rata_proses_seconds.reset_index()
+            rata_proses.columns = ["Proses", "Rata-rata (detik)"]
+            rata_proses["Rata-rata SLA"] = rata_proses["Rata-rata (detik)"].apply(seconds_to_sla_format)
+            st.dataframe(rata_proses[["Proses", "Rata-rata SLA"]], use_container_width=True)
+
+            if proses_grafik_cols:
+                fig2, ax2 = plt.subplots(figsize=(8, 4))
+                values_hari = [rata_proses_seconds[col] / 86400 for col in proses_grafik_cols]
+                ax2.bar(proses_grafik_cols, values_hari, color='#75c8ff')
+                ax2.set_title("Rata-rata SLA per Proses (hari)")
+                ax2.set_ylabel("Rata-rata SLA (hari)")
+                ax2.set_xlabel("Proses")
+                ax2.grid(axis='y', linestyle='--', alpha=0.7)
+                st.pyplot(fig2)
+
+if (not _SLA_LAZY_TABS) or bool(getattr(tab_transaksi, "open", False)):
+    with tab_transaksi:
+        import os
+        import io
+        import html
+        import base64
+        import numpy as np
+        import pandas as pd
+        import plotly.express as px
+        import plotly.graph_objects as go
+        import streamlit.components.v1 as components
+        from PIL import Image, ImageDraw, ImageFont, ImageFilter
+
+        st.subheader("\U0001f9fe Analisis SLA per Jenis Transaksi")
+
+        # =====================================================
+        # LOCAL HELPERS
+        # =====================================================
+        def trx_fmt_int(x):
             try:
-                return ImageFont.truetype(path, size)
+                return f"{int(x):,}".replace(",", ".")
             except Exception:
-                pass
+                return "-"
 
-        return ImageFont.load_default()
+        def trx_fmt_hari(x):
+            try:
+                if x is None or pd.isna(x):
+                    return "-"
+                return f"{float(x):.2f} hari"
+            except Exception:
+                return "-"
 
-    def trx_resample_filter():
-        try:
-            return Image.Resampling.LANCZOS
-        except Exception:
-            return Image.LANCZOS
+        def trx_seconds_to_text(seconds):
+            try:
+                if seconds is None or pd.isna(seconds):
+                    return "-"
+                seconds = int(round(float(seconds)))
+                days = seconds // 86400
+                seconds %= 86400
+                hours = seconds // 3600
+                seconds %= 3600
+                minutes = seconds // 60
+                secs = seconds % 60
 
-    def trx_base_dir():
-        try:
-            return os.path.dirname(os.path.abspath(__file__))
-        except Exception:
-            return os.getcwd()
+                parts = []
+                if days > 0:
+                    parts.append(f"{days} hari")
+                if hours > 0 or days > 0:
+                    parts.append(f"{hours} jam")
+                if minutes > 0 or hours > 0 or days > 0:
+                    parts.append(f"{minutes} menit")
+                parts.append(f"{secs} detik")
+                return " ".join(parts)
+            except Exception:
+                return "-"
 
-    def trx_logo_paths():
-        base_dir = trx_base_dir()
-        return [
-            os.path.join(base_dir, "asdp_logo.png"),
-            os.path.join(os.getcwd(), "asdp_logo.png"),
-            "asdp_logo.png",
-        ]
+        def trx_safe_text(x, max_len=55):
+            x = str(x)
+            return x if len(x) <= max_len else x[:max_len] + "..."
 
-    def trx_load_logo_image():
-        for path in trx_logo_paths():
-            if os.path.exists(path):
-                try:
-                    return Image.open(path).convert("RGBA")
-                except Exception:
-                    pass
-        return None
+        def trx_html_list(items, max_items=None):
+            if not items:
+                return "<li>Belum ada insight yang dapat ditampilkan.</li>"
+            if max_items:
+                items = items[:max_items]
+            return "".join([f"<li>{html.escape(str(x))}</li>" for x in items])
 
-    def trx_logo_data_uri():
-        for path in trx_logo_paths():
-            if os.path.exists(path):
-                try:
-                    with open(path, "rb") as f:
-                        b64 = base64.b64encode(f.read()).decode("utf-8")
-                    return f"data:image/png;base64,{b64}"
-                except Exception:
-                    pass
-        return ""
 
-    def trx_draw_wrapped_text(draw, text, xy, font, fill, max_width, line_gap=7):
-        x, y = xy
-        words = str(text).split()
-        lines = []
-        current = ""
+        def trx_norm_col_name(col):
+            """Normalisasi nama kolom agar deteksi kolom tahan terhadap spasi/titik/underscore."""
+            s = str(col).upper()
+            s = re.sub(r"[^A-Z0-9]+", " ", s)
+            return re.sub(r"\s+", " ", s).strip()
 
-        for word in words:
-            test = current + (" " if current else "") + word
-            bbox = draw.textbbox((0, 0), test, font=font)
-            width = bbox[2] - bbox[0]
-
-            if width <= max_width:
-                current = test
-            else:
-                if current:
-                    lines.append(current)
-                current = word
-
-        if current:
-            lines.append(current)
-
-        for line in lines:
-            draw.text((x, y), line, font=font, fill=fill)
-            bbox = draw.textbbox((0, 0), line, font=font)
-            y += (bbox[3] - bbox[1]) + line_gap
-
-        return y
-
-    def trx_round_rect(draw, box, radius, fill, outline=None, width=1):
-        draw.rounded_rectangle(
-            box,
-            radius=radius,
-            fill=fill,
-            outline=outline,
-            width=width,
-        )
-
-    def trx_gradient_bg(width, height):
-        img = Image.new("RGB", (width, height), "#07111f")
-        draw = ImageDraw.Draw(img)
-
-        top = (4, 13, 33)
-        mid = (10, 38, 84)
-        bottom = (0, 105, 120)
-
-        for y in range(height):
-            t = y / max(height - 1, 1)
-            if t < 0.55:
-                k = t / 0.55
-                r = int(top[0] * (1 - k) + mid[0] * k)
-                g = int(top[1] * (1 - k) + mid[1] * k)
-                b = int(top[2] * (1 - k) + mid[2] * k)
-            else:
-                k = (t - 0.55) / 0.45
-                r = int(mid[0] * (1 - k) + bottom[0] * k)
-                g = int(mid[1] * (1 - k) + bottom[1] * k)
-                b = int(mid[2] * (1 - k) + bottom[2] * k)
-
-            draw.line([(0, y), (width, y)], fill=(r, g, b))
-
-        return img.convert("RGBA")
-
-    # =====================================================
-    # AI INSIGHT
-    # =====================================================
-    def trx_generate_ai_insight(trx_ai_base, proses_bottleneck_cols):
-        if trx_ai_base is None or trx_ai_base.empty:
-            return {
-                "headline": "Belum ada data yang cukup untuk menghasilkan insight.",
-                "summary": [],
-                "risks": [],
-                "recommendations": [],
-                "priority_df": pd.DataFrame(),
-                "status_label": "NO DATA",
-                "status_class": "trx-status-neutral",
-                "p1_count": 0,
-                "bottleneck_proses": "-",
-                "bottleneck_value": np.nan,
+        def trx_detect_permohonan_col(df):
+            """Deteksi kolom Nomor Permohonan secara fleksibel."""
+            exact_candidates = {
+                "NOMOR PERMOHONAN",
+                "NO PERMOHONAN",
+                "NO PERMOHONAN DOKUMEN",
+                "NOMOR PERMINTAAN",
+                "NO PERMINTAAN",
+                "NO REQUEST",
+                "REQUEST NUMBER",
             }
 
-        df_ai = trx_ai_base.copy()
+            for col in df.columns:
+                norm = trx_norm_col_name(col)
+                if norm in exact_candidates:
+                    return col
 
-        fastest = df_ai.sort_values("SLA Utama (hari)", ascending=True).iloc[0]
-        slowest = df_ai.sort_values("SLA Utama (hari)", ascending=False).iloc[0]
-        biggest = df_ai.sort_values("Jumlah Transaksi", ascending=False).iloc[0]
+            for col in df.columns:
+                norm = trx_norm_col_name(col)
+                has_number_hint = any(token in norm.split() for token in ["NO", "NOMOR", "NUMBER"])
+                has_request_hint = any(token in norm for token in ["PERMOHONAN", "PERMINTAAN", "REQUEST"])
+                if has_number_hint and has_request_hint:
+                    return col
 
-        avg_sla = df_ai["SLA Utama (hari)"].mean()
-        max_sla = df_ai["SLA Utama (hari)"].max()
-
-        proses_hari_cols = [
-            f"{p} (hari)"
-            for p in proses_bottleneck_cols
-            if f"{p} (hari)" in df_ai.columns
-        ]
-
-        bottleneck_proses = "-"
-        bottleneck_value = np.nan
-        bottleneck_text = "-"
-
-        if proses_hari_cols:
-            proses_mean = df_ai[proses_hari_cols].mean().dropna().sort_values(ascending=False)
-            if not proses_mean.empty:
-                bottleneck_col = proses_mean.index[0]
-                bottleneck_proses = bottleneck_col.replace(" (hari)", "")
-                bottleneck_value = proses_mean.iloc[0]
-                bottleneck_text = f"{bottleneck_proses} dengan rata-rata {trx_fmt_hari(bottleneck_value)}"
-
-        sla_threshold = df_ai["SLA Utama (hari)"].median()
-        volume_threshold = df_ai["Jumlah Transaksi"].median()
-
-        def priority_label(row):
-            high_sla = row["SLA Utama (hari)"] >= sla_threshold
-            high_vol = row["Jumlah Transaksi"] >= volume_threshold
-
-            if high_sla and high_vol:
-                return "Prioritas 1 \u2014 SLA tinggi & volume besar"
-            elif high_sla and not high_vol:
-                return "Prioritas 2 \u2014 SLA tinggi"
-            elif not high_sla and high_vol:
-                return "Prioritas 3 \u2014 Volume besar"
-            else:
-                return "Normal"
-
-        df_ai["Prioritas AI"] = df_ai.apply(priority_label, axis=1)
-
-        priority_order = {
-            "Prioritas 1 \u2014 SLA tinggi & volume besar": 1,
-            "Prioritas 2 \u2014 SLA tinggi": 2,
-            "Prioritas 3 \u2014 Volume besar": 3,
-            "Normal": 4,
-        }
-
-        df_ai["__PRIORITY_SORT__"] = df_ai["Prioritas AI"].map(priority_order).fillna(9)
-
-        priority_df = (
-            df_ai[
-                [
-                    "JENIS TRANSAKSI",
-                    "Jumlah Transaksi",
-                    "SLA Utama (hari)",
-                    "Prioritas AI",
-                    "__PRIORITY_SORT__",
-                ]
-            ]
-            .sort_values(
-                by=["__PRIORITY_SORT__", "SLA Utama (hari)", "Jumlah Transaksi"],
-                ascending=[True, False, False],
-            )
-            .drop(columns=["__PRIORITY_SORT__"])
-        )
-
-        p1_df = df_ai[df_ai["Prioritas AI"].str.contains("Prioritas 1", na=False)]
-        p1_count = len(p1_df)
-
-        if p1_count >= 3:
-            status_label = "CRITICAL"
-            status_class = "trx-status-critical"
-        elif p1_count >= 1:
-            status_label = "WATCHLIST"
-            status_class = "trx-status-watch"
-        else:
-            status_label = "CONTROLLED"
-            status_class = "trx-status-good"
-
-        if not p1_df.empty:
-            top_priority = p1_df.sort_values(
-                ["SLA Utama (hari)", "Jumlah Transaksi"],
-                ascending=[False, False],
-            ).iloc[0]
-
-            headline = (
-                f"Fokus utama perbaikan adalah jenis transaksi "
-                f"\u201c{trx_safe_text(top_priority['JENIS TRANSAKSI'])}\u201d karena memiliki kombinasi "
-                f"SLA relatif tinggi ({trx_fmt_hari(top_priority['SLA Utama (hari)'])}) "
-                f"dan volume transaksi besar ({trx_fmt_int(top_priority['Jumlah Transaksi'])} transaksi)."
-            )
-        else:
-            headline = (
-                f"Secara umum, SLA jenis transaksi relatif terkendali. "
-                f"Namun jenis transaksi \u201c{trx_safe_text(slowest['JENIS TRANSAKSI'])}\u201d tetap perlu dimonitor "
-                f"karena menjadi kategori dengan SLA paling lama, yaitu "
-                f"{trx_fmt_hari(slowest['SLA Utama (hari)'])}."
-            )
-
-        summary = [
-            f"Jenis transaksi tercepat adalah \u201c{trx_safe_text(fastest['JENIS TRANSAKSI'])}\u201d dengan SLA rata-rata {trx_fmt_hari(fastest['SLA Utama (hari)'])}.",
-            f"Jenis transaksi terlama adalah \u201c{trx_safe_text(slowest['JENIS TRANSAKSI'])}\u201d dengan SLA rata-rata {trx_fmt_hari(slowest['SLA Utama (hari)'])}.",
-            f"Jenis transaksi dengan volume terbesar adalah \u201c{trx_safe_text(biggest['JENIS TRANSAKSI'])}\u201d sebanyak {trx_fmt_int(biggest['Jumlah Transaksi'])} transaksi.",
-            f"Bottleneck proses terbesar terindikasi pada proses {bottleneck_text}.",
-        ]
-
-        risks = []
-
-        if pd.notna(avg_sla) and avg_sla > 0 and pd.notna(max_sla) and max_sla > avg_sla * 1.5:
-            risks.append(
-                f"Terdapat outlier SLA: kategori \u201c{trx_safe_text(slowest['JENIS TRANSAKSI'])}\u201d jauh di atas rata-rata keseluruhan."
-            )
-
-        if p1_count > 0:
-            risks.append(
-                f"Terdapat {p1_count} jenis transaksi prioritas tinggi karena SLA dan volume sama-sama relatif besar."
-            )
-
-        if bottleneck_proses != "-" and not pd.isna(bottleneck_value):
-            risks.append(
-                f"Proses {bottleneck_proses} berpotensi menjadi titik perlambatan utama pada siklus dokumen."
-            )
-
-        if not risks:
-            risks.append("Tidak terdapat anomali besar pada data yang sedang ditampilkan.")
-
-        recommendations = []
-
-        if not p1_df.empty:
-            top3 = p1_df.sort_values(
-                ["SLA Utama (hari)", "Jumlah Transaksi"],
-                ascending=[False, False],
-            ).head(3)
-
-            focus_names = ", ".join(
-                [f"\u201c{trx_safe_text(x)}\u201d" for x in top3["JENIS TRANSAKSI"].tolist()]
-            )
-
-            recommendations.append(
-                f"Prioritaskan review proses untuk {focus_names}, karena kategori tersebut paling berdampak terhadap SLA keseluruhan."
-            )
-        else:
-            recommendations.append(
-                f"Fokus monitoring cukup diarahkan pada kategori dengan SLA tertinggi, yaitu \u201c{trx_safe_text(slowest['JENIS TRANSAKSI'])}\u201d."
-            )
-
-        if bottleneck_proses != "-":
-            recommendations.append(
-                f"Lakukan pendalaman pada proses {bottleneck_proses}, termasuk cek antrean dokumen, approval, kelengkapan dokumen, dan pola keterlambatan per vendor/unit."
-            )
-
-        recommendations.append(
-            "Gunakan bubble matrix untuk menentukan quick win: dahulukan titik kanan-atas karena menunjukkan volume besar dan SLA tinggi."
-        )
-
-        return {
-            "headline": headline,
-            "summary": summary,
-            "risks": risks,
-            "recommendations": recommendations,
-            "priority_df": priority_df,
-            "status_label": status_label,
-            "status_class": status_class,
-            "p1_count": p1_count,
-            "bottleneck_proses": bottleneck_proses,
-            "bottleneck_value": bottleneck_value,
-        }
-
-    # =====================================================
-    # CHART BUILDERS
-    # =====================================================
-    def trx_build_rank_fig(trx_view, sla_utama_label):
-        fig = px.bar(
-            trx_view.sort_values("SLA Utama (hari)", ascending=True),
-            x="SLA Utama (hari)",
-            y="JENIS TRANSAKSI",
-            orientation="h",
-            text="SLA Utama (hari)",
-            color="SLA Utama (hari)",
-            color_continuous_scale="Tealrose",
-            hover_data={"Jumlah Transaksi": True, "SLA Utama (hari)": ":.2f"},
-            title=f"Ranking Rata-rata SLA \u2014 Acuan: {sla_utama_label}",
-        )
-
-        fig.update_traces(
-            texttemplate="%{text:.2f} hari",
-            textposition="outside",
-            marker_line_width=0,
-        )
-
-        fig.update_layout(
-            height=max(430, 42 * len(trx_view)),
-            xaxis_title="Rata-rata SLA (hari)",
-            yaxis_title="Jenis Transaksi",
-            coloraxis_showscale=False,
-            margin=dict(l=20, r=80, t=70, b=30),
-            title_font=dict(size=20),
-        )
-
-        return fig
-
-    def trx_build_heat_fig(trx_view, chart_proses_cols):
-        value_cols = [
-            f"{c} (hari)"
-            for c in chart_proses_cols
-            if f"{c} (hari)" in trx_view.columns
-        ]
-
-        if not value_cols:
             return None
 
-        heatmap_data = trx_view.set_index("JENIS TRANSAKSI")[value_cols].copy()
-        heatmap_data.columns = [c.replace(" (hari)", "") for c in value_cols]
+        def trx_sorted_unique(series):
+            """Ambil unique value sebagai string, urut natural, dan tetap aman untuk NaN."""
+            values = (
+                series
+                .dropna()
+                .astype(str)
+                .map(str.strip)
+            )
+            values = [v for v in values.unique().tolist() if v and v.upper() not in ["NAN", "NONE"]]
 
-        fig = px.imshow(
-            heatmap_data,
-            text_auto=".2f",
-            aspect="auto",
-            color_continuous_scale="Turbo",
-            title="Peta Panas Rata-rata SLA: Jenis Transaksi vs Proses",
-        )
+            def natural_key(x):
+                return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", str(x))]
 
-        fig.update_layout(
-            height=max(430, 38 * len(heatmap_data)),
-            xaxis_title="Proses",
-            yaxis_title="Jenis Transaksi",
-            margin=dict(l=20, r=20, t=70, b=40),
-            title_font=dict(size=20),
-        )
+            return sorted(values, key=natural_key)
 
-        fig.update_traces(
-            hovertemplate="<b>%{y}</b><br>Proses: %{x}<br>SLA: %{z:.2f} hari<extra></extra>"
-        )
+        def trx_apply_main_filters(df_input, nomor_col, selected_permohonan, selected_jenis_data):
+            """Filter utama berbasis baris transaksi, sebelum proses agregasi jenis transaksi."""
+            df_out = df_input.copy()
 
-        return fig
+            if nomor_col and selected_permohonan and "ALL" not in selected_permohonan:
+                df_out = df_out[
+                    df_out[nomor_col]
+                    .astype(str)
+                    .str.strip()
+                    .isin([str(x).strip() for x in selected_permohonan])
+                ].copy()
 
-    def trx_build_group_fig(trx_long_view):
-        fig = px.bar(
-            trx_long_view,
-            x="JENIS TRANSAKSI",
-            y="Rata-rata SLA (hari)",
-            color="Proses",
-            barmode="group",
-            text="Rata-rata SLA (hari)",
-            title="Rata-rata SLA Masing-masing Proses per Jenis Transaksi",
-            hover_data={"Jumlah Transaksi": True, "Rata-rata SLA (hari)": ":.2f"},
-        )
+            if selected_jenis_data and "ALL" not in selected_jenis_data:
+                df_out = df_out[
+                    df_out["JENIS TRANSAKSI"]
+                    .astype(str)
+                    .str.strip()
+                    .isin([str(x).strip() for x in selected_jenis_data])
+                ].copy()
 
-        fig.update_traces(
-            texttemplate="%{text:.1f}",
-            textposition="outside",
-        )
+            return df_out
 
-        fig.update_layout(
-            height=560,
-            xaxis_title="Jenis Transaksi",
-            yaxis_title="Rata-rata SLA (hari)",
-            legend_title="Proses",
-            margin=dict(l=20, r=20, t=70, b=140),
-            title_font=dict(size=20),
-            xaxis_tickangle=-35,
-        )
+        def trx_filter_label(selected_values, all_label="ALL"):
+            if not selected_values or all_label in selected_values:
+                return "ALL"
+            if len(selected_values) <= 3:
+                return ", ".join([str(x) for x in selected_values])
+            return f"{len(selected_values)} pilihan"
 
-        return fig
+        def trx_get_font(size=28, bold=False):
+            candidates = []
+            if bold:
+                candidates = [
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                    "C:/Windows/Fonts/arialbd.ttf",
+                    "arialbd.ttf",
+                ]
+            else:
+                candidates = [
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                    "C:/Windows/Fonts/arial.ttf",
+                    "arial.ttf",
+                ]
 
-    def trx_build_bubble_fig(trx_view):
-        median_volume = trx_view["Jumlah Transaksi"].median()
-        median_sla = trx_view["SLA Utama (hari)"].median()
+            for path in candidates:
+                try:
+                    return ImageFont.truetype(path, size)
+                except Exception:
+                    pass
 
-        fig = px.scatter(
-            trx_view,
-            x="Jumlah Transaksi",
-            y="SLA Utama (hari)",
-            size="Jumlah Transaksi",
-            color="SLA Utama (hari)",
-            color_continuous_scale="Plasma",
-            hover_name="JENIS TRANSAKSI",
-            text="JENIS TRANSAKSI",
-            size_max=58,
-            title="Peta Prioritas: Volume Besar dan SLA Tinggi",
-        )
+            return ImageFont.load_default()
 
-        fig.add_vline(
-            x=median_volume,
-            line_dash="dash",
-            line_color="gray",
-            annotation_text="Median Volume",
-            annotation_position="top left",
-        )
+        def trx_resample_filter():
+            try:
+                return Image.Resampling.LANCZOS
+            except Exception:
+                return Image.LANCZOS
 
-        fig.add_hline(
-            y=median_sla,
-            line_dash="dash",
-            line_color="gray",
-            annotation_text="Median SLA",
-            annotation_position="bottom right",
-        )
+        def trx_base_dir():
+            try:
+                return os.path.dirname(os.path.abspath(__file__))
+            except Exception:
+                return os.getcwd()
 
-        fig.update_traces(
-            textposition="top center",
-            marker=dict(opacity=0.78, line=dict(width=1, color="white")),
-        )
+        def trx_logo_paths():
+            base_dir = trx_base_dir()
+            return [
+                os.path.join(base_dir, "asdp_logo.png"),
+                os.path.join(os.getcwd(), "asdp_logo.png"),
+                "asdp_logo.png",
+            ]
 
-        fig.update_layout(
-            height=580,
-            xaxis_title="Jumlah Transaksi",
-            yaxis_title="Rata-rata SLA (hari)",
-            coloraxis_colorbar_title="SLA Hari",
-            margin=dict(l=20, r=20, t=70, b=40),
-            title_font=dict(size=20),
-        )
+        def trx_load_logo_image():
+            for path in trx_logo_paths():
+                if os.path.exists(path):
+                    try:
+                        return Image.open(path).convert("RGBA")
+                    except Exception:
+                        pass
+            return None
 
-        return fig
+        def trx_logo_data_uri():
+            for path in trx_logo_paths():
+                if os.path.exists(path):
+                    try:
+                        with open(path, "rb") as f:
+                            b64 = base64.b64encode(f.read()).decode("utf-8")
+                        return f"data:image/png;base64,{b64}"
+                    except Exception:
+                        pass
+            return ""
 
-    def trx_build_donut_fig(trx_view):
-        fig = px.pie(
-            trx_view,
-            values="Jumlah Transaksi",
-            names="JENIS TRANSAKSI",
-            hole=0.58,
-            title="Komposisi Transaksi berdasarkan Jenis Transaksi",
-        )
+        def trx_draw_wrapped_text(draw, text, xy, font, fill, max_width, line_gap=7):
+            x, y = xy
+            words = str(text).split()
+            lines = []
+            current = ""
 
-        fig.update_traces(
-            textposition="inside",
-            textinfo="percent+label",
-            pull=[0.03] * len(trx_view),
-        )
+            for word in words:
+                test = current + (" " if current else "") + word
+                bbox = draw.textbbox((0, 0), test, font=font)
+                width = bbox[2] - bbox[0]
 
-        fig.update_layout(
-            height=530,
-            margin=dict(l=20, r=20, t=70, b=30),
-            title_font=dict(size=20),
-            legend_title="Jenis Transaksi",
-        )
+                if width <= max_width:
+                    current = test
+                else:
+                    if current:
+                        lines.append(current)
+                    current = word
 
-        return fig
+            if current:
+                lines.append(current)
 
-    def trx_build_process_fig(data_proses, proses):
-        col_hari = f"{proses} (hari)"
+            for line in lines:
+                draw.text((x, y), line, font=font, fill=fill)
+                bbox = draw.textbbox((0, 0), line, font=font)
+                y += (bbox[3] - bbox[1]) + line_gap
 
-        fig = px.bar(
-            data_proses,
-            x=col_hari,
-            y="JENIS TRANSAKSI",
-            orientation="h",
-            text=col_hari,
-            color=col_hari,
-            color_continuous_scale="Blues",
-            title=f"SLA {proses}",
-        )
+            return y
 
-        fig.update_traces(
-            texttemplate="%{text:.2f}",
-            textposition="outside",
-            marker_line_width=0,
-        )
+        def trx_round_rect(draw, box, radius, fill, outline=None, width=1):
+            draw.rounded_rectangle(
+                box,
+                radius=radius,
+                fill=fill,
+                outline=outline,
+                width=width,
+            )
 
-        fig.update_layout(
-            height=max(360, 32 * len(data_proses)),
-            xaxis_title="Hari",
-            yaxis_title="",
-            coloraxis_showscale=False,
-            margin=dict(l=10, r=55, t=55, b=25),
-            title_font=dict(size=16),
-        )
+        def trx_gradient_bg(width, height):
+            img = Image.new("RGB", (width, height), "#07111f")
+            draw = ImageDraw.Draw(img)
 
-        return fig
+            top = (4, 13, 33)
+            mid = (10, 38, 84)
+            bottom = (0, 105, 120)
 
-    def trx_build_detail_fig(detail_chart, selected_detail):
-        fig = go.Figure()
+            for y in range(height):
+                t = y / max(height - 1, 1)
+                if t < 0.55:
+                    k = t / 0.55
+                    r = int(top[0] * (1 - k) + mid[0] * k)
+                    g = int(top[1] * (1 - k) + mid[1] * k)
+                    b = int(top[2] * (1 - k) + mid[2] * k)
+                else:
+                    k = (t - 0.55) / 0.45
+                    r = int(mid[0] * (1 - k) + bottom[0] * k)
+                    g = int(mid[1] * (1 - k) + bottom[1] * k)
+                    b = int(mid[2] * (1 - k) + bottom[2] * k)
 
-        fig.add_trace(
-            go.Bar(
-                x=detail_chart["Proses"],
-                y=detail_chart["Rata-rata SLA (hari)"],
-                text=detail_chart["Rata-rata SLA (hari)"],
+                draw.line([(0, y), (width, y)], fill=(r, g, b))
+
+            return img.convert("RGBA")
+
+        # =====================================================
+        # AI INSIGHT
+        # =====================================================
+        def trx_generate_ai_insight(trx_ai_base, proses_bottleneck_cols):
+            if trx_ai_base is None or trx_ai_base.empty:
+                return {
+                    "headline": "Belum ada data yang cukup untuk menghasilkan insight.",
+                    "summary": [],
+                    "risks": [],
+                    "recommendations": [],
+                    "priority_df": pd.DataFrame(),
+                    "status_label": "NO DATA",
+                    "status_class": "trx-status-neutral",
+                    "p1_count": 0,
+                    "bottleneck_proses": "-",
+                    "bottleneck_value": np.nan,
+                }
+
+            df_ai = trx_ai_base.copy()
+
+            fastest = df_ai.sort_values("SLA Utama (hari)", ascending=True).iloc[0]
+            slowest = df_ai.sort_values("SLA Utama (hari)", ascending=False).iloc[0]
+            biggest = df_ai.sort_values("Jumlah Transaksi", ascending=False).iloc[0]
+
+            avg_sla = df_ai["SLA Utama (hari)"].mean()
+            max_sla = df_ai["SLA Utama (hari)"].max()
+
+            proses_hari_cols = [
+                f"{p} (hari)"
+                for p in proses_bottleneck_cols
+                if f"{p} (hari)" in df_ai.columns
+            ]
+
+            bottleneck_proses = "-"
+            bottleneck_value = np.nan
+            bottleneck_text = "-"
+
+            if proses_hari_cols:
+                proses_mean = df_ai[proses_hari_cols].mean().dropna().sort_values(ascending=False)
+                if not proses_mean.empty:
+                    bottleneck_col = proses_mean.index[0]
+                    bottleneck_proses = bottleneck_col.replace(" (hari)", "")
+                    bottleneck_value = proses_mean.iloc[0]
+                    bottleneck_text = f"{bottleneck_proses} dengan rata-rata {trx_fmt_hari(bottleneck_value)}"
+
+            sla_threshold = df_ai["SLA Utama (hari)"].median()
+            volume_threshold = df_ai["Jumlah Transaksi"].median()
+
+            def priority_label(row):
+                high_sla = row["SLA Utama (hari)"] >= sla_threshold
+                high_vol = row["Jumlah Transaksi"] >= volume_threshold
+
+                if high_sla and high_vol:
+                    return "Prioritas 1 \u2014 SLA tinggi & volume besar"
+                elif high_sla and not high_vol:
+                    return "Prioritas 2 \u2014 SLA tinggi"
+                elif not high_sla and high_vol:
+                    return "Prioritas 3 \u2014 Volume besar"
+                else:
+                    return "Normal"
+
+            df_ai["Prioritas AI"] = df_ai.apply(priority_label, axis=1)
+
+            priority_order = {
+                "Prioritas 1 \u2014 SLA tinggi & volume besar": 1,
+                "Prioritas 2 \u2014 SLA tinggi": 2,
+                "Prioritas 3 \u2014 Volume besar": 3,
+                "Normal": 4,
+            }
+
+            df_ai["__PRIORITY_SORT__"] = df_ai["Prioritas AI"].map(priority_order).fillna(9)
+
+            priority_df = (
+                df_ai[
+                    [
+                        "JENIS TRANSAKSI",
+                        "Jumlah Transaksi",
+                        "SLA Utama (hari)",
+                        "Prioritas AI",
+                        "__PRIORITY_SORT__",
+                    ]
+                ]
+                .sort_values(
+                    by=["__PRIORITY_SORT__", "SLA Utama (hari)", "Jumlah Transaksi"],
+                    ascending=[True, False, False],
+                )
+                .drop(columns=["__PRIORITY_SORT__"])
+            )
+
+            p1_df = df_ai[df_ai["Prioritas AI"].str.contains("Prioritas 1", na=False)]
+            p1_count = len(p1_df)
+
+            if p1_count >= 3:
+                status_label = "CRITICAL"
+                status_class = "trx-status-critical"
+            elif p1_count >= 1:
+                status_label = "WATCHLIST"
+                status_class = "trx-status-watch"
+            else:
+                status_label = "CONTROLLED"
+                status_class = "trx-status-good"
+
+            if not p1_df.empty:
+                top_priority = p1_df.sort_values(
+                    ["SLA Utama (hari)", "Jumlah Transaksi"],
+                    ascending=[False, False],
+                ).iloc[0]
+
+                headline = (
+                    f"Fokus utama perbaikan adalah jenis transaksi "
+                    f"\u201c{trx_safe_text(top_priority['JENIS TRANSAKSI'])}\u201d karena memiliki kombinasi "
+                    f"SLA relatif tinggi ({trx_fmt_hari(top_priority['SLA Utama (hari)'])}) "
+                    f"dan volume transaksi besar ({trx_fmt_int(top_priority['Jumlah Transaksi'])} transaksi)."
+                )
+            else:
+                headline = (
+                    f"Secara umum, SLA jenis transaksi relatif terkendali. "
+                    f"Namun jenis transaksi \u201c{trx_safe_text(slowest['JENIS TRANSAKSI'])}\u201d tetap perlu dimonitor "
+                    f"karena menjadi kategori dengan SLA paling lama, yaitu "
+                    f"{trx_fmt_hari(slowest['SLA Utama (hari)'])}."
+                )
+
+            summary = [
+                f"Jenis transaksi tercepat adalah \u201c{trx_safe_text(fastest['JENIS TRANSAKSI'])}\u201d dengan SLA rata-rata {trx_fmt_hari(fastest['SLA Utama (hari)'])}.",
+                f"Jenis transaksi terlama adalah \u201c{trx_safe_text(slowest['JENIS TRANSAKSI'])}\u201d dengan SLA rata-rata {trx_fmt_hari(slowest['SLA Utama (hari)'])}.",
+                f"Jenis transaksi dengan volume terbesar adalah \u201c{trx_safe_text(biggest['JENIS TRANSAKSI'])}\u201d sebanyak {trx_fmt_int(biggest['Jumlah Transaksi'])} transaksi.",
+                f"Bottleneck proses terbesar terindikasi pada proses {bottleneck_text}.",
+            ]
+
+            risks = []
+
+            if pd.notna(avg_sla) and avg_sla > 0 and pd.notna(max_sla) and max_sla > avg_sla * 1.5:
+                risks.append(
+                    f"Terdapat outlier SLA: kategori \u201c{trx_safe_text(slowest['JENIS TRANSAKSI'])}\u201d jauh di atas rata-rata keseluruhan."
+                )
+
+            if p1_count > 0:
+                risks.append(
+                    f"Terdapat {p1_count} jenis transaksi prioritas tinggi karena SLA dan volume sama-sama relatif besar."
+                )
+
+            if bottleneck_proses != "-" and not pd.isna(bottleneck_value):
+                risks.append(
+                    f"Proses {bottleneck_proses} berpotensi menjadi titik perlambatan utama pada siklus dokumen."
+                )
+
+            if not risks:
+                risks.append("Tidak terdapat anomali besar pada data yang sedang ditampilkan.")
+
+            recommendations = []
+
+            if not p1_df.empty:
+                top3 = p1_df.sort_values(
+                    ["SLA Utama (hari)", "Jumlah Transaksi"],
+                    ascending=[False, False],
+                ).head(3)
+
+                focus_names = ", ".join(
+                    [f"\u201c{trx_safe_text(x)}\u201d" for x in top3["JENIS TRANSAKSI"].tolist()]
+                )
+
+                recommendations.append(
+                    f"Prioritaskan review proses untuk {focus_names}, karena kategori tersebut paling berdampak terhadap SLA keseluruhan."
+                )
+            else:
+                recommendations.append(
+                    f"Fokus monitoring cukup diarahkan pada kategori dengan SLA tertinggi, yaitu \u201c{trx_safe_text(slowest['JENIS TRANSAKSI'])}\u201d."
+                )
+
+            if bottleneck_proses != "-":
+                recommendations.append(
+                    f"Lakukan pendalaman pada proses {bottleneck_proses}, termasuk cek antrean dokumen, approval, kelengkapan dokumen, dan pola keterlambatan per vendor/unit."
+                )
+
+            recommendations.append(
+                "Gunakan bubble matrix untuk menentukan quick win: dahulukan titik kanan-atas karena menunjukkan volume besar dan SLA tinggi."
+            )
+
+            return {
+                "headline": headline,
+                "summary": summary,
+                "risks": risks,
+                "recommendations": recommendations,
+                "priority_df": priority_df,
+                "status_label": status_label,
+                "status_class": status_class,
+                "p1_count": p1_count,
+                "bottleneck_proses": bottleneck_proses,
+                "bottleneck_value": bottleneck_value,
+            }
+
+        # =====================================================
+        # CHART BUILDERS
+        # =====================================================
+        def trx_build_rank_fig(trx_view, sla_utama_label):
+            fig = px.bar(
+                trx_view.sort_values("SLA Utama (hari)", ascending=True),
+                x="SLA Utama (hari)",
+                y="JENIS TRANSAKSI",
+                orientation="h",
+                text="SLA Utama (hari)",
+                color="SLA Utama (hari)",
+                color_continuous_scale="Tealrose",
+                hover_data={"Jumlah Transaksi": True, "SLA Utama (hari)": ":.2f"},
+                title=f"Ranking Rata-rata SLA \u2014 Acuan: {sla_utama_label}",
+            )
+
+            fig.update_traces(
                 texttemplate="%{text:.2f} hari",
                 textposition="outside",
-                marker=dict(
-                    color=detail_chart["Rata-rata SLA (hari)"],
-                    colorscale="Viridis",
-                    line=dict(width=0),
+                marker_line_width=0,
+            )
+
+            fig.update_layout(
+                height=max(430, 42 * len(trx_view)),
+                xaxis_title="Rata-rata SLA (hari)",
+                yaxis_title="Jenis Transaksi",
+                coloraxis_showscale=False,
+                margin=dict(l=20, r=80, t=70, b=30),
+                title_font=dict(size=20),
+            )
+
+            return fig
+
+        def trx_build_heat_fig(trx_view, chart_proses_cols):
+            value_cols = [
+                f"{c} (hari)"
+                for c in chart_proses_cols
+                if f"{c} (hari)" in trx_view.columns
+            ]
+
+            if not value_cols:
+                return None
+
+            heatmap_data = trx_view.set_index("JENIS TRANSAKSI")[value_cols].copy()
+            heatmap_data.columns = [c.replace(" (hari)", "") for c in value_cols]
+
+            fig = px.imshow(
+                heatmap_data,
+                text_auto=".2f",
+                aspect="auto",
+                color_continuous_scale="Turbo",
+                title="Peta Panas Rata-rata SLA: Jenis Transaksi vs Proses",
+            )
+
+            fig.update_layout(
+                height=max(430, 38 * len(heatmap_data)),
+                xaxis_title="Proses",
+                yaxis_title="Jenis Transaksi",
+                margin=dict(l=20, r=20, t=70, b=40),
+                title_font=dict(size=20),
+            )
+
+            fig.update_traces(
+                hovertemplate="<b>%{y}</b><br>Proses: %{x}<br>SLA: %{z:.2f} hari<extra></extra>"
+            )
+
+            return fig
+
+        def trx_build_group_fig(trx_long_view):
+            fig = px.bar(
+                trx_long_view,
+                x="JENIS TRANSAKSI",
+                y="Rata-rata SLA (hari)",
+                color="Proses",
+                barmode="group",
+                text="Rata-rata SLA (hari)",
+                title="Rata-rata SLA Masing-masing Proses per Jenis Transaksi",
+                hover_data={"Jumlah Transaksi": True, "Rata-rata SLA (hari)": ":.2f"},
+            )
+
+            fig.update_traces(
+                texttemplate="%{text:.1f}",
+                textposition="outside",
+            )
+
+            fig.update_layout(
+                height=560,
+                xaxis_title="Jenis Transaksi",
+                yaxis_title="Rata-rata SLA (hari)",
+                legend_title="Proses",
+                margin=dict(l=20, r=20, t=70, b=140),
+                title_font=dict(size=20),
+                xaxis_tickangle=-35,
+            )
+
+            return fig
+
+        def trx_build_bubble_fig(trx_view):
+            median_volume = trx_view["Jumlah Transaksi"].median()
+            median_sla = trx_view["SLA Utama (hari)"].median()
+
+            fig = px.scatter(
+                trx_view,
+                x="Jumlah Transaksi",
+                y="SLA Utama (hari)",
+                size="Jumlah Transaksi",
+                color="SLA Utama (hari)",
+                color_continuous_scale="Plasma",
+                hover_name="JENIS TRANSAKSI",
+                text="JENIS TRANSAKSI",
+                size_max=58,
+                title="Peta Prioritas: Volume Besar dan SLA Tinggi",
+            )
+
+            fig.add_vline(
+                x=median_volume,
+                line_dash="dash",
+                line_color="gray",
+                annotation_text="Median Volume",
+                annotation_position="top left",
+            )
+
+            fig.add_hline(
+                y=median_sla,
+                line_dash="dash",
+                line_color="gray",
+                annotation_text="Median SLA",
+                annotation_position="bottom right",
+            )
+
+            fig.update_traces(
+                textposition="top center",
+                marker=dict(opacity=0.78, line=dict(width=1, color="white")),
+            )
+
+            fig.update_layout(
+                height=580,
+                xaxis_title="Jumlah Transaksi",
+                yaxis_title="Rata-rata SLA (hari)",
+                coloraxis_colorbar_title="SLA Hari",
+                margin=dict(l=20, r=20, t=70, b=40),
+                title_font=dict(size=20),
+            )
+
+            return fig
+
+        def trx_build_donut_fig(trx_view):
+            fig = px.pie(
+                trx_view,
+                values="Jumlah Transaksi",
+                names="JENIS TRANSAKSI",
+                hole=0.58,
+                title="Komposisi Transaksi berdasarkan Jenis Transaksi",
+            )
+
+            fig.update_traces(
+                textposition="inside",
+                textinfo="percent+label",
+                pull=[0.03] * len(trx_view),
+            )
+
+            fig.update_layout(
+                height=530,
+                margin=dict(l=20, r=20, t=70, b=30),
+                title_font=dict(size=20),
+                legend_title="Jenis Transaksi",
+            )
+
+            return fig
+
+        def trx_build_process_fig(data_proses, proses):
+            col_hari = f"{proses} (hari)"
+
+            fig = px.bar(
+                data_proses,
+                x=col_hari,
+                y="JENIS TRANSAKSI",
+                orientation="h",
+                text=col_hari,
+                color=col_hari,
+                color_continuous_scale="Blues",
+                title=f"SLA {proses}",
+            )
+
+            fig.update_traces(
+                texttemplate="%{text:.2f}",
+                textposition="outside",
+                marker_line_width=0,
+            )
+
+            fig.update_layout(
+                height=max(360, 32 * len(data_proses)),
+                xaxis_title="Hari",
+                yaxis_title="",
+                coloraxis_showscale=False,
+                margin=dict(l=10, r=55, t=55, b=25),
+                title_font=dict(size=16),
+            )
+
+            return fig
+
+        def trx_build_detail_fig(detail_chart, selected_detail):
+            fig = go.Figure()
+
+            fig.add_trace(
+                go.Bar(
+                    x=detail_chart["Proses"],
+                    y=detail_chart["Rata-rata SLA (hari)"],
+                    text=detail_chart["Rata-rata SLA (hari)"],
+                    texttemplate="%{text:.2f} hari",
+                    textposition="outside",
+                    marker=dict(
+                        color=detail_chart["Rata-rata SLA (hari)"],
+                        colorscale="Viridis",
+                        line=dict(width=0),
+                    ),
+                )
+            )
+
+            fig.update_layout(
+                title=f"Profil SLA per Proses \u2014 {selected_detail}",
+                height=470,
+                xaxis_title="Proses",
+                yaxis_title="Rata-rata SLA (hari)",
+                margin=dict(l=20, r=20, t=70, b=40),
+                title_font=dict(size=20),
+            )
+
+            return fig
+
+        # =====================================================
+        # EXECUTIVE IMAGE + PDF
+        # =====================================================
+        def trx_make_summary_image(trx_exec_base, ai_result, sla_utama_label, start_periode, end_periode):
+            W, H = 1920, 1080
+
+            img = trx_gradient_bg(W, H)
+            draw = ImageDraw.Draw(img)
+
+            glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            gd = ImageDraw.Draw(glow)
+            gd.ellipse((-220, -180, 520, 520), fill=(0, 234, 255, 55))
+            gd.ellipse((1320, 650, 2150, 1420), fill=(56, 239, 125, 45))
+            gd.ellipse((1280, -220, 2100, 480), fill=(255, 65, 108, 28))
+            glow = glow.filter(ImageFilter.GaussianBlur(22))
+
+            img = Image.alpha_composite(img, glow)
+            draw = ImageDraw.Draw(img)
+
+            font_title = trx_get_font(54, True)
+            font_sub = trx_get_font(22, False)
+            font_h = trx_get_font(28, True)
+            font_kpi_label = trx_get_font(18, True)
+            font_kpi_value = trx_get_font(36, True)
+            font_body = trx_get_font(21, False)
+            font_body_bold = trx_get_font(21, True)
+            font_small = trx_get_font(15, False)
+            font_badge = trx_get_font(21, True)
+
+            exec_df = trx_exec_base.copy()
+
+            total_jenis_exec = exec_df["JENIS TRANSAKSI"].nunique()
+            total_trx_exec = int(exec_df["Jumlah Transaksi"].sum())
+            avg_sla_exec = float(exec_df["SLA Utama (hari)"].mean())
+
+            fastest_exec = exec_df.sort_values("SLA Utama (hari)", ascending=True).iloc[0]
+            slowest_exec = exec_df.sort_values("SLA Utama (hari)", ascending=False).iloc[0]
+            biggest_exec = exec_df.sort_values("Jumlah Transaksi", ascending=False).iloc[0]
+
+            priority_df_exec = ai_result.get("priority_df", pd.DataFrame()).copy()
+            p1_count = ai_result.get("p1_count", 0)
+            status_label = ai_result.get("status_label", "CONTROLLED")
+            bottleneck_proses = ai_result.get("bottleneck_proses", "-")
+            bottleneck_value = ai_result.get("bottleneck_value", np.nan)
+            headline = ai_result.get("headline", "-")
+            reco_items = ai_result.get("recommendations", [])[:3]
+
+            if status_label == "CRITICAL":
+                status_fill = (255, 65, 108, 235)
+                status_outline = (255, 180, 195, 255)
+            elif status_label == "WATCHLIST":
+                status_fill = (255, 180, 60, 235)
+                status_outline = (255, 235, 150, 255)
+            else:
+                status_fill = (40, 200, 145, 235)
+                status_outline = (160, 255, 210, 255)
+
+            logo = trx_load_logo_image()
+            title_x = 70
+
+            if logo is not None:
+                logo = logo.copy()
+                logo.thumbnail((210, 82), trx_resample_filter())
+                img.alpha_composite(logo, (70, 42))
+                title_x = 310
+
+            draw.text((title_x, 52), "EXECUTIVE SUMMARY", font=font_title, fill=(255, 255, 255, 255))
+            draw.text(
+                (title_x + 3, 122),
+                f"SLA Jenis Transaksi | Periode {start_periode} s.d. {end_periode} | Acuan: {sla_utama_label}",
+                font=font_sub,
+                fill=(210, 235, 255, 235),
+            )
+
+            badge_box = (1495, 58, 1835, 118)
+            trx_round_rect(draw, badge_box, 30, status_fill, status_outline, 2)
+
+            bbox = draw.textbbox((0, 0), status_label, font=font_badge)
+            draw.text(
+                (
+                    badge_box[0] + (badge_box[2] - badge_box[0] - (bbox[2] - bbox[0])) / 2,
+                    badge_box[1] + 15,
                 ),
+                status_label,
+                font=font_badge,
+                fill=(255, 255, 255, 255),
             )
-        )
 
-        fig.update_layout(
-            title=f"Profil SLA per Proses \u2014 {selected_detail}",
-            height=470,
-            xaxis_title="Proses",
-            yaxis_title="Rata-rata SLA (hari)",
-            margin=dict(l=20, r=20, t=70, b=40),
-            title_font=dict(size=20),
-        )
+            headline_box = (70, 170, 1850, 300)
+            trx_round_rect(draw, headline_box, 30, (10, 25, 55, 235), (0, 234, 255, 125), 3)
 
-        return fig
-
-    # =====================================================
-    # EXECUTIVE IMAGE + PDF
-    # =====================================================
-    def trx_make_summary_image(trx_exec_base, ai_result, sla_utama_label, start_periode, end_periode):
-        W, H = 1920, 1080
-
-        img = trx_gradient_bg(W, H)
-        draw = ImageDraw.Draw(img)
-
-        glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        gd = ImageDraw.Draw(glow)
-        gd.ellipse((-220, -180, 520, 520), fill=(0, 234, 255, 55))
-        gd.ellipse((1320, 650, 2150, 1420), fill=(56, 239, 125, 45))
-        gd.ellipse((1280, -220, 2100, 480), fill=(255, 65, 108, 28))
-        glow = glow.filter(ImageFilter.GaussianBlur(22))
-
-        img = Image.alpha_composite(img, glow)
-        draw = ImageDraw.Draw(img)
-
-        font_title = trx_get_font(54, True)
-        font_sub = trx_get_font(22, False)
-        font_h = trx_get_font(28, True)
-        font_kpi_label = trx_get_font(18, True)
-        font_kpi_value = trx_get_font(36, True)
-        font_body = trx_get_font(21, False)
-        font_body_bold = trx_get_font(21, True)
-        font_small = trx_get_font(15, False)
-        font_badge = trx_get_font(21, True)
-
-        exec_df = trx_exec_base.copy()
-
-        total_jenis_exec = exec_df["JENIS TRANSAKSI"].nunique()
-        total_trx_exec = int(exec_df["Jumlah Transaksi"].sum())
-        avg_sla_exec = float(exec_df["SLA Utama (hari)"].mean())
-
-        fastest_exec = exec_df.sort_values("SLA Utama (hari)", ascending=True).iloc[0]
-        slowest_exec = exec_df.sort_values("SLA Utama (hari)", ascending=False).iloc[0]
-        biggest_exec = exec_df.sort_values("Jumlah Transaksi", ascending=False).iloc[0]
-
-        priority_df_exec = ai_result.get("priority_df", pd.DataFrame()).copy()
-        p1_count = ai_result.get("p1_count", 0)
-        status_label = ai_result.get("status_label", "CONTROLLED")
-        bottleneck_proses = ai_result.get("bottleneck_proses", "-")
-        bottleneck_value = ai_result.get("bottleneck_value", np.nan)
-        headline = ai_result.get("headline", "-")
-        reco_items = ai_result.get("recommendations", [])[:3]
-
-        if status_label == "CRITICAL":
-            status_fill = (255, 65, 108, 235)
-            status_outline = (255, 180, 195, 255)
-        elif status_label == "WATCHLIST":
-            status_fill = (255, 180, 60, 235)
-            status_outline = (255, 235, 150, 255)
-        else:
-            status_fill = (40, 200, 145, 235)
-            status_outline = (160, 255, 210, 255)
-
-        logo = trx_load_logo_image()
-        title_x = 70
-
-        if logo is not None:
-            logo = logo.copy()
-            logo.thumbnail((210, 82), trx_resample_filter())
-            img.alpha_composite(logo, (70, 42))
-            title_x = 310
-
-        draw.text((title_x, 52), "EXECUTIVE SUMMARY", font=font_title, fill=(255, 255, 255, 255))
-        draw.text(
-            (title_x + 3, 122),
-            f"SLA Jenis Transaksi | Periode {start_periode} s.d. {end_periode} | Acuan: {sla_utama_label}",
-            font=font_sub,
-            fill=(210, 235, 255, 235),
-        )
-
-        badge_box = (1495, 58, 1835, 118)
-        trx_round_rect(draw, badge_box, 30, status_fill, status_outline, 2)
-
-        bbox = draw.textbbox((0, 0), status_label, font=font_badge)
-        draw.text(
-            (
-                badge_box[0] + (badge_box[2] - badge_box[0] - (bbox[2] - bbox[0])) / 2,
-                badge_box[1] + 15,
-            ),
-            status_label,
-            font=font_badge,
-            fill=(255, 255, 255, 255),
-        )
-
-        headline_box = (70, 170, 1850, 300)
-        trx_round_rect(draw, headline_box, 30, (10, 25, 55, 235), (0, 234, 255, 125), 3)
-
-        trx_draw_wrapped_text(
-            draw,
-            headline,
-            (105, 205),
-            trx_get_font(26, True),
-            (255, 255, 255, 245),
-            1705,
-            9,
-        )
-
-        kpis = [
-            ("TOTAL TRANSAKSI", trx_fmt_int(total_trx_exec), "Filter jenis transaksi aktif"),
-            ("JENIS TRANSAKSI", trx_fmt_int(total_jenis_exec), "Kategori dianalisis"),
-            ("RATA-RATA SLA", trx_fmt_hari(avg_sla_exec), "SLA utama"),
-            ("PRIORITAS TINGGI", trx_fmt_int(p1_count), "SLA tinggi & volume besar"),
-        ]
-
-        card_y = 330
-        card_w = 420
-        card_h = 138
-        card_gap = 35
-
-        for i, (label, value, sub) in enumerate(kpis):
-            x = 70 + i * (card_w + card_gap)
-            box = (x, card_y, x + card_w, card_y + card_h)
-
-            trx_round_rect(draw, box, 26, (10, 25, 55, 230), (255, 255, 255, 95), 2)
-
-            draw.text((x + 28, card_y + 24), label, font=font_kpi_label, fill=(130, 230, 255, 255))
-            draw.text((x + 28, card_y + 58), value, font=font_kpi_value, fill=(255, 255, 255, 255))
-            draw.text((x + 28, card_y + 108), sub, font=font_small, fill=(205, 225, 240, 220))
-
-        left_box = (70, 505, 1050, 955)
-        trx_round_rect(draw, left_box, 30, (10, 25, 55, 230), (255, 255, 255, 85), 2)
-
-        draw.text((105, 535), "Executive Notes", font=font_h, fill=(255, 255, 255, 255))
-
-        notes = [
-            f"Jenis tercepat: {trx_safe_text(fastest_exec['JENIS TRANSAKSI'], 54)} ({trx_fmt_hari(fastest_exec['SLA Utama (hari)'])}).",
-            f"Jenis terlama: {trx_safe_text(slowest_exec['JENIS TRANSAKSI'], 54)} ({trx_fmt_hari(slowest_exec['SLA Utama (hari)'])}).",
-            f"Volume terbesar: {trx_safe_text(biggest_exec['JENIS TRANSAKSI'], 54)} ({trx_fmt_int(biggest_exec['Jumlah Transaksi'])} trx).",
-            f"Bottleneck proses: {bottleneck_proses}"
-            + ("" if pd.isna(bottleneck_value) else f" ({trx_fmt_hari(bottleneck_value)})."),
-        ]
-
-        y = 585
-
-        for note in notes:
-            draw.text((112, y), "\u2022", font=font_body_bold, fill=(0, 234, 255, 255))
-            y = trx_draw_wrapped_text(
+            trx_draw_wrapped_text(
                 draw,
-                note,
-                (140, y),
-                font_body,
-                (245, 250, 255, 245),
-                850,
-                6,
-            )
-            y += 8
-
-        draw.text((105, 760), "Recommended Actions", font=font_h, fill=(255, 255, 255, 255))
-
-        y = 810
-
-        if not reco_items:
-            reco_items = ["Lakukan monitoring berkala terhadap jenis transaksi dengan SLA tertinggi."]
-
-        for reco in reco_items:
-            draw.text((112, y), "\u2713", font=font_body_bold, fill=(56, 239, 125, 255))
-            y = trx_draw_wrapped_text(
-                draw,
-                reco,
-                (145, y),
-                font_body,
-                (245, 250, 255, 245),
-                830,
-                6,
-            )
-            y += 8
-
-        right_box = (1090, 505, 1850, 955)
-        trx_round_rect(draw, right_box, 30, (10, 25, 55, 230), (255, 255, 255, 85), 2)
-
-        draw.text((1125, 535), "Top Priority Transactions", font=font_h, fill=(255, 255, 255, 255))
-
-        if priority_df_exec.empty:
-            priority_df_exec = exec_df[
-                ["JENIS TRANSAKSI", "Jumlah Transaksi", "SLA Utama (hari)"]
-            ].copy()
-            priority_df_exec["Prioritas AI"] = "Prioritas belum tersedia"
-
-        top_priority = priority_df_exec.head(5).copy()
-
-        max_sla = top_priority["SLA Utama (hari)"].max()
-        max_sla = max_sla if pd.notna(max_sla) and max_sla > 0 else 1
-
-        y = 595
-
-        for _, row in top_priority.iterrows():
-            name = trx_safe_text(row["JENIS TRANSAKSI"], 40)
-            sla_val = float(row["SLA Utama (hari)"])
-            trx_val = int(row["Jumlah Transaksi"])
-            prio = str(row.get("Prioritas AI", ""))
-
-            row_box = (1125, y, 1815, y + 62)
-            trx_round_rect(draw, row_box, 18, (18, 42, 88, 245), (0, 234, 255, 90), 1)
-
-            draw.text((1148, y + 9), name, font=trx_get_font(19, True), fill=(255, 255, 255, 250))
-            draw.text((1148, y + 35), prio[:48], font=trx_get_font(14, False), fill=(200, 225, 240, 220))
-
-            bar_x = 1515
-            bar_y = y + 40
-            bar_w = 170
-            bar_h = 9
-
-            trx_round_rect(draw, (bar_x, bar_y, bar_x + bar_w, bar_y + bar_h), 5, (255, 255, 255, 55), None, 1)
-
-            fill_w = int(bar_w * min(sla_val / max_sla, 1))
-
-            trx_round_rect(draw, (bar_x, bar_y, bar_x + fill_w, bar_y + bar_h), 5, (0, 234, 255, 240), None, 1)
-
-            draw.text((1705, y + 9), trx_fmt_hari(sla_val), font=trx_get_font(16, True), fill=(255, 255, 255, 245))
-            draw.text((1705, y + 34), f"{trx_fmt_int(trx_val)} trx", font=trx_get_font(14, False), fill=(200, 225, 240, 220))
-
-            y += 72
-
-        draw.text(
-            (70, 1005),
-            "Generated automatically from Tab Jenis Transaksi filter.",
-            font=font_small,
-            fill=(210, 230, 245, 190),
-        )
-
-        draw.text(
-            (1415, 1005),
-            "SLA Payment Analyzer | Executive View",
-            font=font_small,
-            fill=(210, 230, 245, 190),
-        )
-
-        return img.convert("RGB")
-
-    def trx_image_to_png_bytes(img):
-        out_png = io.BytesIO()
-        img.save(out_png, format="PNG", quality=95)
-        return out_png.getvalue()
-
-    def trx_make_placeholder_page(title, message):
-        W, H = 1920, 1080
-        page = trx_gradient_bg(W, H)
-        draw = ImageDraw.Draw(page)
-
-        trx_round_rect(draw, (90, 100, 1830, 980), 35, (10, 25, 55, 230), (0, 234, 255, 100), 2)
-
-        draw.text((140, 150), title, font=trx_get_font(44, True), fill=(255, 255, 255, 255))
-
-        trx_draw_wrapped_text(
-            draw,
-            message,
-            (140, 240),
-            trx_get_font(26, False),
-            (230, 245, 255, 230),
-            1600,
-            10,
-        )
-
-        return page.convert("RGB")
-
-    def trx_fig_to_pdf_page(fig, title):
-        W, H = 1920, 1080
-        page = trx_gradient_bg(W, H)
-        draw = ImageDraw.Draw(page)
-
-        try:
-            png_bytes = fig.to_image(
-                format="png",
-                width=1600,
-                height=820,
-                scale=2,
-            )
-            chart_img = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
-        except Exception as e:
-            return trx_make_placeholder_page(
-                title,
-                "Chart tidak dapat dirender ke PDF. Pastikan dependency 'kaleido' sudah masuk ke requirements.txt.\n\nDetail error: "
-                + str(e),
+                headline,
+                (105, 205),
+                trx_get_font(26, True),
+                (255, 255, 255, 245),
+                1705,
+                9,
             )
 
-        draw.text((70, 48), title, font=trx_get_font(42, True), fill=(255, 255, 255, 255))
+            kpis = [
+                ("TOTAL TRANSAKSI", trx_fmt_int(total_trx_exec), "Filter jenis transaksi aktif"),
+                ("JENIS TRANSAKSI", trx_fmt_int(total_jenis_exec), "Kategori dianalisis"),
+                ("RATA-RATA SLA", trx_fmt_hari(avg_sla_exec), "SLA utama"),
+                ("PRIORITAS TINGGI", trx_fmt_int(p1_count), "SLA tinggi & volume besar"),
+            ]
 
-        trx_round_rect(
-            draw,
-            (70, 115, 1850, 1015),
-            28,
-            (245, 250, 255, 245),
-            (0, 234, 255, 95),
-            2,
-        )
+            card_y = 330
+            card_w = 420
+            card_h = 138
+            card_gap = 35
 
-        chart_img.thumbnail((1710, 840), trx_resample_filter())
+            for i, (label, value, sub) in enumerate(kpis):
+                x = 70 + i * (card_w + card_gap)
+                box = (x, card_y, x + card_w, card_y + card_h)
 
-        x = 70 + (1780 - chart_img.width) // 2
-        y = 135 + (860 - chart_img.height) // 2
+                trx_round_rect(draw, box, 26, (10, 25, 55, 230), (255, 255, 255, 95), 2)
 
-        page.alpha_composite(chart_img, (x, y))
+                draw.text((x + 28, card_y + 24), label, font=font_kpi_label, fill=(130, 230, 255, 255))
+                draw.text((x + 28, card_y + 58), value, font=font_kpi_value, fill=(255, 255, 255, 255))
+                draw.text((x + 28, card_y + 108), sub, font=font_small, fill=(205, 225, 240, 220))
 
-        return page.convert("RGB")
+            left_box = (70, 505, 1050, 955)
+            trx_round_rect(draw, left_box, 30, (10, 25, 55, 230), (255, 255, 255, 85), 2)
 
-    def trx_table_pages(df, title, subtitle="", rows_per_page=24, max_pages=8):
-        if df is None or df.empty:
-            return [trx_make_placeholder_page(title, "Tidak ada data tabel yang dapat ditampilkan.")]
+            draw.text((105, 535), "Executive Notes", font=font_h, fill=(255, 255, 255, 255))
 
-        df_show = df.copy().astype(str)
-        pages = []
-        total_rows = len(df_show)
+            notes = [
+                f"Jenis tercepat: {trx_safe_text(fastest_exec['JENIS TRANSAKSI'], 54)} ({trx_fmt_hari(fastest_exec['SLA Utama (hari)'])}).",
+                f"Jenis terlama: {trx_safe_text(slowest_exec['JENIS TRANSAKSI'], 54)} ({trx_fmt_hari(slowest_exec['SLA Utama (hari)'])}).",
+                f"Volume terbesar: {trx_safe_text(biggest_exec['JENIS TRANSAKSI'], 54)} ({trx_fmt_int(biggest_exec['Jumlah Transaksi'])} trx).",
+                f"Bottleneck proses: {bottleneck_proses}"
+                + ("" if pd.isna(bottleneck_value) else f" ({trx_fmt_hari(bottleneck_value)})."),
+            ]
 
-        chunks = [
-            df_show.iloc[i:i + rows_per_page]
-            for i in range(0, total_rows, rows_per_page)
-        ][:max_pages]
+            y = 585
 
-        for page_idx, chunk in enumerate(chunks, start=1):
+            for note in notes:
+                draw.text((112, y), "\u2022", font=font_body_bold, fill=(0, 234, 255, 255))
+                y = trx_draw_wrapped_text(
+                    draw,
+                    note,
+                    (140, y),
+                    font_body,
+                    (245, 250, 255, 245),
+                    850,
+                    6,
+                )
+                y += 8
+
+            draw.text((105, 760), "Recommended Actions", font=font_h, fill=(255, 255, 255, 255))
+
+            y = 810
+
+            if not reco_items:
+                reco_items = ["Lakukan monitoring berkala terhadap jenis transaksi dengan SLA tertinggi."]
+
+            for reco in reco_items:
+                draw.text((112, y), "\u2713", font=font_body_bold, fill=(56, 239, 125, 255))
+                y = trx_draw_wrapped_text(
+                    draw,
+                    reco,
+                    (145, y),
+                    font_body,
+                    (245, 250, 255, 245),
+                    830,
+                    6,
+                )
+                y += 8
+
+            right_box = (1090, 505, 1850, 955)
+            trx_round_rect(draw, right_box, 30, (10, 25, 55, 230), (255, 255, 255, 85), 2)
+
+            draw.text((1125, 535), "Top Priority Transactions", font=font_h, fill=(255, 255, 255, 255))
+
+            if priority_df_exec.empty:
+                priority_df_exec = exec_df[
+                    ["JENIS TRANSAKSI", "Jumlah Transaksi", "SLA Utama (hari)"]
+                ].copy()
+                priority_df_exec["Prioritas AI"] = "Prioritas belum tersedia"
+
+            top_priority = priority_df_exec.head(5).copy()
+
+            max_sla = top_priority["SLA Utama (hari)"].max()
+            max_sla = max_sla if pd.notna(max_sla) and max_sla > 0 else 1
+
+            y = 595
+
+            for _, row in top_priority.iterrows():
+                name = trx_safe_text(row["JENIS TRANSAKSI"], 40)
+                sla_val = float(row["SLA Utama (hari)"])
+                trx_val = int(row["Jumlah Transaksi"])
+                prio = str(row.get("Prioritas AI", ""))
+
+                row_box = (1125, y, 1815, y + 62)
+                trx_round_rect(draw, row_box, 18, (18, 42, 88, 245), (0, 234, 255, 90), 1)
+
+                draw.text((1148, y + 9), name, font=trx_get_font(19, True), fill=(255, 255, 255, 250))
+                draw.text((1148, y + 35), prio[:48], font=trx_get_font(14, False), fill=(200, 225, 240, 220))
+
+                bar_x = 1515
+                bar_y = y + 40
+                bar_w = 170
+                bar_h = 9
+
+                trx_round_rect(draw, (bar_x, bar_y, bar_x + bar_w, bar_y + bar_h), 5, (255, 255, 255, 55), None, 1)
+
+                fill_w = int(bar_w * min(sla_val / max_sla, 1))
+
+                trx_round_rect(draw, (bar_x, bar_y, bar_x + fill_w, bar_y + bar_h), 5, (0, 234, 255, 240), None, 1)
+
+                draw.text((1705, y + 9), trx_fmt_hari(sla_val), font=trx_get_font(16, True), fill=(255, 255, 255, 245))
+                draw.text((1705, y + 34), f"{trx_fmt_int(trx_val)} trx", font=trx_get_font(14, False), fill=(200, 225, 240, 220))
+
+                y += 72
+
+            draw.text(
+                (70, 1005),
+                "Generated automatically from Tab Jenis Transaksi filter.",
+                font=font_small,
+                fill=(210, 230, 245, 190),
+            )
+
+            draw.text(
+                (1415, 1005),
+                "SLA Payment Analyzer | Executive View",
+                font=font_small,
+                fill=(210, 230, 245, 190),
+            )
+
+            return img.convert("RGB")
+
+        def trx_image_to_png_bytes(img):
+            out_png = io.BytesIO()
+            img.save(out_png, format="PNG", quality=95)
+            return out_png.getvalue()
+
+        def trx_make_placeholder_page(title, message):
             W, H = 1920, 1080
             page = trx_gradient_bg(W, H)
             draw = ImageDraw.Draw(page)
 
-            draw.text((70, 45), title, font=trx_get_font(42, True), fill=(255, 255, 255, 255))
+            trx_round_rect(draw, (90, 100, 1830, 980), 35, (10, 25, 55, 230), (0, 234, 255, 100), 2)
 
-            if subtitle:
-                draw.text((72, 98), subtitle, font=trx_get_font(20, False), fill=(210, 235, 255, 220))
+            draw.text((140, 150), title, font=trx_get_font(44, True), fill=(255, 255, 255, 255))
 
-            draw.text(
-                (1560, 98),
-                f"Page {page_idx}/{len(chunks)}",
-                font=trx_get_font(20, True),
-                fill=(210, 235, 255, 220),
+            trx_draw_wrapped_text(
+                draw,
+                message,
+                (140, 240),
+                trx_get_font(26, False),
+                (230, 245, 255, 230),
+                1600,
+                10,
             )
 
-            box = (70, 140, 1850, 1010)
-            trx_round_rect(draw, box, 28, (10, 25, 55, 230), (0, 234, 255, 90), 2)
+            return page.convert("RGB")
 
-            cols = list(chunk.columns)
-            table_x = 105
-            table_y = 180
-            table_w = 1710
-            row_h = 31
-            header_h = 38
-            col_w = max(120, table_w // max(len(cols), 1))
+        def trx_fig_to_pdf_page(fig, title):
+            W, H = 1920, 1080
+            page = trx_gradient_bg(W, H)
+            draw = ImageDraw.Draw(page)
 
-            for j, col in enumerate(cols):
-                x = table_x + j * col_w
-                if x >= table_x + table_w:
-                    continue
-
-                draw.rectangle(
-                    (
-                        x,
-                        table_y,
-                        min(x + col_w, table_x + table_w),
-                        table_y + header_h,
-                    ),
-                    fill=(0, 160, 190, 210),
+            try:
+                png_bytes = fig.to_image(
+                    format="png",
+                    width=1600,
+                    height=820,
+                    scale=2,
                 )
+                chart_img = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+            except Exception as e:
+                return trx_make_placeholder_page(
+                    title,
+                    "Chart tidak dapat dirender ke PDF. Pastikan dependency 'kaleido' sudah masuk ke requirements.txt.\n\nDetail error: "
+                    + str(e),
+                )
+
+            draw.text((70, 48), title, font=trx_get_font(42, True), fill=(255, 255, 255, 255))
+
+            trx_round_rect(
+                draw,
+                (70, 115, 1850, 1015),
+                28,
+                (245, 250, 255, 245),
+                (0, 234, 255, 95),
+                2,
+            )
+
+            chart_img.thumbnail((1710, 840), trx_resample_filter())
+
+            x = 70 + (1780 - chart_img.width) // 2
+            y = 135 + (860 - chart_img.height) // 2
+
+            page.alpha_composite(chart_img, (x, y))
+
+            return page.convert("RGB")
+
+        def trx_table_pages(df, title, subtitle="", rows_per_page=24, max_pages=8):
+            if df is None or df.empty:
+                return [trx_make_placeholder_page(title, "Tidak ada data tabel yang dapat ditampilkan.")]
+
+            df_show = df.copy().astype(str)
+            pages = []
+            total_rows = len(df_show)
+
+            chunks = [
+                df_show.iloc[i:i + rows_per_page]
+                for i in range(0, total_rows, rows_per_page)
+            ][:max_pages]
+
+            for page_idx, chunk in enumerate(chunks, start=1):
+                W, H = 1920, 1080
+                page = trx_gradient_bg(W, H)
+                draw = ImageDraw.Draw(page)
+
+                draw.text((70, 45), title, font=trx_get_font(42, True), fill=(255, 255, 255, 255))
+
+                if subtitle:
+                    draw.text((72, 98), subtitle, font=trx_get_font(20, False), fill=(210, 235, 255, 220))
 
                 draw.text(
-                    (x + 8, table_y + 9),
-                    trx_safe_text(col, 18),
-                    font=trx_get_font(15, True),
-                    fill=(255, 255, 255, 255),
+                    (1560, 98),
+                    f"Page {page_idx}/{len(chunks)}",
+                    font=trx_get_font(20, True),
+                    fill=(210, 235, 255, 220),
                 )
 
-            y = table_y + header_h
+                box = (70, 140, 1850, 1010)
+                trx_round_rect(draw, box, 28, (10, 25, 55, 230), (0, 234, 255, 90), 2)
 
-            for i, (_, row) in enumerate(chunk.iterrows()):
-                fill = (255, 255, 255, 22) if i % 2 == 0 else (255, 255, 255, 12)
-                draw.rectangle((table_x, y, table_x + table_w, y + row_h), fill=fill)
+                cols = list(chunk.columns)
+                table_x = 105
+                table_y = 180
+                table_w = 1710
+                row_h = 31
+                header_h = 38
+                col_w = max(120, table_w // max(len(cols), 1))
 
                 for j, col in enumerate(cols):
                     x = table_x + j * col_w
                     if x >= table_x + table_w:
                         continue
 
+                    draw.rectangle(
+                        (
+                            x,
+                            table_y,
+                            min(x + col_w, table_x + table_w),
+                            table_y + header_h,
+                        ),
+                        fill=(0, 160, 190, 210),
+                    )
+
                     draw.text(
-                        (x + 8, y + 8),
-                        trx_safe_text(row[col], 24),
-                        font=trx_get_font(14, False),
-                        fill=(235, 245, 255, 235),
+                        (x + 8, table_y + 9),
+                        trx_safe_text(col, 18),
+                        font=trx_get_font(15, True),
+                        fill=(255, 255, 255, 255),
                     )
 
-                y += row_h
+                y = table_y + header_h
 
-            if total_rows > rows_per_page * max_pages and page_idx == len(chunks):
-                draw.text(
-                    (105, 970),
-                    f"Catatan: tabel dibatasi sampai {rows_per_page * max_pages} baris pertama agar ukuran PDF tetap wajar.",
-                    font=trx_get_font(16, False),
-                    fill=(255, 220, 150, 230),
-                )
+                for i, (_, row) in enumerate(chunk.iterrows()):
+                    fill = (255, 255, 255, 22) if i % 2 == 0 else (255, 255, 255, 12)
+                    draw.rectangle((table_x, y, table_x + table_w, y + row_h), fill=fill)
 
-            pages.append(page.convert("RGB"))
+                    for j, col in enumerate(cols):
+                        x = table_x + j * col_w
+                        if x >= table_x + table_w:
+                            continue
 
-        return pages
+                        draw.text(
+                            (x + 8, y + 8),
+                            trx_safe_text(row[col], 24),
+                            font=trx_get_font(14, False),
+                            fill=(235, 245, 255, 235),
+                        )
 
-    def trx_make_full_pdf_report(
-        summary_img,
-        trx_view,
-        trx_long_view,
-        chart_proses_cols,
-        sla_utama_label,
-        priority_df,
-        transaksi_display,
-        detail_df,
-        detail_chart,
-        selected_detail,
-    ):
-        pages = [summary_img.convert("RGB")]
+                    y += row_h
 
-        chart_pages = [
-            ("Ranking SLA per Jenis Transaksi", trx_build_rank_fig(trx_view, sla_utama_label)),
-            ("Perbandingan SLA Masing-masing Proses", trx_build_group_fig(trx_long_view)),
-            ("Bubble Matrix Volume vs SLA", trx_build_bubble_fig(trx_view)),
-            ("Komposisi Jumlah Transaksi", trx_build_donut_fig(trx_view)),
-        ]
+                if total_rows > rows_per_page * max_pages and page_idx == len(chunks):
+                    draw.text(
+                        (105, 970),
+                        f"Catatan: tabel dibatasi sampai {rows_per_page * max_pages} baris pertama agar ukuran PDF tetap wajar.",
+                        font=trx_get_font(16, False),
+                        fill=(255, 220, 150, 230),
+                    )
 
-        fig_heat = trx_build_heat_fig(trx_view, chart_proses_cols)
-        if fig_heat is not None:
-            chart_pages.insert(1, ("Heatmap SLA per Proses", fig_heat))
+                pages.append(page.convert("RGB"))
 
-        if detail_chart is not None and not detail_chart.empty:
-            chart_pages.append(
-                (
-                    f"Drilldown SLA \u2014 {selected_detail}",
-                    trx_build_detail_fig(detail_chart, selected_detail),
-                )
-            )
+            return pages
 
-        for title, fig in chart_pages:
-            pages.append(trx_fig_to_pdf_page(fig, title))
+        def trx_make_full_pdf_report(
+            summary_img,
+            trx_view,
+            trx_long_view,
+            chart_proses_cols,
+            sla_utama_label,
+            priority_df,
+            transaksi_display,
+            detail_df,
+            detail_chart,
+            selected_detail,
+        ):
+            pages = [summary_img.convert("RGB")]
 
-        for proses in chart_proses_cols:
-            col_hari = f"{proses} (hari)"
-            if col_hari in trx_view.columns:
-                data_proses = trx_view.sort_values(col_hari, ascending=True)
-                pages.append(
-                    trx_fig_to_pdf_page(
-                        trx_build_process_fig(data_proses, proses),
-                        f"Grafik SLA Proses {proses}",
+            chart_pages = [
+                ("Ranking SLA per Jenis Transaksi", trx_build_rank_fig(trx_view, sla_utama_label)),
+                ("Perbandingan SLA Masing-masing Proses", trx_build_group_fig(trx_long_view)),
+                ("Bubble Matrix Volume vs SLA", trx_build_bubble_fig(trx_view)),
+                ("Komposisi Jumlah Transaksi", trx_build_donut_fig(trx_view)),
+            ]
+
+            fig_heat = trx_build_heat_fig(trx_view, chart_proses_cols)
+            if fig_heat is not None:
+                chart_pages.insert(1, ("Heatmap SLA per Proses", fig_heat))
+
+            if detail_chart is not None and not detail_chart.empty:
+                chart_pages.append(
+                    (
+                        f"Drilldown SLA \u2014 {selected_detail}",
+                        trx_build_detail_fig(detail_chart, selected_detail),
                     )
                 )
 
-        priority_table = priority_df.copy()
+            for title, fig in chart_pages:
+                pages.append(trx_fig_to_pdf_page(fig, title))
 
-        if not priority_table.empty and "SLA Utama (hari)" in priority_table.columns:
-            priority_table["SLA Utama (hari)"] = priority_table["SLA Utama (hari)"].round(2)
+            for proses in chart_proses_cols:
+                col_hari = f"{proses} (hari)"
+                if col_hari in trx_view.columns:
+                    data_proses = trx_view.sort_values(col_hari, ascending=True)
+                    pages.append(
+                        trx_fig_to_pdf_page(
+                            trx_build_process_fig(data_proses, proses),
+                            f"Grafik SLA Proses {proses}",
+                        )
+                    )
 
-        pages.extend(
-            trx_table_pages(
-                priority_table,
-                "Tabel Matriks Prioritas AI",
-                "Prioritas berdasarkan kombinasi SLA dan volume transaksi.",
-                rows_per_page=24,
-                max_pages=6,
-            )
-        )
+            priority_table = priority_df.copy()
 
-        pages.extend(
-            trx_table_pages(
-                transaksi_display,
-                "Tabel Rata-rata SLA per Jenis Transaksi",
-                "Ringkasan rata-rata SLA setiap proses per jenis transaksi sesuai tampilan aktif.",
-                rows_per_page=24,
-                max_pages=8,
-            )
-        )
-
-        if detail_df is not None and not detail_df.empty:
-            detail_pdf_df = detail_df.head(120).copy()
+            if not priority_table.empty and "SLA Utama (hari)" in priority_table.columns:
+                priority_table["SLA Utama (hari)"] = priority_table["SLA Utama (hari)"].round(2)
 
             pages.extend(
                 trx_table_pages(
-                    detail_pdf_df,
-                    f"Tabel Detail Data \u2014 {selected_detail}",
-                    "Menampilkan maksimum 120 baris pertama agar ukuran PDF tetap stabil.",
-                    rows_per_page=20,
+                    priority_table,
+                    "Tabel Matriks Prioritas AI",
+                    "Prioritas berdasarkan kombinasi SLA dan volume transaksi.",
+                    rows_per_page=24,
                     max_pages=6,
                 )
             )
 
-        out_pdf = io.BytesIO()
+            pages.extend(
+                trx_table_pages(
+                    transaksi_display,
+                    "Tabel Rata-rata SLA per Jenis Transaksi",
+                    "Ringkasan rata-rata SLA setiap proses per jenis transaksi sesuai tampilan aktif.",
+                    rows_per_page=24,
+                    max_pages=8,
+                )
+            )
 
-        pages[0].save(
-            out_pdf,
-            format="PDF",
-            save_all=True,
-            append_images=pages[1:],
-            resolution=150.0,
-        )
+            if detail_df is not None and not detail_df.empty:
+                detail_pdf_df = detail_df.head(120).copy()
 
-        return out_pdf.getvalue()
-
-    # =====================================================
-    # MAIN TAB LOGIC
-    # =====================================================
-    if "JENIS TRANSAKSI" not in df_filtered.columns or not available_sla_cols:
-        st.info("Kolom 'JENIS TRANSAKSI' tidak ditemukan atau tidak ada kolom SLA yang tersedia.")
-
-    else:
-        df_trx = df_filtered.copy()
-
-        df_trx["JENIS TRANSAKSI"] = (
-            df_trx["JENIS TRANSAKSI"]
-            .fillna("TIDAK TERDETEKSI")
-            .astype(str)
-        )
-
-        proses_cols = [
-            c for c in [
-                "FUNGSIONAL",
-                "VENDOR",
-                "KEUANGAN",
-                "PERBENDAHARAAN",
-                "TOTAL WAKTU",
-            ]
-            if c in available_sla_cols
-        ]
-
-        proses_bottleneck_cols = [
-            c for c in [
-                "FUNGSIONAL",
-                "VENDOR",
-                "KEUANGAN",
-                "PERBENDAHARAAN",
-            ]
-            if c in proses_cols
-        ]
-
-        chart_proses_cols = proses_cols.copy()
-
-        if not proses_cols:
-            st.info("Tidak ada kolom SLA yang dapat dianalisis.")
-
-        else:
-            # =====================================================
-            # FILTER DATA UTAMA \u2014 sebelum agregasi
-            # =====================================================
-            # Catatan penting:
-            # Filter Nomor Permohonan dan Jenis Transaksi harus dilakukan di level baris
-            # sebelum groupby, agar seluruh KPI, AI Insight, Executive Summary, grafik,
-            # PDF, dan drilldown membaca subset data yang sama.
-            nomor_permohonan_col = trx_detect_permohonan_col(df_trx)
-
-            st.markdown("### \U0001f39b\ufe0f Filter Data Transaksi")
-
-            fcol1, fcol2 = st.columns([1.35, 1.25])
-
-            with fcol1:
-                if nomor_permohonan_col:
-                    nomor_options = trx_sorted_unique(df_trx[nomor_permohonan_col])
-
-                    # =====================================================
-                    # FIX HIGH-CARDINALITY MULTISELECT
-                    # =====================================================
-                    # Streamlit/React Multiselect dapat mengalami
-                    # ``RangeError: Maximum call stack size exceeded`` jika
-                    # puluhan ribu opsi dikirim sekaligus ke browser.
-                    #
-                    # Untuk dataset kecil, perilaku lama DIPERTAHANKAN.
-                    # Untuk dataset besar, filter otomatis beralih ke mode
-                    # pencarian server-side sehingga widget hanya menerima
-                    # sebagian kecil opsi. Downstream tetap menerima format
-                    # selected_permohonan yang sama: ["ALL"] atau list nomor.
-                    TRX_NOMOR_DIRECT_LIMIT = 800
-                    TRX_NOMOR_SEARCH_LIMIT = 250
-
-                    if len(nomor_options) <= TRX_NOMOR_DIRECT_LIMIT:
-                        selected_permohonan = st.multiselect(
-                            "Filter Nomor Permohonan",
-                            options=["ALL"] + nomor_options,
-                            default=["ALL"],
-                            help=(
-                                "Bisa pilih 1 atau lebih Nomor Permohonan. "
-                                "Pilih ALL untuk menampilkan seluruh nomor."
-                            ),
-                            key="trx_filter_nomor_permohonan_main",
-                        )
-                    else:
-                        st.markdown("**Filter Nomor Permohonan**")
-                        st.caption(
-                            f"Terdeteksi {trx_fmt_int(len(nomor_options))} Nomor Permohonan unik. "
-                            "Mode pencarian aman diaktifkan agar dashboard tetap ringan dan tidak error."
-                        )
-
-                        use_all_nomor = st.checkbox(
-                            "Gunakan seluruh Nomor Permohonan (ALL)",
-                            value=True,
-                            key="trx_filter_nomor_all_safe_v1",
-                            help=(
-                                "Aktifkan untuk menganalisis seluruh Nomor Permohonan. "
-                                "Nonaktifkan jika ingin mencari dan memilih nomor tertentu."
-                            ),
-                        )
-
-                        if use_all_nomor:
-                            selected_permohonan = ["ALL"]
-                        else:
-                            nomor_query = st.text_input(
-                                "Cari Nomor Permohonan",
-                                value="",
-                                placeholder="Ketik nomor / sebagian nomor. Bisa beberapa, pisahkan dengan koma.",
-                                key="trx_filter_nomor_search_safe_v1",
-                                help=(
-                                    "Pencarian dilakukan sebelum opsi dikirim ke multiselect. "
-                                    "Gunakan koma, titik koma, atau baris baru untuk mencari beberapa nomor sekaligus."
-                                ),
-                            )
-
-                            search_terms = [
-                                token.strip().casefold()
-                                for token in re.split(r"[,;\n]+", nomor_query or "")
-                                if token.strip()
-                            ]
-
-                            matched_nomor = []
-                            if search_terms:
-                                matched_nomor = [
-                                    value
-                                    for value in nomor_options
-                                    if any(term in str(value).casefold() for term in search_terms)
-                                ]
-
-                            safe_key = "trx_filter_nomor_permohonan_safe_v1"
-                            if safe_key not in st.session_state:
-                                st.session_state[safe_key] = []
-
-                            # Opsi yang sudah dipilih tetap dipertahankan walau
-                            # user mengganti kata pencarian, sehingga pilihan
-                            # beberapa nomor dapat dikumpulkan bertahap.
-                            previous_selected = [
-                                str(v) for v in st.session_state.get(safe_key, [])
-                                if str(v) in set(nomor_options)
-                            ]
-
-                            matched_limited = matched_nomor[:TRX_NOMOR_SEARCH_LIMIT]
-                            safe_options = list(dict.fromkeys(previous_selected + matched_limited))
-
-                            # Pastikan state widget tidak membawa value yang
-                            # sudah tidak tersedia setelah periode/filter berubah.
-                            if st.session_state.get(safe_key, []) != previous_selected:
-                                st.session_state[safe_key] = previous_selected
-
-                            selected_permohonan = st.multiselect(
-                                "Pilih Nomor Permohonan hasil pencarian",
-                                options=safe_options,
-                                key=safe_key,
-                                help=(
-                                    "Pilih satu atau lebih nomor dari hasil pencarian. "
-                                    "Pilihan yang sudah dipilih tetap tersimpan saat kata pencarian diganti."
-                                ),
-                            )
-
-                            if not search_terms and not selected_permohonan:
-                                st.info(
-                                    "Ketik Nomor Permohonan pada kolom pencarian di atas. "
-                                    "Selama belum ada nomor yang dipilih, filter Nomor Permohonan dianggap ALL."
-                                )
-                                selected_permohonan = ["ALL"]
-                            elif search_terms and not matched_nomor and not selected_permohonan:
-                                st.warning("Nomor Permohonan yang dicari tidak ditemukan pada periode aktif.")
-                                # Gunakan sentinel agar hasil benar-benar kosong,
-                                # bukan tanpa sengaja kembali ke ALL.
-                                selected_permohonan = ["__NO_MATCH__"]
-                            elif len(matched_nomor) > TRX_NOMOR_SEARCH_LIMIT:
-                                st.caption(
-                                    f"Ditemukan {trx_fmt_int(len(matched_nomor))} hasil. "
-                                    f"Hanya {trx_fmt_int(TRX_NOMOR_SEARCH_LIMIT)} hasil pertama ditampilkan; "
-                                    "ketik pencarian yang lebih spesifik untuk mempersempit hasil."
-                                )
-                            elif search_terms:
-                                st.caption(
-                                    f"Ditemukan {trx_fmt_int(len(matched_nomor))} hasil pencarian."
-                                )
-                else:
-                    selected_permohonan = ["ALL"]
-                    st.warning(
-                        "Kolom Nomor Permohonan tidak terdeteksi. "
-                        "Pastikan nama kolom mengandung kata 'Nomor/No' dan 'Permohonan/Permintaan/Request'."
+                pages.extend(
+                    trx_table_pages(
+                        detail_pdf_df,
+                        f"Tabel Detail Data \u2014 {selected_detail}",
+                        "Menampilkan maksimum 120 baris pertama agar ukuran PDF tetap stabil.",
+                        rows_per_page=20,
+                        max_pages=6,
                     )
-
-            with fcol2:
-                jenis_options_data = trx_sorted_unique(df_trx["JENIS TRANSAKSI"])
-                selected_jenis_data = st.multiselect(
-                    "Filter Jenis Transaksi",
-                    options=["ALL"] + jenis_options_data,
-                    default=["ALL"],
-                    help="Bisa pilih 1 atau lebih jenis transaksi. Filter ini bekerja sebelum agregasi SLA.",
-                    key="trx_filter_jenis_data_main",
                 )
 
-            df_trx_before_filter = df_trx.copy()
-            df_trx = trx_apply_main_filters(
-                df_input=df_trx_before_filter,
-                nomor_col=nomor_permohonan_col,
-                selected_permohonan=selected_permohonan,
-                selected_jenis_data=selected_jenis_data,
+            out_pdf = io.BytesIO()
+
+            pages[0].save(
+                out_pdf,
+                format="PDF",
+                save_all=True,
+                append_images=pages[1:],
+                resolution=150.0,
             )
 
-            kf1, kf2, kf3, kf4 = st.columns(4)
-            kf1.metric("Baris Awal", trx_fmt_int(len(df_trx_before_filter)))
-            kf2.metric("Baris Terfilter", trx_fmt_int(len(df_trx)))
-            kf3.metric("Nomor Dipilih", trx_filter_label(selected_permohonan))
-            kf4.metric("Jenis Dipilih", trx_filter_label(selected_jenis_data))
+            return out_pdf.getvalue()
 
-            if df_trx.empty:
-                st.warning("Tidak ada data untuk kombinasi filter Nomor Permohonan dan Jenis Transaksi yang dipilih.")
+        # =====================================================
+        # MAIN TAB LOGIC
+        # =====================================================
+        if "JENIS TRANSAKSI" not in df_filtered.columns or not available_sla_cols:
+            st.info("Kolom 'JENIS TRANSAKSI' tidak ditemukan atau tidak ada kolom SLA yang tersedia.")
 
-            trx_mean_sec = (
-                df_trx
-                .groupby("JENIS TRANSAKSI")[proses_cols]
-                .mean()
-                .reset_index()
+        else:
+            df_trx = df_filtered.copy()
+
+            df_trx["JENIS TRANSAKSI"] = (
+                df_trx["JENIS TRANSAKSI"]
+                .fillna("TIDAK TERDETEKSI")
+                .astype(str)
             )
 
-            trx_count = (
-                df_trx
-                .groupby("JENIS TRANSAKSI")
-                .size()
-                .reset_index(name="Jumlah Transaksi")
-            )
+            proses_cols = [
+                c for c in [
+                    "FUNGSIONAL",
+                    "VENDOR",
+                    "KEUANGAN",
+                    "PERBENDAHARAAN",
+                    "TOTAL WAKTU",
+                ]
+                if c in available_sla_cols
+            ]
 
-            trx_summary = trx_mean_sec.merge(
-                trx_count,
-                on="JENIS TRANSAKSI",
-                how="left",
-            )
+            proses_bottleneck_cols = [
+                c for c in [
+                    "FUNGSIONAL",
+                    "VENDOR",
+                    "KEUANGAN",
+                    "PERBENDAHARAAN",
+                ]
+                if c in proses_cols
+            ]
 
-            for col in proses_cols:
-                trx_summary[f"{col} (hari)"] = trx_summary[col] / 86400
+            chart_proses_cols = proses_cols.copy()
 
-            if "TOTAL WAKTU" in proses_cols:
-                trx_summary["SLA Utama (detik)"] = trx_summary["TOTAL WAKTU"]
-                trx_summary["SLA Utama (hari)"] = trx_summary["TOTAL WAKTU (hari)"]
-                sla_utama_label = "TOTAL WAKTU"
+            if not proses_cols:
+                st.info("Tidak ada kolom SLA yang dapat dianalisis.")
+
             else:
-                trx_summary["SLA Utama (detik)"] = trx_summary[proses_cols].mean(axis=1)
-                trx_summary["SLA Utama (hari)"] = trx_summary["SLA Utama (detik)"] / 86400
-                sla_utama_label = "RATA-RATA PROSES"
-
-            trx_summary = trx_summary.dropna(subset=["SLA Utama (hari)"]).copy()
-
-            if trx_summary.empty:
-                st.warning("Tidak ada data SLA valid untuk tab jenis transaksi.")
-
-            else:
-                trx_summary = trx_summary.sort_values("SLA Utama (hari)", ascending=True)
-
                 # =====================================================
-                # SLA TRANSAKSIONAL DAN KUMULATIF
+                # FILTER DATA UTAMA \u2014 sebelum agregasi
                 # =====================================================
-                st.markdown("### \U0001f52c SLA Transaksional & Kumulatif atas Filter Aktif")
+                # Catatan penting:
+                # Filter Nomor Permohonan dan Jenis Transaksi harus dilakukan di level baris
+                # sebelum groupby, agar seluruh KPI, AI Insight, Executive Summary, grafik,
+                # PDF, dan drilldown membaca subset data yang sama.
+                nomor_permohonan_col = trx_detect_permohonan_col(df_trx)
 
-                with st.expander("\U0001f4c4 Lihat SLA Transaksional per Baris / Nomor Permohonan", expanded=False):
-                    detail_transaksional = df_trx.copy()
+                st.markdown("### \U0001f39b\ufe0f Filter Data Transaksi")
 
-                    # Format kolom SLA agar mudah dibaca user. Kolom asli detik tetap tidak diubah.
-                    for col in chart_proses_cols:
-                        if col in detail_transaksional.columns:
-                            detail_transaksional[f"{col} (SLA)"] = detail_transaksional[col].apply(trx_seconds_to_text)
+                fcol1, fcol2 = st.columns([1.35, 1.25])
 
-                    base_detail_cols = []
-                    for candidate_col in [
-                        periode_col,
-                        nomor_permohonan_col,
-                        "JENIS TRANSAKSI",
-                        "NAMA VENDOR",
-                        "NILAI TRANSAKSI",
-                        "NOMINAL",
-                        "TOTAL NILAI",
-                    ]:
-                        if candidate_col and candidate_col in detail_transaksional.columns and candidate_col not in base_detail_cols:
-                            base_detail_cols.append(candidate_col)
+                with fcol1:
+                    if nomor_permohonan_col:
+                        nomor_options = trx_sorted_unique(df_trx[nomor_permohonan_col])
 
-                    sla_detail_cols = [
-                        f"{col} (SLA)"
-                        for col in chart_proses_cols
-                        if f"{col} (SLA)" in detail_transaksional.columns
-                    ]
+                        # =====================================================
+                        # FIX HIGH-CARDINALITY MULTISELECT
+                        # =====================================================
+                        # Streamlit/React Multiselect dapat mengalami
+                        # ``RangeError: Maximum call stack size exceeded`` jika
+                        # puluhan ribu opsi dikirim sekaligus ke browser.
+                        #
+                        # Untuk dataset kecil, perilaku lama DIPERTAHANKAN.
+                        # Untuk dataset besar, filter otomatis beralih ke mode
+                        # pencarian server-side sehingga widget hanya menerima
+                        # sebagian kecil opsi. Downstream tetap menerima format
+                        # selected_permohonan yang sama: ["ALL"] atau list nomor.
+                        TRX_NOMOR_DIRECT_LIMIT = 800
+                        TRX_NOMOR_SEARCH_LIMIT = 250
 
-                    detail_cols_show = base_detail_cols + sla_detail_cols
+                        if len(nomor_options) <= TRX_NOMOR_DIRECT_LIMIT:
+                            selected_permohonan = st.multiselect(
+                                "Filter Nomor Permohonan",
+                                options=["ALL"] + nomor_options,
+                                default=["ALL"],
+                                help=(
+                                    "Bisa pilih 1 atau lebih Nomor Permohonan. "
+                                    "Pilih ALL untuk menampilkan seluruh nomor."
+                                ),
+                                key="trx_filter_nomor_permohonan_main",
+                            )
+                        else:
+                            st.markdown("**Filter Nomor Permohonan**")
+                            st.caption(
+                                f"Terdeteksi {trx_fmt_int(len(nomor_options))} Nomor Permohonan unik. "
+                                "Mode pencarian aman diaktifkan agar dashboard tetap ringan dan tidak error."
+                            )
 
-                    if detail_cols_show:
-                        st.dataframe(
-                            detail_transaksional[detail_cols_show],
-                            use_container_width=True,
-                            hide_index=True,
-                        )
+                            use_all_nomor = st.checkbox(
+                                "Gunakan seluruh Nomor Permohonan (ALL)",
+                                value=True,
+                                key="trx_filter_nomor_all_safe_v1",
+                                help=(
+                                    "Aktifkan untuk menganalisis seluruh Nomor Permohonan. "
+                                    "Nonaktifkan jika ingin mencari dan memilih nomor tertentu."
+                                ),
+                            )
+
+                            if use_all_nomor:
+                                selected_permohonan = ["ALL"]
+                            else:
+                                nomor_query = st.text_input(
+                                    "Cari Nomor Permohonan",
+                                    value="",
+                                    placeholder="Ketik nomor / sebagian nomor. Bisa beberapa, pisahkan dengan koma.",
+                                    key="trx_filter_nomor_search_safe_v1",
+                                    help=(
+                                        "Pencarian dilakukan sebelum opsi dikirim ke multiselect. "
+                                        "Gunakan koma, titik koma, atau baris baru untuk mencari beberapa nomor sekaligus."
+                                    ),
+                                )
+
+                                search_terms = [
+                                    token.strip().casefold()
+                                    for token in re.split(r"[,;\n]+", nomor_query or "")
+                                    if token.strip()
+                                ]
+
+                                matched_nomor = []
+                                if search_terms:
+                                    matched_nomor = [
+                                        value
+                                        for value in nomor_options
+                                        if any(term in str(value).casefold() for term in search_terms)
+                                    ]
+
+                                safe_key = "trx_filter_nomor_permohonan_safe_v1"
+                                if safe_key not in st.session_state:
+                                    st.session_state[safe_key] = []
+
+                                # Opsi yang sudah dipilih tetap dipertahankan walau
+                                # user mengganti kata pencarian, sehingga pilihan
+                                # beberapa nomor dapat dikumpulkan bertahap.
+                                previous_selected = [
+                                    str(v) for v in st.session_state.get(safe_key, [])
+                                    if str(v) in set(nomor_options)
+                                ]
+
+                                matched_limited = matched_nomor[:TRX_NOMOR_SEARCH_LIMIT]
+                                safe_options = list(dict.fromkeys(previous_selected + matched_limited))
+
+                                # Pastikan state widget tidak membawa value yang
+                                # sudah tidak tersedia setelah periode/filter berubah.
+                                if st.session_state.get(safe_key, []) != previous_selected:
+                                    st.session_state[safe_key] = previous_selected
+
+                                selected_permohonan = st.multiselect(
+                                    "Pilih Nomor Permohonan hasil pencarian",
+                                    options=safe_options,
+                                    key=safe_key,
+                                    help=(
+                                        "Pilih satu atau lebih nomor dari hasil pencarian. "
+                                        "Pilihan yang sudah dipilih tetap tersimpan saat kata pencarian diganti."
+                                    ),
+                                )
+
+                                if not search_terms and not selected_permohonan:
+                                    st.info(
+                                        "Ketik Nomor Permohonan pada kolom pencarian di atas. "
+                                        "Selama belum ada nomor yang dipilih, filter Nomor Permohonan dianggap ALL."
+                                    )
+                                    selected_permohonan = ["ALL"]
+                                elif search_terms and not matched_nomor and not selected_permohonan:
+                                    st.warning("Nomor Permohonan yang dicari tidak ditemukan pada periode aktif.")
+                                    # Gunakan sentinel agar hasil benar-benar kosong,
+                                    # bukan tanpa sengaja kembali ke ALL.
+                                    selected_permohonan = ["__NO_MATCH__"]
+                                elif len(matched_nomor) > TRX_NOMOR_SEARCH_LIMIT:
+                                    st.caption(
+                                        f"Ditemukan {trx_fmt_int(len(matched_nomor))} hasil. "
+                                        f"Hanya {trx_fmt_int(TRX_NOMOR_SEARCH_LIMIT)} hasil pertama ditampilkan; "
+                                        "ketik pencarian yang lebih spesifik untuk mempersempit hasil."
+                                    )
+                                elif search_terms:
+                                    st.caption(
+                                        f"Ditemukan {trx_fmt_int(len(matched_nomor))} hasil pencarian."
+                                    )
                     else:
-                        st.dataframe(detail_transaksional, use_container_width=True, hide_index=True)
+                        selected_permohonan = ["ALL"]
+                        st.warning(
+                            "Kolom Nomor Permohonan tidak terdeteksi. "
+                            "Pastikan nama kolom mengandung kata 'Nomor/No' dan 'Permohonan/Permintaan/Request'."
+                        )
 
-                kumulatif_rows = []
-                for col in chart_proses_cols:
-                    if col in df_trx.columns:
-                        sec_series = pd.to_numeric(df_trx[col], errors="coerce").dropna()
-                        if not sec_series.empty:
-                            kumulatif_rows.append({
-                                "Proses": col,
-                                "Jumlah Data Valid": int(sec_series.count()),
-                                "Rata-rata SLA": trx_seconds_to_text(sec_series.mean()),
-                                "Rata-rata SLA (hari)": round(float(sec_series.mean()) / 86400, 2),
-                                "Akumulasi SLA": trx_seconds_to_text(sec_series.sum()),
-                                "Akumulasi SLA (hari)": round(float(sec_series.sum()) / 86400, 2),
-                            })
-
-                kumulatif_df = pd.DataFrame(kumulatif_rows)
-
-                if not kumulatif_df.empty:
-                    st.dataframe(kumulatif_df, use_container_width=True, hide_index=True)
-                    st.caption(
-                        "Catatan: Akumulasi SLA adalah penjumlahan durasi SLA seluruh baris transaksi terfilter. "
-                        "Untuk evaluasi performa proses, kolom rata-rata SLA biasanya lebih representatif."
+                with fcol2:
+                    jenis_options_data = trx_sorted_unique(df_trx["JENIS TRANSAKSI"])
+                    selected_jenis_data = st.multiselect(
+                        "Filter Jenis Transaksi",
+                        options=["ALL"] + jenis_options_data,
+                        default=["ALL"],
+                        help="Bisa pilih 1 atau lebih jenis transaksi. Filter ini bekerja sebelum agregasi SLA.",
+                        key="trx_filter_jenis_data_main",
                     )
 
-                if nomor_permohonan_col and nomor_permohonan_col in df_trx.columns:
-                    with st.expander("\U0001f9ee Ringkasan Kumulatif per Nomor Permohonan", expanded=False):
-                        group_cols_permohonan = [nomor_permohonan_col, "JENIS TRANSAKSI"]
+                df_trx_before_filter = df_trx.copy()
+                df_trx = trx_apply_main_filters(
+                    df_input=df_trx_before_filter,
+                    nomor_col=nomor_permohonan_col,
+                    selected_permohonan=selected_permohonan,
+                    selected_jenis_data=selected_jenis_data,
+                )
 
-                        permohonan_summary = (
-                            df_trx
-                            .groupby(group_cols_permohonan, dropna=False)[proses_cols]
-                            .mean()
-                            .reset_index()
+                kf1, kf2, kf3, kf4 = st.columns(4)
+                kf1.metric("Baris Awal", trx_fmt_int(len(df_trx_before_filter)))
+                kf2.metric("Baris Terfilter", trx_fmt_int(len(df_trx)))
+                kf3.metric("Nomor Dipilih", trx_filter_label(selected_permohonan))
+                kf4.metric("Jenis Dipilih", trx_filter_label(selected_jenis_data))
+
+                if df_trx.empty:
+                    st.warning("Tidak ada data untuk kombinasi filter Nomor Permohonan dan Jenis Transaksi yang dipilih.")
+
+                trx_mean_sec = (
+                    df_trx
+                    .groupby("JENIS TRANSAKSI")[proses_cols]
+                    .mean()
+                    .reset_index()
+                )
+
+                trx_count = (
+                    df_trx
+                    .groupby("JENIS TRANSAKSI")
+                    .size()
+                    .reset_index(name="Jumlah Transaksi")
+                )
+
+                trx_summary = trx_mean_sec.merge(
+                    trx_count,
+                    on="JENIS TRANSAKSI",
+                    how="left",
+                )
+
+                for col in proses_cols:
+                    trx_summary[f"{col} (hari)"] = trx_summary[col] / 86400
+
+                if "TOTAL WAKTU" in proses_cols:
+                    trx_summary["SLA Utama (detik)"] = trx_summary["TOTAL WAKTU"]
+                    trx_summary["SLA Utama (hari)"] = trx_summary["TOTAL WAKTU (hari)"]
+                    sla_utama_label = "TOTAL WAKTU"
+                else:
+                    trx_summary["SLA Utama (detik)"] = trx_summary[proses_cols].mean(axis=1)
+                    trx_summary["SLA Utama (hari)"] = trx_summary["SLA Utama (detik)"] / 86400
+                    sla_utama_label = "RATA-RATA PROSES"
+
+                trx_summary = trx_summary.dropna(subset=["SLA Utama (hari)"]).copy()
+
+                if trx_summary.empty:
+                    st.warning("Tidak ada data SLA valid untuk tab jenis transaksi.")
+
+                else:
+                    trx_summary = trx_summary.sort_values("SLA Utama (hari)", ascending=True)
+
+                    # =====================================================
+                    # SLA TRANSAKSIONAL DAN KUMULATIF
+                    # =====================================================
+                    st.markdown("### \U0001f52c SLA Transaksional & Kumulatif atas Filter Aktif")
+
+                    with st.expander("\U0001f4c4 Lihat SLA Transaksional per Baris / Nomor Permohonan", expanded=False):
+                        detail_transaksional = df_trx.copy()
+
+                        # Format kolom SLA agar mudah dibaca user. Kolom asli detik tetap tidak diubah.
+                        for col in chart_proses_cols:
+                            if col in detail_transaksional.columns:
+                                detail_transaksional[f"{col} (SLA)"] = detail_transaksional[col].apply(trx_seconds_to_text)
+
+                        base_detail_cols = []
+                        for candidate_col in [
+                            periode_col,
+                            nomor_permohonan_col,
+                            "JENIS TRANSAKSI",
+                            "NAMA VENDOR",
+                            "NILAI TRANSAKSI",
+                            "NOMINAL",
+                            "TOTAL NILAI",
+                        ]:
+                            if candidate_col and candidate_col in detail_transaksional.columns and candidate_col not in base_detail_cols:
+                                base_detail_cols.append(candidate_col)
+
+                        sla_detail_cols = [
+                            f"{col} (SLA)"
+                            for col in chart_proses_cols
+                            if f"{col} (SLA)" in detail_transaksional.columns
+                        ]
+
+                        detail_cols_show = base_detail_cols + sla_detail_cols
+
+                        if detail_cols_show:
+                            st.dataframe(
+                                detail_transaksional[detail_cols_show],
+                                use_container_width=True,
+                                hide_index=True,
+                            )
+                        else:
+                            st.dataframe(detail_transaksional, use_container_width=True, hide_index=True)
+
+                    kumulatif_rows = []
+                    for col in chart_proses_cols:
+                        if col in df_trx.columns:
+                            sec_series = pd.to_numeric(df_trx[col], errors="coerce").dropna()
+                            if not sec_series.empty:
+                                kumulatif_rows.append({
+                                    "Proses": col,
+                                    "Jumlah Data Valid": int(sec_series.count()),
+                                    "Rata-rata SLA": trx_seconds_to_text(sec_series.mean()),
+                                    "Rata-rata SLA (hari)": round(float(sec_series.mean()) / 86400, 2),
+                                    "Akumulasi SLA": trx_seconds_to_text(sec_series.sum()),
+                                    "Akumulasi SLA (hari)": round(float(sec_series.sum()) / 86400, 2),
+                                })
+
+                    kumulatif_df = pd.DataFrame(kumulatif_rows)
+
+                    if not kumulatif_df.empty:
+                        st.dataframe(kumulatif_df, use_container_width=True, hide_index=True)
+                        st.caption(
+                            "Catatan: Akumulasi SLA adalah penjumlahan durasi SLA seluruh baris transaksi terfilter. "
+                            "Untuk evaluasi performa proses, kolom rata-rata SLA biasanya lebih representatif."
                         )
 
-                        permohonan_count = (
-                            df_trx
-                            .groupby(group_cols_permohonan, dropna=False)
-                            .size()
-                            .reset_index(name="Jumlah Baris")
-                        )
+                    if nomor_permohonan_col and nomor_permohonan_col in df_trx.columns:
+                        with st.expander("\U0001f9ee Ringkasan Kumulatif per Nomor Permohonan", expanded=False):
+                            group_cols_permohonan = [nomor_permohonan_col, "JENIS TRANSAKSI"]
 
-                        permohonan_summary = permohonan_summary.merge(
-                            permohonan_count,
-                            on=group_cols_permohonan,
-                            how="left",
-                        )
+                            permohonan_summary = (
+                                df_trx
+                                .groupby(group_cols_permohonan, dropna=False)[proses_cols]
+                                .mean()
+                                .reset_index()
+                            )
 
-                        for col in proses_cols:
-                            permohonan_summary[f"{col} (Rata-rata)"] = permohonan_summary[col].apply(trx_seconds_to_text)
+                            permohonan_count = (
+                                df_trx
+                                .groupby(group_cols_permohonan, dropna=False)
+                                .size()
+                                .reset_index(name="Jumlah Baris")
+                            )
 
-                        permohonan_display_cols = (
-                            group_cols_permohonan
-                            + ["Jumlah Baris"]
-                            + [
-                                f"{col} (Rata-rata)"
-                                for col in proses_cols
-                                if f"{col} (Rata-rata)" in permohonan_summary.columns
-                            ]
-                        )
+                            permohonan_summary = permohonan_summary.merge(
+                                permohonan_count,
+                                on=group_cols_permohonan,
+                                how="left",
+                            )
 
-                        st.dataframe(
-                            permohonan_summary[permohonan_display_cols],
-                            use_container_width=True,
-                            hide_index=True,
-                        )
+                            for col in proses_cols:
+                                permohonan_summary[f"{col} (Rata-rata)"] = permohonan_summary[col].apply(trx_seconds_to_text)
 
-                # =====================================================
-                # KPI DIGITAL CARDS
-                # =====================================================
-                total_jenis = trx_summary["JENIS TRANSAKSI"].nunique()
-                total_transaksi_trx = int(trx_summary["Jumlah Transaksi"].sum())
+                            permohonan_display_cols = (
+                                group_cols_permohonan
+                                + ["Jumlah Baris"]
+                                + [
+                                    f"{col} (Rata-rata)"
+                                    for col in proses_cols
+                                    if f"{col} (Rata-rata)" in permohonan_summary.columns
+                                ]
+                            )
 
-                fastest_row = trx_summary.sort_values("SLA Utama (hari)", ascending=True).iloc[0]
-                slowest_row = trx_summary.sort_values("SLA Utama (hari)", ascending=False).iloc[0]
+                            st.dataframe(
+                                permohonan_summary[permohonan_display_cols],
+                                use_container_width=True,
+                                hide_index=True,
+                            )
 
-                fastest_name = html.escape(str(fastest_row["JENIS TRANSAKSI"]))
-                slowest_name = html.escape(str(slowest_row["JENIS TRANSAKSI"]))
+                    # =====================================================
+                    # KPI DIGITAL CARDS
+                    # =====================================================
+                    total_jenis = trx_summary["JENIS TRANSAKSI"].nunique()
+                    total_transaksi_trx = int(trx_summary["Jumlah Transaksi"].sum())
 
-                kpi_html = f"""
+                    fastest_row = trx_summary.sort_values("SLA Utama (hari)", ascending=True).iloc[0]
+                    slowest_row = trx_summary.sort_values("SLA Utama (hari)", ascending=False).iloc[0]
+
+                    fastest_name = html.escape(str(fastest_row["JENIS TRANSAKSI"]))
+                    slowest_name = html.escape(str(slowest_row["JENIS TRANSAKSI"]))
+
+                    kpi_html = f"""
                 <!DOCTYPE html>
                 <html>
                 <head>
@@ -2707,154 +2870,154 @@ with tab_transaksi:
                 </html>
                 """
 
-                components.html(kpi_html, height=190, scrolling=False)
+                    components.html(kpi_html, height=190, scrolling=False)
 
-                # =====================================================
-                # FILTER VISUALISASI
-                # =====================================================
-                st.markdown("### \U0001f50e Filter Visualisasi")
-
-                c_filter1, c_filter2, c_filter3 = st.columns([1.4, 1.2, 1.2])
-
-                with c_filter1:
-                    jenis_options = trx_summary["JENIS TRANSAKSI"].tolist()
-
-                    selected_jenis = st.multiselect(
-                        "Pilih Jenis Transaksi untuk visualisasi",
-                        options=["ALL"] + jenis_options,
-                        default=["ALL"],
-                        key="trx_filter_jenis_wow",
-                    )
-
-                if "ALL" in selected_jenis or not selected_jenis:
-                    trx_ai_base = trx_summary.copy()
-                else:
-                    trx_ai_base = trx_summary[
-                        trx_summary["JENIS TRANSAKSI"].isin(selected_jenis)
-                    ].copy()
-
-                with c_filter2:
                     # =====================================================
-                    # FIX: slider tidak boleh memiliki min_value == max_value
+                    # FILTER VISUALISASI
                     # =====================================================
-                    # Kondisi ini terjadi ketika filter utama menyisakan hanya
-                    # 1 jenis transaksi. Streamlit melempar StreamlitAPIException
-                    # jika st.slider dibuat dengan min=1 dan max=1.
-                    max_top_n = min(30, len(trx_ai_base))
+                    st.markdown("### \U0001f50e Filter Visualisasi")
 
-                    if max_top_n <= 0:
-                        top_n = 0
-                        st.metric("Top N ditampilkan", "0")
-                    elif max_top_n == 1:
-                        top_n = 1
-                        # Tetap tampilkan kontrol di posisi yang sama, namun
-                        # nonaktif karena hanya ada satu kategori yang tersedia.
-                        st.selectbox(
-                            "Top N ditampilkan",
-                            options=[1],
-                            index=0,
-                            disabled=True,
-                            key="trx_top_n_wow_single",
-                            help="Hanya ada 1 jenis transaksi pada filter aktif.",
-                        )
-                    else:
-                        default_top_n = min(10, max_top_n)
+                    c_filter1, c_filter2, c_filter3 = st.columns([1.4, 1.2, 1.2])
 
-                        # Bersihkan state slider lama jika nilainya berada di
-                        # luar range baru setelah user mempersempit filter.
-                        old_top_n = st.session_state.get("trx_top_n_wow")
-                        if old_top_n is not None:
-                            try:
-                                old_top_n_int = int(old_top_n)
-                            except Exception:
-                                old_top_n_int = default_top_n
-                            if old_top_n_int < 1 or old_top_n_int > max_top_n:
-                                st.session_state.pop("trx_top_n_wow", None)
+                    with c_filter1:
+                        jenis_options = trx_summary["JENIS TRANSAKSI"].tolist()
 
-                        top_n = st.slider(
-                            "Top N ditampilkan",
-                            min_value=1,
-                            max_value=max_top_n,
-                            value=default_top_n,
-                            step=1,
-                            key="trx_top_n_wow",
+                        selected_jenis = st.multiselect(
+                            "Pilih Jenis Transaksi untuk visualisasi",
+                            options=["ALL"] + jenis_options,
+                            default=["ALL"],
+                            key="trx_filter_jenis_wow",
                         )
 
-                with c_filter3:
-                    sort_mode = st.selectbox(
-                        "Urutkan berdasarkan",
-                        [
-                            "SLA tercepat",
-                            "SLA terlama",
-                            "Jumlah transaksi terbesar",
-                        ],
-                        key="trx_sort_mode_wow",
-                    )
-
-                if trx_ai_base.empty:
-                    st.warning("Tidak ada data untuk kombinasi filter yang dipilih.")
-
-                else:
-                    trx_view = trx_ai_base.copy()
-
-                    if sort_mode == "SLA tercepat":
-                        trx_view = trx_view.sort_values("SLA Utama (hari)", ascending=True)
-                    elif sort_mode == "SLA terlama":
-                        trx_view = trx_view.sort_values("SLA Utama (hari)", ascending=False)
+                    if "ALL" in selected_jenis or not selected_jenis:
+                        trx_ai_base = trx_summary.copy()
                     else:
-                        trx_view = trx_view.sort_values("Jumlah Transaksi", ascending=False)
+                        trx_ai_base = trx_summary[
+                            trx_summary["JENIS TRANSAKSI"].isin(selected_jenis)
+                        ].copy()
 
-                    trx_view = trx_view.head(top_n)
+                    with c_filter2:
+                        # =====================================================
+                        # FIX: slider tidak boleh memiliki min_value == max_value
+                        # =====================================================
+                        # Kondisi ini terjadi ketika filter utama menyisakan hanya
+                        # 1 jenis transaksi. Streamlit melempar StreamlitAPIException
+                        # jika st.slider dibuat dengan min=1 dan max=1.
+                        max_top_n = min(30, len(trx_ai_base))
 
-                    if trx_view.empty:
+                        if max_top_n <= 0:
+                            top_n = 0
+                            st.metric("Top N ditampilkan", "0")
+                        elif max_top_n == 1:
+                            top_n = 1
+                            # Tetap tampilkan kontrol di posisi yang sama, namun
+                            # nonaktif karena hanya ada satu kategori yang tersedia.
+                            st.selectbox(
+                                "Top N ditampilkan",
+                                options=[1],
+                                index=0,
+                                disabled=True,
+                                key="trx_top_n_wow_single",
+                                help="Hanya ada 1 jenis transaksi pada filter aktif.",
+                            )
+                        else:
+                            default_top_n = min(10, max_top_n)
+
+                            # Bersihkan state slider lama jika nilainya berada di
+                            # luar range baru setelah user mempersempit filter.
+                            old_top_n = st.session_state.get("trx_top_n_wow")
+                            if old_top_n is not None:
+                                try:
+                                    old_top_n_int = int(old_top_n)
+                                except Exception:
+                                    old_top_n_int = default_top_n
+                                if old_top_n_int < 1 or old_top_n_int > max_top_n:
+                                    st.session_state.pop("trx_top_n_wow", None)
+
+                            top_n = st.slider(
+                                "Top N ditampilkan",
+                                min_value=1,
+                                max_value=max_top_n,
+                                value=default_top_n,
+                                step=1,
+                                key="trx_top_n_wow",
+                            )
+
+                    with c_filter3:
+                        sort_mode = st.selectbox(
+                            "Urutkan berdasarkan",
+                            [
+                                "SLA tercepat",
+                                "SLA terlama",
+                                "Jumlah transaksi terbesar",
+                            ],
+                            key="trx_sort_mode_wow",
+                        )
+
+                    if trx_ai_base.empty:
                         st.warning("Tidak ada data untuk kombinasi filter yang dipilih.")
 
                     else:
-                        value_vars_chart = [
-                            f"{c} (hari)"
-                            for c in chart_proses_cols
-                            if f"{c} (hari)" in trx_view.columns
-                        ]
+                        trx_view = trx_ai_base.copy()
 
-                        trx_long_view = trx_view.melt(
-                            id_vars=["JENIS TRANSAKSI", "Jumlah Transaksi"],
-                            value_vars=value_vars_chart,
-                            var_name="Proses",
-                            value_name="Rata-rata SLA (hari)",
-                        )
+                        if sort_mode == "SLA tercepat":
+                            trx_view = trx_view.sort_values("SLA Utama (hari)", ascending=True)
+                        elif sort_mode == "SLA terlama":
+                            trx_view = trx_view.sort_values("SLA Utama (hari)", ascending=False)
+                        else:
+                            trx_view = trx_view.sort_values("Jumlah Transaksi", ascending=False)
 
-                        trx_long_view["Proses"] = trx_long_view["Proses"].str.replace(
-                            " (hari)",
-                            "",
-                            regex=False,
-                        )
+                        trx_view = trx_view.head(top_n)
 
-                        trx_long_view = trx_long_view.dropna(subset=["Rata-rata SLA (hari)"])
+                        if trx_view.empty:
+                            st.warning("Tidak ada data untuk kombinasi filter yang dipilih.")
 
-                        # =====================================================
-                        # AI EXECUTIVE INSIGHT
-                        # =====================================================
-                        st.markdown("### \U0001f916 AI Executive Insight")
+                        else:
+                            value_vars_chart = [
+                                f"{c} (hari)"
+                                for c in chart_proses_cols
+                                if f"{c} (hari)" in trx_view.columns
+                            ]
 
-                        ai_result = trx_generate_ai_insight(
-                            trx_ai_base,
-                            proses_bottleneck_cols,
-                        )
+                            trx_long_view = trx_view.melt(
+                                id_vars=["JENIS TRANSAKSI", "Jumlah Transaksi"],
+                                value_vars=value_vars_chart,
+                                var_name="Proses",
+                                value_name="Rata-rata SLA (hari)",
+                            )
 
-                        summary_html = trx_html_list(ai_result.get("summary", []))
-                        risk_html = trx_html_list(ai_result.get("risks", []))
-                        reco_html = trx_html_list(ai_result.get("recommendations", []))
+                            trx_long_view["Proses"] = trx_long_view["Proses"].str.replace(
+                                " (hari)",
+                                "",
+                                regex=False,
+                            )
 
-                        status_label = ai_result.get("status_label", "CONTROLLED")
-                        status_class = ai_result.get("status_class", "trx-status-good")
+                            trx_long_view = trx_long_view.dropna(subset=["Rata-rata SLA (hari)"])
 
-                        ai_height = 430 + 28 * max(
-                            len(ai_result.get("summary", [])),
-                            len(ai_result.get("risks", [])),
-                            len(ai_result.get("recommendations", [])),
-                        )
+                            # =====================================================
+                            # AI EXECUTIVE INSIGHT
+                            # =====================================================
+                            st.markdown("### \U0001f916 AI Executive Insight")
 
-                        ai_html = f"""
+                            ai_result = trx_generate_ai_insight(
+                                trx_ai_base,
+                                proses_bottleneck_cols,
+                            )
+
+                            summary_html = trx_html_list(ai_result.get("summary", []))
+                            risk_html = trx_html_list(ai_result.get("risks", []))
+                            reco_html = trx_html_list(ai_result.get("recommendations", []))
+
+                            status_label = ai_result.get("status_label", "CONTROLLED")
+                            status_class = ai_result.get("status_class", "trx-status-good")
+
+                            ai_height = 430 + 28 * max(
+                                len(ai_result.get("summary", [])),
+                                len(ai_result.get("risks", [])),
+                                len(ai_result.get("recommendations", [])),
+                            )
+
+                            ai_html = f"""
                         <!DOCTYPE html>
                         <html>
                         <head>
@@ -3047,82 +3210,82 @@ with tab_transaksi:
                         </html>
                         """
 
-                        components.html(ai_html, height=ai_height, scrolling=False)
+                            components.html(ai_html, height=ai_height, scrolling=False)
 
-                        # =====================================================
-                        # PRIORITY MATRIX TABLE
-                        # =====================================================
-                        with st.expander("\U0001f9e0 Lihat Matriks Prioritas AI", expanded=False):
-                            priority_show = ai_result.get("priority_df", pd.DataFrame()).copy()
+                            # =====================================================
+                            # PRIORITY MATRIX TABLE
+                            # =====================================================
+                            with st.expander("\U0001f9e0 Lihat Matriks Prioritas AI", expanded=False):
+                                priority_show = ai_result.get("priority_df", pd.DataFrame()).copy()
 
-                            if not priority_show.empty:
-                                priority_show["SLA Utama (hari)"] = priority_show["SLA Utama (hari)"].round(2)
+                                if not priority_show.empty:
+                                    priority_show["SLA Utama (hari)"] = priority_show["SLA Utama (hari)"].round(2)
 
-                                def style_priority(row):
-                                    label = str(row["Prioritas AI"])
+                                    def style_priority(row):
+                                        label = str(row["Prioritas AI"])
 
-                                    if "Prioritas 1" in label:
-                                        return [
-                                            "background-color: #ffe2e2; color: #7a0000; font-weight: bold"
-                                        ] * len(row)
-                                    elif "Prioritas 2" in label:
-                                        return [
-                                            "background-color: #fff3cd; color: #6b4e00; font-weight: bold"
-                                        ] * len(row)
-                                    elif "Prioritas 3" in label:
-                                        return [
-                                            "background-color: #dff5ff; color: #004761; font-weight: bold"
-                                        ] * len(row)
-                                    else:
-                                        return [""] * len(row)
+                                        if "Prioritas 1" in label:
+                                            return [
+                                                "background-color: #ffe2e2; color: #7a0000; font-weight: bold"
+                                            ] * len(row)
+                                        elif "Prioritas 2" in label:
+                                            return [
+                                                "background-color: #fff3cd; color: #6b4e00; font-weight: bold"
+                                            ] * len(row)
+                                        elif "Prioritas 3" in label:
+                                            return [
+                                                "background-color: #dff5ff; color: #004761; font-weight: bold"
+                                            ] * len(row)
+                                        else:
+                                            return [""] * len(row)
 
-                                st.dataframe(
-                                    priority_show.style.apply(style_priority, axis=1),
-                                    use_container_width=True,
-                                    hide_index=True,
-                                )
+                                    st.dataframe(
+                                        priority_show.style.apply(style_priority, axis=1),
+                                        use_container_width=True,
+                                        hide_index=True,
+                                    )
+                                else:
+                                    st.info("Belum ada matriks prioritas yang dapat ditampilkan.")
+
+                            # =====================================================
+                            # EXECUTIVE SUMMARY DIREKSI
+                            # =====================================================
+                            st.markdown("### \U0001f3af Executive Summary Direksi")
+
+                            exec_df = trx_ai_base.copy()
+
+                            total_jenis_exec = exec_df["JENIS TRANSAKSI"].nunique()
+                            total_trx_exec = int(exec_df["Jumlah Transaksi"].sum())
+                            avg_sla_exec = float(exec_df["SLA Utama (hari)"].mean())
+
+                            fastest_exec = exec_df.sort_values("SLA Utama (hari)", ascending=True).iloc[0]
+                            slowest_exec = exec_df.sort_values("SLA Utama (hari)", ascending=False).iloc[0]
+                            biggest_exec = exec_df.sort_values("Jumlah Transaksi", ascending=False).iloc[0]
+
+                            priority_df_exec = ai_result.get("priority_df", pd.DataFrame()).copy()
+                            p1_count = ai_result.get("p1_count", 0)
+                            bottleneck_proses = ai_result.get("bottleneck_proses", "-")
+                            bottleneck_value = ai_result.get("bottleneck_value", np.nan)
+
+                            if status_label == "CRITICAL":
+                                status_desc = "Perlu perhatian segera karena beberapa jenis transaksi memiliki kombinasi SLA tinggi dan volume besar."
+                            elif status_label == "WATCHLIST":
+                                status_desc = "Terdapat transaksi prioritas yang perlu dipantau dan ditindaklanjuti."
                             else:
-                                st.info("Belum ada matriks prioritas yang dapat ditampilkan.")
+                                status_desc = "Secara umum kondisi transaksi masih terkendali pada filter yang aktif."
 
-                        # =====================================================
-                        # EXECUTIVE SUMMARY DIREKSI
-                        # =====================================================
-                        st.markdown("### \U0001f3af Executive Summary Direksi")
+                            top_priority_html = ""
 
-                        exec_df = trx_ai_base.copy()
+                            if not priority_df_exec.empty:
+                                priority_show_exec = priority_df_exec.head(5).copy()
 
-                        total_jenis_exec = exec_df["JENIS TRANSAKSI"].nunique()
-                        total_trx_exec = int(exec_df["Jumlah Transaksi"].sum())
-                        avg_sla_exec = float(exec_df["SLA Utama (hari)"].mean())
+                                for _, row in priority_show_exec.iterrows():
+                                    trx_name = html.escape(trx_safe_text(row["JENIS TRANSAKSI"], 42))
+                                    trx_count = trx_fmt_int(row["Jumlah Transaksi"])
+                                    trx_sla = trx_fmt_hari(row["SLA Utama (hari)"])
+                                    trx_priority = html.escape(str(row["Prioritas AI"]))
 
-                        fastest_exec = exec_df.sort_values("SLA Utama (hari)", ascending=True).iloc[0]
-                        slowest_exec = exec_df.sort_values("SLA Utama (hari)", ascending=False).iloc[0]
-                        biggest_exec = exec_df.sort_values("Jumlah Transaksi", ascending=False).iloc[0]
-
-                        priority_df_exec = ai_result.get("priority_df", pd.DataFrame()).copy()
-                        p1_count = ai_result.get("p1_count", 0)
-                        bottleneck_proses = ai_result.get("bottleneck_proses", "-")
-                        bottleneck_value = ai_result.get("bottleneck_value", np.nan)
-
-                        if status_label == "CRITICAL":
-                            status_desc = "Perlu perhatian segera karena beberapa jenis transaksi memiliki kombinasi SLA tinggi dan volume besar."
-                        elif status_label == "WATCHLIST":
-                            status_desc = "Terdapat transaksi prioritas yang perlu dipantau dan ditindaklanjuti."
-                        else:
-                            status_desc = "Secara umum kondisi transaksi masih terkendali pada filter yang aktif."
-
-                        top_priority_html = ""
-
-                        if not priority_df_exec.empty:
-                            priority_show_exec = priority_df_exec.head(5).copy()
-
-                            for _, row in priority_show_exec.iterrows():
-                                trx_name = html.escape(trx_safe_text(row["JENIS TRANSAKSI"], 42))
-                                trx_count = trx_fmt_int(row["Jumlah Transaksi"])
-                                trx_sla = trx_fmt_hari(row["SLA Utama (hari)"])
-                                trx_priority = html.escape(str(row["Prioritas AI"]))
-
-                                top_priority_html += f"""
+                                    top_priority_html += f"""
                                 <div class="trx-exec-prio-row">
                                     <div>
                                         <div class="trx-exec-prio-name">{trx_name}</div>
@@ -3135,8 +3298,8 @@ with tab_transaksi:
                                 </div>
                                 """
 
-                        if top_priority_html == "":
-                            top_priority_html = """
+                            if top_priority_html == "":
+                                top_priority_html = """
                             <div class="trx-exec-prio-row">
                                 <div>
                                     <div class="trx-exec-prio-name">Belum ada prioritas khusus</div>
@@ -3146,25 +3309,25 @@ with tab_transaksi:
                             </div>
                             """
 
-                        bottleneck_sentence = "."
+                            bottleneck_sentence = "."
 
-                        if not pd.isna(bottleneck_value):
-                            bottleneck_sentence = f" dengan rata-rata {trx_fmt_hari(bottleneck_value)}."
+                            if not pd.isna(bottleneck_value):
+                                bottleneck_sentence = f" dengan rata-rata {trx_fmt_hari(bottleneck_value)}."
 
-                        exec_height = 790 + (len(priority_df_exec.head(5)) * 12)
+                            exec_height = 790 + (len(priority_df_exec.head(5)) * 12)
 
-                        exec_fastest_name = html.escape(trx_safe_text(fastest_exec["JENIS TRANSAKSI"]))
-                        exec_slowest_name = html.escape(trx_safe_text(slowest_exec["JENIS TRANSAKSI"]))
-                        exec_biggest_name = html.escape(trx_safe_text(biggest_exec["JENIS TRANSAKSI"]))
+                            exec_fastest_name = html.escape(trx_safe_text(fastest_exec["JENIS TRANSAKSI"]))
+                            exec_slowest_name = html.escape(trx_safe_text(slowest_exec["JENIS TRANSAKSI"]))
+                            exec_biggest_name = html.escape(trx_safe_text(biggest_exec["JENIS TRANSAKSI"]))
 
-                        logo_src = trx_logo_data_uri()
+                            logo_src = trx_logo_data_uri()
 
-                        if logo_src:
-                            logo_html = f'<img src="{logo_src}" class="trx-exec-logo" />'
-                        else:
-                            logo_html = '<div class="trx-exec-logo-fallback">ASDP</div>'
+                            if logo_src:
+                                logo_html = f'<img src="{logo_src}" class="trx-exec-logo" />'
+                            else:
+                                logo_html = '<div class="trx-exec-logo-fallback">ASDP</div>'
 
-                        exec_html = f"""
+                            exec_html = f"""
                         <!DOCTYPE html>
                         <html>
                         <head>
@@ -3473,403 +3636,404 @@ with tab_transaksi:
                         </html>
                         """
 
-                        components.html(exec_html, height=exec_height, scrolling=False)
+                            components.html(exec_html, height=exec_height, scrolling=False)
 
-                        # =====================================================
-                        # DETAIL OBJECTS
-                        # =====================================================
-                        def trx_get_detail_objects(selected_name):
-                            detail_df_local = df_trx[
-                                df_trx["JENIS TRANSAKSI"] == selected_name
-                            ].copy()
+                            # =====================================================
+                            # DETAIL OBJECTS
+                            # =====================================================
+                            def trx_get_detail_objects(selected_name):
+                                detail_df_local = df_trx[
+                                    df_trx["JENIS TRANSAKSI"] == selected_name
+                                ].copy()
 
-                            detail_mean_local = trx_summary[
-                                trx_summary["JENIS TRANSAKSI"] == selected_name
-                            ].copy()
+                                detail_mean_local = trx_summary[
+                                    trx_summary["JENIS TRANSAKSI"] == selected_name
+                                ].copy()
 
-                            detail_chart_local = pd.DataFrame()
+                                detail_chart_local = pd.DataFrame()
 
-                            if not detail_mean_local.empty:
-                                detail_row_local = detail_mean_local.iloc[0]
-                                rows = []
+                                if not detail_mean_local.empty:
+                                    detail_row_local = detail_mean_local.iloc[0]
+                                    rows = []
 
-                                for p in chart_proses_cols:
-                                    col_hari = f"{p} (hari)"
-                                    if col_hari in detail_row_local.index:
-                                        val = detail_row_local[col_hari]
-                                        if pd.notna(val):
-                                            rows.append(
-                                                {
-                                                    "Proses": p,
-                                                    "Rata-rata SLA (hari)": val,
-                                                }
-                                            )
+                                    for p in chart_proses_cols:
+                                        col_hari = f"{p} (hari)"
+                                        if col_hari in detail_row_local.index:
+                                            val = detail_row_local[col_hari]
+                                            if pd.notna(val):
+                                                rows.append(
+                                                    {
+                                                        "Proses": p,
+                                                        "Rata-rata SLA (hari)": val,
+                                                    }
+                                                )
 
-                                detail_chart_local = pd.DataFrame(rows)
+                                    detail_chart_local = pd.DataFrame(rows)
 
-                            return detail_df_local, detail_mean_local, detail_chart_local
+                                return detail_df_local, detail_mean_local, detail_chart_local
 
-                        detail_options = trx_view["JENIS TRANSAKSI"].tolist()
+                            detail_options = trx_view["JENIS TRANSAKSI"].tolist()
 
-                        previous_detail = st.session_state.get("trx_detail_select_wow", None)
+                            previous_detail = st.session_state.get("trx_detail_select_wow", None)
 
-                        if previous_detail in detail_options:
-                            pdf_selected_detail = previous_detail
-                        else:
-                            pdf_selected_detail = detail_options[0]
+                            if previous_detail in detail_options:
+                                pdf_selected_detail = previous_detail
+                            else:
+                                pdf_selected_detail = detail_options[0]
 
-                        detail_df_for_pdf, detail_mean_for_pdf, detail_chart_for_pdf = trx_get_detail_objects(
-                            pdf_selected_detail
-                        )
+                            detail_df_for_pdf, detail_mean_for_pdf, detail_chart_for_pdf = trx_get_detail_objects(
+                                pdf_selected_detail
+                            )
 
-                        # =====================================================
-                        # DOWNLOAD EXECUTIVE PACK
-                        # =====================================================
-                        st.markdown("### \U0001f4e5 Download Executive Pack")
+                            # =====================================================
+                            # DOWNLOAD EXECUTIVE PACK
+                            # =====================================================
+                            st.markdown("### \U0001f4e5 Download Executive Pack")
 
-                        col_down1, col_down2, col_down3 = st.columns([1, 1, 1.25])
+                            col_down1, col_down2, col_down3 = st.columns([1, 1, 1.25])
 
-                        with col_down1:
-                            if st.button("\U0001f3a8 Generate Executive Pack", key="generate_exec_summary_trx"):
-                                try:
-                                    transaksi_display_pdf = trx_view.copy()
-
-                                    for col in chart_proses_cols:
-                                        if col in transaksi_display_pdf.columns:
-                                            transaksi_display_pdf[f"{col} (Rata-rata)"] = transaksi_display_pdf[col].apply(
-                                                trx_seconds_to_text
-                                            )
-
-                                    display_cols_pdf = (
-                                        ["JENIS TRANSAKSI", "Jumlah Transaksi"]
-                                        + [
-                                            f"{col} (Rata-rata)"
-                                            for col in chart_proses_cols
-                                            if f"{col} (Rata-rata)" in transaksi_display_pdf.columns
-                                        ]
-                                    )
-
-                                    transaksi_display_pdf = transaksi_display_pdf[display_cols_pdf]
-
-                                    summary_img = trx_make_summary_image(
-                                        trx_exec_base=trx_ai_base,
-                                        ai_result=ai_result,
-                                        sla_utama_label=sla_utama_label,
-                                        start_periode=start_periode,
-                                        end_periode=end_periode,
-                                    )
-
-                                    png_bytes = trx_image_to_png_bytes(summary_img)
-                                    st.session_state["trx_exec_summary_png"] = png_bytes
-
+                            with col_down1:
+                                if st.button("\U0001f3a8 Generate Executive Pack", key="generate_exec_summary_trx"):
                                     try:
-                                        pdf_bytes = trx_make_full_pdf_report(
-                                            summary_img=summary_img,
-                                            trx_view=trx_view,
-                                            trx_long_view=trx_long_view,
-                                            chart_proses_cols=chart_proses_cols,
+                                        transaksi_display_pdf = trx_view.copy()
+
+                                        for col in chart_proses_cols:
+                                            if col in transaksi_display_pdf.columns:
+                                                transaksi_display_pdf[f"{col} (Rata-rata)"] = transaksi_display_pdf[col].apply(
+                                                    trx_seconds_to_text
+                                                )
+
+                                        display_cols_pdf = (
+                                            ["JENIS TRANSAKSI", "Jumlah Transaksi"]
+                                            + [
+                                                f"{col} (Rata-rata)"
+                                                for col in chart_proses_cols
+                                                if f"{col} (Rata-rata)" in transaksi_display_pdf.columns
+                                            ]
+                                        )
+
+                                        transaksi_display_pdf = transaksi_display_pdf[display_cols_pdf]
+
+                                        summary_img = trx_make_summary_image(
+                                            trx_exec_base=trx_ai_base,
+                                            ai_result=ai_result,
                                             sla_utama_label=sla_utama_label,
-                                            priority_df=ai_result.get("priority_df", pd.DataFrame()),
-                                            transaksi_display=transaksi_display_pdf,
-                                            detail_df=detail_df_for_pdf,
-                                            detail_chart=detail_chart_for_pdf,
-                                            selected_detail=pdf_selected_detail,
+                                            start_periode=start_periode,
+                                            end_periode=end_periode,
                                         )
 
-                                        st.session_state["trx_exec_report_pdf"] = pdf_bytes
-                                        st.success("Executive Pack berhasil dibuat. PNG dan PDF lengkap siap di-download.")
+                                        png_bytes = trx_image_to_png_bytes(summary_img)
+                                        st.session_state["trx_exec_summary_png"] = png_bytes
 
-                                    except Exception as e_pdf:
-                                        if "trx_exec_report_pdf" in st.session_state:
-                                            del st.session_state["trx_exec_report_pdf"]
+                                        try:
+                                            pdf_bytes = trx_make_full_pdf_report(
+                                                summary_img=summary_img,
+                                                trx_view=trx_view,
+                                                trx_long_view=trx_long_view,
+                                                chart_proses_cols=chart_proses_cols,
+                                                sla_utama_label=sla_utama_label,
+                                                priority_df=ai_result.get("priority_df", pd.DataFrame()),
+                                                transaksi_display=transaksi_display_pdf,
+                                                detail_df=detail_df_for_pdf,
+                                                detail_chart=detail_chart_for_pdf,
+                                                selected_detail=pdf_selected_detail,
+                                            )
 
-                                        st.warning(
-                                            "PNG berhasil dibuat, tetapi PDF gagal dibuat. "
-                                            "Pastikan dependency 'kaleido' sudah ada di requirements.txt."
-                                        )
-                                        st.exception(e_pdf)
+                                            st.session_state["trx_exec_report_pdf"] = pdf_bytes
+                                            st.success("Executive Pack berhasil dibuat. PNG dan PDF lengkap siap di-download.")
 
-                                except Exception as e:
-                                    st.error("Executive Pack gagal dibuat.")
-                                    st.exception(e)
+                                        except Exception as e_pdf:
+                                            if "trx_exec_report_pdf" in st.session_state:
+                                                del st.session_state["trx_exec_report_pdf"]
 
-                        with col_down2:
+                                            st.warning(
+                                                "PNG berhasil dibuat, tetapi PDF gagal dibuat. "
+                                                "Pastikan dependency 'kaleido' sudah ada di requirements.txt."
+                                            )
+                                            st.exception(e_pdf)
+
+                                    except Exception as e:
+                                        st.error("Executive Pack gagal dibuat.")
+                                        st.exception(e)
+
+                            with col_down2:
+                                if "trx_exec_summary_png" in st.session_state:
+                                    st.download_button(
+                                        "\u2b07\ufe0f Download PNG Summary",
+                                        data=st.session_state["trx_exec_summary_png"],
+                                        file_name="Executive_Summary_Tab_Transaksi.png",
+                                        mime="image/png",
+                                        key="download_exec_summary_png",
+                                    )
+
+                            with col_down3:
+                                if "trx_exec_report_pdf" in st.session_state:
+                                    st.download_button(
+                                        "\u2b07\ufe0f Download PDF Lengkap",
+                                        data=st.session_state["trx_exec_report_pdf"],
+                                        file_name="Executive_Report_Tab_Transaksi_Lengkap.pdf",
+                                        mime="application/pdf",
+                                        key="download_exec_report_pdf",
+                                    )
+
                             if "trx_exec_summary_png" in st.session_state:
-                                st.download_button(
-                                    "\u2b07\ufe0f Download PNG Summary",
-                                    data=st.session_state["trx_exec_summary_png"],
-                                    file_name="Executive_Summary_Tab_Transaksi.png",
-                                    mime="image/png",
-                                    key="download_exec_summary_png",
-                                )
-
-                        with col_down3:
-                            if "trx_exec_report_pdf" in st.session_state:
-                                st.download_button(
-                                    "\u2b07\ufe0f Download PDF Lengkap",
-                                    data=st.session_state["trx_exec_report_pdf"],
-                                    file_name="Executive_Report_Tab_Transaksi_Lengkap.pdf",
-                                    mime="application/pdf",
-                                    key="download_exec_report_pdf",
-                                )
-
-                        if "trx_exec_summary_png" in st.session_state:
-                            with st.expander("\U0001f440 Preview Executive Summary 16:9", expanded=True):
-                                st.image(
-                                    st.session_state["trx_exec_summary_png"],
-                                    caption="Preview Executive Summary 16:9",
-                                    use_container_width=True,
-                                )
-
-                        # =====================================================
-                        # MAIN CHARTS
-                        # =====================================================
-                        st.markdown("### \U0001f3c6 Ranking SLA per Jenis Transaksi")
-                        fig_rank = trx_build_rank_fig(trx_view, sla_utama_label)
-                        st.plotly_chart(fig_rank, use_container_width=True)
-
-                        st.markdown("### \U0001f525 Heatmap SLA per Proses")
-                        fig_heat = trx_build_heat_fig(trx_view, chart_proses_cols)
-
-                        if fig_heat is not None:
-                            st.plotly_chart(fig_heat, use_container_width=True)
-                        else:
-                            st.info("Tidak ada kolom proses yang dapat ditampilkan pada heatmap.")
-
-                        st.markdown("### \U0001f4ca Perbandingan SLA Masing-masing Proses")
-
-                        if not trx_long_view.empty:
-                            fig_group = trx_build_group_fig(trx_long_view)
-                            st.plotly_chart(fig_group, use_container_width=True)
-                        else:
-                            st.info("Tidak ada data SLA proses yang valid untuk grafik perbandingan.")
-
-                        st.markdown("### \U0001fae7 Bubble Matrix: Volume vs SLA")
-                        fig_bubble = trx_build_bubble_fig(trx_view)
-                        st.plotly_chart(fig_bubble, use_container_width=True)
-
-                        st.markdown("### \U0001f369 Komposisi Jumlah Transaksi")
-                        fig_donut = trx_build_donut_fig(trx_view)
-                        st.plotly_chart(fig_donut, use_container_width=True)
-
-                        st.markdown("### \u2699\ufe0f Grafik Masing-masing Proses")
-
-                        cols_per_row = 2
-                        proses_chunks = [
-                            chart_proses_cols[i:i + cols_per_row]
-                            for i in range(0, len(chart_proses_cols), cols_per_row)
-                        ]
-
-                        for chunk in proses_chunks:
-                            chart_cols = st.columns(len(chunk))
-
-                            for i, proses in enumerate(chunk):
-                                with chart_cols[i]:
-                                    col_hari = f"{proses} (hari)"
-
-                                    if col_hari not in trx_view.columns:
-                                        continue
-
-                                    data_proses = trx_view.dropna(subset=[col_hari]).sort_values(
-                                        col_hari,
-                                        ascending=True,
-                                    )
-
-                                    if data_proses.empty:
-                                        st.info(f"Tidak ada data valid untuk proses {proses}.")
-                                    else:
-                                        fig_each = trx_build_process_fig(data_proses, proses)
-                                        st.plotly_chart(fig_each, use_container_width=True)
-
-                        # =====================================================
-                        # TABEL RATA-RATA SLA
-                        # =====================================================
-                        with st.expander("\U0001f4cb Tabel Detail Rata-rata SLA per Jenis Transaksi", expanded=False):
-                            transaksi_display = trx_view.copy()
-
-                            for col in chart_proses_cols:
-                                if col in transaksi_display.columns:
-                                    transaksi_display[f"{col} (Rata-rata)"] = transaksi_display[col].apply(
-                                        trx_seconds_to_text
-                                    )
-
-                            display_cols = (
-                                ["JENIS TRANSAKSI", "Jumlah Transaksi"]
-                                + [
-                                    f"{col} (Rata-rata)"
-                                    for col in chart_proses_cols
-                                    if f"{col} (Rata-rata)" in transaksi_display.columns
-                                ]
-                            )
-
-                            st.dataframe(
-                                transaksi_display[display_cols],
-                                use_container_width=True,
-                                hide_index=True,
-                            )
-
-                        # =====================================================
-                        # DRILLDOWN DETAIL - SAFE MODE TANPA st.fragment
-                        # =====================================================
-                        st.markdown("### \U0001f50d Drilldown Detail Jenis Transaksi")
-
-                        # Catatan:
-                        # Jangan gunakan st.fragment di dalam st.tabs untuk kasus ini.
-                        # Pada beberapa versi Streamlit, fragment rerun di dalam tab bisa membuat
-                        # output menumpuk / keluar dari konteks tab, sehingga isi tab lain tampak
-                        # muncul di bawah tab aktif.
-
-                        if not detail_options:
-                            st.info("Tidak ada jenis transaksi yang dapat ditampilkan untuk drilldown.")
-                        else:
-                            current_value = st.session_state.get(
-                                "trx_detail_select_wow",
-                                detail_options[0],
-                            )
-
-                            if current_value not in detail_options:
-                                current_index = 0
-                            else:
-                                current_index = detail_options.index(current_value)
-
-                            selected_detail = st.selectbox(
-                                "Pilih jenis transaksi untuk drilldown",
-                                options=detail_options,
-                                index=current_index,
-                                key="trx_detail_select_wow",
-                            )
-
-                            detail_df, detail_mean, detail_chart = trx_get_detail_objects(selected_detail)
-
-                            if not detail_mean.empty:
-                                detail_row = detail_mean.iloc[0]
-
-                                d1, d2, d3 = st.columns(3)
-
-                                d1.metric(
-                                    "Jumlah Transaksi",
-                                    trx_fmt_int(detail_row["Jumlah Transaksi"]),
-                                )
-
-                                d2.metric(
-                                    "SLA Utama",
-                                    trx_fmt_hari(detail_row["SLA Utama (hari)"]),
-                                )
-
-                                d3.metric(
-                                    "Acuan SLA",
-                                    sla_utama_label,
-                                )
-
-                                if not detail_chart.empty:
-                                    fig_detail = trx_build_detail_fig(detail_chart, selected_detail)
-                                    st.plotly_chart(
-                                        fig_detail,
+                                with st.expander("\U0001f440 Preview Executive Summary 16:9", expanded=True):
+                                    st.image(
+                                        st.session_state["trx_exec_summary_png"],
+                                        caption="Preview Executive Summary 16:9",
                                         use_container_width=True,
-                                        key="trx_detail_chart_safe_wow",
                                     )
-                                else:
-                                    st.info("Tidak ada data SLA proses yang valid untuk jenis transaksi ini.")
-                            else:
-                                st.warning("Detail transaksi tidak ditemukan untuk pilihan ini.")
 
-                            with st.expander("\U0001f50e Lihat Data Baris Detail", expanded=False):
-                                st.dataframe(
-                                    detail_df,
-                                    use_container_width=True,
-                                    key="trx_detail_table_safe_wow",
+                            # =====================================================
+                            # MAIN CHARTS
+                            # =====================================================
+                            st.markdown("### \U0001f3c6 Ranking SLA per Jenis Transaksi")
+                            fig_rank = trx_build_rank_fig(trx_view, sla_utama_label)
+                            st.plotly_chart(fig_rank, use_container_width=True)
+
+                            st.markdown("### \U0001f525 Heatmap SLA per Proses")
+                            fig_heat = trx_build_heat_fig(trx_view, chart_proses_cols)
+
+                            if fig_heat is not None:
+                                st.plotly_chart(fig_heat, use_container_width=True)
+                            else:
+                                st.info("Tidak ada kolom proses yang dapat ditampilkan pada heatmap.")
+
+                            st.markdown("### \U0001f4ca Perbandingan SLA Masing-masing Proses")
+
+                            if not trx_long_view.empty:
+                                fig_group = trx_build_group_fig(trx_long_view)
+                                st.plotly_chart(fig_group, use_container_width=True)
+                            else:
+                                st.info("Tidak ada data SLA proses yang valid untuk grafik perbandingan.")
+
+                            st.markdown("### \U0001fae7 Bubble Matrix: Volume vs SLA")
+                            fig_bubble = trx_build_bubble_fig(trx_view)
+                            st.plotly_chart(fig_bubble, use_container_width=True)
+
+                            st.markdown("### \U0001f369 Komposisi Jumlah Transaksi")
+                            fig_donut = trx_build_donut_fig(trx_view)
+                            st.plotly_chart(fig_donut, use_container_width=True)
+
+                            st.markdown("### \u2699\ufe0f Grafik Masing-masing Proses")
+
+                            cols_per_row = 2
+                            proses_chunks = [
+                                chart_proses_cols[i:i + cols_per_row]
+                                for i in range(0, len(chart_proses_cols), cols_per_row)
+                            ]
+
+                            for chunk in proses_chunks:
+                                chart_cols = st.columns(len(chunk))
+
+                                for i, proses in enumerate(chunk):
+                                    with chart_cols[i]:
+                                        col_hari = f"{proses} (hari)"
+
+                                        if col_hari not in trx_view.columns:
+                                            continue
+
+                                        data_proses = trx_view.dropna(subset=[col_hari]).sort_values(
+                                            col_hari,
+                                            ascending=True,
+                                        )
+
+                                        if data_proses.empty:
+                                            st.info(f"Tidak ada data valid untuk proses {proses}.")
+                                        else:
+                                            fig_each = trx_build_process_fig(data_proses, proses)
+                                            st.plotly_chart(fig_each, use_container_width=True)
+
+                            # =====================================================
+                            # TABEL RATA-RATA SLA
+                            # =====================================================
+                            with st.expander("\U0001f4cb Tabel Detail Rata-rata SLA per Jenis Transaksi", expanded=False):
+                                transaksi_display = trx_view.copy()
+
+                                for col in chart_proses_cols:
+                                    if col in transaksi_display.columns:
+                                        transaksi_display[f"{col} (Rata-rata)"] = transaksi_display[col].apply(
+                                            trx_seconds_to_text
+                                        )
+
+                                display_cols = (
+                                    ["JENIS TRANSAKSI", "Jumlah Transaksi"]
+                                    + [
+                                        f"{col} (Rata-rata)"
+                                        for col in chart_proses_cols
+                                        if f"{col} (Rata-rata)" in transaksi_display.columns
+                                    ]
                                 )
+
+                                st.dataframe(
+                                    transaksi_display[display_cols],
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
+
+                            # =====================================================
+                            # DRILLDOWN DETAIL - SAFE MODE TANPA st.fragment
+                            # =====================================================
+                            st.markdown("### \U0001f50d Drilldown Detail Jenis Transaksi")
+
+                            # Catatan:
+                            # Jangan gunakan st.fragment di dalam st.tabs untuk kasus ini.
+                            # Pada beberapa versi Streamlit, fragment rerun di dalam tab bisa membuat
+                            # output menumpuk / keluar dari konteks tab, sehingga isi tab lain tampak
+                            # muncul di bawah tab aktif.
+
+                            if not detail_options:
+                                st.info("Tidak ada jenis transaksi yang dapat ditampilkan untuk drilldown.")
+                            else:
+                                current_value = st.session_state.get(
+                                    "trx_detail_select_wow",
+                                    detail_options[0],
+                                )
+
+                                if current_value not in detail_options:
+                                    current_index = 0
+                                else:
+                                    current_index = detail_options.index(current_value)
+
+                                selected_detail = st.selectbox(
+                                    "Pilih jenis transaksi untuk drilldown",
+                                    options=detail_options,
+                                    index=current_index,
+                                    key="trx_detail_select_wow",
+                                )
+
+                                detail_df, detail_mean, detail_chart = trx_get_detail_objects(selected_detail)
+
+                                if not detail_mean.empty:
+                                    detail_row = detail_mean.iloc[0]
+
+                                    d1, d2, d3 = st.columns(3)
+
+                                    d1.metric(
+                                        "Jumlah Transaksi",
+                                        trx_fmt_int(detail_row["Jumlah Transaksi"]),
+                                    )
+
+                                    d2.metric(
+                                        "SLA Utama",
+                                        trx_fmt_hari(detail_row["SLA Utama (hari)"]),
+                                    )
+
+                                    d3.metric(
+                                        "Acuan SLA",
+                                        sla_utama_label,
+                                    )
+
+                                    if not detail_chart.empty:
+                                        fig_detail = trx_build_detail_fig(detail_chart, selected_detail)
+                                        st.plotly_chart(
+                                            fig_detail,
+                                            use_container_width=True,
+                                            key="trx_detail_chart_safe_wow",
+                                        )
+                                    else:
+                                        st.info("Tidak ada data SLA proses yang valid untuk jenis transaksi ini.")
+                                else:
+                                    st.warning("Detail transaksi tidak ditemukan untuk pilihan ini.")
+
+                                with st.expander("\U0001f50e Lihat Data Baris Detail", expanded=False):
+                                    st.dataframe(
+                                        detail_df,
+                                        use_container_width=True,
+                                        key="trx_detail_table_safe_wow",
+                                    )
 # ===================== END OF TAB_TRANSAKSI =====================
 
-with tab_vendor:
-    import plotly.express as px
-    import streamlit.components.v1 as components
-
-    # ==============================
-    # Helper: format detik -> "x hari x jam x menit x detik"
-    # ==============================
-    def fmt_duration(seconds):
-        if pd.isna(seconds):
-            return "-"
-        try:
-            s = int(round(float(seconds)))
-        except Exception:
-            return "-"
-        days = s // 86400
-        s %= 86400
-        hours = s // 3600
-        s %= 3600
-        minutes = s // 60
-        secs = s % 60
-        return f"{days} hari {hours} jam {minutes} menit {secs} detik"
-
-    if "NAMA VENDOR" in df_filtered.columns:
-        # ==============================
-        # 1) FILTER KATEGORI
-        # ==============================
-        kategori_filter = st.selectbox(
-            "Pilih Kategori Vendor",
-            ["ALL", "ALL CABANG", "ALL PUSAT", "ALL VENDOR"]
-        )
-
-        if kategori_filter == "ALL CABANG":
-            df_vendor_filtered = df_filtered[
-                df_filtered["NAMA VENDOR"].astype(str).str.upper().str.contains("GM CABANG", na=False)
-            ].copy()
-            df_vendor_filtered["SLA_USED"] = pd.to_numeric(df_vendor_filtered["FUNGSIONAL"], errors="coerce")
-
-        elif kategori_filter == "ALL PUSAT":
-            nama = df_filtered["NAMA VENDOR"].astype(str)
-            mask_pusat = nama.str[:3].eq("110") & (nama.str.len() >= 12) & nama.str[11].eq("-")
-            df_vendor_filtered = df_filtered[mask_pusat].copy()
-            df_vendor_filtered["SLA_USED"] = pd.to_numeric(df_vendor_filtered["FUNGSIONAL"], errors="coerce")
-
-        elif kategori_filter == "ALL VENDOR":
-            nama = df_filtered["NAMA VENDOR"].astype(str)
-            mask_cabang = nama.str.upper().str.contains("GM CABANG", na=False)
-            mask_pusat = nama.str[:3].eq("110") & (nama.str.len() >= 12) & nama.str[11].eq("-")
-            df_vendor_filtered = df_filtered[~(mask_cabang | mask_pusat)].copy()
-            df_vendor_filtered["SLA_USED"] = pd.to_numeric(df_vendor_filtered["VENDOR"], errors="coerce")
-
-        else:  # "ALL"
-            df_vendor_filtered = df_filtered.copy()
-
-            def pick_sla(row):
-                nama = str(row["NAMA VENDOR"]).upper()
-                if "GM CABANG" in nama:
-                    return row.get("FUNGSIONAL")
-                elif nama.startswith("110") and len(nama) >= 12 and nama[11] == "-":
-                    return row.get("FUNGSIONAL")
-                else:
-                    return row.get("VENDOR")
-
-            df_vendor_filtered["SLA_USED"] = df_vendor_filtered.apply(pick_sla, axis=1)
-            df_vendor_filtered["SLA_USED"] = pd.to_numeric(df_vendor_filtered["SLA_USED"], errors="coerce")
-
-        df_vendor_filtered["SLA_USED_FMT"] = df_vendor_filtered["SLA_USED"].apply(fmt_duration)
+if (not _SLA_LAZY_TABS) or bool(getattr(tab_vendor, "open", False)):
+    with tab_vendor:
+        import plotly.express as px
+        import streamlit.components.v1 as components
 
         # ==============================
-        # 2) FILTER VENDOR
+        # Helper: format detik -> "x hari x jam x menit x detik"
         # ==============================
-        vendor_list = sorted(df_vendor_filtered["NAMA VENDOR"].dropna().astype(str).unique())
-        vendor_list_with_all = ["ALL"] + vendor_list
-        selected_vendors = st.multiselect("Pilih Vendor", vendor_list_with_all, default=[])
+        def fmt_duration(seconds):
+            if pd.isna(seconds):
+                return "-"
+            try:
+                s = int(round(float(seconds)))
+            except Exception:
+                return "-"
+            days = s // 86400
+            s %= 86400
+            hours = s // 3600
+            s %= 3600
+            minutes = s // 60
+            secs = s % 60
+            return f"{days} hari {hours} jam {minutes} menit {secs} detik"
 
-        if not selected_vendors:
-            st.info("Silakan pilih vendor untuk melihat analisis.")
-        else:
-            if "ALL" in selected_vendors:
-                selected_vendors = vendor_list
-            df_vendor_filtered = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"].isin(selected_vendors)]
+        if "NAMA VENDOR" in df_filtered.columns:
+            # ==============================
+            # 1) FILTER KATEGORI
+            # ==============================
+            kategori_filter = st.selectbox(
+                "Pilih Kategori Vendor",
+                ["ALL", "ALL CABANG", "ALL PUSAT", "ALL VENDOR"]
+            )
+
+            if kategori_filter == "ALL CABANG":
+                df_vendor_filtered = df_filtered[
+                    df_filtered["NAMA VENDOR"].astype(str).str.upper().str.contains("GM CABANG", na=False)
+                ].copy()
+                df_vendor_filtered["SLA_USED"] = pd.to_numeric(df_vendor_filtered["FUNGSIONAL"], errors="coerce")
+
+            elif kategori_filter == "ALL PUSAT":
+                nama = df_filtered["NAMA VENDOR"].astype(str)
+                mask_pusat = nama.str[:3].eq("110") & (nama.str.len() >= 12) & nama.str[11].eq("-")
+                df_vendor_filtered = df_filtered[mask_pusat].copy()
+                df_vendor_filtered["SLA_USED"] = pd.to_numeric(df_vendor_filtered["FUNGSIONAL"], errors="coerce")
+
+            elif kategori_filter == "ALL VENDOR":
+                nama = df_filtered["NAMA VENDOR"].astype(str)
+                mask_cabang = nama.str.upper().str.contains("GM CABANG", na=False)
+                mask_pusat = nama.str[:3].eq("110") & (nama.str.len() >= 12) & nama.str[11].eq("-")
+                df_vendor_filtered = df_filtered[~(mask_cabang | mask_pusat)].copy()
+                df_vendor_filtered["SLA_USED"] = pd.to_numeric(df_vendor_filtered["VENDOR"], errors="coerce")
+
+            else:  # "ALL"
+                df_vendor_filtered = df_filtered.copy()
+
+                def pick_sla(row):
+                    nama = str(row["NAMA VENDOR"]).upper()
+                    if "GM CABANG" in nama:
+                        return row.get("FUNGSIONAL")
+                    elif nama.startswith("110") and len(nama) >= 12 and nama[11] == "-":
+                        return row.get("FUNGSIONAL")
+                    else:
+                        return row.get("VENDOR")
+
+                df_vendor_filtered["SLA_USED"] = df_vendor_filtered.apply(pick_sla, axis=1)
+                df_vendor_filtered["SLA_USED"] = pd.to_numeric(df_vendor_filtered["SLA_USED"], errors="coerce")
+
+            df_vendor_filtered["SLA_USED_FMT"] = df_vendor_filtered["SLA_USED"].apply(fmt_duration)
 
             # ==============================
-            # 3) Kartu Digital Ringkasan
+            # 2) FILTER VENDOR
             # ==============================
-            total_vendor = df_vendor_filtered["NAMA VENDOR"].nunique()
-            total_transaksi = len(df_vendor_filtered)
-            rata_sla_global_hari = float(df_vendor_filtered["SLA_USED"].mean() / 86400) if df_vendor_filtered["SLA_USED"].notna().any() else 0.0
+            vendor_list = sorted(df_vendor_filtered["NAMA VENDOR"].dropna().astype(str).unique())
+            vendor_list_with_all = ["ALL"] + vendor_list
+            selected_vendors = st.multiselect("Pilih Vendor", vendor_list_with_all, default=[])
 
-            card_template = f"""
+            if not selected_vendors:
+                st.info("Silakan pilih vendor untuk melihat analisis.")
+            else:
+                if "ALL" in selected_vendors:
+                    selected_vendors = vendor_list
+                df_vendor_filtered = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"].isin(selected_vendors)]
+
+                # ==============================
+                # 3) Kartu Digital Ringkasan
+                # ==============================
+                total_vendor = df_vendor_filtered["NAMA VENDOR"].nunique()
+                total_transaksi = len(df_vendor_filtered)
+                rata_sla_global_hari = float(df_vendor_filtered["SLA_USED"].mean() / 86400) if df_vendor_filtered["SLA_USED"].notna().any() else 0.0
+
+                card_template = f"""
             <style>
             .card-container{{display:flex;gap:20px;justify-content:center;margin-top:20px;}}
             .card{{flex:1;padding:20px;border-radius:16px;text-align:center;color:white;
@@ -3903,54 +4067,54 @@ with tab_vendor:
             animateValue("slaCount",0,{round(rata_sla_global_hari,2)},1500);
             </script>
             """
-            components.html(card_template, height=250)
-
-            # ==============================
-            # 4) Tabel Data Detail
-            # ==============================
-            if df_vendor_filtered.shape[0] > 0:
-                st.subheader("\U0001f4cb Data Terfilter")
-                st.dataframe(df_vendor_filtered, use_container_width=True)
+                components.html(card_template, height=250)
 
                 # ==============================
-                # 5) Agregasi per Vendor
+                # 4) Tabel Data Detail
                 # ==============================
-                rata_vendor = (
-                    df_vendor_filtered
-                    .groupby("NAMA VENDOR", dropna=True)["SLA_USED"]
-                    .mean()
-                    .reset_index()
-                )
-                rata_vendor["SLA_USED"] = pd.to_numeric(rata_vendor["SLA_USED"], errors="coerce")
-                rata_vendor["SLA (hari)"] = rata_vendor["SLA_USED"] / 86400.0
-                rata_vendor["SLA (format)"] = rata_vendor["SLA_USED"].apply(fmt_duration)
+                if df_vendor_filtered.shape[0] > 0:
+                    st.subheader("\U0001f4cb Data Terfilter")
+                    st.dataframe(df_vendor_filtered, use_container_width=True)
 
-                # ==============================
-                # 6) Leaderboard Vendor
-                # ==============================
-                st.subheader("\u26a1 Leaderboard SLA Vendor")
-                lb = rata_vendor.dropna(subset=["SLA_USED"]).copy()
+                    # ==============================
+                    # 5) Agregasi per Vendor
+                    # ==============================
+                    rata_vendor = (
+                        df_vendor_filtered
+                        .groupby("NAMA VENDOR", dropna=True)["SLA_USED"]
+                        .mean()
+                        .reset_index()
+                    )
+                    rata_vendor["SLA_USED"] = pd.to_numeric(rata_vendor["SLA_USED"], errors="coerce")
+                    rata_vendor["SLA (hari)"] = rata_vendor["SLA_USED"] / 86400.0
+                    rata_vendor["SLA (format)"] = rata_vendor["SLA_USED"].apply(fmt_duration)
 
-                if not lb.empty:
-                    lb_sorted = lb.sort_values("SLA_USED", ascending=True).reset_index(drop=True)
-                    min_sla = float(lb_sorted["SLA_USED"].min())
-                    max_sla = float(lb_sorted["SLA_USED"].max())
+                    # ==============================
+                    # 6) Leaderboard Vendor
+                    # ==============================
+                    st.subheader("\u26a1 Leaderboard SLA Vendor")
+                    lb = rata_vendor.dropna(subset=["SLA_USED"]).copy()
 
-                    rows = ""
-                    for i, row in lb_sorted.iterrows():
-                        nama = row["NAMA VENDOR"]
-                        sla_used = float(row["SLA_USED"])
-                        sla_hari = sla_used / 86400.0
+                    if not lb.empty:
+                        lb_sorted = lb.sort_values("SLA_USED", ascending=True).reset_index(drop=True)
+                        min_sla = float(lb_sorted["SLA_USED"].min())
+                        max_sla = float(lb_sorted["SLA_USED"].max())
 
-                        badge = "\U0001f947" if i == 0 else "\U0001f948" if i == 1 else "\U0001f949" if i == 2 else "\U0001f6a8" if i == len(lb_sorted)-1 else ""
+                        rows = ""
+                        for i, row in lb_sorted.iterrows():
+                            nama = row["NAMA VENDOR"]
+                            sla_used = float(row["SLA_USED"])
+                            sla_hari = sla_used / 86400.0
 
-                        ratio = (sla_used - min_sla) / (max_sla - min_sla + 1e-9)
-                        red = int(255 * ratio)
-                        green = int(255 * (1 - ratio))
-                        color = f"rgba({red},{green},120,0.85)"
-                        progress_pct = int((sla_used / (max_sla+1e-9)) * 100)
+                            badge = "\U0001f947" if i == 0 else "\U0001f948" if i == 1 else "\U0001f949" if i == 2 else "\U0001f6a8" if i == len(lb_sorted)-1 else ""
 
-                        rows += f"""
+                            ratio = (sla_used - min_sla) / (max_sla - min_sla + 1e-9)
+                            red = int(255 * ratio)
+                            green = int(255 * (1 - ratio))
+                            color = f"rgba({red},{green},120,0.85)"
+                            progress_pct = int((sla_used / (max_sla+1e-9)) * 100)
+
+                            rows += f"""
                         <div style='padding:10px 14px;border-radius:12px;background:{color};margin-bottom:8px;'>
                             <div style='display:flex;justify-content:space-between;font-weight:600;color:white;'>
                                 <span>{badge} {nama}</span>
@@ -3962,182 +4126,184 @@ with tab_vendor:
                         </div>
                         """
 
-                    leaderboard_html = f"""
+                        leaderboard_html = f"""
                     <div style="max-height:500px;overflow-y:auto;display:flex;flex-direction:column;">
                         {rows}
                     </div>
                     """
-                    components.html(leaderboard_html, height=600)
+                        components.html(leaderboard_html, height=600)
 
-                # ==============================
-                # 7) Grafik & Drilldown
-                # ==============================
-                st.subheader("\U0001f4ca Interaktif SLA per Vendor")
-                if not rata_vendor.empty and rata_vendor["SLA (hari)"].notna().any():
-                    fig = px.bar(
-                        rata_vendor, x="NAMA VENDOR", y="SLA (hari)",
-                        color="SLA (hari)", color_continuous_scale="Blues",
-                        title="Rata-rata SLA per Vendor"
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-
-                clicked_vendor = st.selectbox("\U0001f50d Pilih vendor untuk drill-down detail:",
-                                              rata_vendor["NAMA VENDOR"].tolist() if not rata_vendor.empty else [])
-                if clicked_vendor:
-                    df_vendor_detail = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"] == clicked_vendor]
-                    if "JENIS TRANSAKSI" in df_vendor_detail.columns and not df_vendor_detail.empty:
-                        st.markdown(f"### \U0001f4ca Detail SLA \u2014 {clicked_vendor}")
-
-                        transaksi_group = (
-                            df_vendor_detail
-                            .groupby("JENIS TRANSAKSI")["SLA_USED"]
-                            .mean()
-                            .reset_index()
+                    # ==============================
+                    # 7) Grafik & Drilldown
+                    # ==============================
+                    st.subheader("\U0001f4ca Interaktif SLA per Vendor")
+                    if not rata_vendor.empty and rata_vendor["SLA (hari)"].notna().any():
+                        fig = px.bar(
+                            rata_vendor, x="NAMA VENDOR", y="SLA (hari)",
+                            color="SLA (hari)", color_continuous_scale="Blues",
+                            title="Rata-rata SLA per Vendor"
                         )
-                        transaksi_group["SLA (hari)"] = transaksi_group["SLA_USED"] / 86400.0
-                        transaksi_group["SLA (format)"] = transaksi_group["SLA_USED"].apply(fmt_duration)
-                        st.dataframe(transaksi_group, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True)
 
-                        fig2 = px.bar(transaksi_group, x="SLA (hari)", y="JENIS TRANSAKSI",
-                                      orientation="h", color="SLA (hari)", color_continuous_scale="Viridis")
-                        st.plotly_chart(fig2, use_container_width=True)
+                    clicked_vendor = st.selectbox("\U0001f50d Pilih vendor untuk drill-down detail:",
+                                                  rata_vendor["NAMA VENDOR"].tolist() if not rata_vendor.empty else [])
+                    if clicked_vendor:
+                        df_vendor_detail = df_vendor_filtered[df_vendor_filtered["NAMA VENDOR"] == clicked_vendor]
+                        if "JENIS TRANSAKSI" in df_vendor_detail.columns and not df_vendor_detail.empty:
+                            st.markdown(f"### \U0001f4ca Detail SLA \u2014 {clicked_vendor}")
 
-                        jumlah_per_transaksi = (
-                            df_vendor_detail
-                            .groupby("JENIS TRANSAKSI")
+                            transaksi_group = (
+                                df_vendor_detail
+                                .groupby("JENIS TRANSAKSI")["SLA_USED"]
+                                .mean()
+                                .reset_index()
+                            )
+                            transaksi_group["SLA (hari)"] = transaksi_group["SLA_USED"] / 86400.0
+                            transaksi_group["SLA (format)"] = transaksi_group["SLA_USED"].apply(fmt_duration)
+                            st.dataframe(transaksi_group, use_container_width=True)
+
+                            fig2 = px.bar(transaksi_group, x="SLA (hari)", y="JENIS TRANSAKSI",
+                                          orientation="h", color="SLA (hari)", color_continuous_scale="Viridis")
+                            st.plotly_chart(fig2, use_container_width=True)
+
+                            jumlah_per_transaksi = (
+                                df_vendor_detail
+                                .groupby("JENIS TRANSAKSI")
+                                .size()
+                                .reset_index(name="Jumlah")
+                            )
+                            fig_pie = px.pie(jumlah_per_transaksi, values="Jumlah", names="JENIS TRANSAKSI")
+                            st.plotly_chart(fig_pie, use_container_width=True)
+
+                    # ==============================
+                    # 8) Distribusi Multi Vendor
+                    # ==============================
+                    if len(selected_vendors) > 1 and "JENIS TRANSAKSI" in df_vendor_filtered.columns:
+                        st.subheader(f"\U0001f4ca Distribusi Transaksi \u2014 {len(selected_vendors)} Vendor")
+                        jumlah_multi = (
+                            df_vendor_filtered.groupby(["NAMA VENDOR","JENIS TRANSAKSI"])
                             .size()
                             .reset_index(name="Jumlah")
                         )
-                        fig_pie = px.pie(jumlah_per_transaksi, values="Jumlah", names="JENIS TRANSAKSI")
-                        st.plotly_chart(fig_pie, use_container_width=True)
+                        pivot_jumlah = jumlah_multi.pivot(index="NAMA VENDOR", columns="JENIS TRANSAKSI", values="Jumlah").fillna(0)
+                        st.dataframe(pivot_jumlah, use_container_width=True)
 
-                # ==============================
-                # 8) Distribusi Multi Vendor
-                # ==============================
-                if len(selected_vendors) > 1 and "JENIS TRANSAKSI" in df_vendor_filtered.columns:
-                    st.subheader(f"\U0001f4ca Distribusi Transaksi \u2014 {len(selected_vendors)} Vendor")
-                    jumlah_multi = (
-                        df_vendor_filtered.groupby(["NAMA VENDOR","JENIS TRANSAKSI"])
-                        .size()
-                        .reset_index(name="Jumlah")
-                    )
-                    pivot_jumlah = jumlah_multi.pivot(index="NAMA VENDOR", columns="JENIS TRANSAKSI", values="Jumlah").fillna(0)
-                    st.dataframe(pivot_jumlah, use_container_width=True)
+                else:
+                    st.info("Tidak ada data untuk vendor yang dipilih.")
+        else:
+            st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
 
-            else:
-                st.info("Tidak ada data untuk vendor yang dipilih.")
-    else:
-        st.info("Kolom 'NAMA VENDOR' tidak ditemukan.")
-
-with tab_tren:
-    if available_sla_cols:
-        st.subheader("\U0001f4c8 Trend Rata-rata SLA per Periode")
+if (not _SLA_LAZY_TABS) or bool(getattr(tab_tren, "open", False)):
+    with tab_tren:
+        if available_sla_cols:
+            st.subheader("\U0001f4c8 Trend Rata-rata SLA per Periode")
         
-        # Hitung rata-rata per periode
-        trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[available_sla_cols].mean().reset_index()
-        trend["PERIODE_SORTED"] = pd.Categorical(trend[periode_col], categories=selected_periode, ordered=True)
-        trend = trend.sort_values("PERIODE_SORTED").reset_index(drop=True)
+            # Hitung rata-rata per periode
+            trend = df_filtered.groupby(df_filtered[periode_col].astype(str))[available_sla_cols].mean().reset_index()
+            trend["PERIODE_SORTED"] = pd.Categorical(trend[periode_col], categories=selected_periode, ordered=True)
+            trend = trend.sort_values("PERIODE_SORTED").reset_index(drop=True)
 
-        # Tambahkan kolom nomor urut
-        trend.insert(0, "No", range(1, len(trend) + 1))
+            # Tambahkan kolom nomor urut
+            trend.insert(0, "No", range(1, len(trend) + 1))
 
-        # Buat tampilan dengan format detik -> string
-        trend_display = trend.copy()
-        for col in available_sla_cols:
-            trend_display[col] = trend_display[col].apply(seconds_to_sla_format)
+            # Buat tampilan dengan format detik -> string
+            trend_display = trend.copy()
+            for col in available_sla_cols:
+                trend_display[col] = trend_display[col].apply(seconds_to_sla_format)
 
-        # Hapus kolom bantu & sembunyikan index Pandas
-        st.dataframe(
-            trend_display.drop(columns=["PERIODE_SORTED"]).set_index("No").style.hide(axis="index"),
-            use_container_width=True
-        )
+            # Hapus kolom bantu & sembunyikan index Pandas
+            st.dataframe(
+                trend_display.drop(columns=["PERIODE_SORTED"]).set_index("No").style.hide(axis="index"),
+                use_container_width=True
+            )
 
-        # ==============================
-        # Grafik TOTAL WAKTU
-        # ==============================
-        if "TOTAL WAKTU" in available_sla_cols:
-            fig, ax = plt.subplots(figsize=(10, 5))
-            y_values_days = trend["TOTAL WAKTU"] / 86400
-            x_values = trend[periode_col]
-
-            ax.plot(x_values, y_values_days, marker='o', label="TOTAL WAKTU", color='#9467bd')
-
-            # Tambahkan angka di setiap dot (2 angka desimal)
-            for x, y in zip(x_values, y_values_days):
-                ax.text(x, y, f"{y:.2f}", ha='center', va='bottom', fontsize=9, color="black", weight="bold")
-
-            ax.set_title("Trend Rata-rata SLA TOTAL WAKTU per Periode")
-            ax.set_xlabel("Periode")
-            ax.set_ylabel("Rata-rata SLA (hari)")
-            ax.grid(True, linestyle='--', alpha=0.7)
-            ax.legend()
-
-            for label in ax.get_xticklabels():
-                label.set_rotation(45)
-                label.set_ha('right')
-
-            st.pyplot(fig)
-
-        # ==============================
-        # Grafik per proses
-        # ==============================
-        if proses_grafik_cols:
-            fig3, axs = plt.subplots(2, 2, figsize=(14, 8), constrained_layout=True)
-            fig3.suptitle("Trend Rata-rata SLA per Proses")
-            axs = axs.flatten()
-
-            for i, col in enumerate(proses_grafik_cols):
-                y_days = trend[col] / 86400
+            # ==============================
+            # Grafik TOTAL WAKTU
+            # ==============================
+            if "TOTAL WAKTU" in available_sla_cols:
+                fig, ax = plt.subplots(figsize=(10, 5))
+                y_values_days = trend["TOTAL WAKTU"] / 86400
                 x_values = trend[periode_col]
 
-                axs[i].plot(x_values, y_days, marker='o', color='#75c8ff')
+                ax.plot(x_values, y_values_days, marker='o', label="TOTAL WAKTU", color='#9467bd')
 
                 # Tambahkan angka di setiap dot (2 angka desimal)
-                for x, y in zip(x_values, y_days):
-                    axs[i].text(x, y, f"{y:.2f}", ha='center', va='bottom', fontsize=8, color="black")
+                for x, y in zip(x_values, y_values_days):
+                    ax.text(x, y, f"{y:.2f}", ha='center', va='bottom', fontsize=9, color="black", weight="bold")
 
-                axs[i].set_title(col)
-                axs[i].set_ylabel("Hari")
-                axs[i].grid(True, linestyle='--', alpha=0.7)
+                ax.set_title("Trend Rata-rata SLA TOTAL WAKTU per Periode")
+                ax.set_xlabel("Periode")
+                ax.set_ylabel("Rata-rata SLA (hari)")
+                ax.grid(True, linestyle='--', alpha=0.7)
+                ax.legend()
 
-                for label in axs[i].get_xticklabels():
+                for label in ax.get_xticklabels():
                     label.set_rotation(45)
                     label.set_ha('right')
 
-            st.pyplot(fig3)
+                st.pyplot(fig)
 
-    else:
-        st.info("Tidak ada kolom SLA yang dapat ditampilkan di tren.")
+            # ==============================
+            # Grafik per proses
+            # ==============================
+            if proses_grafik_cols:
+                fig3, axs = plt.subplots(2, 2, figsize=(14, 8), constrained_layout=True)
+                fig3.suptitle("Trend Rata-rata SLA per Proses")
+                axs = axs.flatten()
+
+                for i, col in enumerate(proses_grafik_cols):
+                    y_days = trend[col] / 86400
+                    x_values = trend[periode_col]
+
+                    axs[i].plot(x_values, y_days, marker='o', color='#75c8ff')
+
+                    # Tambahkan angka di setiap dot (2 angka desimal)
+                    for x, y in zip(x_values, y_days):
+                        axs[i].text(x, y, f"{y:.2f}", ha='center', va='bottom', fontsize=8, color="black")
+
+                    axs[i].set_title(col)
+                    axs[i].set_ylabel("Hari")
+                    axs[i].grid(True, linestyle='--', alpha=0.7)
+
+                    for label in axs[i].get_xticklabels():
+                        label.set_rotation(45)
+                        label.set_ha('right')
+
+                st.pyplot(fig3)
+
+        else:
+            st.info("Tidak ada kolom SLA yang dapat ditampilkan di tren.")
 
 
-with tab_jumlah:
-    st.subheader("\U0001f4ca Jumlah Transaksi per Periode")
-    jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name='Jumlah')
-    jumlah_transaksi = jumlah_transaksi.sort_values(
-        by=periode_col,
-        key=lambda x: pd.Categorical(x, categories=selected_periode, ordered=True)
-    )
-    total_row = pd.DataFrame({periode_col: ["TOTAL"], 'Jumlah': [jumlah_transaksi['Jumlah'].sum()]})
-    jumlah_transaksi = pd.concat([jumlah_transaksi, total_row], ignore_index=True)
+if (not _SLA_LAZY_TABS) or bool(getattr(tab_jumlah, "open", False)):
+    with tab_jumlah:
+        st.subheader("\U0001f4ca Jumlah Transaksi per Periode")
+        jumlah_transaksi = df_filtered.groupby(df_filtered[periode_col].astype(str)).size().reset_index(name='Jumlah')
+        jumlah_transaksi = jumlah_transaksi.sort_values(
+            by=periode_col,
+            key=lambda x: pd.Categorical(x, categories=selected_periode, ordered=True)
+        )
+        total_row = pd.DataFrame({periode_col: ["TOTAL"], 'Jumlah': [jumlah_transaksi['Jumlah'].sum()]})
+        jumlah_transaksi = pd.concat([jumlah_transaksi, total_row], ignore_index=True)
 
-    def highlight_total(row):
-        return ['font-weight: bold' if row[periode_col] == "TOTAL" else '' for _ in row]
+        def highlight_total(row):
+            return ['font-weight: bold' if row[periode_col] == "TOTAL" else '' for _ in row]
 
-    # ========================================================================
-    # PREMIUM TRANSACTION TABLE - tambahan visual; data dan grafik existing tetap.
-    # ========================================================================
-    import html as jtm_html
+        # ========================================================================
+        # PREMIUM TRANSACTION TABLE - tambahan visual; data dan grafik existing tetap.
+        # ========================================================================
+        import html as jtm_html
 
-    jtm_body = jumlah_transaksi[jumlah_transaksi[periode_col].astype(str) != "TOTAL"].copy()
-    jtm_total = int(pd.to_numeric(jtm_body["Jumlah"], errors="coerce").fillna(0).sum())
-    jtm_n = len(jtm_body)
-    jtm_peak = (jtm_body.loc[jtm_body["Jumlah"].idxmax(), periode_col]
-                if jtm_n else "Belum ada data")
-    jtm_peak_v = int(jtm_body["Jumlah"].max()) if jtm_n else 0
-    jtm_avg = (jtm_total / jtm_n) if jtm_n else 0.0
-    jtm_max = max(jtm_peak_v, 1)
+        jtm_body = jumlah_transaksi[jumlah_transaksi[periode_col].astype(str) != "TOTAL"].copy()
+        jtm_total = int(pd.to_numeric(jtm_body["Jumlah"], errors="coerce").fillna(0).sum())
+        jtm_n = len(jtm_body)
+        jtm_peak = (jtm_body.loc[jtm_body["Jumlah"].idxmax(), periode_col]
+                    if jtm_n else "Belum ada data")
+        jtm_peak_v = int(jtm_body["Jumlah"].max()) if jtm_n else 0
+        jtm_avg = (jtm_total / jtm_n) if jtm_n else 0.0
+        jtm_max = max(jtm_peak_v, 1)
 
-    st.markdown("""
+        st.markdown("""
     <style>
     .jtm-summary {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:12px 0 19px;}
     .jtm-card {padding:19px 20px;border-radius:17px;min-height:97px;
@@ -4176,253 +4342,253 @@ with tab_jumlah:
     </style>
     """, unsafe_allow_html=True)
 
-    jtm_kpis = [
-        ("TOTAL TRANSAKSI", f"{jtm_total:,}".replace(",", "."), "Periode aktif di sidebar"),
-        ("BULAN TERSEDIA", str(jtm_n), "Bulan dengan data transaksi"),
-        ("RATA-RATA / BULAN", f"{jtm_avg:,.0f}".replace(",", "."), "Dari bulan yang tersedia"),
-        ("BULAN TERTINGGI", f"{jtm_peak_v:,}".replace(",", "."), str(jtm_peak)),
-    ]
-    jtm_cards_html = "".join(
-        f'<div class="jtm-card"><div class="jtm-card-label">{jtm_html.escape(label)}</div>'
-        f'<div class="jtm-card-value">{jtm_html.escape(val)}</div>'
-        f'<div class="jtm-card-sub">{jtm_html.escape(note)}</div></div>'
-        for label, val, note in jtm_kpis
-    )
-    st.markdown(f'<div class="jtm-summary">{jtm_cards_html}</div>', unsafe_allow_html=True)
-
-    jtm_rows = []
-    jtm_previous = None
-    jtm_csv_rows = []
-    for _, jtm_row in jtm_body.iterrows():
-        jtm_period = str(jtm_row[periode_col])
-        jtm_count = int(jtm_row["Jumlah"])
-        jtm_share = 100 * jtm_count / jtm_total if jtm_total else 0.0
-        jtm_width = 100 * jtm_count / jtm_max
-        if jtm_previous is None:
-            jtm_delta, jtm_growth, jtm_class, jtm_sign = None, None, "jtm-flat", "—"
-        else:
-            jtm_delta = jtm_count - jtm_previous
-            jtm_growth = 100 * jtm_delta / jtm_previous if jtm_previous else None
-            jtm_class = "jtm-up" if jtm_delta > 0 else ("jtm-down" if jtm_delta < 0 else "jtm-flat")
-            jtm_sign = f"{jtm_delta:+,}".replace(",", ".")
-        jtm_growth_html = "—" if jtm_growth is None else f"{jtm_growth:+.2f}%".replace(".", ",")
-        jtm_csv_rows.append({
-            "PERIODE": jtm_period, "Jumlah": jtm_count,
-            "Selisih vs Periode Sebelumnya": jtm_delta,
-            "Pertumbuhan (%)": round(jtm_growth, 2) if jtm_growth is not None else None,
-            "Kontribusi (%)": round(jtm_share, 2),
-        })
-        jtm_rows.append(
-            '<tr>'
-            f'<td><b>{jtm_html.escape(jtm_period)}</b></td>'
-            f'<td class="jtm-num">{jtm_count:,}</td>'
-            f'<td class="jtm-num"><span class="jtm-tag {jtm_class}">{jtm_sign}</span></td>'
-            f'<td class="jtm-num"><span class="jtm-tag {jtm_class}">{jtm_growth_html}</span></td>'
-            f'<td class="jtm-num">{jtm_share:.2f}%</td>'
-            f'<td><div class="jtm-progress" title="{jtm_count:,} transaksi">'
-            f'<div class="jtm-progress-fill" style="width:{jtm_width:.2f}%"></div></div></td>'
-            '</tr>'
-        )
-        jtm_previous = jtm_count
-
-    jtm_table_html = (
-        '<div class="jtm-frame"><div class="jtm-frame-head">'
-        '<div class="jtm-frame-title">Transaction Volume Ledger</div>'
-        '<div class="jtm-frame-meta">LIVE FILTER • MONTHLY PERFORMANCE</div></div>'
-        '<div class="jtm-table-scroll"><table class="jtm-table"><thead><tr>'
-        '<th>Periode</th><th style="text-align:right">Jumlah Transaksi</th>'
-        '<th style="text-align:right">Selisih</th><th style="text-align:right">Growth</th>'
-        '<th style="text-align:right">Kontribusi</th><th>Distribusi Volume</th>'
-        '</tr></thead><tbody>' + ''.join(jtm_rows) + '</tbody><tfoot><tr>'
-        '<td>TOTAL</td><td class="jtm-num">' + f'{jtm_total:,}'.replace(",", ".") + '</td>'
-        '<td>—</td><td>—</td><td class="jtm-num">' + ("100,00%" if jtm_total else "—") + '</td><td>—</td>'
-        '</tr></tfoot></table></div></div>'
-    )
-    st.markdown(jtm_table_html, unsafe_allow_html=True)
-    st.markdown('<div class="jtm-foot">Selisih &amp; growth membandingkan bulan dengan data sebelumnya dalam filter aktif. '
-                'Tabel asli tetap tersedia untuk disortir dan disalin. Angka pada grafik existing tidak diubah.</div>',
-                unsafe_allow_html=True)
-    with st.expander("🔎 Tabel data original — sortir, salin & audit", expanded=False):
-        st.dataframe(jumlah_transaksi.style.apply(highlight_total, axis=1),
-                     use_container_width=True)
-    st.download_button(
-        "⬇️ Ekspor tabel Jumlah Transaksi (CSV)",
-        data=pd.DataFrame(jtm_csv_rows).to_csv(index=False).encode("utf-8-sig"),
-        file_name="SLA_Jumlah_Transaksi_Tabel_Periode.csv", mime="text/csv",
-        key="jtm_export_main_table",
-    )
-
-    fig_trans, ax_trans = plt.subplots(figsize=(10, 5))
-    ax_trans.bar(
-        jumlah_transaksi[jumlah_transaksi[periode_col] != "TOTAL"][periode_col],
-        jumlah_transaksi[jumlah_transaksi[periode_col] != "TOTAL"]['Jumlah'],
-        color='#ff9f7f'
-    )
-    ax_trans.set_title("Jumlah Transaksi per Periode")
-    ax_trans.set_xlabel("Periode")
-    ax_trans.set_ylabel("Jumlah Transaksi")
-    ax_trans.grid(axis='y', linestyle='--', alpha=0.7)
-    for label in ax_trans.get_xticklabels():
-        label.set_rotation(45)
-        label.set_ha('right')
-    st.pyplot(fig_trans)
-
-    # ===========================================================================
-    # ADVANCED TRANSACTION VOLUME COMPARISON
-    # Tambahan murni di bawah grafik existing tab Jumlah Transaksi.
-    # TIDAK memodifikasi df_filtered, periode_list, selected_periode, atau tab lain.
-    # Dataset khusus perbandingan = SELURUH periode historis file upload.
-    # ===========================================================================
-    import html as jt_html
-    import plotly.graph_objects as jt_go
-
-    JT_MONTH_NAMES = (
-        "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-        "Juli", "Agustus", "September", "Oktober", "November", "Desember"
-    )
-    JT_MONTH_SHORT = ("Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des")
-    JT_BLUE = "#4F91FA"
-    JT_TEAL = "#21CAB5"
-    JT_ORANGE = "#FFBA69"
-    JT_WHITE = "#E9F2FE"
-
-
-    def jt_format_int(num):
-        return f"{int(num):,}".replace(",", ".")
-
-
-    def jt_month_text(period):
-        return f"{JT_MONTH_NAMES[period.month - 1]} {period.year}"
-
-
-    def jt_delta_data(a, b):
-        """Pertumbuhan terhadap A; hindari membagi nol/tidak ada data."""
-        if a is None or b is None:
-            return None, None
-        a, b = int(a), int(b)
-        gap = b - a
-        if a == 0:
-            return gap, (0.0 if b == 0 else None)
-        return gap, 100 * gap / a
-
-
-    def jt_format_change_pct(percent):
-        return "N/A (basis 0)" if percent is None else f"{percent:+,.2f}%".replace(",", "_").replace(".", ",").replace("_", ".")
-
-
-    def jt_summary_cards(label_a, label_b, count_a, count_b):
-        delta, pct = jt_delta_data(count_a, count_b)
-        sign_class = "positive" if delta is not None and delta >= 0 else "negative"
-        label_a = jt_html.escape(str(label_a))
-        label_b = jt_html.escape(str(label_b))
-        cards = [
-            ("PERIODE A", label_a, jt_format_int(count_a), "blue"),
-            ("PERIODE B", label_b, jt_format_int(count_b), "teal"),
-            ("SELISIH TRANSAKSI (B - A)", "Perubahan volume", f"{delta:+,}".replace(",", ".") if delta is not None else "—", sign_class),
-            ("PERTUMBUHAN B vs A", "Dibanding periode A", jt_format_change_pct(pct), sign_class),
+        jtm_kpis = [
+            ("TOTAL TRANSAKSI", f"{jtm_total:,}".replace(",", "."), "Periode aktif di sidebar"),
+            ("BULAN TERSEDIA", str(jtm_n), "Bulan dengan data transaksi"),
+            ("RATA-RATA / BULAN", f"{jtm_avg:,.0f}".replace(",", "."), "Dari bulan yang tersedia"),
+            ("BULAN TERTINGGI", f"{jtm_peak_v:,}".replace(",", "."), str(jtm_peak)),
         ]
-        html_cards = "".join(
-            f'<div class="jt-kpi jt-kpi-{color}"><div class="jt-kpi-label">{jt_html.escape(k)}</div>'
-            f'<div class="jt-kpi-period">{period}</div><div class="jt-kpi-value">{jt_html.escape(value)}</div></div>'
-            for k, period, value, color in cards
+        jtm_cards_html = "".join(
+            f'<div class="jtm-card"><div class="jtm-card-label">{jtm_html.escape(label)}</div>'
+            f'<div class="jtm-card-value">{jtm_html.escape(val)}</div>'
+            f'<div class="jtm-card-sub">{jtm_html.escape(note)}</div></div>'
+            for label, val, note in jtm_kpis
         )
-        st.markdown(f'<div class="jt-kpi-grid">{html_cards}</div>', unsafe_allow_html=True)
-        return delta, pct
+        st.markdown(f'<div class="jtm-summary">{jtm_cards_html}</div>', unsafe_allow_html=True)
 
-
-    def jt_plot_style(fig, title, y_title="Jumlah transaksi", height=410):
-        fig.update_layout(
-            title=dict(text=title, font=dict(size=19, color=JT_WHITE), x=0.03),
-            height=height,
-            paper_bgcolor="#0D2648",
-            plot_bgcolor="#123155",
-            font=dict(family="Segoe UI, Arial, sans-serif", color="#D2E4FA", size=12),
-            legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1),
-            margin=dict(l=32, r=30, t=95, b=50),
-            hovermode="x unified",
-            barmode="group",
-        )
-        fig.update_xaxes(showgrid=False, tickfont=dict(size=11), zeroline=False)
-        fig.update_yaxes(title=y_title, showgrid=True, gridcolor="rgba(140,170,200,.15)",
-                         zeroline=False, rangemode="tozero")
-        return fig
-
-
-    def jt_months_series(month_counts, year, end_month=12):
-        return [month_counts.get(pd.Period(year=year, month=m, freq="M")) for m in range(1, end_month + 1)]
-
-
-    def jt_count_sum(values):
-        return sum(int(x) for x in values if x is not None)
-
-
-    def jt_export_buttons(df, mode_name, summary, extra_sheets=None):
-        """CSV + Excel, mendukung 2 periode klasik maupun multi-pembanding."""
-        detail_df = df.copy()
-        csv_bytes = detail_df.to_csv(index=False).encode("utf-8-sig")
-        left, right = st.columns(2)
-        with left:
-            st.download_button(
-                "⬇️ Download Data Perbandingan (CSV)",
-                data=csv_bytes,
-                file_name=f"SLA_Jumlah_Transaksi_{mode_name}.csv",
-                mime="text/csv",
-                key=f"jt_csv_{mode_name}",
-                use_container_width=True,
+        jtm_rows = []
+        jtm_previous = None
+        jtm_csv_rows = []
+        for _, jtm_row in jtm_body.iterrows():
+            jtm_period = str(jtm_row[periode_col])
+            jtm_count = int(jtm_row["Jumlah"])
+            jtm_share = 100 * jtm_count / jtm_total if jtm_total else 0.0
+            jtm_width = 100 * jtm_count / jtm_max
+            if jtm_previous is None:
+                jtm_delta, jtm_growth, jtm_class, jtm_sign = None, None, "jtm-flat", "—"
+            else:
+                jtm_delta = jtm_count - jtm_previous
+                jtm_growth = 100 * jtm_delta / jtm_previous if jtm_previous else None
+                jtm_class = "jtm-up" if jtm_delta > 0 else ("jtm-down" if jtm_delta < 0 else "jtm-flat")
+                jtm_sign = f"{jtm_delta:+,}".replace(",", ".")
+            jtm_growth_html = "—" if jtm_growth is None else f"{jtm_growth:+.2f}%".replace(".", ",")
+            jtm_csv_rows.append({
+                "PERIODE": jtm_period, "Jumlah": jtm_count,
+                "Selisih vs Periode Sebelumnya": jtm_delta,
+                "Pertumbuhan (%)": round(jtm_growth, 2) if jtm_growth is not None else None,
+                "Kontribusi (%)": round(jtm_share, 2),
+            })
+            jtm_rows.append(
+                '<tr>'
+                f'<td><b>{jtm_html.escape(jtm_period)}</b></td>'
+                f'<td class="jtm-num">{jtm_count:,}</td>'
+                f'<td class="jtm-num"><span class="jtm-tag {jtm_class}">{jtm_sign}</span></td>'
+                f'<td class="jtm-num"><span class="jtm-tag {jtm_class}">{jtm_growth_html}</span></td>'
+                f'<td class="jtm-num">{jtm_share:.2f}%</td>'
+                f'<td><div class="jtm-progress" title="{jtm_count:,} transaksi">'
+                f'<div class="jtm-progress-fill" style="width:{jtm_width:.2f}%"></div></div></td>'
+                '</tr>'
             )
-        with right:
-            try:
-                buf = io.BytesIO()
-                summary_df = pd.DataFrame(summary if isinstance(summary, list) else [summary])
-                with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-                    summary_df.to_excel(writer, sheet_name="Ringkasan", index=False)
-                    detail_df.to_excel(writer, sheet_name="Perbandingan", index=False)
-                    if extra_sheets:
-                        for sheet_name, sheet_df in extra_sheets.items():
-                            if sheet_name not in {"Ringkasan", "Perbandingan", "Metodologi"}:
-                                sheet_df.to_excel(writer, sheet_name=str(sheet_name)[:31], index=False)
-                    pd.DataFrame({"Ketentuan": [
-                        "Sumber: seluruh histori PERIODE pada file upload terakhir.",
-                        "Jumlah transaksi = jumlah baris per bulan, sesuai dashboard existing.",
-                        "Tahun, bulan, dan rentang perbandingan dapat dipilih lebih dari dua.",
-                        "Selisih/Growth dihitung terhadap acuan yang dipilih pengguna.",
-                        "Growth = (Pembanding-Acuan)/Acuan x100%, tidak berlaku jika acuan nol.",
-                        "Bulan tidak tersedia tidak diperlakukan sebagai nol transaksi.",
-                        "Perbandingan rentang dengan durasi berlainan perlu normalisasi per bulan berdata.",
-                        "Filter global tetap mengatur grafik lama; perbandingan memakai histori upload.",
-                    ]}).to_excel(writer, sheet_name="Metodologi", index=False)
+            jtm_previous = jtm_count
+
+        jtm_table_html = (
+            '<div class="jtm-frame"><div class="jtm-frame-head">'
+            '<div class="jtm-frame-title">Transaction Volume Ledger</div>'
+            '<div class="jtm-frame-meta">LIVE FILTER • MONTHLY PERFORMANCE</div></div>'
+            '<div class="jtm-table-scroll"><table class="jtm-table"><thead><tr>'
+            '<th>Periode</th><th style="text-align:right">Jumlah Transaksi</th>'
+            '<th style="text-align:right">Selisih</th><th style="text-align:right">Growth</th>'
+            '<th style="text-align:right">Kontribusi</th><th>Distribusi Volume</th>'
+            '</tr></thead><tbody>' + ''.join(jtm_rows) + '</tbody><tfoot><tr>'
+            '<td>TOTAL</td><td class="jtm-num">' + f'{jtm_total:,}'.replace(",", ".") + '</td>'
+            '<td>—</td><td>—</td><td class="jtm-num">' + ("100,00%" if jtm_total else "—") + '</td><td>—</td>'
+            '</tr></tfoot></table></div></div>'
+        )
+        st.markdown(jtm_table_html, unsafe_allow_html=True)
+        st.markdown('<div class="jtm-foot">Selisih &amp; growth membandingkan bulan dengan data sebelumnya dalam filter aktif. '
+                    'Tabel asli tetap tersedia untuk disortir dan disalin. Angka pada grafik existing tidak diubah.</div>',
+                    unsafe_allow_html=True)
+        with st.expander("🔎 Tabel data original — sortir, salin & audit", expanded=False):
+            st.dataframe(jumlah_transaksi.style.apply(highlight_total, axis=1),
+                         use_container_width=True)
+        st.download_button(
+            "⬇️ Ekspor tabel Jumlah Transaksi (CSV)",
+            data=pd.DataFrame(jtm_csv_rows).to_csv(index=False).encode("utf-8-sig"),
+            file_name="SLA_Jumlah_Transaksi_Tabel_Periode.csv", mime="text/csv",
+            key="jtm_export_main_table",
+        )
+
+        fig_trans, ax_trans = plt.subplots(figsize=(10, 5))
+        ax_trans.bar(
+            jumlah_transaksi[jumlah_transaksi[periode_col] != "TOTAL"][periode_col],
+            jumlah_transaksi[jumlah_transaksi[periode_col] != "TOTAL"]['Jumlah'],
+            color='#ff9f7f'
+        )
+        ax_trans.set_title("Jumlah Transaksi per Periode")
+        ax_trans.set_xlabel("Periode")
+        ax_trans.set_ylabel("Jumlah Transaksi")
+        ax_trans.grid(axis='y', linestyle='--', alpha=0.7)
+        for label in ax_trans.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
+        st.pyplot(fig_trans)
+
+        # ===========================================================================
+        # ADVANCED TRANSACTION VOLUME COMPARISON
+        # Tambahan murni di bawah grafik existing tab Jumlah Transaksi.
+        # TIDAK memodifikasi df_filtered, periode_list, selected_periode, atau tab lain.
+        # Dataset khusus perbandingan = SELURUH periode historis file upload.
+        # ===========================================================================
+        import html as jt_html
+        import plotly.graph_objects as jt_go
+
+        JT_MONTH_NAMES = (
+            "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+            "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+        )
+        JT_MONTH_SHORT = ("Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des")
+        JT_BLUE = "#4F91FA"
+        JT_TEAL = "#21CAB5"
+        JT_ORANGE = "#FFBA69"
+        JT_WHITE = "#E9F2FE"
+
+
+        def jt_format_int(num):
+            return f"{int(num):,}".replace(",", ".")
+
+
+        def jt_month_text(period):
+            return f"{JT_MONTH_NAMES[period.month - 1]} {period.year}"
+
+
+        def jt_delta_data(a, b):
+            """Pertumbuhan terhadap A; hindari membagi nol/tidak ada data."""
+            if a is None or b is None:
+                return None, None
+            a, b = int(a), int(b)
+            gap = b - a
+            if a == 0:
+                return gap, (0.0 if b == 0 else None)
+            return gap, 100 * gap / a
+
+
+        def jt_format_change_pct(percent):
+            return "N/A (basis 0)" if percent is None else f"{percent:+,.2f}%".replace(",", "_").replace(".", ",").replace("_", ".")
+
+
+        def jt_summary_cards(label_a, label_b, count_a, count_b):
+            delta, pct = jt_delta_data(count_a, count_b)
+            sign_class = "positive" if delta is not None and delta >= 0 else "negative"
+            label_a = jt_html.escape(str(label_a))
+            label_b = jt_html.escape(str(label_b))
+            cards = [
+                ("PERIODE A", label_a, jt_format_int(count_a), "blue"),
+                ("PERIODE B", label_b, jt_format_int(count_b), "teal"),
+                ("SELISIH TRANSAKSI (B - A)", "Perubahan volume", f"{delta:+,}".replace(",", ".") if delta is not None else "—", sign_class),
+                ("PERTUMBUHAN B vs A", "Dibanding periode A", jt_format_change_pct(pct), sign_class),
+            ]
+            html_cards = "".join(
+                f'<div class="jt-kpi jt-kpi-{color}"><div class="jt-kpi-label">{jt_html.escape(k)}</div>'
+                f'<div class="jt-kpi-period">{period}</div><div class="jt-kpi-value">{jt_html.escape(value)}</div></div>'
+                for k, period, value, color in cards
+            )
+            st.markdown(f'<div class="jt-kpi-grid">{html_cards}</div>', unsafe_allow_html=True)
+            return delta, pct
+
+
+        def jt_plot_style(fig, title, y_title="Jumlah transaksi", height=410):
+            fig.update_layout(
+                title=dict(text=title, font=dict(size=19, color=JT_WHITE), x=0.03),
+                height=height,
+                paper_bgcolor="#0D2648",
+                plot_bgcolor="#123155",
+                font=dict(family="Segoe UI, Arial, sans-serif", color="#D2E4FA", size=12),
+                legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1),
+                margin=dict(l=32, r=30, t=95, b=50),
+                hovermode="x unified",
+                barmode="group",
+            )
+            fig.update_xaxes(showgrid=False, tickfont=dict(size=11), zeroline=False)
+            fig.update_yaxes(title=y_title, showgrid=True, gridcolor="rgba(140,170,200,.15)",
+                             zeroline=False, rangemode="tozero")
+            return fig
+
+
+        def jt_months_series(month_counts, year, end_month=12):
+            return [month_counts.get(pd.Period(year=year, month=m, freq="M")) for m in range(1, end_month + 1)]
+
+
+        def jt_count_sum(values):
+            return sum(int(x) for x in values if x is not None)
+
+
+        def jt_export_buttons(df, mode_name, summary, extra_sheets=None):
+            """CSV + Excel, mendukung 2 periode klasik maupun multi-pembanding."""
+            detail_df = df.copy()
+            csv_bytes = detail_df.to_csv(index=False).encode("utf-8-sig")
+            left, right = st.columns(2)
+            with left:
                 st.download_button(
-                    "⬇️ Download Laporan Perbandingan (Excel)",
-                    data=buf.getvalue(),
-                    file_name=f"SLA_Jumlah_Transaksi_{mode_name}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"jt_xlsx_{mode_name}",
+                    "⬇️ Download Data Perbandingan (CSV)",
+                    data=csv_bytes,
+                    file_name=f"SLA_Jumlah_Transaksi_{mode_name}.csv",
+                    mime="text/csv",
+                    key=f"jt_csv_{mode_name}",
                     use_container_width=True,
                 )
-            except Exception as exc:
-                st.warning(f"Ekspor Excel belum tersedia: {type(exc).__name__}. Gunakan CSV sebagai alternatif.")
+            with right:
+                try:
+                    buf = io.BytesIO()
+                    summary_df = pd.DataFrame(summary if isinstance(summary, list) else [summary])
+                    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+                        summary_df.to_excel(writer, sheet_name="Ringkasan", index=False)
+                        detail_df.to_excel(writer, sheet_name="Perbandingan", index=False)
+                        if extra_sheets:
+                            for sheet_name, sheet_df in extra_sheets.items():
+                                if sheet_name not in {"Ringkasan", "Perbandingan", "Metodologi"}:
+                                    sheet_df.to_excel(writer, sheet_name=str(sheet_name)[:31], index=False)
+                        pd.DataFrame({"Ketentuan": [
+                            "Sumber: seluruh histori PERIODE pada file upload terakhir.",
+                            "Jumlah transaksi = jumlah baris per bulan, sesuai dashboard existing.",
+                            "Tahun, bulan, dan rentang perbandingan dapat dipilih lebih dari dua.",
+                            "Selisih/Growth dihitung terhadap acuan yang dipilih pengguna.",
+                            "Growth = (Pembanding-Acuan)/Acuan x100%, tidak berlaku jika acuan nol.",
+                            "Bulan tidak tersedia tidak diperlakukan sebagai nol transaksi.",
+                            "Perbandingan rentang dengan durasi berlainan perlu normalisasi per bulan berdata.",
+                            "Filter global tetap mengatur grafik lama; perbandingan memakai histori upload.",
+                        ]}).to_excel(writer, sheet_name="Metodologi", index=False)
+                    st.download_button(
+                        "⬇️ Download Laporan Perbandingan (Excel)",
+                        data=buf.getvalue(),
+                        file_name=f"SLA_Jumlah_Transaksi_{mode_name}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"jt_xlsx_{mode_name}",
+                        use_container_width=True,
+                    )
+                except Exception as exc:
+                    st.warning(f"Ekspor Excel belum tersedia: {type(exc).__name__}. Gunakan CSV sebagai alternatif.")
 
 
-    def jt_executive_note(a, b, lab_a, lab_b, extra=""):
-        change, pct = jt_delta_data(a, b)
-        if change is None:
-            headline = "Perbandingan belum memiliki data yang cukup."
-        elif change > 0:
-            headline = f"Volume transaksi meningkat {jt_format_int(change)} transaksi ({jt_format_change_pct(pct)}) dibandingkan periode A."
-        elif change < 0:
-            headline = f"Volume transaksi menurun {jt_format_int(abs(change))} transaksi ({jt_format_change_pct(pct)}) dibandingkan periode A."
-        else:
-            headline = "Volume transaksi pada kedua periode sama."
-        st.markdown(
-            '<div class="jt-note"><div class="jt-note-head">✦ AUTOMATED EXECUTIVE INSIGHT</div>'
-            f'<div>{jt_html.escape(headline)}</div>'
-            f'<div class="jt-note-small">Pembanding: {jt_html.escape(str(lab_a))} vs '
-            f'{jt_html.escape(str(lab_b))}. {jt_html.escape(extra)}</div></div>',
-            unsafe_allow_html=True,
-        )
+        def jt_executive_note(a, b, lab_a, lab_b, extra=""):
+            change, pct = jt_delta_data(a, b)
+            if change is None:
+                headline = "Perbandingan belum memiliki data yang cukup."
+            elif change > 0:
+                headline = f"Volume transaksi meningkat {jt_format_int(change)} transaksi ({jt_format_change_pct(pct)}) dibandingkan periode A."
+            elif change < 0:
+                headline = f"Volume transaksi menurun {jt_format_int(abs(change))} transaksi ({jt_format_change_pct(pct)}) dibandingkan periode A."
+            else:
+                headline = "Volume transaksi pada kedua periode sama."
+            st.markdown(
+                '<div class="jt-note"><div class="jt-note-head">✦ AUTOMATED EXECUTIVE INSIGHT</div>'
+                f'<div>{jt_html.escape(headline)}</div>'
+                f'<div class="jt-note-small">Pembanding: {jt_html.escape(str(lab_a))} vs '
+                f'{jt_html.escape(str(lab_b))}. {jt_html.escape(extra)}</div></div>',
+                unsafe_allow_html=True,
+            )
 
 
-    st.markdown("""
+        st.markdown("""
     <style>
     .jt-hero {
       margin: 28px 0 18px; padding: 25px 30px; border-radius: 22px;
@@ -4458,7 +4624,7 @@ with tab_jumlah:
     </style>
     """, unsafe_allow_html=True)
 
-    st.markdown("""
+        st.markdown("""
     <div class="jt-hero">
       <div class="jt-eyebrow">ASDP • TRANSACTION INTELLIGENCE</div>
       <h2>Advanced Transaction Comparison</h2>
@@ -4466,112 +4632,112 @@ with tab_jumlah:
          Semua grafik & laporan existing tetap dipertahankan.</p>
     </div>
     """, unsafe_allow_html=True)
-    st.caption(
-        "💡 Grafik di atas tetap mengikuti Filter Rentang Periode pada sidebar. "
-        "Khusus modul perbandingan di bawah, opsi periodenya mencakup seluruh histori "
-        "yang tersedia dalam file Excel terakhir sehingga bisa membandingkan lintas tahun."
-    )
-
-    # Membaca hanya kolom periode dari data asli (tidak mengubah dataset modul lain).
-    if "PERIODE_DATETIME" in df_raw.columns:
-        jt_period_dt = pd.to_datetime(df_raw["PERIODE_DATETIME"], errors="coerce")
-    else:
-        jt_period_dt = df_raw[periode_col].apply(parse_period_label_to_timestamp)
-
-    jt_valid_periods = jt_period_dt.dropna()
-    jt_invalid_count = int(len(jt_period_dt) - len(jt_valid_periods))
-
-    if jt_valid_periods.empty:
-        st.warning("Tidak tersedia data periode yang dapat dibandingkan. Periksa format PERIODE pada upload terakhir.")
-    else:
-        jt_period_months = jt_valid_periods.dt.to_period("M")
-        jt_grouped = jt_period_months.value_counts(sort=False).sort_index()
-        jt_counts = {p: int(count) for p, count in jt_grouped.items()}
-        jt_period_options = sorted(jt_counts.keys())
-        jt_year_options = sorted({p.year for p in jt_period_options})
-        jt_latest = jt_period_options[-1]
-
-        if jt_invalid_count:
-            st.warning(f"{jt_format_int(jt_invalid_count)} baris memiliki periode tidak valid/kosong dan tidak digunakan dalam perbandingan.")
-
-        jt_mode_year, jt_mode_month, jt_mode_range = st.tabs([
-            "📆 Perbandingan Antar Tahun", "🗓️ Perbandingan Bulan & Tahun", "🔁 Perbandingan Rentang Periode"
-        ])
-
-        # ==========================================================================
-        # MULTI-COMPARISON UPGRADE (v3): fleksibel 2, 3, atau lebih pembanding.
-        # Existing helpers, Grafik Jumlah Transaksi, export CSV/Excel, dan tiga mode
-        # tetap dipertahankan. Seluruh kalkulasi di bawah memakai jt_counts historis.
-        # ==========================================================================
-        JT_MULTI_PALETTE = (
-            "#4F91FA", "#21CAB5", "#FFBA69", "#A78BFA", "#F472A1", "#8ECE76",
-            "#22D3EE", "#FACC65", "#7CA4FC", "#E879F9", "#F08B6D", "#63D6BA",
+        st.caption(
+            "💡 Grafik di atas tetap mengikuti Filter Rentang Periode pada sidebar. "
+            "Khusus modul perbandingan di bawah, opsi periodenya mencakup seluruh histori "
+            "yang tersedia dalam file Excel terakhir sehingga bisa membandingkan lintas tahun."
         )
 
+        # Membaca hanya kolom periode dari data asli (tidak mengubah dataset modul lain).
+        if "PERIODE_DATETIME" in df_raw.columns:
+            jt_period_dt = pd.to_datetime(df_raw["PERIODE_DATETIME"], errors="coerce")
+        else:
+            jt_period_dt = df_raw[periode_col].apply(parse_period_label_to_timestamp)
 
-        def jt_color_at(position):
-            return JT_MULTI_PALETTE[position % len(JT_MULTI_PALETTE)]
+        jt_valid_periods = jt_period_dt.dropna()
+        jt_invalid_count = int(len(jt_period_dt) - len(jt_valid_periods))
 
+        if jt_valid_periods.empty:
+            st.warning("Tidak tersedia data periode yang dapat dibandingkan. Periksa format PERIODE pada upload terakhir.")
+        else:
+            jt_period_months = jt_valid_periods.dt.to_period("M")
+            jt_grouped = jt_period_months.value_counts(sort=False).sort_index()
+            jt_counts = {p: int(count) for p, count in jt_grouped.items()}
+            jt_period_options = sorted(jt_counts.keys())
+            jt_year_options = sorted({p.year for p in jt_period_options})
+            jt_latest = jt_period_options[-1]
 
-        def jt_num_or_dash(value):
-            return "—" if value is None or pd.isna(value) else jt_format_int(value)
+            if jt_invalid_count:
+                st.warning(f"{jt_format_int(jt_invalid_count)} baris memiliki periode tidak valid/kosong dan tidak digunakan dalam perbandingan.")
 
+            jt_mode_year, jt_mode_month, jt_mode_range = st.tabs([
+                "📆 Perbandingan Antar Tahun", "🗓️ Perbandingan Bulan & Tahun", "🔁 Perbandingan Rentang Periode"
+            ])
 
-        def jt_growth_signed(growth):
-            return "N/A (basis 0)" if growth is None else jt_format_change_pct(growth)
-
-
-        def jt_multi_cards(records, baseline_name):
-            """Empat KPI klasik untuk tepat dua periode; kartu adaptif saat 3+."""
-            if len(records) == 2:
-                reference = next((r for r in records if r["name"] == baseline_name), records[0])
-                comparison = next((r for r in records if r["name"] != reference["name"]), records[1])
-                return jt_summary_cards(
-                    reference["label"], comparison["label"],
-                    reference["total"], comparison["total"],
-                )
-            baseline = next((record for record in records if record["name"] == baseline_name), records[0])
-            cards_html = []
-            for i, record in enumerate(records):
-                delta, growth = jt_delta_data(baseline["total"], record["total"])
-                is_baseline = record["name"] == baseline["name"]
-                subtitle = "PERIODE ACUAN" if is_baseline else f"Δ {delta:+,} · {jt_growth_signed(growth)}"
-                subtitle = subtitle.replace(",", ".") if not is_baseline else subtitle
-                cards_html.append(
-                    '<div class="jt-multi-card" style="border-top:3px solid ' + jt_color_at(i) + '">'
-                    '<div class="jt-multi-label">' + jt_html.escape(str(record["name"])) + '</div>'
-                    '<div class="jt-multi-period">' + jt_html.escape(str(record["label"])) + '</div>'
-                    '<div class="jt-multi-value">' + jt_format_int(record["total"]) + '</div>'
-                    '<div class="jt-multi-sub">' + jt_html.escape(subtitle) + '</div>'
-                    '</div>'
-                )
-            st.markdown('<div class="jt-multi-grid">' + ''.join(cards_html) + '</div>', unsafe_allow_html=True)
-
-
-        def jt_multi_note(text, extra=""):
-            st.markdown(
-                '<div class="jt-note"><div class="jt-note-head">✦ AUTOMATED EXECUTIVE INSIGHT</div>'
-                '<div>' + jt_html.escape(str(text)) + '</div>'
-                '<div class="jt-note-small">' + jt_html.escape(str(extra)) + '</div></div>',
-                unsafe_allow_html=True,
+            # ==========================================================================
+            # MULTI-COMPARISON UPGRADE (v3): fleksibel 2, 3, atau lebih pembanding.
+            # Existing helpers, Grafik Jumlah Transaksi, export CSV/Excel, dan tiga mode
+            # tetap dipertahankan. Seluruh kalkulasi di bawah memakai jt_counts historis.
+            # ==========================================================================
+            JT_MULTI_PALETTE = (
+                "#4F91FA", "#21CAB5", "#FFBA69", "#A78BFA", "#F472A1", "#8ECE76",
+                "#22D3EE", "#FACC65", "#7CA4FC", "#E879F9", "#F08B6D", "#63D6BA",
             )
 
 
-        def jt_safe_percent_difference(base, comparison):
-            if base is None or comparison is None:
-                return None, None
-            diff = comparison - base
-            if base == 0:
-                return diff, (0.0 if comparison == 0 else None)
-            return diff, 100 * diff / base
+            def jt_color_at(position):
+                return JT_MULTI_PALETTE[position % len(JT_MULTI_PALETTE)]
 
 
-        def jt_reset_invalid_choice(widget_key, available):
-            if widget_key in st.session_state and st.session_state[widget_key] not in available:
-                del st.session_state[widget_key]
+            def jt_num_or_dash(value):
+                return "—" if value is None or pd.isna(value) else jt_format_int(value)
 
 
-        st.markdown("""
+            def jt_growth_signed(growth):
+                return "N/A (basis 0)" if growth is None else jt_format_change_pct(growth)
+
+
+            def jt_multi_cards(records, baseline_name):
+                """Empat KPI klasik untuk tepat dua periode; kartu adaptif saat 3+."""
+                if len(records) == 2:
+                    reference = next((r for r in records if r["name"] == baseline_name), records[0])
+                    comparison = next((r for r in records if r["name"] != reference["name"]), records[1])
+                    return jt_summary_cards(
+                        reference["label"], comparison["label"],
+                        reference["total"], comparison["total"],
+                    )
+                baseline = next((record for record in records if record["name"] == baseline_name), records[0])
+                cards_html = []
+                for i, record in enumerate(records):
+                    delta, growth = jt_delta_data(baseline["total"], record["total"])
+                    is_baseline = record["name"] == baseline["name"]
+                    subtitle = "PERIODE ACUAN" if is_baseline else f"Δ {delta:+,} · {jt_growth_signed(growth)}"
+                    subtitle = subtitle.replace(",", ".") if not is_baseline else subtitle
+                    cards_html.append(
+                        '<div class="jt-multi-card" style="border-top:3px solid ' + jt_color_at(i) + '">'
+                        '<div class="jt-multi-label">' + jt_html.escape(str(record["name"])) + '</div>'
+                        '<div class="jt-multi-period">' + jt_html.escape(str(record["label"])) + '</div>'
+                        '<div class="jt-multi-value">' + jt_format_int(record["total"]) + '</div>'
+                        '<div class="jt-multi-sub">' + jt_html.escape(subtitle) + '</div>'
+                        '</div>'
+                    )
+                st.markdown('<div class="jt-multi-grid">' + ''.join(cards_html) + '</div>', unsafe_allow_html=True)
+
+
+            def jt_multi_note(text, extra=""):
+                st.markdown(
+                    '<div class="jt-note"><div class="jt-note-head">✦ AUTOMATED EXECUTIVE INSIGHT</div>'
+                    '<div>' + jt_html.escape(str(text)) + '</div>'
+                    '<div class="jt-note-small">' + jt_html.escape(str(extra)) + '</div></div>',
+                    unsafe_allow_html=True,
+                )
+
+
+            def jt_safe_percent_difference(base, comparison):
+                if base is None or comparison is None:
+                    return None, None
+                diff = comparison - base
+                if base == 0:
+                    return diff, (0.0 if comparison == 0 else None)
+                return diff, 100 * diff / base
+
+
+            def jt_reset_invalid_choice(widget_key, available):
+                if widget_key in st.session_state and st.session_state[widget_key] not in available:
+                    del st.session_state[widget_key]
+
+
+            st.markdown("""
         <style>
         .jt-multi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
          gap:12px;margin:16px 0 18px;}
@@ -4588,475 +4754,475 @@ with tab_jumlah:
         </style>
         """, unsafe_allow_html=True)
 
-        # ==========================================
-        # MODE 1 - TAHUN JAMAK (YoY multi-series)
-        # ==========================================
-        with jt_mode_year:
-            st.markdown("#### Year-on-Year • Perbandingan Multi-Tahun")
-            st.caption("Pilih dua, tiga, atau seluruh tahun yang tersedia. Tahun acuan dapat dipilih bebas.")
-            jt_year_defaults = jt_year_options[-2:] if len(jt_year_options) > 1 else jt_year_options[:]
-            jt_year_selected = st.multiselect(
-                "Pilih tahun yang akan dibandingkan",
-                jt_year_options,
-                default=jt_year_defaults,
-                key="jt_year_multi_v3",
-                help="Boleh memilih 2, 3, 4, dan seterusnya; tidak dibatasi pada dua tahun.",
-            )
-            jt_year_selected = sorted(set(jt_year_selected))
-            if not jt_year_selected:
-                st.info("Pilih setidaknya satu tahun untuk menampilkan data; pilih dua atau lebih untuk membandingkan.")
-            else:
-                jt_reset_invalid_choice("jt_year_basis_v3", jt_year_selected)
-                jt_yc1, jt_yc2 = st.columns([1, 1.25])
-                with jt_yc1:
-                    jt_year_basis = st.selectbox("Tahun acuan (basis)", jt_year_selected,
-                                                  key="jt_year_basis_v3")
-                with jt_yc2:
-                    jt_align_months = st.checkbox(
-                        "Samakan horizon bulan (YTD)", value=True, key="jt_align_months",
-                        help="Horizon perbandingan diambil dari bulan terakhir terpendek di antara tahun terpilih. "
-                             "Bulan tanpa data tetap kosong, bukan dianggap nol.",
-                    )
-                jt_last_by_year = {
-                    year: max(p.month for p in jt_period_options if p.year == year)
-                    for year in jt_year_selected
-                }
-                jt_end_month = min(jt_last_by_year.values()) if jt_align_months else 12
-                jt_month_labels = list(JT_MONTH_SHORT[:jt_end_month])
-                jt_label_suffix = f"Jan–{JT_MONTH_SHORT[jt_end_month-1]}" if jt_align_months else "Jan–Des (tersedia)"
-                jt_year_series = {
-                    year: jt_months_series(jt_counts, year, jt_end_month) for year in jt_year_selected
-                }
-                jt_year_totals = {year: jt_count_sum(jt_year_series[year]) for year in jt_year_selected}
-                jt_year_coverages = {
-                    year: sum(x is not None for x in jt_year_series[year]) for year in jt_year_selected
-                }
-                jt_year_records = [
-                    {"name": str(year), "label": f"{year} • {jt_label_suffix}", "total": jt_year_totals[year]}
-                    for year in jt_year_selected
-                ]
-                jt_multi_cards(jt_year_records, str(jt_year_basis))
-
-                if len(jt_year_selected) == 1:
-                    st.info("Hanya satu tahun yang dipilih. Tambahkan tahun lain untuk melihat perbandingan YoY.")
-                if len(set(jt_year_coverages.values())) > 1 or any(
-                    count < jt_end_month for count in jt_year_coverages.values()
-                ):
-                    st.warning(
-                        "Cakupan data per tahun berbeda. Bulan yang belum ada dalam file tidak dihitung "
-                        "sebagai nol transaksi. Tinjau coverage sebelum menarik kesimpulan pertumbuhan."
-                    )
-                if not jt_align_months and len(set(jt_last_by_year.values())) > 1:
-                    st.info("Periode tahunan belum tentu setara karena bulan terakhir berbeda. "
-                            "Aktifkan YTD untuk membandingkan horizon bulan yang sama.")
-
-                jt_year_figure = jt_go.Figure()
-                for i, year in enumerate(jt_year_selected):
-                    values = jt_year_series[year]
-                    jt_year_figure.add_trace(jt_go.Bar(
-                        x=jt_month_labels, y=values, name=f"Tahun {year}",
-                        marker_color=jt_color_at(i),
-                        text=values if len(jt_year_selected) <= 4 else None,
-                        textposition="auto",
-                        hovertemplate=f"Tahun {year}<br>%{{x}}: %{{y:,.0f}} transaksi<extra></extra>",
-                    ))
-                jt_plot_style(jt_year_figure, "Distribusi Transaksi Bulanan • Multi-Tahun", height=445)
-                st.plotly_chart(jt_year_figure, use_container_width=True, key="jt_year_chart")
-
-                jt_year_cumulative = jt_go.Figure()
-                for i, year in enumerate(jt_year_selected):
-                    running = 0
-                    vals = []
-                    for count in jt_year_series[year]:
-                        if count is None:
-                            vals.append(None)
-                        else:
-                            running += int(count)
-                            vals.append(running)
-                    jt_year_cumulative.add_trace(jt_go.Scatter(
-                        x=jt_month_labels, y=vals, name=f"Tahun {year}",
-                        mode="lines+markers", connectgaps=False,
-                        line=dict(color=jt_color_at(i), width=3),
-                        marker=dict(size=7),
-                        hovertemplate=f"{year} • %{{x}}<br>Akumulasi: %{{y:,.0f}}<extra></extra>",
-                    ))
-                jt_plot_style(jt_year_cumulative, "Tren Akumulasi Transaksi per Tahun", "Akumulasi transaksi", 370)
-                st.plotly_chart(jt_year_cumulative, use_container_width=True, key="jt_year_accumulation_v3")
-
-                jt_year_rows = []
-                for m in range(1, jt_end_month + 1):
-                    row = {"Bulan": JT_MONTH_NAMES[m-1]}
-                    basis_val = jt_year_series[jt_year_basis][m-1]
-                    for year in jt_year_selected:
-                        count = jt_year_series[year][m-1]
-                        row[f"Tahun {year}"] = count
-                        if year != jt_year_basis:
-                            diff, growth = jt_delta_data(basis_val, count)
-                            row[f"Selisih {year} vs {jt_year_basis}"] = diff
-                            row[f"Growth {year} vs {jt_year_basis} (%)"] = (
-                                round(growth, 2) if growth is not None else None
-                            )
-                    jt_year_rows.append(row)
-                jt_year_table = pd.DataFrame(jt_year_rows)
-                st.markdown("<div class='jt-section-heading'>Matriks Perbandingan Bulanan Semua Tahun</div>",
-                            unsafe_allow_html=True)
-                st.dataframe(jt_year_table, hide_index=True, use_container_width=True)
-                jt_year_summary = []
-                for year in jt_year_selected:
-                    diff, growth = jt_delta_data(jt_year_totals[jt_year_basis], jt_year_totals[year])
-                    jt_year_summary.append({
-                        "Tahun": year,
-                        "Status": "ACUAN" if year == jt_year_basis else "PEMBANDING",
-                        "Horizon": jt_label_suffix,
-                        "Total Transaksi": jt_year_totals[year],
-                        "Bulan Memiliki Data": jt_year_coverages[year],
-                        "Total Bulan Horizon": jt_end_month,
-                        f"Selisih vs {jt_year_basis}": diff,
-                        f"Growth vs {jt_year_basis} (%)": round(growth, 2) if growth is not None else None,
-                    })
-                jt_year_summary_df = pd.DataFrame(jt_year_summary)
-                st.markdown("<div class='jt-section-heading'>Executive Comparison • Tahun Terpilih</div>",
-                            unsafe_allow_html=True)
-                st.dataframe(jt_year_summary_df, use_container_width=True, hide_index=True)
-                jt_best_year = max(jt_year_selected, key=lambda yr: jt_year_totals[yr])
-                jt_multi_note(
-                    f"Dari {len(jt_year_selected)} tahun terpilih, tahun {jt_best_year} memiliki volume "
-                    f"terbesar dengan {jt_format_int(jt_year_totals[jt_best_year])} transaksi. "
-                    f"Tahun acuan adalah {jt_year_basis}.",
-                    "Pertumbuhan dihitung terhadap tahun acuan. Data kosong dipisahkan dari nol; "
-                    "total yang cakupannya berbeda tidak langsung sebanding.",
+            # ==========================================
+            # MODE 1 - TAHUN JAMAK (YoY multi-series)
+            # ==========================================
+            with jt_mode_year:
+                st.markdown("#### Year-on-Year • Perbandingan Multi-Tahun")
+                st.caption("Pilih dua, tiga, atau seluruh tahun yang tersedia. Tahun acuan dapat dipilih bebas.")
+                jt_year_defaults = jt_year_options[-2:] if len(jt_year_options) > 1 else jt_year_options[:]
+                jt_year_selected = st.multiselect(
+                    "Pilih tahun yang akan dibandingkan",
+                    jt_year_options,
+                    default=jt_year_defaults,
+                    key="jt_year_multi_v3",
+                    help="Boleh memilih 2, 3, 4, dan seterusnya; tidak dibatasi pada dua tahun.",
                 )
-                jt_export_buttons(jt_year_table, "Antar_Tahun_Multi", jt_year_summary,
-                                  extra_sheets={"Ringkasan Perbandingan": jt_year_summary_df})
-
-        # ==========================================
-        # MODE 2 - BULAN & TAHUN JAMAK
-        # ==========================================
-        with jt_mode_month:
-            st.markdown("#### Month-to-Month • Perbandingan Multi-Bulan & Multi-Tahun")
-            st.caption("Pilih beberapa bulan dari tahun yang sama ataupun tahun berbeda.")
-            jt_month_defaults = jt_period_options[-2:] if len(jt_period_options) >= 2 else jt_period_options[:]
-            jt_selected_months = st.multiselect(
-                "Pilih bulan-tahun untuk dibandingkan",
-                jt_period_options,
-                default=jt_month_defaults,
-                format_func=jt_month_text,
-                key="jt_month_multi_v3",
-                help="Contoh: Januari 2024, Januari 2025, Januari 2026 atau gabungan bulan bebas.",
-            )
-            jt_selected_months = sorted(set(jt_selected_months))
-            if not jt_selected_months:
-                st.info("Pilih setidaknya satu bulan-tahun dari histori transaksi yang tersedia.")
-            else:
-                jt_reset_invalid_choice("jt_month_basis_v3", jt_selected_months)
-                jt_month_basis = st.selectbox(
-                    "Bulan-tahun acuan (basis)", jt_selected_months,
-                    format_func=jt_month_text, key="jt_month_basis_v3",
-                )
-                jt_month_records = [
-                    {"name": str(period), "label": jt_month_text(period), "total": jt_counts[period]}
-                    for period in jt_selected_months
-                ]
-                jt_multi_cards(jt_month_records, str(jt_month_basis))
-                if len(jt_selected_months) == 1:
-                    st.info("Tambahkan bulan lain agar dapat melihat selisih dan pertumbuhan antar bulan.")
-
-                jt_month_fig = jt_go.Figure()
-                jt_month_fig.add_trace(jt_go.Bar(
-                    x=[jt_month_text(p) for p in jt_selected_months],
-                    y=[jt_counts[p] for p in jt_selected_months],
-                    marker_color=[jt_color_at(i) for i in range(len(jt_selected_months))],
-                    text=[jt_format_int(jt_counts[p]) for p in jt_selected_months]
-                         if len(jt_selected_months) <= 12 else None,
-                    textposition="outside", showlegend=False,
-                    hovertemplate="%{x}<br>%{y:,.0f} transaksi<extra></extra>",
-                ))
-                jt_plot_style(jt_month_fig, "Perbandingan Langsung Bulan-Tahun Terpilih", height=410)
-                jt_month_fig.update_xaxes(tickangle=-30)
-                st.plotly_chart(jt_month_fig, use_container_width=True, key="jt_month_duel_chart")
-
-                # Momentum 6 bulan sebelumnya: mempertahankan grafik existing, diperluas N seri.
-                jt_momentum_fig = jt_go.Figure()
-                jt_momentum_rows = []
-                for i, period in enumerate(jt_selected_months):
-                    periods = pd.period_range(end=period, periods=6, freq="M")
-                    vals = [jt_counts.get(x) for x in periods]
-                    jt_momentum_fig.add_trace(jt_go.Scatter(
-                        x=[f"T-{5-j}" if j < 5 else "T" for j in range(6)],
-                        y=vals, name=jt_month_text(period), mode="lines+markers",
-                        line=dict(color=jt_color_at(i), width=3), marker=dict(size=8),
-                        customdata=[jt_month_text(x) for x in periods],
-                        hovertemplate="%{customdata}<br>%{y:,.0f} transaksi<extra></extra>",
-                        connectgaps=False,
-                    ))
-                    for j, (p, val) in enumerate(zip(periods, vals)):
-                        jt_momentum_rows.append({
-                            "Pilihan": jt_month_text(period),
-                            "Posisi": f"T-{5-j}" if j < 5 else "T",
-                            "Periode": jt_month_text(p),
-                            "Jumlah Transaksi": val,
-                        })
-                jt_plot_style(jt_momentum_fig,
-                              "Momentum 6 Bulan • Setiap Pilihan Bulan-Tahun", height=400)
-                st.plotly_chart(jt_momentum_fig, use_container_width=True, key="jt_month_momentum_chart")
-                st.caption("T = bulan yang dipilih, T-1 = satu bulan sebelumnya. "
-                           "Bulan yang belum tercatat pada file tetap kosong, tidak dikonversi ke nol.")
-
-                jt_month_rows = []
-                jt_basis_volume = jt_counts[jt_month_basis]
-                previous_value = None
-                for period in jt_selected_months:
-                    val = jt_counts[period]
-                    diff_basis, growth_basis = jt_delta_data(jt_basis_volume, val)
-                    diff_previous, growth_previous = jt_delta_data(previous_value, val)
-                    jt_month_rows.append({
-                        "Bulan & Tahun": jt_month_text(period),
-                        "Status": "ACUAN" if period == jt_month_basis else "PEMBANDING",
-                        "Jumlah Transaksi": val,
-                        "Selisih vs Acuan": diff_basis,
-                        "Growth vs Acuan (%)": round(growth_basis, 2) if growth_basis is not None else None,
-                        "Selisih vs Pilihan Sebelumnya": diff_previous,
-                        "Growth vs Pilihan Sebelumnya (%)": (
-                            round(growth_previous, 2) if growth_previous is not None else None
-                        ),
-                    })
-                    previous_value = val
-                jt_month_table = pd.DataFrame(jt_month_rows)
-                st.markdown("<div class='jt-section-heading'>Matriks Perbandingan Semua Bulan Terpilih</div>",
-                            unsafe_allow_html=True)
-                st.dataframe(jt_month_table, use_container_width=True, hide_index=True)
-                jt_top_month = max(jt_selected_months, key=lambda period: jt_counts[period])
-                jt_multi_note(
-                    f"Dari {len(jt_selected_months)} bulan-tahun yang dipilih, "
-                    f"volume tertinggi terdapat pada {jt_month_text(jt_top_month)} "
-                    f"sebanyak {jt_format_int(jt_counts[jt_top_month])} transaksi.",
-                    f"Basis pembanding: {jt_month_text(jt_month_basis)}. "
-                    "Selisih terhadap pilihan sebelumnya mengikuti urutan kronologis.",
-                )
-                jt_export_buttons(
-                    pd.DataFrame(jt_momentum_rows), "Antar_Bulan_Multi", jt_month_rows,
-                    extra_sheets={"Matriks Bulan": jt_month_table},
-                )
-
-        # ==========================================
-        # MODE 3 - RENTANG PERIODE JAMAK
-        # ==========================================
-        with jt_mode_range:
-            st.markdown("#### Period-to-Period • Multi-Rentang Periode Bebas")
-            st.caption("Tentukan jumlah rentang, lalu tetapkan awal–akhir masing-masing. "
-                       "Dapat membandingkan 2, 3, 4, atau lebih rentang sekaligus.")
-            jt_latest_year = jt_latest.year
-            jt_previous_year = jt_latest_year - 1
-            jt_curr_year_periods = [p for p in jt_period_options if p.year == jt_latest_year]
-            jt_prev_year_periods = [p for p in jt_period_options if p.year == jt_previous_year]
-            jt_default_b_start = jt_curr_year_periods[0] if jt_curr_year_periods else jt_period_options[0]
-            jt_default_b_end = jt_latest
-            jt_default_a_start = jt_prev_year_periods[0] if jt_prev_year_periods else jt_period_options[0]
-            jt_previous_ytd = [p for p in jt_prev_year_periods if p.month <= jt_latest.month]
-            jt_default_a_end = jt_previous_ytd[-1] if jt_previous_ytd else (
-                jt_prev_year_periods[-1] if jt_prev_year_periods else jt_period_options[-1]
-            )
-
-            # Tanpa hard limit untuk jumlah perbandingan. Pengguna bisa menambah kapan pun.
-            jt_n_ranges = int(st.number_input(
-                "Jumlah rentang periode yang ingin dibandingkan",
-                min_value=2, value=2, step=1, key="jt_range_count_v3",
-                help="Mulai dua rentang, tambah menjadi tiga, empat, dan seterusnya.",
-            ))
-            if jt_n_ranges > 20:
-                st.info("Banyak rentang dipilih. Grafik serta tabel akan lebih lebar; "
-                        "gunakan mode layar lebar untuk hasil terbaik.")
-
-            jt_ranges = []
-            jt_invalid_ranges = []
-            for i in range(jt_n_ranges):
-                range_label = f"Rentang {i+1}"
-                st.markdown(f"**{range_label}**" + (" • Basis awal" if i == 0 else ""))
-                if i == 0:
-                    default_start, default_end = jt_default_a_start, jt_default_a_end
-                elif i == 1:
-                    default_start, default_end = jt_default_b_start, jt_default_b_end
+                jt_year_selected = sorted(set(jt_year_selected))
+                if not jt_year_selected:
+                    st.info("Pilih setidaknya satu tahun untuk menampilkan data; pilih dua atau lebih untuk membandingkan.")
                 else:
-                    offset = i - 2
-                    default_year_index = max(0, len(jt_year_options) - 1 - offset)
-                    default_year = jt_year_options[default_year_index]
-                    year_available = [p for p in jt_period_options if p.year == default_year]
-                    default_start, default_end = year_available[0], year_available[-1]
-                jtr_c1, jtr_c2 = st.columns(2)
-                with jtr_c1:
-                    start = st.selectbox(
-                        f"Mulai {range_label.lower()}", jt_period_options,
-                        index=jt_period_options.index(default_start),
-                        format_func=jt_month_text, key=f"jt_range_start_v3_{i}",
-                    )
-                with jtr_c2:
-                    end = st.selectbox(
-                        f"Sampai {range_label.lower()}", jt_period_options,
-                        index=jt_period_options.index(default_end),
-                        format_func=jt_month_text, key=f"jt_range_end_v3_{i}",
-                    )
-                if start > end:
-                    jt_invalid_ranges.append(range_label)
-                    continue
-                periods = list(pd.period_range(start=start, end=end, freq="M"))
-                values = [jt_counts.get(period) for period in periods]
-                months_with_data = sum(value is not None for value in values)
-                total = jt_count_sum(values)
-                jt_ranges.append({
-                    "name": range_label,
-                    "label": f"{jt_month_text(start)} – {jt_month_text(end)}",
-                    "total": total,
-                    "months": len(periods),
-                    "observed": months_with_data,
-                    "avg": (total / months_with_data) if months_with_data else None,
-                    "periods": periods, "values": values,
-                    "start": start, "end": end,
-                })
+                    jt_reset_invalid_choice("jt_year_basis_v3", jt_year_selected)
+                    jt_yc1, jt_yc2 = st.columns([1, 1.25])
+                    with jt_yc1:
+                        jt_year_basis = st.selectbox("Tahun acuan (basis)", jt_year_selected,
+                                                      key="jt_year_basis_v3")
+                    with jt_yc2:
+                        jt_align_months = st.checkbox(
+                            "Samakan horizon bulan (YTD)", value=True, key="jt_align_months",
+                            help="Horizon perbandingan diambil dari bulan terakhir terpendek di antara tahun terpilih. "
+                                 "Bulan tanpa data tetap kosong, bukan dianggap nol.",
+                        )
+                    jt_last_by_year = {
+                        year: max(p.month for p in jt_period_options if p.year == year)
+                        for year in jt_year_selected
+                    }
+                    jt_end_month = min(jt_last_by_year.values()) if jt_align_months else 12
+                    jt_month_labels = list(JT_MONTH_SHORT[:jt_end_month])
+                    jt_label_suffix = f"Jan–{JT_MONTH_SHORT[jt_end_month-1]}" if jt_align_months else "Jan–Des (tersedia)"
+                    jt_year_series = {
+                        year: jt_months_series(jt_counts, year, jt_end_month) for year in jt_year_selected
+                    }
+                    jt_year_totals = {year: jt_count_sum(jt_year_series[year]) for year in jt_year_selected}
+                    jt_year_coverages = {
+                        year: sum(x is not None for x in jt_year_series[year]) for year in jt_year_selected
+                    }
+                    jt_year_records = [
+                        {"name": str(year), "label": f"{year} • {jt_label_suffix}", "total": jt_year_totals[year]}
+                        for year in jt_year_selected
+                    ]
+                    jt_multi_cards(jt_year_records, str(jt_year_basis))
 
-            if jt_invalid_ranges:
-                st.warning("Periode mulai harus sebelum atau sama dengan periode akhir pada: "
-                           + ", ".join(jt_invalid_ranges) + ". Sesuaikan pilihan untuk menampilkan perbandingan.")
-            else:
-                jt_range_names = [record["name"] for record in jt_ranges]
-                jt_reset_invalid_choice("jt_range_basis_v3", jt_range_names)
-                jt_range_basis_name = st.selectbox(
-                    "Rentang acuan (basis)", jt_range_names, key="jt_range_basis_v3",
-                )
-                jt_range_basis = next(r for r in jt_ranges if r["name"] == jt_range_basis_name)
-                jt_multi_cards(jt_ranges, jt_range_basis_name)
+                    if len(jt_year_selected) == 1:
+                        st.info("Hanya satu tahun yang dipilih. Tambahkan tahun lain untuk melihat perbandingan YoY.")
+                    if len(set(jt_year_coverages.values())) > 1 or any(
+                        count < jt_end_month for count in jt_year_coverages.values()
+                    ):
+                        st.warning(
+                            "Cakupan data per tahun berbeda. Bulan yang belum ada dalam file tidak dihitung "
+                            "sebagai nol transaksi. Tinjau coverage sebelum menarik kesimpulan pertumbuhan."
+                        )
+                    if not jt_align_months and len(set(jt_last_by_year.values())) > 1:
+                        st.info("Periode tahunan belum tentu setara karena bulan terakhir berbeda. "
+                                "Aktifkan YTD untuk membandingkan horizon bulan yang sama.")
 
-                jt_durations = {r["months"] for r in jt_ranges}
-                if len(jt_durations) > 1:
-                    st.warning("Durasi rentang tidak sama. Selisih total kurang sebanding; "
-                               "gunakan rata-rata per bulan berdata untuk perbandingan yang dinormalisasi.")
-                jt_gaps = [r for r in jt_ranges if r["observed"] < r["months"]]
-                if jt_gaps:
-                    st.info("Ada rentang dengan bulan tanpa data: " + ", ".join(
-                        f'{r["name"]} ({r["observed"]}/{r["months"]} bulan)' for r in jt_gaps
-                    ) + ". Bulan kosong tidak dianggap nol dan rata-rata hanya dihitung dari bulan berdata.")
-                overlap_pairs = [
-                    f'{r1["name"]}–{r2["name"]}'
-                    for i, r1 in enumerate(jt_ranges)
-                    for r2 in jt_ranges[i+1:]
-                    if r1["start"] <= r2["end"] and r2["start"] <= r1["end"]
-                ]
-                if overlap_pairs:
-                    st.info("Rentang saling tumpang tindih: " + ", ".join(overlap_pairs[:10])
-                            + (" dan lainnya." if len(overlap_pairs) > 10 else ".")
-                            + " Bulan tumpang tindih muncul di masing-masing rentang.")
+                    jt_year_figure = jt_go.Figure()
+                    for i, year in enumerate(jt_year_selected):
+                        values = jt_year_series[year]
+                        jt_year_figure.add_trace(jt_go.Bar(
+                            x=jt_month_labels, y=values, name=f"Tahun {year}",
+                            marker_color=jt_color_at(i),
+                            text=values if len(jt_year_selected) <= 4 else None,
+                            textposition="auto",
+                            hovertemplate=f"Tahun {year}<br>%{{x}}: %{{y:,.0f}} transaksi<extra></extra>",
+                        ))
+                    jt_plot_style(jt_year_figure, "Distribusi Transaksi Bulanan • Multi-Tahun", height=445)
+                    st.plotly_chart(jt_year_figure, use_container_width=True, key="jt_year_chart")
 
-                jtr_m1, jtr_m2, jtr_m3, jtr_m4 = st.columns(4)
-                jtr_m1.metric("Jumlah Rentang", str(len(jt_ranges)))
-                jtr_m2.metric("Bulan Acuan", f'{jt_range_basis["months"]} bulan')
-                jtr_m3.metric("Data Bulan Acuan", f'{jt_range_basis["observed"]}/{jt_range_basis["months"]}')
-                jtr_m4.metric("Rata-rata Acuan / Bulan", (
-                    f'{jt_range_basis["avg"]:,.1f}' if jt_range_basis["avg"] is not None else "—"
-                ))
+                    jt_year_cumulative = jt_go.Figure()
+                    for i, year in enumerate(jt_year_selected):
+                        running = 0
+                        vals = []
+                        for count in jt_year_series[year]:
+                            if count is None:
+                                vals.append(None)
+                            else:
+                                running += int(count)
+                                vals.append(running)
+                        jt_year_cumulative.add_trace(jt_go.Scatter(
+                            x=jt_month_labels, y=vals, name=f"Tahun {year}",
+                            mode="lines+markers", connectgaps=False,
+                            line=dict(color=jt_color_at(i), width=3),
+                            marker=dict(size=7),
+                            hovertemplate=f"{year} • %{{x}}<br>Akumulasi: %{{y:,.0f}}<extra></extra>",
+                        ))
+                    jt_plot_style(jt_year_cumulative, "Tren Akumulasi Transaksi per Tahun", "Akumulasi transaksi", 370)
+                    st.plotly_chart(jt_year_cumulative, use_container_width=True, key="jt_year_accumulation_v3")
 
-                jt_relative_fig = jt_go.Figure()
-                jt_cum_fig = jt_go.Figure()
-                jt_detail_rows = []
-                for i, record in enumerate(jt_ranges):
-                    jt_color = jt_color_at(i)
-                    indices = list(range(1, len(record["periods"]) + 1))
-                    labels = [jt_month_text(period) for period in record["periods"]]
-                    jt_relative_fig.add_trace(jt_go.Scatter(
-                        x=indices, y=record["values"], name=record["name"],
-                        mode="lines+markers", line=dict(color=jt_color, width=3),
-                        marker=dict(size=8), customdata=labels,
-                        hovertemplate="Bulan ke-%{x}<br>%{customdata}<br>%{y:,.0f} transaksi<extra></extra>",
-                        connectgaps=False,
-                    ))
-                    running = 0
-                    accumulated = []
-                    for period, value, month_index in zip(record["periods"], record["values"], indices):
-                        if value is None:
-                            accumulated.append(None)
-                        else:
-                            running += int(value)
-                            accumulated.append(running)
-                        jt_detail_rows.append({
-                            "Rentang": record["name"], "Label": record["label"],
-                            "Bulan ke-": month_index, "Periode": jt_month_text(period),
-                            "Jumlah Transaksi": value, "Akumulasi": accumulated[-1],
+                    jt_year_rows = []
+                    for m in range(1, jt_end_month + 1):
+                        row = {"Bulan": JT_MONTH_NAMES[m-1]}
+                        basis_val = jt_year_series[jt_year_basis][m-1]
+                        for year in jt_year_selected:
+                            count = jt_year_series[year][m-1]
+                            row[f"Tahun {year}"] = count
+                            if year != jt_year_basis:
+                                diff, growth = jt_delta_data(basis_val, count)
+                                row[f"Selisih {year} vs {jt_year_basis}"] = diff
+                                row[f"Growth {year} vs {jt_year_basis} (%)"] = (
+                                    round(growth, 2) if growth is not None else None
+                                )
+                        jt_year_rows.append(row)
+                    jt_year_table = pd.DataFrame(jt_year_rows)
+                    st.markdown("<div class='jt-section-heading'>Matriks Perbandingan Bulanan Semua Tahun</div>",
+                                unsafe_allow_html=True)
+                    st.dataframe(jt_year_table, hide_index=True, use_container_width=True)
+                    jt_year_summary = []
+                    for year in jt_year_selected:
+                        diff, growth = jt_delta_data(jt_year_totals[jt_year_basis], jt_year_totals[year])
+                        jt_year_summary.append({
+                            "Tahun": year,
+                            "Status": "ACUAN" if year == jt_year_basis else "PEMBANDING",
+                            "Horizon": jt_label_suffix,
+                            "Total Transaksi": jt_year_totals[year],
+                            "Bulan Memiliki Data": jt_year_coverages[year],
+                            "Total Bulan Horizon": jt_end_month,
+                            f"Selisih vs {jt_year_basis}": diff,
+                            f"Growth vs {jt_year_basis} (%)": round(growth, 2) if growth is not None else None,
                         })
-                    jt_cum_fig.add_trace(jt_go.Scatter(
-                        x=indices, y=accumulated, name=record["name"],
-                        mode="lines+markers", line=dict(color=jt_color, width=3),
-                        marker=dict(size=7), customdata=labels,
-                        fill="tozeroy" if len(jt_ranges) <= 2 else None,
-                        hovertemplate="%{customdata}<br>Akumulasi: %{y:,.0f}<extra></extra>",
-                        connectgaps=False,
+                    jt_year_summary_df = pd.DataFrame(jt_year_summary)
+                    st.markdown("<div class='jt-section-heading'>Executive Comparison • Tahun Terpilih</div>",
+                                unsafe_allow_html=True)
+                    st.dataframe(jt_year_summary_df, use_container_width=True, hide_index=True)
+                    jt_best_year = max(jt_year_selected, key=lambda yr: jt_year_totals[yr])
+                    jt_multi_note(
+                        f"Dari {len(jt_year_selected)} tahun terpilih, tahun {jt_best_year} memiliki volume "
+                        f"terbesar dengan {jt_format_int(jt_year_totals[jt_best_year])} transaksi. "
+                        f"Tahun acuan adalah {jt_year_basis}.",
+                        "Pertumbuhan dihitung terhadap tahun acuan. Data kosong dipisahkan dari nol; "
+                        "total yang cakupannya berbeda tidak langsung sebanding.",
+                    )
+                    jt_export_buttons(jt_year_table, "Antar_Tahun_Multi", jt_year_summary,
+                                      extra_sheets={"Ringkasan Perbandingan": jt_year_summary_df})
+
+            # ==========================================
+            # MODE 2 - BULAN & TAHUN JAMAK
+            # ==========================================
+            with jt_mode_month:
+                st.markdown("#### Month-to-Month • Perbandingan Multi-Bulan & Multi-Tahun")
+                st.caption("Pilih beberapa bulan dari tahun yang sama ataupun tahun berbeda.")
+                jt_month_defaults = jt_period_options[-2:] if len(jt_period_options) >= 2 else jt_period_options[:]
+                jt_selected_months = st.multiselect(
+                    "Pilih bulan-tahun untuk dibandingkan",
+                    jt_period_options,
+                    default=jt_month_defaults,
+                    format_func=jt_month_text,
+                    key="jt_month_multi_v3",
+                    help="Contoh: Januari 2024, Januari 2025, Januari 2026 atau gabungan bulan bebas.",
+                )
+                jt_selected_months = sorted(set(jt_selected_months))
+                if not jt_selected_months:
+                    st.info("Pilih setidaknya satu bulan-tahun dari histori transaksi yang tersedia.")
+                else:
+                    jt_reset_invalid_choice("jt_month_basis_v3", jt_selected_months)
+                    jt_month_basis = st.selectbox(
+                        "Bulan-tahun acuan (basis)", jt_selected_months,
+                        format_func=jt_month_text, key="jt_month_basis_v3",
+                    )
+                    jt_month_records = [
+                        {"name": str(period), "label": jt_month_text(period), "total": jt_counts[period]}
+                        for period in jt_selected_months
+                    ]
+                    jt_multi_cards(jt_month_records, str(jt_month_basis))
+                    if len(jt_selected_months) == 1:
+                        st.info("Tambahkan bulan lain agar dapat melihat selisih dan pertumbuhan antar bulan.")
+
+                    jt_month_fig = jt_go.Figure()
+                    jt_month_fig.add_trace(jt_go.Bar(
+                        x=[jt_month_text(p) for p in jt_selected_months],
+                        y=[jt_counts[p] for p in jt_selected_months],
+                        marker_color=[jt_color_at(i) for i in range(len(jt_selected_months))],
+                        text=[jt_format_int(jt_counts[p]) for p in jt_selected_months]
+                             if len(jt_selected_months) <= 12 else None,
+                        textposition="outside", showlegend=False,
+                        hovertemplate="%{x}<br>%{y:,.0f} transaksi<extra></extra>",
                     ))
-                jt_plot_style(jt_relative_fig,
-                              "Volume Transaksi • Posisi Bulan dalam Setiap Rentang", height=450)
-                jt_relative_fig.update_xaxes(title="Bulan ke-")
-                st.plotly_chart(jt_relative_fig, use_container_width=True,
-                                key="jt_range_relative_chart")
+                    jt_plot_style(jt_month_fig, "Perbandingan Langsung Bulan-Tahun Terpilih", height=410)
+                    jt_month_fig.update_xaxes(tickangle=-30)
+                    st.plotly_chart(jt_month_fig, use_container_width=True, key="jt_month_duel_chart")
 
-                jt_plot_style(jt_cum_fig,
-                              "Akumulasi Volume Transaksi • Multi-Rentang", "Akumulasi transaksi", 410)
-                jt_cum_fig.update_xaxes(title="Bulan ke-")
-                st.plotly_chart(jt_cum_fig, use_container_width=True, key="jt_range_cum_chart")
+                    # Momentum 6 bulan sebelumnya: mempertahankan grafik existing, diperluas N seri.
+                    jt_momentum_fig = jt_go.Figure()
+                    jt_momentum_rows = []
+                    for i, period in enumerate(jt_selected_months):
+                        periods = pd.period_range(end=period, periods=6, freq="M")
+                        vals = [jt_counts.get(x) for x in periods]
+                        jt_momentum_fig.add_trace(jt_go.Scatter(
+                            x=[f"T-{5-j}" if j < 5 else "T" for j in range(6)],
+                            y=vals, name=jt_month_text(period), mode="lines+markers",
+                            line=dict(color=jt_color_at(i), width=3), marker=dict(size=8),
+                            customdata=[jt_month_text(x) for x in periods],
+                            hovertemplate="%{customdata}<br>%{y:,.0f} transaksi<extra></extra>",
+                            connectgaps=False,
+                        ))
+                        for j, (p, val) in enumerate(zip(periods, vals)):
+                            jt_momentum_rows.append({
+                                "Pilihan": jt_month_text(period),
+                                "Posisi": f"T-{5-j}" if j < 5 else "T",
+                                "Periode": jt_month_text(p),
+                                "Jumlah Transaksi": val,
+                            })
+                    jt_plot_style(jt_momentum_fig,
+                                  "Momentum 6 Bulan • Setiap Pilihan Bulan-Tahun", height=400)
+                    st.plotly_chart(jt_momentum_fig, use_container_width=True, key="jt_month_momentum_chart")
+                    st.caption("T = bulan yang dipilih, T-1 = satu bulan sebelumnya. "
+                               "Bulan yang belum tercatat pada file tetap kosong, tidak dikonversi ke nol.")
 
-                jt_range_summary = []
-                for record in jt_ranges:
-                    diff, growth = jt_delta_data(jt_range_basis["total"], record["total"])
-                    avg_diff, avg_growth = jt_safe_percent_difference(jt_range_basis["avg"], record["avg"])
-                    jt_range_summary.append({
-                        "Rentang": record["name"], "Periode": record["label"],
-                        "Status": "ACUAN" if record["name"] == jt_range_basis_name else "PEMBANDING",
-                        "Durasi Kalender (bulan)": record["months"],
-                        "Bulan dengan Data": record["observed"],
-                        "Total Transaksi": record["total"],
-                        "Rata-rata per Bulan Berdata": round(record["avg"], 2) if record["avg"] is not None else None,
-                        "Selisih Total vs Acuan": diff,
-                        "Growth Total vs Acuan (%)": round(growth, 2) if growth is not None else None,
-                        "Selisih Rata-rata vs Acuan": round(avg_diff, 2) if avg_diff is not None else None,
-                        "Growth Rata-rata vs Acuan (%)": (
-                            round(avg_growth, 2) if avg_growth is not None else None
-                        ),
+                    jt_month_rows = []
+                    jt_basis_volume = jt_counts[jt_month_basis]
+                    previous_value = None
+                    for period in jt_selected_months:
+                        val = jt_counts[period]
+                        diff_basis, growth_basis = jt_delta_data(jt_basis_volume, val)
+                        diff_previous, growth_previous = jt_delta_data(previous_value, val)
+                        jt_month_rows.append({
+                            "Bulan & Tahun": jt_month_text(period),
+                            "Status": "ACUAN" if period == jt_month_basis else "PEMBANDING",
+                            "Jumlah Transaksi": val,
+                            "Selisih vs Acuan": diff_basis,
+                            "Growth vs Acuan (%)": round(growth_basis, 2) if growth_basis is not None else None,
+                            "Selisih vs Pilihan Sebelumnya": diff_previous,
+                            "Growth vs Pilihan Sebelumnya (%)": (
+                                round(growth_previous, 2) if growth_previous is not None else None
+                            ),
+                        })
+                        previous_value = val
+                    jt_month_table = pd.DataFrame(jt_month_rows)
+                    st.markdown("<div class='jt-section-heading'>Matriks Perbandingan Semua Bulan Terpilih</div>",
+                                unsafe_allow_html=True)
+                    st.dataframe(jt_month_table, use_container_width=True, hide_index=True)
+                    jt_top_month = max(jt_selected_months, key=lambda period: jt_counts[period])
+                    jt_multi_note(
+                        f"Dari {len(jt_selected_months)} bulan-tahun yang dipilih, "
+                        f"volume tertinggi terdapat pada {jt_month_text(jt_top_month)} "
+                        f"sebanyak {jt_format_int(jt_counts[jt_top_month])} transaksi.",
+                        f"Basis pembanding: {jt_month_text(jt_month_basis)}. "
+                        "Selisih terhadap pilihan sebelumnya mengikuti urutan kronologis.",
+                    )
+                    jt_export_buttons(
+                        pd.DataFrame(jt_momentum_rows), "Antar_Bulan_Multi", jt_month_rows,
+                        extra_sheets={"Matriks Bulan": jt_month_table},
+                    )
+
+            # ==========================================
+            # MODE 3 - RENTANG PERIODE JAMAK
+            # ==========================================
+            with jt_mode_range:
+                st.markdown("#### Period-to-Period • Multi-Rentang Periode Bebas")
+                st.caption("Tentukan jumlah rentang, lalu tetapkan awal–akhir masing-masing. "
+                           "Dapat membandingkan 2, 3, 4, atau lebih rentang sekaligus.")
+                jt_latest_year = jt_latest.year
+                jt_previous_year = jt_latest_year - 1
+                jt_curr_year_periods = [p for p in jt_period_options if p.year == jt_latest_year]
+                jt_prev_year_periods = [p for p in jt_period_options if p.year == jt_previous_year]
+                jt_default_b_start = jt_curr_year_periods[0] if jt_curr_year_periods else jt_period_options[0]
+                jt_default_b_end = jt_latest
+                jt_default_a_start = jt_prev_year_periods[0] if jt_prev_year_periods else jt_period_options[0]
+                jt_previous_ytd = [p for p in jt_prev_year_periods if p.month <= jt_latest.month]
+                jt_default_a_end = jt_previous_ytd[-1] if jt_previous_ytd else (
+                    jt_prev_year_periods[-1] if jt_prev_year_periods else jt_period_options[-1]
+                )
+
+                # Tanpa hard limit untuk jumlah perbandingan. Pengguna bisa menambah kapan pun.
+                jt_n_ranges = int(st.number_input(
+                    "Jumlah rentang periode yang ingin dibandingkan",
+                    min_value=2, value=2, step=1, key="jt_range_count_v3",
+                    help="Mulai dua rentang, tambah menjadi tiga, empat, dan seterusnya.",
+                ))
+                if jt_n_ranges > 20:
+                    st.info("Banyak rentang dipilih. Grafik serta tabel akan lebih lebar; "
+                            "gunakan mode layar lebar untuk hasil terbaik.")
+
+                jt_ranges = []
+                jt_invalid_ranges = []
+                for i in range(jt_n_ranges):
+                    range_label = f"Rentang {i+1}"
+                    st.markdown(f"**{range_label}**" + (" • Basis awal" if i == 0 else ""))
+                    if i == 0:
+                        default_start, default_end = jt_default_a_start, jt_default_a_end
+                    elif i == 1:
+                        default_start, default_end = jt_default_b_start, jt_default_b_end
+                    else:
+                        offset = i - 2
+                        default_year_index = max(0, len(jt_year_options) - 1 - offset)
+                        default_year = jt_year_options[default_year_index]
+                        year_available = [p for p in jt_period_options if p.year == default_year]
+                        default_start, default_end = year_available[0], year_available[-1]
+                    jtr_c1, jtr_c2 = st.columns(2)
+                    with jtr_c1:
+                        start = st.selectbox(
+                            f"Mulai {range_label.lower()}", jt_period_options,
+                            index=jt_period_options.index(default_start),
+                            format_func=jt_month_text, key=f"jt_range_start_v3_{i}",
+                        )
+                    with jtr_c2:
+                        end = st.selectbox(
+                            f"Sampai {range_label.lower()}", jt_period_options,
+                            index=jt_period_options.index(default_end),
+                            format_func=jt_month_text, key=f"jt_range_end_v3_{i}",
+                        )
+                    if start > end:
+                        jt_invalid_ranges.append(range_label)
+                        continue
+                    periods = list(pd.period_range(start=start, end=end, freq="M"))
+                    values = [jt_counts.get(period) for period in periods]
+                    months_with_data = sum(value is not None for value in values)
+                    total = jt_count_sum(values)
+                    jt_ranges.append({
+                        "name": range_label,
+                        "label": f"{jt_month_text(start)} – {jt_month_text(end)}",
+                        "total": total,
+                        "months": len(periods),
+                        "observed": months_with_data,
+                        "avg": (total / months_with_data) if months_with_data else None,
+                        "periods": periods, "values": values,
+                        "start": start, "end": end,
                     })
-                jt_range_summary_df = pd.DataFrame(jt_range_summary)
-                st.markdown("<div class='jt-section-heading'>Matriks Executive Comparison • Semua Rentang</div>",
-                            unsafe_allow_html=True)
-                st.dataframe(jt_range_summary_df, use_container_width=True, hide_index=True)
 
-                jt_max_span = max(r["months"] for r in jt_ranges)
-                jt_range_matrix_rows = []
-                for month_index in range(jt_max_span):
-                    row = {"Bulan ke-": month_index + 1}
+                if jt_invalid_ranges:
+                    st.warning("Periode mulai harus sebelum atau sama dengan periode akhir pada: "
+                               + ", ".join(jt_invalid_ranges) + ". Sesuaikan pilihan untuk menampilkan perbandingan.")
+                else:
+                    jt_range_names = [record["name"] for record in jt_ranges]
+                    jt_reset_invalid_choice("jt_range_basis_v3", jt_range_names)
+                    jt_range_basis_name = st.selectbox(
+                        "Rentang acuan (basis)", jt_range_names, key="jt_range_basis_v3",
+                    )
+                    jt_range_basis = next(r for r in jt_ranges if r["name"] == jt_range_basis_name)
+                    jt_multi_cards(jt_ranges, jt_range_basis_name)
+
+                    jt_durations = {r["months"] for r in jt_ranges}
+                    if len(jt_durations) > 1:
+                        st.warning("Durasi rentang tidak sama. Selisih total kurang sebanding; "
+                                   "gunakan rata-rata per bulan berdata untuk perbandingan yang dinormalisasi.")
+                    jt_gaps = [r for r in jt_ranges if r["observed"] < r["months"]]
+                    if jt_gaps:
+                        st.info("Ada rentang dengan bulan tanpa data: " + ", ".join(
+                            f'{r["name"]} ({r["observed"]}/{r["months"]} bulan)' for r in jt_gaps
+                        ) + ". Bulan kosong tidak dianggap nol dan rata-rata hanya dihitung dari bulan berdata.")
+                    overlap_pairs = [
+                        f'{r1["name"]}–{r2["name"]}'
+                        for i, r1 in enumerate(jt_ranges)
+                        for r2 in jt_ranges[i+1:]
+                        if r1["start"] <= r2["end"] and r2["start"] <= r1["end"]
+                    ]
+                    if overlap_pairs:
+                        st.info("Rentang saling tumpang tindih: " + ", ".join(overlap_pairs[:10])
+                                + (" dan lainnya." if len(overlap_pairs) > 10 else ".")
+                                + " Bulan tumpang tindih muncul di masing-masing rentang.")
+
+                    jtr_m1, jtr_m2, jtr_m3, jtr_m4 = st.columns(4)
+                    jtr_m1.metric("Jumlah Rentang", str(len(jt_ranges)))
+                    jtr_m2.metric("Bulan Acuan", f'{jt_range_basis["months"]} bulan')
+                    jtr_m3.metric("Data Bulan Acuan", f'{jt_range_basis["observed"]}/{jt_range_basis["months"]}')
+                    jtr_m4.metric("Rata-rata Acuan / Bulan", (
+                        f'{jt_range_basis["avg"]:,.1f}' if jt_range_basis["avg"] is not None else "—"
+                    ))
+
+                    jt_relative_fig = jt_go.Figure()
+                    jt_cum_fig = jt_go.Figure()
+                    jt_detail_rows = []
+                    for i, record in enumerate(jt_ranges):
+                        jt_color = jt_color_at(i)
+                        indices = list(range(1, len(record["periods"]) + 1))
+                        labels = [jt_month_text(period) for period in record["periods"]]
+                        jt_relative_fig.add_trace(jt_go.Scatter(
+                            x=indices, y=record["values"], name=record["name"],
+                            mode="lines+markers", line=dict(color=jt_color, width=3),
+                            marker=dict(size=8), customdata=labels,
+                            hovertemplate="Bulan ke-%{x}<br>%{customdata}<br>%{y:,.0f} transaksi<extra></extra>",
+                            connectgaps=False,
+                        ))
+                        running = 0
+                        accumulated = []
+                        for period, value, month_index in zip(record["periods"], record["values"], indices):
+                            if value is None:
+                                accumulated.append(None)
+                            else:
+                                running += int(value)
+                                accumulated.append(running)
+                            jt_detail_rows.append({
+                                "Rentang": record["name"], "Label": record["label"],
+                                "Bulan ke-": month_index, "Periode": jt_month_text(period),
+                                "Jumlah Transaksi": value, "Akumulasi": accumulated[-1],
+                            })
+                        jt_cum_fig.add_trace(jt_go.Scatter(
+                            x=indices, y=accumulated, name=record["name"],
+                            mode="lines+markers", line=dict(color=jt_color, width=3),
+                            marker=dict(size=7), customdata=labels,
+                            fill="tozeroy" if len(jt_ranges) <= 2 else None,
+                            hovertemplate="%{customdata}<br>Akumulasi: %{y:,.0f}<extra></extra>",
+                            connectgaps=False,
+                        ))
+                    jt_plot_style(jt_relative_fig,
+                                  "Volume Transaksi • Posisi Bulan dalam Setiap Rentang", height=450)
+                    jt_relative_fig.update_xaxes(title="Bulan ke-")
+                    st.plotly_chart(jt_relative_fig, use_container_width=True,
+                                    key="jt_range_relative_chart")
+
+                    jt_plot_style(jt_cum_fig,
+                                  "Akumulasi Volume Transaksi • Multi-Rentang", "Akumulasi transaksi", 410)
+                    jt_cum_fig.update_xaxes(title="Bulan ke-")
+                    st.plotly_chart(jt_cum_fig, use_container_width=True, key="jt_range_cum_chart")
+
+                    jt_range_summary = []
                     for record in jt_ranges:
-                        name = record["name"]
-                        row[f"Periode {name}"] = (
-                            jt_month_text(record["periods"][month_index])
-                            if month_index < record["months"] else None
-                        )
-                        row[f"Transaksi {name}"] = (
-                            record["values"][month_index]
-                            if month_index < record["months"] else None
-                        )
-                    jt_range_matrix_rows.append(row)
-                jt_range_matrix_df = pd.DataFrame(jt_range_matrix_rows)
-                st.markdown("<div class='jt-section-heading'>Matriks Bulan ke-Bulan Semua Rentang</div>",
-                            unsafe_allow_html=True)
-                st.dataframe(jt_range_matrix_df, hide_index=True, use_container_width=True)
-                with st.expander("🔎 Detail panjang untuk audit seluruh rentang", expanded=False):
-                    st.dataframe(pd.DataFrame(jt_detail_rows), hide_index=True, use_container_width=True)
+                        diff, growth = jt_delta_data(jt_range_basis["total"], record["total"])
+                        avg_diff, avg_growth = jt_safe_percent_difference(jt_range_basis["avg"], record["avg"])
+                        jt_range_summary.append({
+                            "Rentang": record["name"], "Periode": record["label"],
+                            "Status": "ACUAN" if record["name"] == jt_range_basis_name else "PEMBANDING",
+                            "Durasi Kalender (bulan)": record["months"],
+                            "Bulan dengan Data": record["observed"],
+                            "Total Transaksi": record["total"],
+                            "Rata-rata per Bulan Berdata": round(record["avg"], 2) if record["avg"] is not None else None,
+                            "Selisih Total vs Acuan": diff,
+                            "Growth Total vs Acuan (%)": round(growth, 2) if growth is not None else None,
+                            "Selisih Rata-rata vs Acuan": round(avg_diff, 2) if avg_diff is not None else None,
+                            "Growth Rata-rata vs Acuan (%)": (
+                                round(avg_growth, 2) if avg_growth is not None else None
+                            ),
+                        })
+                    jt_range_summary_df = pd.DataFrame(jt_range_summary)
+                    st.markdown("<div class='jt-section-heading'>Matriks Executive Comparison • Semua Rentang</div>",
+                                unsafe_allow_html=True)
+                    st.dataframe(jt_range_summary_df, use_container_width=True, hide_index=True)
 
-                jt_highest = max(jt_ranges, key=lambda record: record["total"])
-                jt_multi_note(
-                    f"Dari {len(jt_ranges)} rentang, {jt_highest['name']} memiliki total terbesar "
-                    f"({jt_format_int(jt_highest['total'])} transaksi). "
-                    f"Acuan perbandingan: {jt_range_basis_name}.",
-                    "Perhatikan durasi & coverage data tiap rentang; "
-                    "bila tidak sama, pertumbuhan rata-rata per bulan lebih relevan daripada pertumbuhan total.",
-                )
-                jt_export_buttons(
-                    jt_range_matrix_df, "Rentang_Periode_Multi", jt_range_summary,
-                    extra_sheets={"Detail Semua Rentang": pd.DataFrame(jt_detail_rows),
-                                  "Matriks Executive": jt_range_summary_df},
-                )
+                    jt_max_span = max(r["months"] for r in jt_ranges)
+                    jt_range_matrix_rows = []
+                    for month_index in range(jt_max_span):
+                        row = {"Bulan ke-": month_index + 1}
+                        for record in jt_ranges:
+                            name = record["name"]
+                            row[f"Periode {name}"] = (
+                                jt_month_text(record["periods"][month_index])
+                                if month_index < record["months"] else None
+                            )
+                            row[f"Transaksi {name}"] = (
+                                record["values"][month_index]
+                                if month_index < record["months"] else None
+                            )
+                        jt_range_matrix_rows.append(row)
+                    jt_range_matrix_df = pd.DataFrame(jt_range_matrix_rows)
+                    st.markdown("<div class='jt-section-heading'>Matriks Bulan ke-Bulan Semua Rentang</div>",
+                                unsafe_allow_html=True)
+                    st.dataframe(jt_range_matrix_df, hide_index=True, use_container_width=True)
+                    with st.expander("🔎 Detail panjang untuk audit seluruh rentang", expanded=False):
+                        st.dataframe(pd.DataFrame(jt_detail_rows), hide_index=True, use_container_width=True)
+
+                    jt_highest = max(jt_ranges, key=lambda record: record["total"])
+                    jt_multi_note(
+                        f"Dari {len(jt_ranges)} rentang, {jt_highest['name']} memiliki total terbesar "
+                        f"({jt_format_int(jt_highest['total'])} transaksi). "
+                        f"Acuan perbandingan: {jt_range_basis_name}.",
+                        "Perhatikan durasi & coverage data tiap rentang; "
+                        "bila tidak sama, pertumbuhan rata-rata per bulan lebih relevan daripada pertumbuhan total.",
+                    )
+                    jt_export_buttons(
+                        jt_range_matrix_df, "Rentang_Periode_Multi", jt_range_summary,
+                        extra_sheets={"Detail Semua Rentang": pd.DataFrame(jt_detail_rows),
+                                      "Matriks Executive": jt_range_summary_df},
+                    )
 
 # ==========================================================
 #            FITUR BARU: \U0001f4e5 DOWNLOAD POSTER (A4)
@@ -5525,906 +5691,911 @@ def _detect_col(df: pd.DataFrame, keywords: list[str]) -> str | None:
 # ==============================
 # FULL TAB NILAI TRANSAKSI (WOW + FAST + YOY BUCKETS DYNAMIC)
 # ==============================
-with tab_nilai:
-    import os
-    import re
-    import json
-    import math
-    import base64
-    from io import BytesIO
-    from typing import Optional, List, Dict
+if (not _SLA_LAZY_TABS) or bool(getattr(tab_nilai, "open", False)):
+    with tab_nilai:
+        import os
+        import re
+        import json
+        import math
+        import base64
+        from io import BytesIO
+        from typing import Optional, List, Dict
 
-    import pandas as pd
-    import matplotlib.pyplot as plt
-    import streamlit as st
+        import pandas as pd
+        import matplotlib.pyplot as plt
+        import streamlit as st
 
-    # =========================
-    # CONFIG
-    # =========================
-    DATA_PATH = "data/nilai_transaksi.xlsx"
-    DATA_GITHUB_PATH = "data/nilai_transaksi.xlsx"
-    BUCKET_PATH = "data/nilai_bucket.json"
-    BUCKET_GITHUB_PATH = "data/nilai_bucket.json"
+        # =========================
+        # CONFIG
+        # =========================
+        DATA_PATH = "data/nilai_transaksi.xlsx"
+        DATA_GITHUB_PATH = "data/nilai_transaksi.xlsx"
+        BUCKET_PATH = "data/nilai_bucket.json"
+        BUCKET_GITHUB_PATH = "data/nilai_bucket.json"
 
-    os.makedirs("data", exist_ok=True)
+        os.makedirs("data", exist_ok=True)
 
-    st.subheader("\U0001f4b0 Nilai Transaksi \u2014 Direksi Dashboard")
+        st.subheader("\U0001f4b0 Nilai Transaksi \u2014 Direksi Dashboard")
 
-    # =========================
-    # FORMATTERS
-    # =========================
-    def fmt_int(n: float | int) -> str:
-        try:
-            return f"{int(n):,}".replace(",", ".")
-        except Exception:
-            return "-"
+        # =========================
+        # FORMATTERS
+        # =========================
+        def fmt_int(n: float | int) -> str:
+            try:
+                return f"{int(n):,}".replace(",", ".")
+            except Exception:
+                return "-"
 
-    def fmt_rp(x: float) -> str:
-        if x is None or (isinstance(x, float) and math.isnan(x)):
-            return "-"
-        return "Rp " + f"{x:,.0f}".replace(",", ".")
+        def fmt_rp(x: float) -> str:
+            if x is None or (isinstance(x, float) and math.isnan(x)):
+                return "-"
+            return "Rp " + f"{x:,.0f}".replace(",", ".")
 
-    def fmt_pct(x: float) -> str:
-        if x is None or (isinstance(x, float) and math.isnan(x)):
-            return "-"
-        return f"{x:.1f}%".replace(".", ",")
+        def fmt_pct(x: float) -> str:
+            if x is None or (isinstance(x, float) and math.isnan(x)):
+                return "-"
+            return f"{x:.1f}%".replace(".", ",")
 
-    def pct_delta(curr: float, prev: Optional[float]) -> Optional[str]:
-        if prev is None or prev == 0 or (isinstance(prev, float) and math.isnan(prev)):
-            return None
-        p = (curr - prev) / prev * 100.0
-        sign = "+" if p >= 0 else ""
-        return f"{sign}{p:.1f}%".replace(".", ",")
-
-    # =========================
-    # GITHUB HELPERS (expects existing functions)
-    # github_get_file_info(path)
-    # upload_file_to_github(content_bytes, path=..., message=...)
-    # =========================
-    def github_get_bytes(path: str) -> Optional[bytes]:
-        if not (GITHUB_TOKEN and GITHUB_REPO):
-            return None
-        try:
-            info = github_get_file_info(path)
-            if not info or "content" not in info:
+        def pct_delta(curr: float, prev: Optional[float]) -> Optional[str]:
+            if prev is None or prev == 0 or (isinstance(prev, float) and math.isnan(prev)):
                 return None
-            return base64.b64decode(info["content"].encode())
-        except Exception:
-            return None
+            p = (curr - prev) / prev * 100.0
+            sign = "+" if p >= 0 else ""
+            return f"{sign}{p:.1f}%".replace(".", ",")
 
-    def github_put_bytes(path: str, content: bytes, message: str) -> bool:
-        if not (GITHUB_TOKEN and GITHUB_REPO):
-            return False
-        try:
-            res = upload_file_to_github(content, path=path, message=message)
-            return bool(res)
-        except Exception:
-            return False
-
-    # =========================
-    # FAST IO
-    # =========================
-    @st.cache_data(show_spinner=False)
-    def read_excel_cached(path: str, size: int, mtime: float) -> pd.DataFrame:
-        return pd.read_excel(path)
-
-    @st.cache_data(show_spinner=False)
-    def read_excel_bytes(b: bytes) -> pd.DataFrame:
-        return pd.read_excel(BytesIO(b))
-
-    def load_local_df() -> Optional[pd.DataFrame]:
-        if not os.path.exists(DATA_PATH):
-            return None
-        try:
-            stat = os.stat(DATA_PATH)
-            return read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
-        except Exception:
-            return None
-
-    # =========================
-    # COLUMN DETECT + PARSING
-    # =========================
-    def detect_col(df: pd.DataFrame, keywords: List[str]) -> Optional[str]:
-        cols = list(df.columns)
-        for c in cols:
-            cu = re.sub(r"\s+", " ", str(c).strip().upper())
-            if all(k in cu for k in keywords):
-                return c
-        for c in cols:
-            cu = re.sub(r"\s+", " ", str(c).strip().upper())
-            if any(k in cu for k in keywords):
-                return c
-        return None
-
-    def parse_rupiah_vectorized(s: pd.Series) -> pd.Series:
-        num = pd.to_numeric(s, errors="coerce")
-        if num.notna().mean() >= 0.7:
-            return num
-        txt = s.astype(str).str.upper().str.strip()
-        txt = txt.replace({"NAN": "", "NONE": "", "NULL": "", "-": ""})
-        txt = txt.str.replace("RUPIAH", "", regex=False)
-        txt = txt.str.replace("RP", "", regex=False)
-        txt = txt.str.replace(r"\s+", "", regex=True)
-        txt = txt.str.replace(".", "", regex=False)
-        txt = txt.str.replace(",", "", regex=False)
-        txt = txt.str.replace(r"[^0-9\-]", "", regex=True)
-        return pd.to_numeric(txt, errors="coerce")
-
-    def extract_year(period_s: pd.Series) -> pd.Series:
-        s = period_s.astype(str).str.strip()
-        dt = pd.to_datetime(s, errors="coerce", dayfirst=True)
-        year = dt.dt.year
-        mask = year.isna()
-        if mask.any():
-            extracted = s[mask].str.extract(r"(\d{4})", expand=False)
-            year.loc[mask] = pd.to_numeric(extracted, errors="coerce")
-        return year
-
-    @st.cache_data(show_spinner=False)
-    def preprocess(df: pd.DataFrame, col_periode: str, col_nilai: str) -> pd.DataFrame:
-        out = df.copy()
-        out["__YEAR__"] = extract_year(out[col_periode])
-        out["__NILAI_NUM__"] = parse_rupiah_vectorized(out[col_nilai])
-        out = out.dropna(subset=["__YEAR__", "__NILAI_NUM__"]).copy()
-        out["__YEAR__"] = out["__YEAR__"].astype(int)
-        return out
-
-    # =========================
-    # BUCKETS (dynamic thresholds)
-    # thresholds: [t1,t2,...] => 0\u2013t1, t1\u2013t2, ..., >tN
-    # =========================
-    def build_edges(thresholds: List[float]) -> List[float]:
-        t = [float(x) for x in thresholds if x is not None and not math.isnan(float(x))]
-        t = sorted(set([x for x in t if x > 0]))
-        return [0.0] + t + [float("inf")]
-
-    def build_labels(edges: List[float]) -> List[str]:
-        labs: List[str] = []
-        for i in range(len(edges) - 1):
-            lo, hi = edges[i], edges[i + 1]
-            if math.isinf(hi):
-                labs.append(f"> {lo:,.0f}".replace(",", "."))
-            else:
-                labs.append(f"{lo:,.0f} \u2013 {hi:,.0f}".replace(",", "."))
-        return labs
-
-    def load_bucket_cfg() -> Dict:
-        default = {"mode": "dynamic", "thresholds": [10e6, 50e6, 500e6]}
-        if os.path.exists(BUCKET_PATH):
+        # =========================
+        # GITHUB HELPERS (expects existing functions)
+        # github_get_file_info(path)
+        # upload_file_to_github(content_bytes, path=..., message=...)
+        # =========================
+        def github_get_bytes(path: str) -> Optional[bytes]:
+            if not (GITHUB_TOKEN and GITHUB_REPO):
+                return None
             try:
-                with open(BUCKET_PATH, "r", encoding="utf-8") as f:
-                    cfg = json.load(f)
-                    if isinstance(cfg, dict) and isinstance(cfg.get("thresholds"), list):
-                        return cfg
+                info = github_get_file_info(path)
+                if not info or "content" not in info:
+                    return None
+                return base64.b64decode(info["content"].encode())
             except Exception:
-                pass
-        b = github_get_bytes(BUCKET_GITHUB_PATH)
-        if b:
+                return None
+
+        def github_put_bytes(path: str, content: bytes, message: str) -> bool:
+            if not (GITHUB_TOKEN and GITHUB_REPO):
+                return False
             try:
-                cfg = json.loads(b.decode("utf-8"))
-                if isinstance(cfg, dict) and isinstance(cfg.get("thresholds"), list):
-                    with open(BUCKET_PATH, "w", encoding="utf-8") as f:
-                        json.dump(cfg, f, ensure_ascii=False, indent=2)
-                    return cfg
+                res = upload_file_to_github(content, path=path, message=message)
+                return bool(res)
             except Exception:
-                pass
-        return default
+                return False
 
-    def save_bucket_cfg(thresholds: List[float]) -> None:
-        thresholds = sorted(set([float(x) for x in thresholds if x is not None and float(x) > 0]))
-        edges = build_edges(thresholds)
-        payload = {
-            "mode": "dynamic",
-            "thresholds": thresholds,
-            "edges": [("inf" if math.isinf(x) else x) for x in edges],
-            "labels": build_labels(edges),
-        }
-        with open(BUCKET_PATH, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-        if GITHUB_TOKEN and GITHUB_REPO:
-            github_put_bytes(
-                BUCKET_GITHUB_PATH,
-                json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
-                "Update Nilai Buckets (dynamic)",
-            )
+        # =========================
+        # FAST IO
+        # =========================
+        @st.cache_data(show_spinner=False)
+        def read_excel_cached(path: str, size: int, mtime: float) -> pd.DataFrame:
+            return pd.read_excel(path)
 
-    # =========================
-    # ADMIN UPLOAD + MANUAL SYNC
-    # =========================
-    left, right = st.columns([2, 1])
-    with left:
-        with st.expander("\U0001f4e4 Upload Data Nilai Transaksi (Admin Only)", expanded=is_admin):
-            if not is_admin:
-                st.info("Hanya admin yang dapat upload.")
-                uploaded = None
-            else:
-                uploaded = st.file_uploader("Upload Excel (.xlsx)", type=["xlsx"], key="nilai_upload_rewrite_v1")
-            if is_admin and uploaded is not None:
-                b = uploaded.getvalue()
-                try:
-                    df_now = read_excel_bytes(b)
-                    st.session_state["nilai_raw_df"] = df_now
-                    st.success(f"\u2705 Upload terbaca: {fmt_int(len(df_now))} baris")
-                    st.dataframe(df_now.head(20), use_container_width=True)
-                except Exception as e:
-                    st.error(f"Gagal baca Excel: {e}")
-                    st.stop()
+        @st.cache_data(show_spinner=False)
+        def read_excel_bytes(b: bytes) -> pd.DataFrame:
+            return pd.read_excel(BytesIO(b))
 
-                with open(DATA_PATH, "wb") as f:
-                    f.write(b)
+        def load_local_df() -> Optional[pd.DataFrame]:
+            if not os.path.exists(DATA_PATH):
+                return None
+            try:
+                stat = os.stat(DATA_PATH)
+                return read_excel_cached(DATA_PATH, stat.st_size, stat.st_mtime)
+            except Exception:
+                return None
 
-                if GITHUB_TOKEN and GITHUB_REPO:
-                    with st.spinner("Sync ke GitHub..."):
-                        ok = github_put_bytes(DATA_GITHUB_PATH, b, "Update Nilai Transaksi (tab Nilai)")
-                    if ok:
-                        st.success("\u2705 Tersimpan lokal & tersinkron ke GitHub.")
-                    else:
-                        st.warning("\u26a0\ufe0f Tersimpan lokal, tapi gagal upload ke GitHub.")
+        # =========================
+        # COLUMN DETECT + PARSING
+        # =========================
+        def detect_col(df: pd.DataFrame, keywords: List[str]) -> Optional[str]:
+            cols = list(df.columns)
+            for c in cols:
+                cu = re.sub(r"\s+", " ", str(c).strip().upper())
+                if all(k in cu for k in keywords):
+                    return c
+            for c in cols:
+                cu = re.sub(r"\s+", " ", str(c).strip().upper())
+                if any(k in cu for k in keywords):
+                    return c
+            return None
+
+        def parse_rupiah_vectorized(s: pd.Series) -> pd.Series:
+            num = pd.to_numeric(s, errors="coerce")
+            if num.notna().mean() >= 0.7:
+                return num
+            txt = s.astype(str).str.upper().str.strip()
+            txt = txt.replace({"NAN": "", "NONE": "", "NULL": "", "-": ""})
+            txt = txt.str.replace("RUPIAH", "", regex=False)
+            txt = txt.str.replace("RP", "", regex=False)
+            txt = txt.str.replace(r"\s+", "", regex=True)
+            txt = txt.str.replace(".", "", regex=False)
+            txt = txt.str.replace(",", "", regex=False)
+            txt = txt.str.replace(r"[^0-9\-]", "", regex=True)
+            return pd.to_numeric(txt, errors="coerce")
+
+        def extract_year(period_s: pd.Series) -> pd.Series:
+            s = period_s.astype(str).str.strip()
+            dt = pd.to_datetime(s, errors="coerce", dayfirst=True)
+            year = dt.dt.year
+            mask = year.isna()
+            if mask.any():
+                extracted = s[mask].str.extract(r"(\d{4})", expand=False)
+                year.loc[mask] = pd.to_numeric(extracted, errors="coerce")
+            return year
+
+        @st.cache_data(show_spinner=False)
+        def preprocess(df: pd.DataFrame, col_periode: str, col_nilai: str) -> pd.DataFrame:
+            out = df.copy()
+            out["__YEAR__"] = extract_year(out[col_periode])
+            out["__NILAI_NUM__"] = parse_rupiah_vectorized(out[col_nilai])
+            out = out.dropna(subset=["__YEAR__", "__NILAI_NUM__"]).copy()
+            out["__YEAR__"] = out["__YEAR__"].astype(int)
+            return out
+
+        # =========================
+        # BUCKETS (dynamic thresholds)
+        # thresholds: [t1,t2,...] => 0\u2013t1, t1\u2013t2, ..., >tN
+        # =========================
+        def build_edges(thresholds: List[float]) -> List[float]:
+            t = [float(x) for x in thresholds if x is not None and not math.isnan(float(x))]
+            t = sorted(set([x for x in t if x > 0]))
+            return [0.0] + t + [float("inf")]
+
+        def build_labels(edges: List[float]) -> List[str]:
+            labs: List[str] = []
+            for i in range(len(edges) - 1):
+                lo, hi = edges[i], edges[i + 1]
+                if math.isinf(hi):
+                    labs.append(f"> {lo:,.0f}".replace(",", "."))
                 else:
-                    st.success("\u2705 Tersimpan lokal (GitHub tidak dikonfigurasi).")
+                    labs.append(f"{lo:,.0f} \u2013 {hi:,.0f}".replace(",", "."))
+            return labs
 
-                st.cache_data.clear()
-                st.rerun()
-
-    with right:
-        st.caption("\u26a1 Fast mode: load local-first. GitHub sync manual.")
-        if is_admin and (GITHUB_TOKEN and GITHUB_REPO):
-            if st.button("\U0001f504 Sync dari GitHub", key="nilai_sync_rewrite_v1"):
-                with st.spinner("Mengambil file dari GitHub..."):
-                    xlsx = github_get_bytes(DATA_GITHUB_PATH)
-                    cfgb = github_get_bytes(BUCKET_GITHUB_PATH)
-
-                if xlsx:
-                    df_now = read_excel_bytes(xlsx)
-                    st.session_state["nilai_raw_df"] = df_now
-                    with open(DATA_PATH, "wb") as f:
-                        f.write(xlsx)
-
-                if cfgb:
-                    try:
-                        cfg = json.loads(cfgb.decode("utf-8"))
+        def load_bucket_cfg() -> Dict:
+            default = {"mode": "dynamic", "thresholds": [10e6, 50e6, 500e6]}
+            if os.path.exists(BUCKET_PATH):
+                try:
+                    with open(BUCKET_PATH, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                        if isinstance(cfg, dict) and isinstance(cfg.get("thresholds"), list):
+                            return cfg
+                except Exception:
+                    pass
+            b = github_get_bytes(BUCKET_GITHUB_PATH)
+            if b:
+                try:
+                    cfg = json.loads(b.decode("utf-8"))
+                    if isinstance(cfg, dict) and isinstance(cfg.get("thresholds"), list):
                         with open(BUCKET_PATH, "w", encoding="utf-8") as f:
                             json.dump(cfg, f, ensure_ascii=False, indent=2)
-                    except Exception:
-                        pass
+                        return cfg
+                except Exception:
+                    pass
+            return default
 
-                st.cache_data.clear()
-                st.success("\u2705 Sync selesai.")
-                st.rerun()
-
-    # =========================
-    # LOAD DATA (SESSION -> LOCAL)
-    # =========================
-    df_raw = st.session_state.get("nilai_raw_df")
-    if df_raw is None:
-        df_raw = load_local_df()
-    if df_raw is None or df_raw.empty:
-        st.warning("Belum ada data Nilai Transaksi. Admin silakan upload di atas.")
-        st.stop()
-
-    st.caption(f"Loaded: {fmt_int(len(df_raw))} baris")
-
-    # =========================
-    # MAPPING KOLOM
-    # =========================
-    cols = list(df_raw.columns)
-    auto_periode = detect_col(df_raw, ["PERIODE"]) or detect_col(df_raw, ["PERIOD"]) or cols[0]
-    auto_nilai = (
-        detect_col(df_raw, ["NILAI"])
-        or detect_col(df_raw, ["AMOUNT"])
-        or detect_col(df_raw, ["VALUE"])
-        or detect_col(df_raw, ["NOMINAL"])
-        or cols[0]
-    )
-    auto_vendor = detect_col(df_raw, ["VENDOR"]) or detect_col(df_raw, ["NAMA", "VENDOR"])
-    auto_jenis = detect_col(df_raw, ["JENIS", "TRANSAKSI"]) or detect_col(df_raw, ["TRANSAKSI"])
-
-    with st.expander("\u2699\ufe0f Mapping Kolom", expanded=False):
-        col_periode = st.selectbox("Kolom PERIODE", cols, index=cols.index(auto_periode), key="map_periode_rewrite_v1")
-        col_nilai = st.selectbox("Kolom NILAI", cols, index=cols.index(auto_nilai), key="map_nilai_rewrite_v1")
-        col_vendor = st.selectbox(
-            "Kolom VENDOR (opsional)",
-            ["(none)"] + cols,
-            index=(["(none)"] + cols).index(auto_vendor) if auto_vendor in cols else 0,
-            key="map_vendor_rewrite_v1",
-        )
-        col_jenis = st.selectbox(
-            "Kolom JENIS TRANSAKSI (opsional)",
-            ["(none)"] + cols,
-            index=(["(none)"] + cols).index(auto_jenis) if auto_jenis in cols else 0,
-            key="map_jenis_rewrite_v1",
-        )
-
-    # =========================
-    # PREPROCESS (CACHED)
-    # =========================
-    df = preprocess(df_raw, col_periode=col_periode, col_nilai=col_nilai)
-    if df.empty:
-        st.error("Tidak ada data valid setelah parsing YEAR/NILAI. Cek mapping & format data.")
-        st.dataframe(df_raw.head(30), use_container_width=True)
-        st.stop()
-
-    years_all = sorted(df["__YEAR__"].unique().tolist())
-
-    # =========================
-    # GLOBAL FILTERS (apply to all)
-    # =========================
-    st.markdown("### \U0001f50e Filter Global (berlaku untuk semua tab)")
-    gf1, gf2 = st.columns([1.2, 2.0])
-
-    with gf1:
-        years_global = st.multiselect(
-            "Tahun",
-            options=years_all,
-            default=years_all[-3:] if len(years_all) >= 3 else years_all,
-            key="global_years_rewrite_v1",
-        )
-    if not years_global:
-        st.warning("Pilih minimal 1 tahun.")
-        st.stop()
-
-    df_global = df[df["__YEAR__"].isin([int(y) for y in years_global])].copy()
-
-    with gf2:
-        if col_jenis != "(none)" and col_jenis in df_global.columns:
-            jenis_opts = sorted(df_global[col_jenis].dropna().astype(str).unique().tolist())
-            jenis_selected = st.multiselect(
-                "Jenis Transaksi (multi)",
-                options=jenis_opts,
-                default=jenis_opts,
-                key="global_jenis_rewrite_v1",
-            )
-            if not jenis_selected:
-                st.warning("Pilih minimal 1 jenis transaksi.")
-                st.stop()
-            df_global = df_global[df_global[col_jenis].astype(str).isin(jenis_selected)].copy()
-        else:
-            jenis_selected = None
-            st.caption("Filter jenis transaksi nonaktif (mapping jenis belum dipilih).")
-
-    if df_global.empty:
-        st.warning("Tidak ada data untuk kombinasi filter global.")
-        st.stop()
-
-    # =========================
-    # SUB-TABS
-    # =========================
-    tab_nilai_exec, tab_nilai_yoy, tab_nilai_vendor = st.tabs(
-        ["\U0001f3c1 Executive Summary", "\U0001f4ca YoY Buckets & Analysis", "\U0001f3f7\ufe0f Vendor & Drilldown"]
-    )
-
-    # =====================================================
-    # TAB 1: EXECUTIVE SUMMARY (Bucket multi OR Custom Range multi)
-    # =====================================================
-    with tab_nilai_exec:
-        st.markdown("### \U0001f3af Executive Snapshot")
-
-        cfg0 = load_bucket_cfg()
-        thresholds0 = cfg0.get("thresholds", [10e6, 50e6, 500e6])
-        edges0 = build_edges(thresholds0)
-        labs0 = build_labels(edges0)
-
-        dfx = df_global.copy()
-        dfx["Bucket"] = pd.cut(dfx["__NILAI_NUM__"], bins=edges0, labels=labs0, right=False, include_lowest=True)
-
-        c1, c2, c3 = st.columns([1.6, 1.6, 1.2])
-        with c1:
-            focus_mode = st.radio(
-                "Mode sorot",
-                options=["Bucket", "Custom Range (Rp)"],
-                horizontal=True,
-                key="exec_focus_mode_rewrite_v1",
-            )
-        with c2:
-            quick_focus = st.selectbox(
-                "Quick focus",
-                options=["(none)", ">= 100 juta", ">= 250 juta", ">= 500 juta", ">= 1 Miliar"],
-                index=0,
-                key="exec_quick_focus_rewrite_v1",
-            )
-        with c3:
-            show_insight = st.toggle("Insight otomatis", value=True, key="exec_insight_rewrite_v1")
-
-        # ---- custom range multi helpers
-        def _ensure_ranges_session(key: str, defaults: list[dict]) -> None:
-            if key not in st.session_state:
-                st.session_state[key] = defaults
-
-        def _clamp_nonneg(x: float) -> float:
-            try:
-                return max(0.0, float(x))
-            except Exception:
-                return 0.0
-
-        focus_df = dfx.copy()
-        focus_title = ""
-
-        if focus_mode == "Bucket":
-            focus_buckets = st.multiselect(
-                "Sorot bucket (multi)",
-                options=labs0,
-                default=[labs0[min(2, len(labs0) - 1)]],
-                key="exec_focus_buckets_rewrite_v1",
-            )
-            if not focus_buckets:
-                st.warning("Pilih minimal 1 bucket untuk sorotan.")
-                st.stop()
-            focus_df = dfx[dfx["Bucket"].astype(str).isin([str(x) for x in focus_buckets])].copy()
-            focus_title = " + ".join([str(x) for x in focus_buckets])
-
-        else:
-            st.markdown("#### \U0001f39a\ufe0f Sorot Range Custom (multi)")
-            st.caption("Isi min\u2013max sendiri. Jika max \u221e \u2192 tanpa batas atas.")
-
-            _default_ranges = [
-                {"min": 0.0, "max": 10_000_000.0},
-                {"min": 10_000_000.0, "max": 50_000_000.0},
-                {"min": 50_000_000.0, "max": 500_000_000.0},
-                {"min": 500_000_000.0, "max": None},
-            ]
-            _ensure_ranges_session("exec_custom_ranges_rewrite_v1", _default_ranges)
-
-            r1, r2, r3 = st.columns([1, 1, 2])
-            with r1:
-                if st.button("\u2795 Tambah range", key="exec_add_range_rewrite_v1"):
-                    st.session_state["exec_custom_ranges_rewrite_v1"].append({"min": 0.0, "max": None})
-            with r2:
-                if st.button("\u2796 Hapus terakhir", key="exec_del_range_rewrite_v1"):
-                    if st.session_state["exec_custom_ranges_rewrite_v1"]:
-                        st.session_state["exec_custom_ranges_rewrite_v1"] = st.session_state["exec_custom_ranges_rewrite_v1"][:-1]
-            with r3:
-                if quick_focus != "(none)":
-                    if quick_focus == ">= 100 juta":
-                        st.session_state["exec_custom_ranges_rewrite_v1"] = [{"min": 100_000_000.0, "max": None}]
-                    elif quick_focus == ">= 250 juta":
-                        st.session_state["exec_custom_ranges_rewrite_v1"] = [{"min": 250_000_000.0, "max": None}]
-                    elif quick_focus == ">= 500 juta":
-                        st.session_state["exec_custom_ranges_rewrite_v1"] = [{"min": 500_000_000.0, "max": None}]
-                    elif quick_focus == ">= 1 Miliar":
-                        st.session_state["exec_custom_ranges_rewrite_v1"] = [{"min": 1_000_000_000.0, "max": None}]
-
-            ranges_ui: list[dict] = []
-            for i, rr in enumerate(st.session_state["exec_custom_ranges_rewrite_v1"], start=1):
-                cmin, cmax, cen = st.columns([1, 1, 1.1])
-                with cmin:
-                    vmin = st.number_input(
-                        f"Range {i} \u2014 Min (Rp)",
-                        min_value=0.0,
-                        value=float(rr.get("min") or 0.0),
-                        step=1e6,
-                        key=f"exec_rmin_rewrite_{i}_v1",
-                    )
-                with cmax:
-                    inf = st.checkbox("\u221e (tanpa max)", value=(rr.get("max") is None), key=f"exec_rinf_rewrite_{i}_v1")
-                    if inf:
-                        vmax = None
-                    else:
-                        vmax = st.number_input(
-                            f"Range {i} \u2014 Max (Rp)",
-                            min_value=0.0,
-                            value=float(rr.get("max") or 0.0),
-                            step=1e6,
-                            key=f"exec_rmax_rewrite_{i}_v1",
-                        )
-                with cen:
-                    enabled = st.checkbox("Aktif", value=True, key=f"exec_ren_rewrite_{i}_v1")
-
-                ranges_ui.append(
-                    {"min": _clamp_nonneg(vmin), "max": None if vmax is None else _clamp_nonneg(vmax), "enabled": bool(enabled)}
+        def save_bucket_cfg(thresholds: List[float]) -> None:
+            thresholds = sorted(set([float(x) for x in thresholds if x is not None and float(x) > 0]))
+            edges = build_edges(thresholds)
+            payload = {
+                "mode": "dynamic",
+                "thresholds": thresholds,
+                "edges": [("inf" if math.isinf(x) else x) for x in edges],
+                "labels": build_labels(edges),
+            }
+            with open(BUCKET_PATH, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            if GITHUB_TOKEN and GITHUB_REPO:
+                github_put_bytes(
+                    BUCKET_GITHUB_PATH,
+                    json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
+                    "Update Nilai Buckets (dynamic)",
                 )
 
-            ranges_active = []
-            for rr in ranges_ui:
-                if not rr["enabled"]:
-                    continue
-                lo = float(rr["min"])
-                hi = rr["max"]
-                if hi is not None and hi < lo:
-                    lo, hi = hi, lo
-                ranges_active.append({"min": lo, "max": hi})
-
-            if not ranges_active:
-                st.warning("Aktifkan minimal 1 range.")
-                st.stop()
-
-            mask = pd.Series(False, index=focus_df.index)
-            for rr in ranges_active:
-                lo, hi = rr["min"], rr["max"]
-                if hi is None:
-                    mask = mask | (focus_df["__NILAI_NUM__"] >= lo)
+        # =========================
+        # ADMIN UPLOAD + MANUAL SYNC
+        # =========================
+        left, right = st.columns([2, 1])
+        with left:
+            with st.expander("\U0001f4e4 Upload Data Nilai Transaksi (Admin Only)", expanded=is_admin):
+                if not is_admin:
+                    st.info("Hanya admin yang dapat upload.")
+                    uploaded = None
                 else:
-                    mask = mask | ((focus_df["__NILAI_NUM__"] >= lo) & (focus_df["__NILAI_NUM__"] <= hi))
+                    uploaded = st.file_uploader("Upload Excel (.xlsx)", type=["xlsx"], key="nilai_upload_rewrite_v1")
+                if is_admin and uploaded is not None:
+                    b = uploaded.getvalue()
+                    try:
+                        df_now = read_excel_bytes(b)
+                        st.session_state["nilai_raw_df"] = df_now
+                        st.success(f"\u2705 Upload terbaca: {fmt_int(len(df_now))} baris")
+                        st.dataframe(df_now.head(20), use_container_width=True)
+                    except Exception as e:
+                        st.error(f"Gagal baca Excel: {e}")
+                        st.stop()
 
-            focus_df = focus_df[mask].copy()
+                    with open(DATA_PATH, "wb") as f:
+                        f.write(b)
 
-            parts = []
-            for rr in ranges_active:
-                lo, hi = rr["min"], rr["max"]
-                if hi is None:
-                    parts.append(f">= {fmt_rp(lo)}")
-                else:
-                    parts.append(f"{fmt_rp(lo)} \u2014 {fmt_rp(hi)}")
-            focus_title = " + ".join(parts)
+                    if GITHUB_TOKEN and GITHUB_REPO:
+                        with st.spinner("Sync ke GitHub..."):
+                            ok = github_put_bytes(DATA_GITHUB_PATH, b, "Update Nilai Transaksi (tab Nilai)")
+                        if ok:
+                            st.success("\u2705 Tersimpan lokal & tersinkron ke GitHub.")
+                        else:
+                            st.warning("\u26a0\ufe0f Tersimpan lokal, tapi gagal upload ke GitHub.")
+                    else:
+                        st.success("\u2705 Tersimpan lokal (GitHub tidak dikonfigurasi).")
 
-        st.markdown(f"**Sorotan aktif:** {focus_title}")
+                    st.cache_data.clear()
+                    st.rerun()
 
-        # ---- overall KPI YoY (All)
-        overall = (
-            dfx.groupby("__YEAR__")["__NILAI_NUM__"]
-            .agg(Transaksi="size", Total="sum", Rata2="mean")
-            .reset_index()
-            .rename(columns={"__YEAR__": "Tahun"})
-            .sort_values("Tahun")
+        with right:
+            st.caption("\u26a1 Fast mode: load local-first. GitHub sync manual.")
+            if is_admin and (GITHUB_TOKEN and GITHUB_REPO):
+                if st.button("\U0001f504 Sync dari GitHub", key="nilai_sync_rewrite_v1"):
+                    with st.spinner("Mengambil file dari GitHub..."):
+                        xlsx = github_get_bytes(DATA_GITHUB_PATH)
+                        cfgb = github_get_bytes(BUCKET_GITHUB_PATH)
+
+                    if xlsx:
+                        df_now = read_excel_bytes(xlsx)
+                        st.session_state["nilai_raw_df"] = df_now
+                        with open(DATA_PATH, "wb") as f:
+                            f.write(xlsx)
+
+                    if cfgb:
+                        try:
+                            cfg = json.loads(cfgb.decode("utf-8"))
+                            with open(BUCKET_PATH, "w", encoding="utf-8") as f:
+                                json.dump(cfg, f, ensure_ascii=False, indent=2)
+                        except Exception:
+                            pass
+
+                    st.cache_data.clear()
+                    st.success("\u2705 Sync selesai.")
+                    st.rerun()
+
+        # =========================
+        # LOAD DATA (SESSION -> LOCAL)
+        # =========================
+        df_raw = st.session_state.get("nilai_raw_df")
+        if df_raw is None:
+            df_raw = load_local_df()
+        if df_raw is None or df_raw.empty:
+            st.warning("Belum ada data Nilai Transaksi. Admin silakan upload di atas.")
+            st.stop()
+
+        st.caption(f"Loaded: {fmt_int(len(df_raw))} baris")
+
+        # =========================
+        # MAPPING KOLOM
+        # =========================
+        cols = list(df_raw.columns)
+        auto_periode = detect_col(df_raw, ["PERIODE"]) or detect_col(df_raw, ["PERIOD"]) or cols[0]
+        auto_nilai = (
+            detect_col(df_raw, ["NILAI"])
+            or detect_col(df_raw, ["AMOUNT"])
+            or detect_col(df_raw, ["VALUE"])
+            or detect_col(df_raw, ["NOMINAL"])
+            or cols[0]
         )
-        last_year = int(overall["Tahun"].max())
-        prev_year = int(sorted(overall["Tahun"].unique())[-2]) if len(overall["Tahun"].unique()) >= 2 else None
-        ov = overall.set_index("Tahun")
+        auto_vendor = detect_col(df_raw, ["VENDOR"]) or detect_col(df_raw, ["NAMA", "VENDOR"])
+        auto_jenis = detect_col(df_raw, ["JENIS", "TRANSAKSI"]) or detect_col(df_raw, ["TRANSAKSI"])
 
-        cur_tx = float(ov.loc[last_year, "Transaksi"])
-        cur_total = float(ov.loc[last_year, "Total"])
-        cur_avg = float(ov.loc[last_year, "Rata2"])
+        with st.expander("\u2699\ufe0f Mapping Kolom", expanded=False):
+            col_periode = st.selectbox("Kolom PERIODE", cols, index=cols.index(auto_periode), key="map_periode_rewrite_v1")
+            col_nilai = st.selectbox("Kolom NILAI", cols, index=cols.index(auto_nilai), key="map_nilai_rewrite_v1")
+            col_vendor = st.selectbox(
+                "Kolom VENDOR (opsional)",
+                ["(none)"] + cols,
+                index=(["(none)"] + cols).index(auto_vendor) if auto_vendor in cols else 0,
+                key="map_vendor_rewrite_v1",
+            )
+            col_jenis = st.selectbox(
+                "Kolom JENIS TRANSAKSI (opsional)",
+                ["(none)"] + cols,
+                index=(["(none)"] + cols).index(auto_jenis) if auto_jenis in cols else 0,
+                key="map_jenis_rewrite_v1",
+            )
 
-        prev_tx = float(ov.loc[prev_year, "Transaksi"]) if (prev_year in ov.index) else None
-        prev_total = float(ov.loc[prev_year, "Total"]) if (prev_year in ov.index) else None
-        prev_avg = float(ov.loc[prev_year, "Rata2"]) if (prev_year in ov.index) else None
+        # =========================
+        # PREPROCESS (CACHED)
+        # =========================
+        df = preprocess(df_raw, col_periode=col_periode, col_nilai=col_nilai)
+        if df.empty:
+            st.error("Tidak ada data valid setelah parsing YEAR/NILAI. Cek mapping & format data.")
+            st.dataframe(df_raw.head(30), use_container_width=True)
+            st.stop()
 
-        st.markdown("#### \U0001f9fe KPI Utama (All Transactions)")
-        k1, k2, k3 = st.columns(3)
-        k1.metric(f"Jumlah Transaksi ({last_year})", fmt_int(cur_tx), delta=pct_delta(cur_tx, prev_tx))
-        k2.metric(f"Total Nilai ({last_year})", fmt_rp(cur_total), delta=pct_delta(cur_total, prev_total))
-        k3.metric(f"Rata-rata ({last_year})", fmt_rp(cur_avg), delta=pct_delta(cur_avg, prev_avg))
+        years_all = sorted(df["__YEAR__"].unique().tolist())
 
-        st.markdown(f"#### \U0001f525 KPI Sorotan: **{focus_title}**")
-        if focus_df.empty:
-            st.info("Tidak ada data pada sorotan untuk filter global saat ini.")
-        else:
-            focus_kpi = (
-                focus_df.groupby("__YEAR__")["__NILAI_NUM__"]
+        # =========================
+        # GLOBAL FILTERS (apply to all)
+        # =========================
+        st.markdown("### \U0001f50e Filter Global (berlaku untuk semua tab)")
+        gf1, gf2 = st.columns([1.2, 2.0])
+
+        with gf1:
+            years_global = st.multiselect(
+                "Tahun",
+                options=years_all,
+                default=years_all[-3:] if len(years_all) >= 3 else years_all,
+                key="global_years_rewrite_v1",
+            )
+        if not years_global:
+            st.warning("Pilih minimal 1 tahun.")
+            st.stop()
+
+        df_global = df[df["__YEAR__"].isin([int(y) for y in years_global])].copy()
+
+        with gf2:
+            if col_jenis != "(none)" and col_jenis in df_global.columns:
+                jenis_opts = sorted(df_global[col_jenis].dropna().astype(str).unique().tolist())
+                jenis_selected = st.multiselect(
+                    "Jenis Transaksi (multi)",
+                    options=jenis_opts,
+                    default=jenis_opts,
+                    key="global_jenis_rewrite_v1",
+                )
+                if not jenis_selected:
+                    st.warning("Pilih minimal 1 jenis transaksi.")
+                    st.stop()
+                df_global = df_global[df_global[col_jenis].astype(str).isin(jenis_selected)].copy()
+            else:
+                jenis_selected = None
+                st.caption("Filter jenis transaksi nonaktif (mapping jenis belum dipilih).")
+
+        if df_global.empty:
+            st.warning("Tidak ada data untuk kombinasi filter global.")
+            st.stop()
+
+        # =========================
+        # SUB-TABS
+        # =========================
+        tab_nilai_exec, tab_nilai_yoy, tab_nilai_vendor = st.tabs(
+            ["\U0001f3c1 Executive Summary", "\U0001f4ca YoY Buckets & Analysis", "\U0001f3f7\ufe0f Vendor & Drilldown"]
+        )
+
+        # =====================================================
+        # TAB 1: EXECUTIVE SUMMARY (Bucket multi OR Custom Range multi)
+        # =====================================================
+        with tab_nilai_exec:
+            st.markdown("### \U0001f3af Executive Snapshot")
+
+            cfg0 = load_bucket_cfg()
+            thresholds0 = cfg0.get("thresholds", [10e6, 50e6, 500e6])
+            edges0 = build_edges(thresholds0)
+            labs0 = build_labels(edges0)
+
+            dfx = df_global.copy()
+            dfx["Bucket"] = pd.cut(dfx["__NILAI_NUM__"], bins=edges0, labels=labs0, right=False, include_lowest=True)
+
+            c1, c2, c3 = st.columns([1.6, 1.6, 1.2])
+            with c1:
+                focus_mode = st.radio(
+                    "Mode sorot",
+                    options=["Bucket", "Custom Range (Rp)"],
+                    horizontal=True,
+                    key="exec_focus_mode_rewrite_v1",
+                )
+            with c2:
+                quick_focus = st.selectbox(
+                    "Quick focus",
+                    options=["(none)", ">= 100 juta", ">= 250 juta", ">= 500 juta", ">= 1 Miliar"],
+                    index=0,
+                    key="exec_quick_focus_rewrite_v1",
+                )
+            with c3:
+                show_insight = st.toggle("Insight otomatis", value=True, key="exec_insight_rewrite_v1")
+
+            # ---- custom range multi helpers
+            def _ensure_ranges_session(key: str, defaults: list[dict]) -> None:
+                if key not in st.session_state:
+                    st.session_state[key] = defaults
+
+            def _clamp_nonneg(x: float) -> float:
+                try:
+                    return max(0.0, float(x))
+                except Exception:
+                    return 0.0
+
+            focus_df = dfx.copy()
+            focus_title = ""
+
+            if focus_mode == "Bucket":
+                focus_buckets = st.multiselect(
+                    "Sorot bucket (multi)",
+                    options=labs0,
+                    default=[labs0[min(2, len(labs0) - 1)]],
+                    key="exec_focus_buckets_rewrite_v1",
+                )
+                if not focus_buckets:
+                    st.warning("Pilih minimal 1 bucket untuk sorotan.")
+                    st.stop()
+                focus_df = dfx[dfx["Bucket"].astype(str).isin([str(x) for x in focus_buckets])].copy()
+                focus_title = " + ".join([str(x) for x in focus_buckets])
+
+            else:
+                st.markdown("#### \U0001f39a\ufe0f Sorot Range Custom (multi)")
+                st.caption("Isi min\u2013max sendiri. Jika max \u221e \u2192 tanpa batas atas.")
+
+                _default_ranges = [
+                    {"min": 0.0, "max": 10_000_000.0},
+                    {"min": 10_000_000.0, "max": 50_000_000.0},
+                    {"min": 50_000_000.0, "max": 500_000_000.0},
+                    {"min": 500_000_000.0, "max": None},
+                ]
+                _ensure_ranges_session("exec_custom_ranges_rewrite_v1", _default_ranges)
+
+                r1, r2, r3 = st.columns([1, 1, 2])
+                with r1:
+                    if st.button("\u2795 Tambah range", key="exec_add_range_rewrite_v1"):
+                        st.session_state["exec_custom_ranges_rewrite_v1"].append({"min": 0.0, "max": None})
+                with r2:
+                    if st.button("\u2796 Hapus terakhir", key="exec_del_range_rewrite_v1"):
+                        if st.session_state["exec_custom_ranges_rewrite_v1"]:
+                            st.session_state["exec_custom_ranges_rewrite_v1"] = st.session_state["exec_custom_ranges_rewrite_v1"][:-1]
+                with r3:
+                    if quick_focus != "(none)":
+                        if quick_focus == ">= 100 juta":
+                            st.session_state["exec_custom_ranges_rewrite_v1"] = [{"min": 100_000_000.0, "max": None}]
+                        elif quick_focus == ">= 250 juta":
+                            st.session_state["exec_custom_ranges_rewrite_v1"] = [{"min": 250_000_000.0, "max": None}]
+                        elif quick_focus == ">= 500 juta":
+                            st.session_state["exec_custom_ranges_rewrite_v1"] = [{"min": 500_000_000.0, "max": None}]
+                        elif quick_focus == ">= 1 Miliar":
+                            st.session_state["exec_custom_ranges_rewrite_v1"] = [{"min": 1_000_000_000.0, "max": None}]
+
+                ranges_ui: list[dict] = []
+                for i, rr in enumerate(st.session_state["exec_custom_ranges_rewrite_v1"], start=1):
+                    cmin, cmax, cen = st.columns([1, 1, 1.1])
+                    with cmin:
+                        vmin = st.number_input(
+                            f"Range {i} \u2014 Min (Rp)",
+                            min_value=0.0,
+                            value=float(rr.get("min") or 0.0),
+                            step=1e6,
+                            key=f"exec_rmin_rewrite_{i}_v1",
+                        )
+                    with cmax:
+                        inf = st.checkbox("\u221e (tanpa max)", value=(rr.get("max") is None), key=f"exec_rinf_rewrite_{i}_v1")
+                        if inf:
+                            vmax = None
+                        else:
+                            vmax = st.number_input(
+                                f"Range {i} \u2014 Max (Rp)",
+                                min_value=0.0,
+                                value=float(rr.get("max") or 0.0),
+                                step=1e6,
+                                key=f"exec_rmax_rewrite_{i}_v1",
+                            )
+                    with cen:
+                        enabled = st.checkbox("Aktif", value=True, key=f"exec_ren_rewrite_{i}_v1")
+
+                    ranges_ui.append(
+                        {"min": _clamp_nonneg(vmin), "max": None if vmax is None else _clamp_nonneg(vmax), "enabled": bool(enabled)}
+                    )
+
+                ranges_active = []
+                for rr in ranges_ui:
+                    if not rr["enabled"]:
+                        continue
+                    lo = float(rr["min"])
+                    hi = rr["max"]
+                    if hi is not None and hi < lo:
+                        lo, hi = hi, lo
+                    ranges_active.append({"min": lo, "max": hi})
+
+                if not ranges_active:
+                    st.warning("Aktifkan minimal 1 range.")
+                    st.stop()
+
+                mask = pd.Series(False, index=focus_df.index)
+                for rr in ranges_active:
+                    lo, hi = rr["min"], rr["max"]
+                    if hi is None:
+                        mask = mask | (focus_df["__NILAI_NUM__"] >= lo)
+                    else:
+                        mask = mask | ((focus_df["__NILAI_NUM__"] >= lo) & (focus_df["__NILAI_NUM__"] <= hi))
+
+                focus_df = focus_df[mask].copy()
+
+                parts = []
+                for rr in ranges_active:
+                    lo, hi = rr["min"], rr["max"]
+                    if hi is None:
+                        parts.append(f">= {fmt_rp(lo)}")
+                    else:
+                        parts.append(f"{fmt_rp(lo)} \u2014 {fmt_rp(hi)}")
+                focus_title = " + ".join(parts)
+
+            st.markdown(f"**Sorotan aktif:** {focus_title}")
+
+            # ---- overall KPI YoY (All)
+            overall = (
+                dfx.groupby("__YEAR__")["__NILAI_NUM__"]
                 .agg(Transaksi="size", Total="sum", Rata2="mean")
                 .reset_index()
                 .rename(columns={"__YEAR__": "Tahun"})
                 .sort_values("Tahun")
             )
-            fk = focus_kpi.set_index("Tahun")
+            last_year = int(overall["Tahun"].max())
+            prev_year = int(sorted(overall["Tahun"].unique())[-2]) if len(overall["Tahun"].unique()) >= 2 else None
+            ov = overall.set_index("Tahun")
 
-            cur_f_tx = float(fk.loc[last_year, "Transaksi"]) if (last_year in fk.index) else 0.0
-            cur_f_total = float(fk.loc[last_year, "Total"]) if (last_year in fk.index) else 0.0
-            cur_f_avg = float(fk.loc[last_year, "Rata2"]) if (last_year in fk.index) else float("nan")
+            cur_tx = float(ov.loc[last_year, "Transaksi"])
+            cur_total = float(ov.loc[last_year, "Total"])
+            cur_avg = float(ov.loc[last_year, "Rata2"])
 
-            prev_f_tx = float(fk.loc[prev_year, "Transaksi"]) if (prev_year in fk.index) else None
-            prev_f_total = float(fk.loc[prev_year, "Total"]) if (prev_year in fk.index) else None
-            prev_f_avg = float(fk.loc[prev_year, "Rata2"]) if (prev_year in fk.index) else None
+            prev_tx = float(ov.loc[prev_year, "Transaksi"]) if (prev_year in ov.index) else None
+            prev_total = float(ov.loc[prev_year, "Total"]) if (prev_year in ov.index) else None
+            prev_avg = float(ov.loc[prev_year, "Rata2"]) if (prev_year in ov.index) else None
 
-            b1, b2, b3, b4 = st.columns(4)
-            b1.metric("Transaksi (sorotan)", fmt_int(cur_f_tx), delta=pct_delta(cur_f_tx, prev_f_tx))
-            b2.metric("Total Nilai (sorotan)", fmt_rp(cur_f_total), delta=pct_delta(cur_f_total, prev_f_total))
-            b3.metric("Rata-rata (sorotan)", fmt_rp(cur_f_avg) if not pd.isna(cur_f_avg) else "-", delta=pct_delta(cur_f_avg, prev_f_avg))
-            b4.metric("% share transaksi", fmt_pct((cur_f_tx / cur_tx * 100.0) if cur_tx else float("nan")))
+            st.markdown("#### \U0001f9fe KPI Utama (All Transactions)")
+            k1, k2, k3 = st.columns(3)
+            k1.metric(f"Jumlah Transaksi ({last_year})", fmt_int(cur_tx), delta=pct_delta(cur_tx, prev_tx))
+            k2.metric(f"Total Nilai ({last_year})", fmt_rp(cur_total), delta=pct_delta(cur_total, prev_total))
+            k3.metric(f"Rata-rata ({last_year})", fmt_rp(cur_avg), delta=pct_delta(cur_avg, prev_avg))
 
-            with st.expander("\U0001f4cb Tabel KPI Sorotan (YoY)", expanded=False):
-                show_focus = focus_kpi.copy()
-                show_focus["Total"] = show_focus["Total"].apply(lambda x: fmt_rp(float(x)))
-                show_focus["Rata2"] = show_focus["Rata2"].apply(lambda x: fmt_rp(float(x)) if not pd.isna(x) else "-")
-                st.dataframe(show_focus, use_container_width=True)
+            st.markdown(f"#### \U0001f525 KPI Sorotan: **{focus_title}**")
+            if focus_df.empty:
+                st.info("Tidak ada data pada sorotan untuk filter global saat ini.")
+            else:
+                focus_kpi = (
+                    focus_df.groupby("__YEAR__")["__NILAI_NUM__"]
+                    .agg(Transaksi="size", Total="sum", Rata2="mean")
+                    .reset_index()
+                    .rename(columns={"__YEAR__": "Tahun"})
+                    .sort_values("Tahun")
+                )
+                fk = focus_kpi.set_index("Tahun")
 
-        st.markdown("#### \U0001f4c8 Tren YoY")
-        fig1, ax1 = plt.subplots(figsize=(10, 4))
-        ax1.plot(overall["Tahun"].astype(str), overall["Total"], marker="o")
-        ax1.set_title("Total Nilai per Tahun")
-        ax1.set_xlabel("Tahun")
-        ax1.set_ylabel("Total Nilai (Rp)")
-        ax1.grid(axis="y", linestyle="--", alpha=0.35)
-        st.pyplot(fig1)
+                cur_f_tx = float(fk.loc[last_year, "Transaksi"]) if (last_year in fk.index) else 0.0
+                cur_f_total = float(fk.loc[last_year, "Total"]) if (last_year in fk.index) else 0.0
+                cur_f_avg = float(fk.loc[last_year, "Rata2"]) if (last_year in fk.index) else float("nan")
 
-        fig2, ax2 = plt.subplots(figsize=(10, 4))
-        ax2.bar(overall["Tahun"].astype(str), overall["Transaksi"])
-        ax2.set_title("Jumlah Transaksi per Tahun")
-        ax2.set_xlabel("Tahun")
-        ax2.set_ylabel("Jumlah")
-        ax2.grid(axis="y", linestyle="--", alpha=0.35)
-        st.pyplot(fig2)
+                prev_f_tx = float(fk.loc[prev_year, "Transaksi"]) if (prev_year in fk.index) else None
+                prev_f_total = float(fk.loc[prev_year, "Total"]) if (prev_year in fk.index) else None
+                prev_f_avg = float(fk.loc[prev_year, "Rata2"]) if (prev_year in fk.index) else None
 
-        if show_insight and len(overall) >= 2:
-            st.markdown("#### \U0001f9e0 Insight Otomatis")
-            top_year = overall.sort_values("Total", ascending=False).iloc[0]
-            st.write(
-                f"- Tahun tertinggi (Total Nilai): **{int(top_year['Tahun'])}** ({fmt_rp(float(top_year['Total']))}).\n"
-                f"- Tahun terakhir **{last_year}**: Total {pct_delta(cur_total, prev_total) or 'n/a'} | Qty {pct_delta(cur_tx, prev_tx) or 'n/a'}."
-            )
+                b1, b2, b3, b4 = st.columns(4)
+                b1.metric("Transaksi (sorotan)", fmt_int(cur_f_tx), delta=pct_delta(cur_f_tx, prev_f_tx))
+                b2.metric("Total Nilai (sorotan)", fmt_rp(cur_f_total), delta=pct_delta(cur_f_total, prev_f_total))
+                b3.metric("Rata-rata (sorotan)", fmt_rp(cur_f_avg) if not pd.isna(cur_f_avg) else "-", delta=pct_delta(cur_f_avg, prev_f_avg))
+                b4.metric("% share transaksi", fmt_pct((cur_f_tx / cur_tx * 100.0) if cur_tx else float("nan")))
 
-        with st.expander("\U0001f4cb Tabel KPI YoY (All)", expanded=False):
-            show_overall = overall.copy()
-            show_overall["Total"] = show_overall["Total"].apply(lambda x: fmt_rp(float(x)))
-            show_overall["Rata2"] = show_overall["Rata2"].apply(lambda x: fmt_rp(float(x)))
-            st.dataframe(show_overall, use_container_width=True)
+                with st.expander("\U0001f4cb Tabel KPI Sorotan (YoY)", expanded=False):
+                    show_focus = focus_kpi.copy()
+                    show_focus["Total"] = show_focus["Total"].apply(lambda x: fmt_rp(float(x)))
+                    show_focus["Rata2"] = show_focus["Rata2"].apply(lambda x: fmt_rp(float(x)) if not pd.isna(x) else "-")
+                    st.dataframe(show_focus, use_container_width=True)
 
-    # =====================================================
-    # TAB 2: YOY BUCKETS & ANALYSIS (uses global filters too)
-    # =====================================================
-    with tab_nilai_yoy:
-        st.markdown("### \U0001f4ca Analisis YoY per Range Nilai (Custom)")
+            st.markdown("#### \U0001f4c8 Tren YoY")
+            fig1, ax1 = plt.subplots(figsize=(10, 4))
+            ax1.plot(overall["Tahun"].astype(str), overall["Total"], marker="o")
+            ax1.set_title("Total Nilai per Tahun")
+            ax1.set_xlabel("Tahun")
+            ax1.set_ylabel("Total Nilai (Rp)")
+            ax1.grid(axis="y", linestyle="--", alpha=0.35)
+            st.pyplot(fig1)
 
-        cfg = load_bucket_cfg()
-        base_thresholds = cfg.get("thresholds", [10e6, 50e6, 500e6])
+            fig2, ax2 = plt.subplots(figsize=(10, 4))
+            ax2.bar(overall["Tahun"].astype(str), overall["Transaksi"])
+            ax2.set_title("Jumlah Transaksi per Tahun")
+            ax2.set_xlabel("Tahun")
+            ax2.set_ylabel("Jumlah")
+            ax2.grid(axis="y", linestyle="--", alpha=0.35)
+            st.pyplot(fig2)
 
-        if "dyn_thresholds_yoy_rewrite_v1" not in st.session_state:
-            st.session_state["dyn_thresholds_yoy_rewrite_v1"] = [float(x) for x in base_thresholds]
-
-        with st.expander("\U0001f9e9 Editor Range (Tambah/Kurangi) + Simpan", expanded=True):
-            st.caption("Threshold membentuk bucket: 0\u2013t1, t1\u2013t2, ..., >tN.")
-
-            a1, a2, a3, a4 = st.columns([1, 1, 1.2, 1.8])
-            if a1.button("\u2795 Tambah threshold", key="yoy_add_thr_rewrite_v1"):
-                last = st.session_state["dyn_thresholds_yoy_rewrite_v1"][-1] if st.session_state["dyn_thresholds_yoy_rewrite_v1"] else 10e6
-                st.session_state["dyn_thresholds_yoy_rewrite_v1"].append(float(last * 2))
-
-            if a2.button("\u2796 Hapus terakhir", key="yoy_del_thr_rewrite_v1"):
-                if st.session_state["dyn_thresholds_yoy_rewrite_v1"]:
-                    st.session_state["dyn_thresholds_yoy_rewrite_v1"] = st.session_state["dyn_thresholds_yoy_rewrite_v1"][:-1]
-
-            if a3.button("\u21a9 Reset default", key="yoy_reset_thr_rewrite_v1"):
-                st.session_state["dyn_thresholds_yoy_rewrite_v1"] = [float(x) for x in base_thresholds]
-
-            thresholds_ui: List[float] = []
-            for i, v in enumerate(st.session_state["dyn_thresholds_yoy_rewrite_v1"], start=1):
-                thresholds_ui.append(
-                    st.number_input(
-                        f"Threshold {i} (Rp)",
-                        min_value=0.0,
-                        value=float(v),
-                        step=1e6,
-                        key=f"yoy_thr_input_rewrite_{i}_v1",
-                    )
+            if show_insight and len(overall) >= 2:
+                st.markdown("#### \U0001f9e0 Insight Otomatis")
+                top_year = overall.sort_values("Total", ascending=False).iloc[0]
+                st.write(
+                    f"- Tahun tertinggi (Total Nilai): **{int(top_year['Tahun'])}** ({fmt_rp(float(top_year['Total']))}).\n"
+                    f"- Tahun terakhir **{last_year}**: Total {pct_delta(cur_total, prev_total) or 'n/a'} | Qty {pct_delta(cur_tx, prev_tx) or 'n/a'}."
                 )
 
-            thresholds_norm = sorted(set([float(x) for x in thresholds_ui if x is not None and float(x) > 0]))
-            edges = build_edges(thresholds_norm)
+            with st.expander("\U0001f4cb Tabel KPI YoY (All)", expanded=False):
+                show_overall = overall.copy()
+                show_overall["Total"] = show_overall["Total"].apply(lambda x: fmt_rp(float(x)))
+                show_overall["Rata2"] = show_overall["Rata2"].apply(lambda x: fmt_rp(float(x)))
+                st.dataframe(show_overall, use_container_width=True)
+
+        # =====================================================
+        # TAB 2: YOY BUCKETS & ANALYSIS (uses global filters too)
+        # =====================================================
+        with tab_nilai_yoy:
+            st.markdown("### \U0001f4ca Analisis YoY per Range Nilai (Custom)")
+
+            cfg = load_bucket_cfg()
+            base_thresholds = cfg.get("thresholds", [10e6, 50e6, 500e6])
+
+            if "dyn_thresholds_yoy_rewrite_v1" not in st.session_state:
+                st.session_state["dyn_thresholds_yoy_rewrite_v1"] = [float(x) for x in base_thresholds]
+
+            with st.expander("\U0001f9e9 Editor Range (Tambah/Kurangi) + Simpan", expanded=True):
+                st.caption("Threshold membentuk bucket: 0\u2013t1, t1\u2013t2, ..., >tN.")
+
+                a1, a2, a3, a4 = st.columns([1, 1, 1.2, 1.8])
+                if a1.button("\u2795 Tambah threshold", key="yoy_add_thr_rewrite_v1"):
+                    last = st.session_state["dyn_thresholds_yoy_rewrite_v1"][-1] if st.session_state["dyn_thresholds_yoy_rewrite_v1"] else 10e6
+                    st.session_state["dyn_thresholds_yoy_rewrite_v1"].append(float(last * 2))
+
+                if a2.button("\u2796 Hapus terakhir", key="yoy_del_thr_rewrite_v1"):
+                    if st.session_state["dyn_thresholds_yoy_rewrite_v1"]:
+                        st.session_state["dyn_thresholds_yoy_rewrite_v1"] = st.session_state["dyn_thresholds_yoy_rewrite_v1"][:-1]
+
+                if a3.button("\u21a9 Reset default", key="yoy_reset_thr_rewrite_v1"):
+                    st.session_state["dyn_thresholds_yoy_rewrite_v1"] = [float(x) for x in base_thresholds]
+
+                thresholds_ui: List[float] = []
+                for i, v in enumerate(st.session_state["dyn_thresholds_yoy_rewrite_v1"], start=1):
+                    thresholds_ui.append(
+                        st.number_input(
+                            f"Threshold {i} (Rp)",
+                            min_value=0.0,
+                            value=float(v),
+                            step=1e6,
+                            key=f"yoy_thr_input_rewrite_{i}_v1",
+                        )
+                    )
+
+                thresholds_norm = sorted(set([float(x) for x in thresholds_ui if x is not None and float(x) > 0]))
+                edges = build_edges(thresholds_norm)
+                labs = build_labels(edges)
+
+                st.write("Preview bucket:")
+                st.write(labs)
+
+                if is_admin:
+                    if a4.button("\U0001f4be Simpan Bucket (Persisten)", key="yoy_save_thr_rewrite_v1"):
+                        save_bucket_cfg(thresholds_norm)
+                        st.session_state["dyn_thresholds_yoy_rewrite_v1"] = thresholds_norm
+                        st.success("\u2705 Bucket tersimpan.")
+                else:
+                    st.info("Hanya admin yang bisa menyimpan. Anda tetap bisa mencoba sementara.")
+
+            dfy = df_global.copy()
+            dfy["Bucket"] = pd.cut(dfy["__NILAI_NUM__"], bins=edges, labels=labs, right=False, include_lowest=True)
+
+            grp = (
+                dfy.dropna(subset=["Bucket"])
+                .groupby(["__YEAR__", "Bucket"])["__NILAI_NUM__"]
+                .agg(Jumlah="size", Total="sum")
+                .reset_index()
+                .rename(columns={"__YEAR__": "Tahun"})
+            )
+
+            pivot_cnt = grp.pivot_table(index="Bucket", columns="Tahun", values="Jumlah", fill_value=0).reindex(labs)
+            pivot_total = grp.pivot_table(index="Bucket", columns="Tahun", values="Total", fill_value=0.0).reindex(labs)
+
+            st.markdown("#### \u2705 Jumlah Transaksi per Range (per Tahun)")
+            st.dataframe(pivot_cnt, use_container_width=True)
+
+            st.markdown("#### \u2705 Total Nilai per Range (per Tahun)")
+            pivot_total_fmt = pivot_total.copy()
+            for c in pivot_total_fmt.columns:
+                pivot_total_fmt[c] = pivot_total_fmt[c].apply(lambda x: fmt_rp(float(x)))
+            st.dataframe(pivot_total_fmt, use_container_width=True)
+
+            st.markdown("#### \U0001f4cc % Share Quantity (per Range, per Tahun)")
+            qty_share = pivot_cnt.div(pivot_cnt.sum(axis=0).replace(0, float("nan")), axis=1) * 100.0
+            qty_share_fmt = qty_share.copy()
+            for c in qty_share_fmt.columns:
+                qty_share_fmt[c] = qty_share_fmt[c].apply(lambda x: fmt_pct(float(x)) if not pd.isna(x) else "-")
+            st.dataframe(qty_share_fmt, use_container_width=True)
+
+            st.markdown("#### \U0001f4cc % Share Nilai (per Range, per Tahun)")
+            val_share = pivot_total.div(pivot_total.sum(axis=0).replace(0, float("nan")), axis=1) * 100.0
+            val_share_fmt = val_share.copy()
+            for c in val_share_fmt.columns:
+                val_share_fmt[c] = val_share_fmt[c].apply(lambda x: fmt_pct(float(x)) if not pd.isna(x) else "-")
+            st.dataframe(val_share_fmt, use_container_width=True)
+
+            years_sorted = sorted(pivot_cnt.columns.tolist())
+            x = list(range(len(years_sorted)))
+
+            st.markdown("#### \U0001f4ca 100% Stacked \u2014 Komposisi Quantity")
+            label_pct_qty = st.toggle("Tampilkan label % (Quantity)", value=False, key="yoy_label_qty_rewrite_v1")
+
+            figq, axq = plt.subplots(figsize=(10, 5))
+            bottom = [0.0] * len(years_sorted)
+            for bucket in labs:
+                vals = []
+                for y in years_sorted:
+                    v = float(qty_share.loc[bucket, y]) if (bucket in qty_share.index and y in qty_share.columns) else 0.0
+                    vals.append(0.0 if math.isnan(v) else v)
+                axq.bar(x, vals, bottom=bottom, label=str(bucket))
+                if label_pct_qty:
+                    for i, p in enumerate(vals):
+                        if p >= 6.0:
+                            axq.text(i, bottom[i] + p / 2, f"{p:.0f}%", ha="center", va="center", fontsize=8)
+                bottom = [bottom[i] + vals[i] for i in range(len(vals))]
+
+            axq.set_title("Komposisi % Jumlah Transaksi per Tahun (100% Stacked)")
+            axq.set_xlabel("Tahun")
+            axq.set_ylabel("% Quantity")
+            axq.set_xticks(x)
+            axq.set_xticklabels([str(y) for y in years_sorted])
+            axq.set_ylim(0, 100)
+            axq.grid(axis="y", linestyle="--", alpha=0.35)
+            axq.legend(title="Bucket", bbox_to_anchor=(1.02, 1), loc="upper left")
+            st.pyplot(figq)
+
+            st.markdown("#### \U0001f4b0 100% Stacked \u2014 Komposisi Nilai")
+            label_pct_val = st.toggle("Tampilkan label % (Nilai)", value=False, key="yoy_label_val_rewrite_v1")
+
+            figv, axv = plt.subplots(figsize=(10, 5))
+            bottom = [0.0] * len(years_sorted)
+            for bucket in labs:
+                vals = []
+                for y in years_sorted:
+                    v = float(val_share.loc[bucket, y]) if (bucket in val_share.index and y in val_share.columns) else 0.0
+                    vals.append(0.0 if math.isnan(v) else v)
+                axv.bar(x, vals, bottom=bottom, label=str(bucket))
+                if label_pct_val:
+                    for i, p in enumerate(vals):
+                        if p >= 6.0:
+                            axv.text(i, bottom[i] + p / 2, f"{p:.0f}%", ha="center", va="center", fontsize=8)
+                bottom = [bottom[i] + vals[i] for i in range(len(vals))]
+
+            axv.set_title("Komposisi % Total Nilai per Tahun (100% Stacked)")
+            axv.set_xlabel("Tahun")
+            axv.set_ylabel("% Nilai")
+            axv.set_xticks(x)
+            axv.set_xticklabels([str(y) for y in years_sorted])
+            axv.set_ylim(0, 100)
+            axv.grid(axis="y", linestyle="--", alpha=0.35)
+            axv.legend(title="Bucket", bbox_to_anchor=(1.02, 1), loc="upper left")
+            st.pyplot(figv)
+
+            st.markdown("#### \U0001f9e0 Insight Bucket (ringkas)")
+            try:
+                last_y = max(years_sorted)
+                top_qty_bucket = pivot_cnt[last_y].idxmax()
+                top_val_bucket = pivot_total[last_y].idxmax()
+                st.write(
+                    f"- Tahun **{last_y}**: bucket **qty terbesar** = **{top_qty_bucket}** "
+                    f"({fmt_int(int(pivot_cnt.loc[top_qty_bucket, last_y]))} transaksi; {fmt_pct(float(qty_share.loc[top_qty_bucket, last_y]))})."
+                )
+                st.write(
+                    f"- Tahun **{last_y}**: bucket **nilai terbesar** = **{top_val_bucket}** "
+                    f"({fmt_rp(float(pivot_total.loc[top_val_bucket, last_y]))}; {fmt_pct(float(val_share.loc[top_val_bucket, last_y]))})."
+                )
+            except Exception:
+                pass
+
+            with st.expander("\U0001f50e Detail groupby (opsional)", expanded=False):
+                st.dataframe(grp.sort_values(["Tahun", "Bucket"]), use_container_width=True)
+
+        # =====================================================
+        # TAB 3: VENDOR (also uses global filters)
+        # =====================================================
+        with tab_nilai_vendor:
+            st.markdown("### \U0001f3f7\ufe0f Vendor Spotlight")
+
+            if col_vendor == "(none)":
+                st.info("Pilih kolom vendor di Mapping Kolom untuk membuka analisis vendor.")
+                st.stop()
+
+            cfg = load_bucket_cfg()
+            thresholds = cfg.get("thresholds", [10e6, 50e6, 500e6])
+            edges = build_edges(thresholds)
             labs = build_labels(edges)
 
-            st.write("Preview bucket:")
-            st.write(labs)
+            dfv = df_global.copy()
+            dfv["Bucket"] = pd.cut(dfv["__NILAI_NUM__"], bins=edges, labels=labs, right=False, include_lowest=True)
 
-            if is_admin:
-                if a4.button("\U0001f4be Simpan Bucket (Persisten)", key="yoy_save_thr_rewrite_v1"):
-                    save_bucket_cfg(thresholds_norm)
-                    st.session_state["dyn_thresholds_yoy_rewrite_v1"] = thresholds_norm
-                    st.success("\u2705 Bucket tersimpan.")
-            else:
-                st.info("Hanya admin yang bisa menyimpan. Anda tetap bisa mencoba sementara.")
+            c1, c2, c3 = st.columns([1.3, 1.0, 1.7])
+            with c1:
+                bucket_pick = st.selectbox("Bucket fokus", options=labs, index=min(2, len(labs) - 1), key="vendor_bucket_rewrite_v1")
+            with c2:
+                topn = st.number_input("Top N", min_value=5, max_value=50, value=10, step=5, key="vendor_topn_rewrite_v1")
+            with c3:
+                show_detail = st.toggle("Tampilkan detail baris (lebih berat)", value=False, key="vendor_detail_rewrite_v1")
 
-        dfy = df_global.copy()
-        dfy["Bucket"] = pd.cut(dfy["__NILAI_NUM__"], bins=edges, labels=labs, right=False, include_lowest=True)
+            dv = dfv[dfv["Bucket"].astype(str) == str(bucket_pick)].copy()
+            if dv.empty:
+                st.warning("Tidak ada data untuk filter ini.")
+                st.stop()
 
-        grp = (
-            dfy.dropna(subset=["Bucket"])
-            .groupby(["__YEAR__", "Bucket"])["__NILAI_NUM__"]
-            .agg(Jumlah="size", Total="sum")
-            .reset_index()
-            .rename(columns={"__YEAR__": "Tahun"})
-        )
-
-        pivot_cnt = grp.pivot_table(index="Bucket", columns="Tahun", values="Jumlah", fill_value=0).reindex(labs)
-        pivot_total = grp.pivot_table(index="Bucket", columns="Tahun", values="Total", fill_value=0.0).reindex(labs)
-
-        st.markdown("#### \u2705 Jumlah Transaksi per Range (per Tahun)")
-        st.dataframe(pivot_cnt, use_container_width=True)
-
-        st.markdown("#### \u2705 Total Nilai per Range (per Tahun)")
-        pivot_total_fmt = pivot_total.copy()
-        for c in pivot_total_fmt.columns:
-            pivot_total_fmt[c] = pivot_total_fmt[c].apply(lambda x: fmt_rp(float(x)))
-        st.dataframe(pivot_total_fmt, use_container_width=True)
-
-        st.markdown("#### \U0001f4cc % Share Quantity (per Range, per Tahun)")
-        qty_share = pivot_cnt.div(pivot_cnt.sum(axis=0).replace(0, float("nan")), axis=1) * 100.0
-        qty_share_fmt = qty_share.copy()
-        for c in qty_share_fmt.columns:
-            qty_share_fmt[c] = qty_share_fmt[c].apply(lambda x: fmt_pct(float(x)) if not pd.isna(x) else "-")
-        st.dataframe(qty_share_fmt, use_container_width=True)
-
-        st.markdown("#### \U0001f4cc % Share Nilai (per Range, per Tahun)")
-        val_share = pivot_total.div(pivot_total.sum(axis=0).replace(0, float("nan")), axis=1) * 100.0
-        val_share_fmt = val_share.copy()
-        for c in val_share_fmt.columns:
-            val_share_fmt[c] = val_share_fmt[c].apply(lambda x: fmt_pct(float(x)) if not pd.isna(x) else "-")
-        st.dataframe(val_share_fmt, use_container_width=True)
-
-        years_sorted = sorted(pivot_cnt.columns.tolist())
-        x = list(range(len(years_sorted)))
-
-        st.markdown("#### \U0001f4ca 100% Stacked \u2014 Komposisi Quantity")
-        label_pct_qty = st.toggle("Tampilkan label % (Quantity)", value=False, key="yoy_label_qty_rewrite_v1")
-
-        figq, axq = plt.subplots(figsize=(10, 5))
-        bottom = [0.0] * len(years_sorted)
-        for bucket in labs:
-            vals = []
-            for y in years_sorted:
-                v = float(qty_share.loc[bucket, y]) if (bucket in qty_share.index and y in qty_share.columns) else 0.0
-                vals.append(0.0 if math.isnan(v) else v)
-            axq.bar(x, vals, bottom=bottom, label=str(bucket))
-            if label_pct_qty:
-                for i, p in enumerate(vals):
-                    if p >= 6.0:
-                        axq.text(i, bottom[i] + p / 2, f"{p:.0f}%", ha="center", va="center", fontsize=8)
-            bottom = [bottom[i] + vals[i] for i in range(len(vals))]
-
-        axq.set_title("Komposisi % Jumlah Transaksi per Tahun (100% Stacked)")
-        axq.set_xlabel("Tahun")
-        axq.set_ylabel("% Quantity")
-        axq.set_xticks(x)
-        axq.set_xticklabels([str(y) for y in years_sorted])
-        axq.set_ylim(0, 100)
-        axq.grid(axis="y", linestyle="--", alpha=0.35)
-        axq.legend(title="Bucket", bbox_to_anchor=(1.02, 1), loc="upper left")
-        st.pyplot(figq)
-
-        st.markdown("#### \U0001f4b0 100% Stacked \u2014 Komposisi Nilai")
-        label_pct_val = st.toggle("Tampilkan label % (Nilai)", value=False, key="yoy_label_val_rewrite_v1")
-
-        figv, axv = plt.subplots(figsize=(10, 5))
-        bottom = [0.0] * len(years_sorted)
-        for bucket in labs:
-            vals = []
-            for y in years_sorted:
-                v = float(val_share.loc[bucket, y]) if (bucket in val_share.index and y in val_share.columns) else 0.0
-                vals.append(0.0 if math.isnan(v) else v)
-            axv.bar(x, vals, bottom=bottom, label=str(bucket))
-            if label_pct_val:
-                for i, p in enumerate(vals):
-                    if p >= 6.0:
-                        axv.text(i, bottom[i] + p / 2, f"{p:.0f}%", ha="center", va="center", fontsize=8)
-            bottom = [bottom[i] + vals[i] for i in range(len(vals))]
-
-        axv.set_title("Komposisi % Total Nilai per Tahun (100% Stacked)")
-        axv.set_xlabel("Tahun")
-        axv.set_ylabel("% Nilai")
-        axv.set_xticks(x)
-        axv.set_xticklabels([str(y) for y in years_sorted])
-        axv.set_ylim(0, 100)
-        axv.grid(axis="y", linestyle="--", alpha=0.35)
-        axv.legend(title="Bucket", bbox_to_anchor=(1.02, 1), loc="upper left")
-        st.pyplot(figv)
-
-        st.markdown("#### \U0001f9e0 Insight Bucket (ringkas)")
-        try:
-            last_y = max(years_sorted)
-            top_qty_bucket = pivot_cnt[last_y].idxmax()
-            top_val_bucket = pivot_total[last_y].idxmax()
-            st.write(
-                f"- Tahun **{last_y}**: bucket **qty terbesar** = **{top_qty_bucket}** "
-                f"({fmt_int(int(pivot_cnt.loc[top_qty_bucket, last_y]))} transaksi; {fmt_pct(float(qty_share.loc[top_qty_bucket, last_y]))})."
+            top_vendor = (
+                dv.groupby(dv[col_vendor].astype(str))["__NILAI_NUM__"]
+                .agg(Total="sum", Transaksi="size")
+                .reset_index()
+                .sort_values("Total", ascending=False)
+                .head(int(topn))
             )
-            st.write(
-                f"- Tahun **{last_y}**: bucket **nilai terbesar** = **{top_val_bucket}** "
-                f"({fmt_rp(float(pivot_total.loc[top_val_bucket, last_y]))}; {fmt_pct(float(val_share.loc[top_val_bucket, last_y]))})."
-            )
-        except Exception:
-            pass
 
-        with st.expander("\U0001f50e Detail groupby (opsional)", expanded=False):
-            st.dataframe(grp.sort_values(["Tahun", "Bucket"]), use_container_width=True)
+            fig, ax = plt.subplots(figsize=(10, 4))
+            ax.bar(top_vendor[col_vendor].astype(str), top_vendor["Transaksi"])
+            ax.set_title(f"Top Vendor \u2014 Jumlah Transaksi (Bucket {bucket_pick})")
+            ax.set_xlabel("Vendor")
+            ax.set_ylabel("Jumlah")
+            ax.grid(axis="y", linestyle="--", alpha=0.35)
+            for lab in ax.get_xticklabels():
+                lab.set_rotation(25)
+                lab.set_ha("right")
+            st.pyplot(fig)
 
-    # =====================================================
-    # TAB 3: VENDOR (also uses global filters)
-    # =====================================================
-    with tab_nilai_vendor:
-        st.markdown("### \U0001f3f7\ufe0f Vendor Spotlight")
+            show_vendor = top_vendor.copy()
+            show_vendor["Total"] = show_vendor["Total"].apply(lambda x: fmt_rp(float(x)))
+            st.dataframe(show_vendor, use_container_width=True)
 
-        if col_vendor == "(none)":
-            st.info("Pilih kolom vendor di Mapping Kolom untuk membuka analisis vendor.")
-            st.stop()
-
-        cfg = load_bucket_cfg()
-        thresholds = cfg.get("thresholds", [10e6, 50e6, 500e6])
-        edges = build_edges(thresholds)
-        labs = build_labels(edges)
-
-        dfv = df_global.copy()
-        dfv["Bucket"] = pd.cut(dfv["__NILAI_NUM__"], bins=edges, labels=labs, right=False, include_lowest=True)
-
-        c1, c2, c3 = st.columns([1.3, 1.0, 1.7])
-        with c1:
-            bucket_pick = st.selectbox("Bucket fokus", options=labs, index=min(2, len(labs) - 1), key="vendor_bucket_rewrite_v1")
-        with c2:
-            topn = st.number_input("Top N", min_value=5, max_value=50, value=10, step=5, key="vendor_topn_rewrite_v1")
-        with c3:
-            show_detail = st.toggle("Tampilkan detail baris (lebih berat)", value=False, key="vendor_detail_rewrite_v1")
-
-        dv = dfv[dfv["Bucket"].astype(str) == str(bucket_pick)].copy()
-        if dv.empty:
-            st.warning("Tidak ada data untuk filter ini.")
-            st.stop()
-
-        top_vendor = (
-            dv.groupby(dv[col_vendor].astype(str))["__NILAI_NUM__"]
-            .agg(Total="sum", Transaksi="size")
-            .reset_index()
-            .sort_values("Total", ascending=False)
-            .head(int(topn))
-        )
-
-        fig, ax = plt.subplots(figsize=(10, 4))
-        ax.bar(top_vendor[col_vendor].astype(str), top_vendor["Transaksi"])
-        ax.set_title(f"Top Vendor \u2014 Jumlah Transaksi (Bucket {bucket_pick})")
-        ax.set_xlabel("Vendor")
-        ax.set_ylabel("Jumlah")
-        ax.grid(axis="y", linestyle="--", alpha=0.35)
-        for lab in ax.get_xticklabels():
-            lab.set_rotation(25)
-            lab.set_ha("right")
-        st.pyplot(fig)
-
-        show_vendor = top_vendor.copy()
-        show_vendor["Total"] = show_vendor["Total"].apply(lambda x: fmt_rp(float(x)))
-        st.dataframe(show_vendor, use_container_width=True)
-
-        if show_detail:
-            st.markdown("#### \U0001f50e Detail Baris (Filtered)")
-            detail_cols = [c for c in [col_periode, col_vendor, col_nilai] if c in dv.columns]
-            if col_jenis != "(none)" and col_jenis in dv.columns:
-                detail_cols.insert(1, col_jenis)
-            detail_cols += ["__YEAR__", "__NILAI_NUM__", "Bucket"]
-            st.dataframe(dv[detail_cols].sort_values("__NILAI_NUM__", ascending=False), use_container_width=True)
+            if show_detail:
+                st.markdown("#### \U0001f50e Detail Baris (Filtered)")
+                detail_cols = [c for c in [col_periode, col_vendor, col_nilai] if c in dv.columns]
+                if col_jenis != "(none)" and col_jenis in dv.columns:
+                    detail_cols.insert(1, col_jenis)
+                detail_cols += ["__YEAR__", "__NILAI_NUM__", "Bucket"]
+                st.dataframe(dv[detail_cols].sort_values("__NILAI_NUM__", ascending=False), use_container_width=True)
     
 
 # ==========================================================
 # Tab Report (Poster & PDF)
 # ==========================================================
 with tab_report:
-    tab_poster, tab_pdf = st.tabs(["\U0001f3a8 Poster", "\U0001f4c4 PDF"])
+    if _SLA_LAZY_TABS:
+        tab_poster, tab_pdf = st.tabs(["\U0001f3a8 Poster", "\U0001f4c4 PDF"], on_change="rerun", key="sla_active_report_subtab")
+    else:
+        tab_poster, tab_pdf = st.tabs(["\U0001f3a8 Poster", "\U0001f4c4 PDF"])
 
-with tab_poster:
-    st.subheader("\U0001f4e5 Download Poster")
+if (not _SLA_LAZY_TABS) or (bool(getattr(tab_report, "open", False)) and bool(getattr(tab_poster, "open", False))):
+    with tab_poster:
+        st.subheader("\U0001f4e5 Download Poster")
 
-    if st.button("\U0001f3a8 Generate Poster A4"):
-        rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
+        if st.button("\U0001f3a8 Generate Poster A4"):
+            rata_proses_seconds = df_filtered[proses_grafik_cols].mean()
         
-        df_proses = pd.DataFrame({
-            "Rata-rata SLA": [
-                format_duration(rata_proses_seconds[col]) for col in rata_proses_seconds.index
-            ]
-        }, index=rata_proses_seconds.index)
+            df_proses = pd.DataFrame({
+                "Rata-rata SLA": [
+                    format_duration(rata_proses_seconds[col]) for col in rata_proses_seconds.index
+                ]
+            }, index=rata_proses_seconds.index)
         
-        poster_buf = generate_poster_A4(
-        {},
-        rata_proses_seconds,
-        df_proses,
-        "Captain Ferizy.png",
-        periode_info_text,
-        df_filtered,
-        periode_col,
-        selected_periode
-        )
-
-        # Simpan sebagai bytes agar stabil di session_state pada rerun Streamlit.
-        # Bytes dapat dipakai langsung baik oleh st.image maupun st.download_button.
-        if hasattr(poster_buf, "getvalue"):
-            poster_bytes = poster_buf.getvalue()
-        elif isinstance(poster_buf, (bytes, bytearray)):
-            poster_bytes = bytes(poster_buf)
-        else:
-            raise TypeError(
-                f"Format hasil poster tidak didukung: {type(poster_buf).__name__}"
+            poster_buf = generate_poster_A4(
+            {},
+            rata_proses_seconds,
+            df_proses,
+            "Captain Ferizy.png",
+            periode_info_text,
+            df_filtered,
+            periode_col,
+            selected_periode
             )
 
-        st.session_state.poster_buf = poster_bytes
+            # Simpan sebagai bytes agar stabil di session_state pada rerun Streamlit.
+            # Bytes dapat dipakai langsung baik oleh st.image maupun st.download_button.
+            if hasattr(poster_buf, "getvalue"):
+                poster_bytes = poster_buf.getvalue()
+            elif isinstance(poster_buf, (bytes, bytearray)):
+                poster_bytes = bytes(poster_buf)
+            else:
+                raise TypeError(
+                    f"Format hasil poster tidak didukung: {type(poster_buf).__name__}"
+                )
+
+            st.session_state.poster_buf = poster_bytes
     
-    if "poster_buf" in st.session_state:
-        # Streamlit 2026 menghapus parameter deprecated `use_column_width`.
-        # `width="stretch"` memberikan perilaku visual yang sama: preview
-        # mengikuti lebar container tanpa mengubah isi/generator poster.
-        st.image(
-            st.session_state.poster_buf,
-            caption="Preview Poster A4",
-            width="stretch",
-        )
-        st.download_button(
-            "\U0001f4be Download Poster (PNG, A4 - 300 DPI)",
-            data=st.session_state.poster_buf,
-            file_name="Poster_SLA_A4.png",
-            mime="image/png"
-        )
+        if "poster_buf" in st.session_state:
+            # Streamlit 2026 menghapus parameter deprecated `use_column_width`.
+            # `width="stretch"` memberikan perilaku visual yang sama: preview
+            # mengikuti lebar container tanpa mengubah isi/generator poster.
+            st.image(
+                st.session_state.poster_buf,
+                caption="Preview Poster A4",
+                width="stretch",
+            )
+            st.download_button(
+                "\U0001f4be Download Poster (PNG, A4 - 300 DPI)",
+                data=st.session_state.poster_buf,
+                file_name="Poster_SLA_A4.png",
+                mime="image/png"
+            )
 
 # =========================
 # TAB ANALISIS DATA (BARU)
@@ -6865,64 +7036,65 @@ def make_exec_poster_pdf_from_png(png_bytes):
 # TAB ANALISIS \u2014 FULL (tempel di: with tab_analisis:)
 # ============================================================
 
-with tab_analisis:
-    import plotly.express as px
+if (not _SLA_LAZY_TABS) or bool(getattr(tab_analisis, "open", False)):
+    with tab_analisis:
+        import plotly.express as px
 
-    st.markdown("## \U0001f4ca Analisis Data \u2014 Executive Dashboard")
-    st.caption("Bandingkan **A vs B** (Tahun vs Tahun, Bulan vs Bulan, atau Rentang vs Rentang). Angka di sini mengikuti filter tab_analisis.")
+        st.markdown("## \U0001f4ca Analisis Data \u2014 Executive Dashboard")
+        st.caption("Bandingkan **A vs B** (Tahun vs Tahun, Bulan vs Bulan, atau Rentang vs Rentang). Angka di sini mengikuti filter tab_analisis.")
 
-    # Guard
-    if "df_raw" not in locals() or df_raw is None or df_raw.empty:
-        st.warning("Data kosong.")
-        st.stop()
-    if "periode_col" not in locals() or periode_col is None or periode_col not in df_raw.columns:
-        st.error("Kolom periode (periode_col) tidak ditemukan.")
-        st.stop()
+        # Guard
+        if "df_raw" not in locals() or df_raw is None or df_raw.empty:
+            st.warning("Data kosong.")
+            st.stop()
+        if "periode_col" not in locals() or periode_col is None or periode_col not in df_raw.columns:
+            st.error("Kolom periode (periode_col) tidak ditemukan.")
+            st.stop()
 
-    # Toggle filter scope
-    use_sidebar_filter = st.toggle("Gunakan filter sidebar (df_filtered)", value=True, key="ana_usefilter_all_v3")
-    df_base = df_filtered.copy() if (use_sidebar_filter and "df_filtered" in locals()) else df_raw.copy()
-    if df_base is None or df_base.empty:
-        st.warning("Data kosong (setelah filter).")
-        st.stop()
+        # Toggle filter scope
+        use_sidebar_filter = st.toggle("Gunakan filter sidebar (df_filtered)", value=True, key="ana_usefilter_all_v3")
+        df_base = df_filtered.copy() if (use_sidebar_filter and "df_filtered" in locals()) else df_raw.copy()
+        if df_base is None or df_base.empty:
+            st.warning("Data kosong (setelah filter).")
+            st.stop()
 
-    # -------------------------
-    # Filter tambahan: Jenis Transaksi (multi-select) - ALL / 1 / banyak
-    # -------------------------
-    trx_col = None
-    for _c in df_base.columns:
-        _cu = re.sub(r"\s+", " ", str(_c).strip().upper())
-        if _cu in {"JENIS TRANSAKSI", "JENIS_TRANSAKSI", "TRANSAKSI", "NAMA TRANSAKSI", "TYPE TRANSAKSI", "TIPE TRANSAKSI"}:
-            trx_col = _c
-            break
-        if ("JENIS" in _cu and "TRANSAK" in _cu) or (_cu.endswith("TRANSAKSI")):
-            trx_col = _c
-            break
+        # -------------------------
+        # Filter tambahan: Jenis Transaksi (multi-select) - ALL / 1 / banyak
+        # -------------------------
+        trx_col = None
+        for _c in df_base.columns:
+            _cu = re.sub(r"\s+", " ", str(_c).strip().upper())
+            if _cu in {"JENIS TRANSAKSI", "JENIS_TRANSAKSI", "TRANSAKSI", "NAMA TRANSAKSI", "TYPE TRANSAKSI", "TIPE TRANSAKSI"}:
+                trx_col = _c
+                break
+            if ("JENIS" in _cu and "TRANSAK" in _cu) or (_cu.endswith("TRANSAKSI")):
+                trx_col = _c
+                break
 
-    if trx_col:
-        trx_options = sorted([x for x in df_base[trx_col].dropna().astype(str).unique().tolist() if str(x).strip() != ""])
-        trx_pick = st.multiselect(
-            "Filter transaksi (pilih 1/lebih, atau ALL)",
-            options=["ALL"] + trx_options,
-            default=["ALL"],
-            key="ana_trx_filter_v1"
-        )
-        if trx_pick and "ALL" not in trx_pick:
-            df_base = df_base[df_base[trx_col].astype(str).isin(trx_pick)].copy()
+        if trx_col:
+            trx_options = sorted([x for x in df_base[trx_col].dropna().astype(str).unique().tolist() if str(x).strip() != ""])
+            trx_pick = st.multiselect(
+                "Filter transaksi (pilih 1/lebih, atau ALL)",
+                options=["ALL"] + trx_options,
+                default=["ALL"],
+                key="ana_trx_filter_v1"
+            )
+            if trx_pick and "ALL" not in trx_pick:
+                df_base = df_base[df_base[trx_col].astype(str).isin(trx_pick)].copy()
 
-    if df_base.empty:
-        st.warning("Data kosong setelah filter transaksi.")
-        st.stop()
+        if df_base.empty:
+            st.warning("Data kosong setelah filter transaksi.")
+            st.stop()
 
-    # Month names
-    month_id = {
-        1: "Januari", 2: "Februari", 3: "Maret", 4: "April", 5: "Mei", 6: "Juni",
-        7: "Juli", 8: "Agustus", 9: "September", 10: "Oktober", 11: "November", 12: "Desember"
-    }
-    id_month = {v.lower(): k for k, v in month_id.items()}
+        # Month names
+        month_id = {
+            1: "Januari", 2: "Februari", 3: "Maret", 4: "April", 5: "Mei", 6: "Juni",
+            7: "Juli", 8: "Agustus", 9: "September", 10: "Oktober", 11: "November", 12: "Desember"
+        }
+        id_month = {v.lower(): k for k, v in month_id.items()}
 
-    # CSS cards (kontras)
-    st.markdown("""
+        # CSS cards (kontras)
+        st.markdown("""
 <style>
 .kpi-wrap{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:10px}
 .kpi-card{
@@ -6958,282 +7130,282 @@ with tab_analisis:
 </style>
 """, unsafe_allow_html=True)
 
-    def badge_class(delta):
-        try:
-            if delta is None or (isinstance(delta, float) and np.isnan(delta)):
+        def badge_class(delta):
+            try:
+                if delta is None or (isinstance(delta, float) and np.isnan(delta)):
+                    return "badge-flat"
+                if delta > 0:
+                    return "badge-up"
+                if delta < 0:
+                    return "badge-down"
                 return "badge-flat"
-            if delta > 0:
-                return "badge-up"
-            if delta < 0:
-                return "badge-down"
-            return "badge-flat"
-        except Exception:
-            return "badge-flat"
+            except Exception:
+                return "badge-flat"
 
-    def safe_pct(a, b):
-        if a is None or pd.isna(a) or a == 0:
-            return np.nan
-        return (b - a) / a * 100
+        def safe_pct(a, b):
+            if a is None or pd.isna(a) or a == 0:
+                return np.nan
+            return (b - a) / a * 100
 
-    # -------------------------
-    # Periode parsing -> PERIOD_M (Period[M])
-    # -------------------------
-    def to_period_month(x):
-        if pd.isna(x):
-            return pd.NaT
-        if isinstance(x, pd.Period):
-            return x.asfreq("M")
-        if isinstance(x, (pd.Timestamp,)):
-            return x.to_period("M")
-        s = str(x).strip()
-        if not s:
-            return pd.NaT
+        # -------------------------
+        # Periode parsing -> PERIOD_M (Period[M])
+        # -------------------------
+        def to_period_month(x):
+            if pd.isna(x):
+                return pd.NaT
+            if isinstance(x, pd.Period):
+                return x.asfreq("M")
+            if isinstance(x, (pd.Timestamp,)):
+                return x.to_period("M")
+            s = str(x).strip()
+            if not s:
+                return pd.NaT
 
-        dt = pd.to_datetime(s, errors="coerce")
-        if pd.notna(dt):
-            return dt.to_period("M")
+            dt = pd.to_datetime(s, errors="coerce")
+            if pd.notna(dt):
+                return dt.to_period("M")
 
-        m = re.search(r"(\d{4})[-/](\d{1,2})", s)
-        if m:
-            y = int(m.group(1)); mo = int(m.group(2))
-            if 1 <= mo <= 12:
-                return pd.Period(f"{y}-{mo:02d}", freq="M")
-
-        s_low = s.lower()
-        for nama, mo in id_month.items():
-            if nama in s_low:
-                y_m = re.search(r"(\d{4})", s_low)
-                if y_m:
-                    y = int(y_m.group(1))
+            m = re.search(r"(\d{4})[-/](\d{1,2})", s)
+            if m:
+                y = int(m.group(1)); mo = int(m.group(2))
+                if 1 <= mo <= 12:
                     return pd.Period(f"{y}-{mo:02d}", freq="M")
-        return pd.NaT
 
-    if "PERIOD_M" not in df_base.columns:
-        df_base["PERIOD_M"] = df_base[periode_col].apply(to_period_month)
+            s_low = s.lower()
+            for nama, mo in id_month.items():
+                if nama in s_low:
+                    y_m = re.search(r"(\d{4})", s_low)
+                    if y_m:
+                        y = int(y_m.group(1))
+                        return pd.Period(f"{y}-{mo:02d}", freq="M")
+            return pd.NaT
 
-    df_base = df_base.dropna(subset=["PERIOD_M"]).copy()
-    if df_base.empty:
-        st.warning("Data periode kosong.")
-        st.stop()
+        if "PERIOD_M" not in df_base.columns:
+            df_base["PERIOD_M"] = df_base[periode_col].apply(to_period_month)
 
-    periods = sorted(df_base["PERIOD_M"].unique().tolist())
-    years = sorted({int(p.year) for p in periods})
+        df_base = df_base.dropna(subset=["PERIOD_M"]).copy()
+        if df_base.empty:
+            st.warning("Data periode kosong.")
+            st.stop()
 
-    def period_label(p: pd.Period):
-        return f"{month_id[int(p.month)]} {int(p.year)}"
+        periods = sorted(df_base["PERIOD_M"].unique().tolist())
+        years = sorted({int(p.year) for p in periods})
 
-    period_labels = [period_label(p) for p in periods]
-    label_to_period = {period_label(p): p for p in periods}
+        def period_label(p: pd.Period):
+            return f"{month_id[int(p.month)]} {int(p.year)}"
 
-    # -------------------------
-    # Mode Perbandingan
-    # -------------------------
-    st.markdown("### \u2699\ufe0f Mode Perbandingan")
-    mode = st.radio(
-        "Pilih mode",
-        ["Tahun vs Tahun", "Bulan vs Bulan (tahun bebas)", "Rentang (A) vs Rentang (B)"],
-        horizontal=True,
-        key="ana_mode_all_v5"
-    )
+        period_labels = [period_label(p) for p in periods]
+        label_to_period = {period_label(p): p for p in periods}
 
-    colA, colB, colS = st.columns([1, 1, 1])
-    with colS:
-        st.markdown("**Metrik SLA**")
-
-        # pilih kolom SLA (pakai daftar helper kalau ada)
-        sla_candidates = []
-        if "available_sla_cols" in globals() and isinstance(available_sla_cols, list):
-            sla_candidates += [c for c in available_sla_cols if c in df_base.columns]
-
-        # fallback kolom populer
-        for c in ["KEUANGAN", "TOTAL WAKTU", "TOTAL_WAKTU", "SLA", "SLA (DETIK)", "SLA_DETIK", "SLA_HARI", "SLA HARI"]:
-            if c in df_base.columns and c not in sla_candidates:
-                sla_candidates.append(c)
-
-        sla_options = [c for c in sla_candidates if c in df_base.columns]
-        if sla_options:
-            default_idx = 0
-            for prefer in ["KEUANGAN", "TOTAL WAKTU", "TOTAL_WAKTU", "SLA", "SLA (DETIK)", "SLA_DETIK"]:
-                if prefer in sla_options:
-                    default_idx = sla_options.index(prefer)
-                    break
-            sla_pick = st.selectbox("Kolom SLA", sla_options, index=default_idx, key="ana_sla_pick_v5")
-        else:
-            sla_pick = None
-            st.info("Kolom SLA tidak terdeteksi (SLA card & chart akan mengikuti kondisi data).")
-
-    labelA = labelB = ""
-    selA = []
-    selB = []
-
-    if mode == "Tahun vs Tahun":
-        with colA:
-            yearA = st.selectbox("Periode A \u2014 Tahun", years, index=0, key="ana_yearA_v5")
-        with colB:
-            yearB = st.selectbox("Periode B \u2014 Tahun", years, index=min(1, len(years) - 1), key="ana_yearB_v5")
-
-        selA = [p for p in periods if int(p.year) == int(yearA)]
-        selB = [p for p in periods if int(p.year) == int(yearB)]
-        labelA, labelB = f"Tahun {yearA}", f"Tahun {yearB}"
-
-    elif mode == "Bulan vs Bulan (tahun bebas)":
-        with colA:
-            mA = st.selectbox("Periode A \u2014 Bulan", period_labels, index=0, key="ana_monthA_v5")
-        with colB:
-            mB = st.selectbox("Periode B \u2014 Bulan", period_labels, index=min(1, len(period_labels) - 1), key="ana_monthB_v5")
-
-        selA = [label_to_period[mA]]
-        selB = [label_to_period[mB]]
-        labelA, labelB = mA, mB
-
-    else:  # range
-        with colA:
-            startA = st.selectbox("Periode A \u2014 Mulai", period_labels, index=0, key="ana_startA_v5")
-            endA   = st.selectbox("Periode A \u2014 Sampai", period_labels, index=len(period_labels)-1, key="ana_endA_v5")
-        with colB:
-            startB = st.selectbox("Periode B \u2014 Mulai", period_labels, index=0, key="ana_startB_v5")
-            endB   = st.selectbox("Periode B \u2014 Sampai", period_labels, index=len(period_labels)-1, key="ana_endB_v5")
-
-        pA0 = label_to_period[startA]; pA1 = label_to_period[endA]
-        pB0 = label_to_period[startB]; pB1 = label_to_period[endB]
-
-        if pA0 > pA1: pA0, pA1 = pA1, pA0
-        if pB0 > pB1: pB0, pB1 = pB1, pB0
-
-        selA = [p for p in periods if pA0 <= p <= pA1]
-        selB = [p for p in periods if pB0 <= p <= pB1]
-        labelA = f"{period_label(selA[0])} \u2013 {period_label(selA[-1])}" if selA else "Periode A"
-        labelB = f"{period_label(selB[0])} \u2013 {period_label(selB[-1])}" if selB else "Periode B"
-
-    if not selA or not selB:
-        st.warning("Pilihan periode A/B kosong. Silakan ubah pilihan.")
-        st.stop()
-
-    dfA = df_base[df_base["PERIOD_M"].isin(selA)].copy()
-    dfB = df_base[df_base["PERIOD_M"].isin(selB)].copy()
-
-    # -------------------------
-    # KPI Target (ambil dari Tab Overview)
-    # -------------------------
-    try:
-        kpi_days = load_kpi()
-    except Exception:
-        kpi_days = None
-    kpi_sec = float(kpi_days) * 86400.0 if (kpi_days is not None and not pd.isna(kpi_days)) else None
-
-    # -------------------------
-    # SLA seconds: FIXED parsing (numeric dulu, baru parse_sla)
-    # -------------------------
-    has_sla = bool(sla_pick) and (sla_pick in df_base.columns)
-
-    def ensure_sla_seconds_local(df):
-        out_col = "__SLA_SECONDS_ANALYSIS__"
-        if out_col in df.columns:
-            return df, out_col
-
-        if (not has_sla) or (sla_pick not in df.columns):
-            df[out_col] = np.nan
-            return df, out_col
-
-        s = df[sla_pick]
-
-        # 1) numeric langsung (kalau SLA sudah detik)
-        num = pd.to_numeric(s, errors="coerce")
-
-        # 2) non-numeric -> parse_sla (format teks)
-        if "parse_sla" in globals():
-            def _parse_if_needed(v, n):
-                if pd.notna(n):
-                    return float(n)
-
-                if v is None:
-                    return np.nan
-                vs = str(v).strip().lower()
-                if vs in {"", "nan", "none", "-", "null"}:
-                    return np.nan
-
-                try:
-                    sec = parse_sla(v)
-                except Exception:
-                    sec = np.nan
-
-                # parse gagal -> NaN (hindari garis 0)
-                try:
-                    if (sec == 0 or sec == 0.0) and vs not in {"0", "0.0"}:
-                        return np.nan
-                except Exception:
-                    pass
-
-                return float(sec) if pd.notna(sec) else np.nan
-
-            df[out_col] = [_parse_if_needed(v, n) for v, n in zip(s.tolist(), num.tolist())]
-        else:
-            df[out_col] = num
-
-        return df, out_col
-
-    meanA = meanB = np.nan
-    coverageA = coverageB = np.nan
-    complianceA = complianceB = np.nan
-
-    if has_sla:
-        dfA, sla_sec_col = ensure_sla_seconds_local(dfA)
-        dfB, _ = ensure_sla_seconds_local(dfB)
-
-        sA_all = dfA[sla_sec_col]
-        sB_all = dfB[sla_sec_col]
-        validA = sA_all.dropna()
-        validB = sB_all.dropna()
-
-        meanA = float(validA.mean()) if len(validA) else np.nan
-        meanB = float(validB.mean()) if len(validB) else np.nan
-
-        coverageA = float(sA_all.notna().mean() * 100) if len(dfA) else np.nan
-        coverageB = float(sB_all.notna().mean() * 100) if len(dfB) else np.nan
-
-        if kpi_sec is not None:
-            complianceA = float((validA <= kpi_sec).mean() * 100) if len(validA) else np.nan
-            complianceB = float((validB <= kpi_sec).mean() * 100) if len(validB) else np.nan
-
-    d_cov = coverageB - coverageA if (np.isfinite(coverageA) and np.isfinite(coverageB)) else np.nan
-
-    # -------------------------
-    # KPI Cards (Total Nilai dihapus)
-    # -------------------------
-    totalA, totalB = len(dfA), len(dfB)
-    d_total = totalB - totalA
-    p_total = safe_pct(totalA, totalB)
-
-    d_sla = meanB - meanA if (np.isfinite(meanA) and np.isfinite(meanB)) else np.nan
-    p_sla = safe_pct(meanA, meanB) if (np.isfinite(meanA) and np.isfinite(meanB)) else np.nan
-
-    d_comp = complianceB - complianceA if (np.isfinite(complianceA) and np.isfinite(complianceB)) else np.nan
-    p_comp = safe_pct(complianceA, complianceB) if (np.isfinite(complianceA) and np.isfinite(complianceB)) else np.nan
-
-    badge_vol = f"{_id_int(d_total)} ({_id_num(p_total,2,'%')})" if np.isfinite(p_total) else _id_int(d_total)
-    badge_sla = (("\u2212" if d_sla < 0 else "+") + _sla_short_days(abs(d_sla), 2) + (f" ({p_sla:+.1f}%)" if np.isfinite(p_sla) else "")) if np.isfinite(d_sla) else "-"
-    badge_comp = (f"{d_comp:+.1f} pts" + (f" ({p_comp:+.1f}%)" if np.isfinite(p_comp) else "")) if np.isfinite(d_comp) else "-"
-
-    trx_sub = f"{labelA}: {_id_int(totalA)} \u2022 {labelB}: {_id_int(totalB)}"
-    if np.isfinite(p_total):
-        trx_sub += f" \u2022 \u0394: {badge_vol}"
-
-    if has_sla and np.isfinite(meanA) and np.isfinite(meanB):
-        sla_sub = (
-            f"{labelA}: {_sla_short_days(meanA,2)} | {seconds_to_sla_format(meanA)}<br/>"
-            f"{labelB}: {_sla_short_days(meanB,2)} | {seconds_to_sla_format(meanB)}"
+        # -------------------------
+        # Mode Perbandingan
+        # -------------------------
+        st.markdown("### \u2699\ufe0f Mode Perbandingan")
+        mode = st.radio(
+            "Pilih mode",
+            ["Tahun vs Tahun", "Bulan vs Bulan (tahun bebas)", "Rentang (A) vs Rentang (B)"],
+            horizontal=True,
+            key="ana_mode_all_v5"
         )
-    else:
-        sla_sub = "Data SLA tidak tersedia / belum terbaca (cek pilihan kolom SLA)."
 
-    if kpi_days is not None and has_sla and np.isfinite(complianceB):
-        comp_sub = f"Target KPI {float(kpi_days):.2f} hari \u2022 {labelA}: {complianceA:.1f}% \u2022 {labelB}: {complianceB:.1f}%"
-    elif kpi_days is not None:
-        comp_sub = f"Target KPI {float(kpi_days):.2f} hari"
-    else:
-        comp_sub = "Target KPI belum diatur di Tab Overview."
+        colA, colB, colS = st.columns([1, 1, 1])
+        with colS:
+            st.markdown("**Metrik SLA**")
 
-    html_cards = f"""
+            # pilih kolom SLA (pakai daftar helper kalau ada)
+            sla_candidates = []
+            if "available_sla_cols" in globals() and isinstance(available_sla_cols, list):
+                sla_candidates += [c for c in available_sla_cols if c in df_base.columns]
+
+            # fallback kolom populer
+            for c in ["KEUANGAN", "TOTAL WAKTU", "TOTAL_WAKTU", "SLA", "SLA (DETIK)", "SLA_DETIK", "SLA_HARI", "SLA HARI"]:
+                if c in df_base.columns and c not in sla_candidates:
+                    sla_candidates.append(c)
+
+            sla_options = [c for c in sla_candidates if c in df_base.columns]
+            if sla_options:
+                default_idx = 0
+                for prefer in ["KEUANGAN", "TOTAL WAKTU", "TOTAL_WAKTU", "SLA", "SLA (DETIK)", "SLA_DETIK"]:
+                    if prefer in sla_options:
+                        default_idx = sla_options.index(prefer)
+                        break
+                sla_pick = st.selectbox("Kolom SLA", sla_options, index=default_idx, key="ana_sla_pick_v5")
+            else:
+                sla_pick = None
+                st.info("Kolom SLA tidak terdeteksi (SLA card & chart akan mengikuti kondisi data).")
+
+        labelA = labelB = ""
+        selA = []
+        selB = []
+
+        if mode == "Tahun vs Tahun":
+            with colA:
+                yearA = st.selectbox("Periode A \u2014 Tahun", years, index=0, key="ana_yearA_v5")
+            with colB:
+                yearB = st.selectbox("Periode B \u2014 Tahun", years, index=min(1, len(years) - 1), key="ana_yearB_v5")
+
+            selA = [p for p in periods if int(p.year) == int(yearA)]
+            selB = [p for p in periods if int(p.year) == int(yearB)]
+            labelA, labelB = f"Tahun {yearA}", f"Tahun {yearB}"
+
+        elif mode == "Bulan vs Bulan (tahun bebas)":
+            with colA:
+                mA = st.selectbox("Periode A \u2014 Bulan", period_labels, index=0, key="ana_monthA_v5")
+            with colB:
+                mB = st.selectbox("Periode B \u2014 Bulan", period_labels, index=min(1, len(period_labels) - 1), key="ana_monthB_v5")
+
+            selA = [label_to_period[mA]]
+            selB = [label_to_period[mB]]
+            labelA, labelB = mA, mB
+
+        else:  # range
+            with colA:
+                startA = st.selectbox("Periode A \u2014 Mulai", period_labels, index=0, key="ana_startA_v5")
+                endA   = st.selectbox("Periode A \u2014 Sampai", period_labels, index=len(period_labels)-1, key="ana_endA_v5")
+            with colB:
+                startB = st.selectbox("Periode B \u2014 Mulai", period_labels, index=0, key="ana_startB_v5")
+                endB   = st.selectbox("Periode B \u2014 Sampai", period_labels, index=len(period_labels)-1, key="ana_endB_v5")
+
+            pA0 = label_to_period[startA]; pA1 = label_to_period[endA]
+            pB0 = label_to_period[startB]; pB1 = label_to_period[endB]
+
+            if pA0 > pA1: pA0, pA1 = pA1, pA0
+            if pB0 > pB1: pB0, pB1 = pB1, pB0
+
+            selA = [p for p in periods if pA0 <= p <= pA1]
+            selB = [p for p in periods if pB0 <= p <= pB1]
+            labelA = f"{period_label(selA[0])} \u2013 {period_label(selA[-1])}" if selA else "Periode A"
+            labelB = f"{period_label(selB[0])} \u2013 {period_label(selB[-1])}" if selB else "Periode B"
+
+        if not selA or not selB:
+            st.warning("Pilihan periode A/B kosong. Silakan ubah pilihan.")
+            st.stop()
+
+        dfA = df_base[df_base["PERIOD_M"].isin(selA)].copy()
+        dfB = df_base[df_base["PERIOD_M"].isin(selB)].copy()
+
+        # -------------------------
+        # KPI Target (ambil dari Tab Overview)
+        # -------------------------
+        try:
+            kpi_days = load_kpi()
+        except Exception:
+            kpi_days = None
+        kpi_sec = float(kpi_days) * 86400.0 if (kpi_days is not None and not pd.isna(kpi_days)) else None
+
+        # -------------------------
+        # SLA seconds: FIXED parsing (numeric dulu, baru parse_sla)
+        # -------------------------
+        has_sla = bool(sla_pick) and (sla_pick in df_base.columns)
+
+        def ensure_sla_seconds_local(df):
+            out_col = "__SLA_SECONDS_ANALYSIS__"
+            if out_col in df.columns:
+                return df, out_col
+
+            if (not has_sla) or (sla_pick not in df.columns):
+                df[out_col] = np.nan
+                return df, out_col
+
+            s = df[sla_pick]
+
+            # 1) numeric langsung (kalau SLA sudah detik)
+            num = pd.to_numeric(s, errors="coerce")
+
+            # 2) non-numeric -> parse_sla (format teks)
+            if "parse_sla" in globals():
+                def _parse_if_needed(v, n):
+                    if pd.notna(n):
+                        return float(n)
+
+                    if v is None:
+                        return np.nan
+                    vs = str(v).strip().lower()
+                    if vs in {"", "nan", "none", "-", "null"}:
+                        return np.nan
+
+                    try:
+                        sec = parse_sla(v)
+                    except Exception:
+                        sec = np.nan
+
+                    # parse gagal -> NaN (hindari garis 0)
+                    try:
+                        if (sec == 0 or sec == 0.0) and vs not in {"0", "0.0"}:
+                            return np.nan
+                    except Exception:
+                        pass
+
+                    return float(sec) if pd.notna(sec) else np.nan
+
+                df[out_col] = [_parse_if_needed(v, n) for v, n in zip(s.tolist(), num.tolist())]
+            else:
+                df[out_col] = num
+
+            return df, out_col
+
+        meanA = meanB = np.nan
+        coverageA = coverageB = np.nan
+        complianceA = complianceB = np.nan
+
+        if has_sla:
+            dfA, sla_sec_col = ensure_sla_seconds_local(dfA)
+            dfB, _ = ensure_sla_seconds_local(dfB)
+
+            sA_all = dfA[sla_sec_col]
+            sB_all = dfB[sla_sec_col]
+            validA = sA_all.dropna()
+            validB = sB_all.dropna()
+
+            meanA = float(validA.mean()) if len(validA) else np.nan
+            meanB = float(validB.mean()) if len(validB) else np.nan
+
+            coverageA = float(sA_all.notna().mean() * 100) if len(dfA) else np.nan
+            coverageB = float(sB_all.notna().mean() * 100) if len(dfB) else np.nan
+
+            if kpi_sec is not None:
+                complianceA = float((validA <= kpi_sec).mean() * 100) if len(validA) else np.nan
+                complianceB = float((validB <= kpi_sec).mean() * 100) if len(validB) else np.nan
+
+        d_cov = coverageB - coverageA if (np.isfinite(coverageA) and np.isfinite(coverageB)) else np.nan
+
+        # -------------------------
+        # KPI Cards (Total Nilai dihapus)
+        # -------------------------
+        totalA, totalB = len(dfA), len(dfB)
+        d_total = totalB - totalA
+        p_total = safe_pct(totalA, totalB)
+
+        d_sla = meanB - meanA if (np.isfinite(meanA) and np.isfinite(meanB)) else np.nan
+        p_sla = safe_pct(meanA, meanB) if (np.isfinite(meanA) and np.isfinite(meanB)) else np.nan
+
+        d_comp = complianceB - complianceA if (np.isfinite(complianceA) and np.isfinite(complianceB)) else np.nan
+        p_comp = safe_pct(complianceA, complianceB) if (np.isfinite(complianceA) and np.isfinite(complianceB)) else np.nan
+
+        badge_vol = f"{_id_int(d_total)} ({_id_num(p_total,2,'%')})" if np.isfinite(p_total) else _id_int(d_total)
+        badge_sla = (("\u2212" if d_sla < 0 else "+") + _sla_short_days(abs(d_sla), 2) + (f" ({p_sla:+.1f}%)" if np.isfinite(p_sla) else "")) if np.isfinite(d_sla) else "-"
+        badge_comp = (f"{d_comp:+.1f} pts" + (f" ({p_comp:+.1f}%)" if np.isfinite(p_comp) else "")) if np.isfinite(d_comp) else "-"
+
+        trx_sub = f"{labelA}: {_id_int(totalA)} \u2022 {labelB}: {_id_int(totalB)}"
+        if np.isfinite(p_total):
+            trx_sub += f" \u2022 \u0394: {badge_vol}"
+
+        if has_sla and np.isfinite(meanA) and np.isfinite(meanB):
+            sla_sub = (
+                f"{labelA}: {_sla_short_days(meanA,2)} | {seconds_to_sla_format(meanA)}<br/>"
+                f"{labelB}: {_sla_short_days(meanB,2)} | {seconds_to_sla_format(meanB)}"
+            )
+        else:
+            sla_sub = "Data SLA tidak tersedia / belum terbaca (cek pilihan kolom SLA)."
+
+        if kpi_days is not None and has_sla and np.isfinite(complianceB):
+            comp_sub = f"Target KPI {float(kpi_days):.2f} hari \u2022 {labelA}: {complianceA:.1f}% \u2022 {labelB}: {complianceB:.1f}%"
+        elif kpi_days is not None:
+            comp_sub = f"Target KPI {float(kpi_days):.2f} hari"
+        else:
+            comp_sub = "Target KPI belum diatur di Tab Overview."
+
+        html_cards = f"""
     <div class="kpi-wrap">
       <div class="kpi-card">
         <p class="kpi-title">Jumlah Transaksi (A vs B)</p>
@@ -7257,177 +7429,177 @@ with tab_analisis:
       </div>
     </div>
     """
-    st.markdown(html_cards, unsafe_allow_html=True)
+        st.markdown(html_cards, unsafe_allow_html=True)
 
-    # Highlight ringkas
-    vol_dir = "naik" if d_total > 0 else ("turun" if d_total < 0 else "stabil")
-    spot = f"\u2022 Volume transaksi <b>{vol_dir}</b>: {_id_int(totalA)} \u2192 {_id_int(totalB)} (\u0394 {badge_vol})."
-    if has_sla and np.isfinite(d_sla):
-        sla_dir = "membaik" if d_sla < 0 else ("memburuk" if d_sla > 0 else "stabil")
-        spot += f" \u2022 SLA <b>{sla_dir}</b>: <b>{_sla_short_days(meanA,2)}</b> \u2192 <b>{_sla_short_days(meanB,2)}</b> (\u0394 {badge_sla})."
-    if kpi_days is not None and has_sla and np.isfinite(complianceB):
-        spot += f" \u2022 Dengan target KPI <b>{float(kpi_days):.2f} hari</b>, {labelB} memenuhi target sebesar <b>{complianceB:.1f}%</b>."
-    st.markdown(f"<div class='hero'>{spot}</div>", unsafe_allow_html=True)
+        # Highlight ringkas
+        vol_dir = "naik" if d_total > 0 else ("turun" if d_total < 0 else "stabil")
+        spot = f"\u2022 Volume transaksi <b>{vol_dir}</b>: {_id_int(totalA)} \u2192 {_id_int(totalB)} (\u0394 {badge_vol})."
+        if has_sla and np.isfinite(d_sla):
+            sla_dir = "membaik" if d_sla < 0 else ("memburuk" if d_sla > 0 else "stabil")
+            spot += f" \u2022 SLA <b>{sla_dir}</b>: <b>{_sla_short_days(meanA,2)}</b> \u2192 <b>{_sla_short_days(meanB,2)}</b> (\u0394 {badge_sla})."
+        if kpi_days is not None and has_sla and np.isfinite(complianceB):
+            spot += f" \u2022 Dengan target KPI <b>{float(kpi_days):.2f} hari</b>, {labelB} memenuhi target sebesar <b>{complianceB:.1f}%</b>."
+        st.markdown(f"<div class='hero'>{spot}</div>", unsafe_allow_html=True)
 
-    # (opsional) debug SLA
-    with st.expander("\U0001f9ea Debug SLA (cek pembacaan detik)", expanded=False):
-        st.write("Kolom SLA dipilih:", sla_pick)
-        if "__SLA_SECONDS_ANALYSIS__" in dfA.columns:
-            st.write("Sample A (seconds):", dfA["__SLA_SECONDS_ANALYSIS__"].dropna().head(10).tolist())
-        if "__SLA_SECONDS_ANALYSIS__" in dfB.columns:
-            st.write("Sample B (seconds):", dfB["__SLA_SECONDS_ANALYSIS__"].dropna().head(10).tolist())
+        # (opsional) debug SLA
+        with st.expander("\U0001f9ea Debug SLA (cek pembacaan detik)", expanded=False):
+            st.write("Kolom SLA dipilih:", sla_pick)
+            if "__SLA_SECONDS_ANALYSIS__" in dfA.columns:
+                st.write("Sample A (seconds):", dfA["__SLA_SECONDS_ANALYSIS__"].dropna().head(10).tolist())
+            if "__SLA_SECONDS_ANALYSIS__" in dfB.columns:
+                st.write("Sample B (seconds):", dfB["__SLA_SECONDS_ANALYSIS__"].dropna().head(10).tolist())
 
-    # -------------------------
-    # Diagram 1 & 2 (per bulan, sumbu X Jan\u2013Des, warna = periode A vs B)
-    # -------------------------
-    st.markdown("### \U0001f4c8 Grafik Perbandingan (per Bulan)")
+        # -------------------------
+        # Diagram 1 & 2 (per bulan, sumbu X Jan\u2013Des, warna = periode A vs B)
+        # -------------------------
+        st.markdown("### \U0001f4c8 Grafik Perbandingan (per Bulan)")
 
-    def year_or_label(sel_periods, fallback_tag):
-        ys = sorted({int(p.year) for p in sel_periods})
-        if len(ys) == 1:
-            return f"Tahun {ys[0]}"
-        return fallback_tag
+        def year_or_label(sel_periods, fallback_tag):
+            ys = sorted({int(p.year) for p in sel_periods})
+            if len(ys) == 1:
+                return f"Tahun {ys[0]}"
+            return fallback_tag
 
-    seriesA = year_or_label(selA, "A")
-    seriesB = year_or_label(selB, "B")
+        seriesA = year_or_label(selA, "A")
+        seriesB = year_or_label(selB, "B")
 
-    month_order = [month_id[m] for m in range(1, 13)]
+        month_order = [month_id[m] for m in range(1, 13)]
 
-    # Diagram 1: jumlah transaksi per bulan
-    def trx_by_monthnum(df):
-        if df.empty:
-            return {}
-        g = df.groupby("PERIOD_M").size().reset_index(name="trx")
-        g["m"] = g["PERIOD_M"].apply(lambda p: int(p.month))
-        return g.groupby("m")["trx"].sum().to_dict()
-
-    A_trx = trx_by_monthnum(dfA)
-    B_trx = trx_by_monthnum(dfB)
-
-    vol_month = pd.DataFrame({
-        "Bulan": month_order,
-        seriesA: [float(A_trx.get(m, 0)) for m in range(1, 13)],
-        seriesB: [float(B_trx.get(m, 0)) for m in range(1, 13)],
-    })
-
-    vol_long = vol_month.melt(id_vars=["Bulan"], var_name="Periode", value_name="Jumlah Transaksi")
-    fig_trx = px.bar(
-        vol_long,
-        x="Bulan",
-        y="Jumlah Transaksi",
-        color="Periode",
-        barmode="group",
-        category_orders={"Bulan": month_order},
-        title=f"Diagram 1 \u2014 Jumlah Transaksi per Bulan ({seriesA} vs {seriesB})"
-    )
-    fig_trx.update_layout(xaxis_title=None, yaxis_title="Jumlah Transaksi", legend_title=None, height=430)
-    st.plotly_chart(fig_trx, use_container_width=True)
-
-    # Diagram 2: rata-rata SLA per bulan (hari)
-    sla_month = pd.DataFrame({"Bulan": month_order})
-    if has_sla and "__SLA_SECONDS_ANALYSIS__" in dfA.columns and "__SLA_SECONDS_ANALYSIS__" in dfB.columns:
-        def mean_sla_days_by_month(df, sec_col):
+        # Diagram 1: jumlah transaksi per bulan
+        def trx_by_monthnum(df):
             if df.empty:
                 return {}
-            d = df.copy()
-            d = d[d[sec_col].notna()].copy()
-            if d.empty:
-                return {}
-            g = d.groupby("PERIOD_M")[sec_col].mean().reset_index(name="sec")
+            g = df.groupby("PERIOD_M").size().reset_index(name="trx")
             g["m"] = g["PERIOD_M"].apply(lambda p: int(p.month))
-            g["days"] = g["sec"] / 86400.0
-            return g.groupby("m")["days"].mean().to_dict()
+            return g.groupby("m")["trx"].sum().to_dict()
 
-        A_days = mean_sla_days_by_month(dfA, "__SLA_SECONDS_ANALYSIS__")
-        B_days = mean_sla_days_by_month(dfB, "__SLA_SECONDS_ANALYSIS__")
+        A_trx = trx_by_monthnum(dfA)
+        B_trx = trx_by_monthnum(dfB)
 
-        sla_month[seriesA] = [float(A_days.get(m, np.nan)) for m in range(1, 13)]
-        sla_month[seriesB] = [float(B_days.get(m, np.nan)) for m in range(1, 13)]
+        vol_month = pd.DataFrame({
+            "Bulan": month_order,
+            seriesA: [float(A_trx.get(m, 0)) for m in range(1, 13)],
+            seriesB: [float(B_trx.get(m, 0)) for m in range(1, 13)],
+        })
 
-        sla_long = sla_month.melt(id_vars=["Bulan"], var_name="Periode", value_name="Rata-rata SLA (hari)")
-        fig_sla = px.line(
-            sla_long,
+        vol_long = vol_month.melt(id_vars=["Bulan"], var_name="Periode", value_name="Jumlah Transaksi")
+        fig_trx = px.bar(
+            vol_long,
             x="Bulan",
-            y="Rata-rata SLA (hari)",
+            y="Jumlah Transaksi",
             color="Periode",
-            markers=True,
+            barmode="group",
             category_orders={"Bulan": month_order},
-            title=f"Diagram 2 \u2014 Rata-rata SLA per Bulan ({seriesA} vs {seriesB})"
+            title=f"Diagram 1 \u2014 Jumlah Transaksi per Bulan ({seriesA} vs {seriesB})"
         )
-        fig_sla.update_layout(xaxis_title=None, yaxis_title="Rata-rata SLA (hari)", legend_title=None, height=430)
-        st.plotly_chart(fig_sla, use_container_width=True)
-    else:
-        st.info("Diagram 2 (SLA) tidak ditampilkan karena kolom SLA belum tersedia/terdeteksi atau nilainya tidak terbaca.")
-        sla_month[seriesA] = [np.nan] * 12
-        sla_month[seriesB] = [np.nan] * 12
+        fig_trx.update_layout(xaxis_title=None, yaxis_title="Jumlah Transaksi", legend_title=None, height=430)
+        st.plotly_chart(fig_trx, use_container_width=True)
 
-    # ============================================================
-    # BLOK POSTER EXECUTIVE SUMMARY \u2014 FIXED LAYOUT (NO OVERLAP)
-    # ============================================================
-    st.markdown("---")
-    st.markdown("### \U0001f5bc\ufe0f Poster Executive Summary (Analisis)")
+        # Diagram 2: rata-rata SLA per bulan (hari)
+        sla_month = pd.DataFrame({"Bulan": month_order})
+        if has_sla and "__SLA_SECONDS_ANALYSIS__" in dfA.columns and "__SLA_SECONDS_ANALYSIS__" in dfB.columns:
+            def mean_sla_days_by_month(df, sec_col):
+                if df.empty:
+                    return {}
+                d = df.copy()
+                d = d[d[sec_col].notna()].copy()
+                if d.empty:
+                    return {}
+                g = d.groupby("PERIOD_M")[sec_col].mean().reset_index(name="sec")
+                g["m"] = g["PERIOD_M"].apply(lambda p: int(p.month))
+                g["days"] = g["sec"] / 86400.0
+                return g.groupby("m")["days"].mean().to_dict()
 
-    # (opsional) animasi di UI saja
-    gif_url = "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif"
-    gif_bytes = _fetch_image_bytes(gif_url)
-    if gif_bytes:
-        st.image(gif_bytes, width=220)
+            A_days = mean_sla_days_by_month(dfA, "__SLA_SECONDS_ANALYSIS__")
+            B_days = mean_sla_days_by_month(dfB, "__SLA_SECONDS_ANALYSIS__")
 
-    # Logo (kiri/kanan)
-    logo_left_bytes = _fetch_image_bytes(LOGO_LEFT_URL) if "LOGO_LEFT_URL" in globals() else None
-    logo_right_bytes = _fetch_image_bytes(LOGO_RIGHT_URL) if "LOGO_RIGHT_URL" in globals() else None
+            sla_month[seriesA] = [float(A_days.get(m, np.nan)) for m in range(1, 13)]
+            sla_month[seriesB] = [float(B_days.get(m, np.nan)) for m in range(1, 13)]
 
-    c1, c2 = st.columns([1, 1])
-    with c1:
-        poster_title = st.text_input("Judul Poster", value="EXECUTIVE SUMMARY", key="ana_poster_title_v3")
-    with c2:
-        poster_subtitle = st.text_input("Sub Judul", value="Analisis SLA & Transaksi", key="ana_poster_subtitle_v3")
+            sla_long = sla_month.melt(id_vars=["Bulan"], var_name="Periode", value_name="Rata-rata SLA (hari)")
+            fig_sla = px.line(
+                sla_long,
+                x="Bulan",
+                y="Rata-rata SLA (hari)",
+                color="Periode",
+                markers=True,
+                category_orders={"Bulan": month_order},
+                title=f"Diagram 2 \u2014 Rata-rata SLA per Bulan ({seriesA} vs {seriesB})"
+            )
+            fig_sla.update_layout(xaxis_title=None, yaxis_title="Rata-rata SLA (hari)", legend_title=None, height=430)
+            st.plotly_chart(fig_sla, use_container_width=True)
+        else:
+            st.info("Diagram 2 (SLA) tidak ditampilkan karena kolom SLA belum tersedia/terdeteksi atau nilainya tidak terbaca.")
+            sla_month[seriesA] = [np.nan] * 12
+            sla_month[seriesB] = [np.nan] * 12
 
-    headline = build_auto_headline(totalA, totalB, meanA, meanB, p_total, d_total) if "build_auto_headline" in globals() else ""
+        # ============================================================
+        # BLOK POSTER EXECUTIVE SUMMARY \u2014 FIXED LAYOUT (NO OVERLAP)
+        # ============================================================
+        st.markdown("---")
+        st.markdown("### \U0001f5bc\ufe0f Poster Executive Summary (Analisis)")
 
-    @st.cache_data(show_spinner=False)
-    def _gen_exec_poster_cached(payload: dict):
-        png = make_exec_poster_png_v3(**payload)
-        pdf = make_exec_poster_pdf_from_png(png)
-        return png, pdf
+        # (opsional) animasi di UI saja
+        gif_url = "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif"
+        gif_bytes = _fetch_image_bytes(gif_url)
+        if gif_bytes:
+            st.image(gif_bytes, width=220)
 
-    payload = dict(
-        labelA=labelA, labelB=labelB,
-        seriesA=seriesA, seriesB=seriesB,
-        totalA=totalA, totalB=totalB, p_total=p_total, d_total=d_total,
-        meanA=meanA, meanB=meanB,
-        kpi_days=kpi_days, complianceB=complianceB, coverageB=coverageB,
-        d_comp=d_comp, d_cov=d_cov,
-        vol_month_df=vol_month,
-        sla_month_df=sla_month,
-        headline=headline,
-        logo_left_bytes=logo_left_bytes,
-        logo_right_bytes=logo_right_bytes,
-        title=poster_title,
-        subtitle=poster_subtitle,
-    )
+        # Logo (kiri/kanan)
+        logo_left_bytes = _fetch_image_bytes(LOGO_LEFT_URL) if "LOGO_LEFT_URL" in globals() else None
+        logo_right_bytes = _fetch_image_bytes(LOGO_RIGHT_URL) if "LOGO_RIGHT_URL" in globals() else None
 
-    png_bytes, pdf_bytes = _gen_exec_poster_cached(payload)
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            poster_title = st.text_input("Judul Poster", value="EXECUTIVE SUMMARY", key="ana_poster_title_v3")
+        with c2:
+            poster_subtitle = st.text_input("Sub Judul", value="Analisis SLA & Transaksi", key="ana_poster_subtitle_v3")
 
-    st.image(png_bytes, caption="Preview Poster Executive Summary (layout sudah rapih & tidak overlap)", use_container_width=True)
+        headline = build_auto_headline(totalA, totalB, meanA, meanB, p_total, d_total) if "build_auto_headline" in globals() else ""
 
-    d1, d2 = st.columns(2)
-    with d1:
-        st.download_button(
-            "\u2b07\ufe0f Download Poster PNG (WA)",
-            data=png_bytes,
-            file_name="Poster_Executive_Summary_Analisis.png",
-            mime="image/png",
-            use_container_width=True
+        @st.cache_data(show_spinner=False)
+        def _gen_exec_poster_cached(payload: dict):
+            png = make_exec_poster_png_v3(**payload)
+            pdf = make_exec_poster_pdf_from_png(png)
+            return png, pdf
+
+        payload = dict(
+            labelA=labelA, labelB=labelB,
+            seriesA=seriesA, seriesB=seriesB,
+            totalA=totalA, totalB=totalB, p_total=p_total, d_total=d_total,
+            meanA=meanA, meanB=meanB,
+            kpi_days=kpi_days, complianceB=complianceB, coverageB=coverageB,
+            d_comp=d_comp, d_cov=d_cov,
+            vol_month_df=vol_month,
+            sla_month_df=sla_month,
+            headline=headline,
+            logo_left_bytes=logo_left_bytes,
+            logo_right_bytes=logo_right_bytes,
+            title=poster_title,
+            subtitle=poster_subtitle,
         )
-    with d2:
-        st.download_button(
-            "\u2b07\ufe0f Download Poster PDF (Email/Arsip)",
-            data=pdf_bytes,
-            file_name="Poster_Executive_Summary_Analisis.pdf",
-            mime="application/pdf",
-            use_container_width=True
-        )
+
+        png_bytes, pdf_bytes = _gen_exec_poster_cached(payload)
+
+        st.image(png_bytes, caption="Preview Poster Executive Summary (layout sudah rapih & tidak overlap)", use_container_width=True)
+
+        d1, d2 = st.columns(2)
+        with d1:
+            st.download_button(
+                "\u2b07\ufe0f Download Poster PNG (WA)",
+                data=png_bytes,
+                file_name="Poster_Executive_Summary_Analisis.png",
+                mime="image/png",
+                use_container_width=True
+            )
+        with d2:
+            st.download_button(
+                "\u2b07\ufe0f Download Poster PDF (Email/Arsip)",
+                data=pdf_bytes,
+                file_name="Poster_Executive_Summary_Analisis.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
 
 
 # =====================[ HELPERS PDF ]=====================
@@ -7905,30 +8077,46 @@ def generate_pdf_report_v6(df_ord, selected_periode, periode_col, available_sla_
     return pdf_bytes
 
 # ====================== STREAMLIT TAB: PDF v6 ======================
-with tab_pdf:
-    st.subheader("\U0001f4d1 Laporan SLA")
+@st.cache_data(show_spinner=False, max_entries=6)
+def _pdf_report_cached(source_version: str, periods: tuple, kpi_value, _filtered_df,
+                       _period_col, _available_sla, _process_cols):
+    """Generate full PDF only when report tab opens; same inputs reuse bytes."""
+    return generate_pdf_report_v6(
+        df_ord=_filtered_df,
+        selected_periode=list(periods),
+        periode_col=_period_col,
+        available_sla_cols=list(_available_sla),
+        proses_cols=list(_process_cols),
+        kpi_target_days=kpi_value,
+    )
 
-    try:
-        pdf_bytes = generate_pdf_report_v6(
-            df_ord=df_filtered,                    # DataFrame hasil filter
-            selected_periode=selected_periode,     # urutan periode (string)
-            periode_col=periode_col,               # nama kolom periode
-            available_sla_cols=available_sla_cols, # list kolom SLA
-            proses_cols=proses_grafik_cols,        # kolom proses untuk Bab 4
-            kpi_target_days=target_kpi_hari if 'target_kpi_hari' in globals() else None
-        )
 
-        st.download_button(
-            "\u2b07\ufe0f Download Laporan PDF",
-            data=pdf_bytes,
-            file_name="LAPORAN_SLA_VERIFIKASI_DOKUMEN_PENAGIHAN.pdf",
-            mime="application/pdf"
-        )
-        st.success("PDF siap diunduh \u2705")
-    except Exception as e:
-        import traceback
-        st.error(f"Gagal membuat PDF: {type(e).__name__}: {e}")
-        traceback.print_exc()
+if (not _SLA_LAZY_TABS) or (bool(getattr(tab_report, "open", False)) and bool(getattr(tab_pdf, "open", False))):
+    with tab_pdf:
+        st.subheader("\U0001f4d1 Laporan SLA")
+
+        try:
+            pdf_bytes = _pdf_report_cached(
+                _sla_source_version,
+                tuple(selected_periode),
+                target_kpi_hari if 'target_kpi_hari' in globals() else None,
+                df_filtered,
+                periode_col,
+                tuple(available_sla_cols),
+                tuple(proses_grafik_cols),
+            )
+
+            st.download_button(
+                "\u2b07\ufe0f Download Laporan PDF",
+                data=pdf_bytes,
+                file_name="LAPORAN_SLA_VERIFIKASI_DOKUMEN_PENAGIHAN.pdf",
+                mime="application/pdf"
+            )
+            st.success("PDF siap diunduh \u2705")
+        except Exception as e:
+            import traceback
+            st.error(f"Gagal membuat PDF: {type(e).__name__}: {e}")
+            traceback.print_exc()
 
 # ==========================================================
 #  SELA v10 \u2014 Smooth Lip-Sync Smart Period Analyst
@@ -9047,3 +9235,13 @@ def render_sela_widget(df_filtered, periode_col: str):
 # PANGGIL SELA HANYA JIKA USER MINTA (lebih ringan untuk halaman awal)
 if st.session_state.get("show_sela", False):
     render_sela_widget(df_filtered, periode_col)
+
+# Performance-safe user settings preservation for dynamic tabs.
+if _SLA_LAZY_TABS:
+    _snapshot = st.session_state.setdefault('_sla_saved_widget_values', {})
+    for _key in list(st.session_state.keys()):
+        if _key not in ('_sla_saved_widget_values', 'sla_active_main_tab', 'sla_active_report_subtab') \
+                and _key.startswith(('jt_', 'jtm_', 'trx_', 'ana_', 'global_', 'map_', 'nilai_', 'periode_')):
+            _value = st.session_state[_key]
+            if isinstance(_value, (str, bool, int, float, list, tuple)):
+                _snapshot[_key] = _value
