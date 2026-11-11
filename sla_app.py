@@ -4123,7 +4123,134 @@ with tab_jumlah:
     def highlight_total(row):
         return ['font-weight: bold' if row[periode_col] == "TOTAL" else '' for _ in row]
 
-    st.dataframe(jumlah_transaksi.style.apply(highlight_total, axis=1), use_container_width=True)
+    # ========================================================================
+    # PREMIUM TRANSACTION TABLE - tambahan visual; data dan grafik existing tetap.
+    # ========================================================================
+    import html as jtm_html
+
+    jtm_body = jumlah_transaksi[jumlah_transaksi[periode_col].astype(str) != "TOTAL"].copy()
+    jtm_total = int(pd.to_numeric(jtm_body["Jumlah"], errors="coerce").fillna(0).sum())
+    jtm_n = len(jtm_body)
+    jtm_peak = (jtm_body.loc[jtm_body["Jumlah"].idxmax(), periode_col]
+                if jtm_n else "Belum ada data")
+    jtm_peak_v = int(jtm_body["Jumlah"].max()) if jtm_n else 0
+    jtm_avg = (jtm_total / jtm_n) if jtm_n else 0.0
+    jtm_max = max(jtm_peak_v, 1)
+
+    st.markdown("""
+    <style>
+    .jtm-summary {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:12px 0 19px;}
+    .jtm-card {padding:19px 20px;border-radius:17px;min-height:97px;
+       background:linear-gradient(125deg,#102b4e,#153f65);color:#fff;
+       border:1px solid #295778;box-shadow:0 7px 19px rgba(14,34,63,.12);}
+    .jtm-card-label{font-size:11px;letter-spacing:1px;font-weight:750;color:#9fcce7;margin-bottom:11px;}
+    .jtm-card-value{font-size:25px;font-weight:850;color:#f5fbff;line-height:1.14;overflow-wrap:anywhere;}
+    .jtm-card-sub{color:#aac8dc;font-size:11px;margin-top:6px;}
+    .jtm-frame{border:1px solid #d7e5ef;border-radius:20px;overflow:hidden;
+       background:#fff;box-shadow:0 11px 30px rgba(13,46,77,.10);margin:7px 0 12px;}
+    .jtm-frame-head{background:linear-gradient(110deg,#09294a,#144e72);padding:19px 22px;
+       display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;}
+    .jtm-frame-title{color:#fff;font-size:18px;font-weight:850;letter-spacing:.2px;}
+    .jtm-frame-meta{color:#a9eae2;font-size:11px;letter-spacing:1px;font-weight:800;}
+    .jtm-table-scroll{max-height:560px;overflow:auto;}
+    table.jtm-table{border-collapse:separate;border-spacing:0;width:100%;min-width:790px;
+       font-family:Segoe UI,Arial,sans-serif;font-size:13px;text-align:left;}
+    .jtm-table thead th{position:sticky;top:0;z-index:2;background:#eaf2f9;color:#24425e;
+       font-size:11px;letter-spacing:.75px;padding:14px 17px;text-transform:uppercase;
+       border-bottom:1px solid #d7e4ee;white-space:nowrap;}
+    .jtm-table tbody td{padding:13px 17px;border-bottom:1px solid #e8eef4;color:#213b57;white-space:nowrap;}
+    .jtm-table tbody tr:nth-child(even){background:#f4f8fc;}
+    .jtm-table tbody tr:hover{background:#eaf9f8;}
+    .jtm-table .jtm-num{text-align:right;font-variant-numeric:tabular-nums;font-weight:750;}
+    .jtm-tag{display:inline-block;padding:4px 9px;border-radius:50px;font-size:11px;font-weight:800;}
+    .jtm-up{background:#e0f8ef;color:#087557;}.jtm-down{background:#ffece7;color:#bd5435;}
+    .jtm-flat{background:#eaf0f8;color:#62758e;}
+    .jtm-progress{width:100%;min-width:100px;height:8px;background:#e0eaf3;border-radius:20px;overflow:hidden;}
+    .jtm-progress-fill{height:100%;border-radius:20px;background:linear-gradient(90deg,#2d85f0,#20ccb7);}
+    .jtm-table tfoot td{position:sticky;bottom:0;background:#123b5d;color:#fff;
+       font-weight:850;padding:15px 17px;border-top:2px solid #38d1c4;}
+    .jtm-table tfoot .jtm-num{color:#76f0d9;}
+    .jtm-foot{font-size:11px;color:#688097;margin:10px 3px 18px;line-height:1.6;}
+    @media(max-width:1000px){.jtm-summary{grid-template-columns:repeat(2,minmax(0,1fr));}}
+    @media(max-width:540px){.jtm-summary{grid-template-columns:1fr;}.jtm-card{min-height:60px;}}
+    </style>
+    """, unsafe_allow_html=True)
+
+    jtm_kpis = [
+        ("TOTAL TRANSAKSI", f"{jtm_total:,}".replace(",", "."), "Periode aktif di sidebar"),
+        ("BULAN TERSEDIA", str(jtm_n), "Bulan dengan data transaksi"),
+        ("RATA-RATA / BULAN", f"{jtm_avg:,.0f}".replace(",", "."), "Dari bulan yang tersedia"),
+        ("BULAN TERTINGGI", f"{jtm_peak_v:,}".replace(",", "."), str(jtm_peak)),
+    ]
+    jtm_cards_html = "".join(
+        f'<div class="jtm-card"><div class="jtm-card-label">{jtm_html.escape(label)}</div>'
+        f'<div class="jtm-card-value">{jtm_html.escape(val)}</div>'
+        f'<div class="jtm-card-sub">{jtm_html.escape(note)}</div></div>'
+        for label, val, note in jtm_kpis
+    )
+    st.markdown(f'<div class="jtm-summary">{jtm_cards_html}</div>', unsafe_allow_html=True)
+
+    jtm_rows = []
+    jtm_previous = None
+    jtm_csv_rows = []
+    for _, jtm_row in jtm_body.iterrows():
+        jtm_period = str(jtm_row[periode_col])
+        jtm_count = int(jtm_row["Jumlah"])
+        jtm_share = 100 * jtm_count / jtm_total if jtm_total else 0.0
+        jtm_width = 100 * jtm_count / jtm_max
+        if jtm_previous is None:
+            jtm_delta, jtm_growth, jtm_class, jtm_sign = None, None, "jtm-flat", "—"
+        else:
+            jtm_delta = jtm_count - jtm_previous
+            jtm_growth = 100 * jtm_delta / jtm_previous if jtm_previous else None
+            jtm_class = "jtm-up" if jtm_delta > 0 else ("jtm-down" if jtm_delta < 0 else "jtm-flat")
+            jtm_sign = f"{jtm_delta:+,}".replace(",", ".")
+        jtm_growth_html = "—" if jtm_growth is None else f"{jtm_growth:+.2f}%".replace(".", ",")
+        jtm_csv_rows.append({
+            "PERIODE": jtm_period, "Jumlah": jtm_count,
+            "Selisih vs Periode Sebelumnya": jtm_delta,
+            "Pertumbuhan (%)": round(jtm_growth, 2) if jtm_growth is not None else None,
+            "Kontribusi (%)": round(jtm_share, 2),
+        })
+        jtm_rows.append(
+            '<tr>'
+            f'<td><b>{jtm_html.escape(jtm_period)}</b></td>'
+            f'<td class="jtm-num">{jtm_count:,}</td>'
+            f'<td class="jtm-num"><span class="jtm-tag {jtm_class}">{jtm_sign}</span></td>'
+            f'<td class="jtm-num"><span class="jtm-tag {jtm_class}">{jtm_growth_html}</span></td>'
+            f'<td class="jtm-num">{jtm_share:.2f}%</td>'
+            f'<td><div class="jtm-progress" title="{jtm_count:,} transaksi">'
+            f'<div class="jtm-progress-fill" style="width:{jtm_width:.2f}%"></div></div></td>'
+            '</tr>'
+        )
+        jtm_previous = jtm_count
+
+    jtm_table_html = (
+        '<div class="jtm-frame"><div class="jtm-frame-head">'
+        '<div class="jtm-frame-title">Transaction Volume Ledger</div>'
+        '<div class="jtm-frame-meta">LIVE FILTER • MONTHLY PERFORMANCE</div></div>'
+        '<div class="jtm-table-scroll"><table class="jtm-table"><thead><tr>'
+        '<th>Periode</th><th style="text-align:right">Jumlah Transaksi</th>'
+        '<th style="text-align:right">Selisih</th><th style="text-align:right">Growth</th>'
+        '<th style="text-align:right">Kontribusi</th><th>Distribusi Volume</th>'
+        '</tr></thead><tbody>' + ''.join(jtm_rows) + '</tbody><tfoot><tr>'
+        '<td>TOTAL</td><td class="jtm-num">' + f'{jtm_total:,}'.replace(",", ".") + '</td>'
+        '<td>—</td><td>—</td><td class="jtm-num">' + ("100,00%" if jtm_total else "—") + '</td><td>—</td>'
+        '</tr></tfoot></table></div></div>'
+    )
+    st.markdown(jtm_table_html, unsafe_allow_html=True)
+    st.markdown('<div class="jtm-foot">Selisih &amp; growth membandingkan bulan dengan data sebelumnya dalam filter aktif. '
+                'Tabel asli tetap tersedia untuk disortir dan disalin. Angka pada grafik existing tidak diubah.</div>',
+                unsafe_allow_html=True)
+    with st.expander("🔎 Tabel data original — sortir, salin & audit", expanded=False):
+        st.dataframe(jumlah_transaksi.style.apply(highlight_total, axis=1),
+                     use_container_width=True)
+    st.download_button(
+        "⬇️ Ekspor tabel Jumlah Transaksi (CSV)",
+        data=pd.DataFrame(jtm_csv_rows).to_csv(index=False).encode("utf-8-sig"),
+        file_name="SLA_Jumlah_Transaksi_Tabel_Periode.csv", mime="text/csv",
+        key="jtm_export_main_table",
+    )
 
     fig_trans, ax_trans = plt.subplots(figsize=(10, 5))
     ax_trans.bar(
@@ -4229,8 +4356,8 @@ with tab_jumlah:
         return sum(int(x) for x in values if x is not None)
 
 
-    def jt_export_buttons(df, mode_name, summary):
-        """Export tanpa menambah dependency: openpyxl sudah diperlukan untuk membaca XLSX asli."""
+    def jt_export_buttons(df, mode_name, summary, extra_sheets=None):
+        """CSV + Excel, mendukung 2 periode klasik maupun multi-pembanding."""
         detail_df = df.copy()
         csv_bytes = detail_df.to_csv(index=False).encode("utf-8-sig")
         left, right = st.columns(2)
@@ -4246,16 +4373,23 @@ with tab_jumlah:
         with right:
             try:
                 buf = io.BytesIO()
+                summary_df = pd.DataFrame(summary if isinstance(summary, list) else [summary])
                 with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-                    pd.DataFrame([summary]).to_excel(writer, sheet_name="Ringkasan", index=False)
+                    summary_df.to_excel(writer, sheet_name="Ringkasan", index=False)
                     detail_df.to_excel(writer, sheet_name="Perbandingan", index=False)
+                    if extra_sheets:
+                        for sheet_name, sheet_df in extra_sheets.items():
+                            if sheet_name not in {"Ringkasan", "Perbandingan", "Metodologi"}:
+                                sheet_df.to_excel(writer, sheet_name=str(sheet_name)[:31], index=False)
                     pd.DataFrame({"Ketentuan": [
-                        "Sumber data: seluruh histori periode pada file upload terakhir.",
-                        "Jumlah transaksi mengikuti metode dashboard existing: jumlah baris per periode.",
-                        "Selisih = transaksi periode B dikurangi transaksi periode A.",
-                        "Pertumbuhan = (B - A) / A x 100%; tidak tersedia jika A = 0 dan B > 0.",
-                        "Bulan tanpa data upload dibedakan dari bulan dengan jumlah nol.",
-                        "Filter global hanya mengatur grafik lama; fitur perbandingan memilih periode sendiri.",
+                        "Sumber: seluruh histori PERIODE pada file upload terakhir.",
+                        "Jumlah transaksi = jumlah baris per bulan, sesuai dashboard existing.",
+                        "Tahun, bulan, dan rentang perbandingan dapat dipilih lebih dari dua.",
+                        "Selisih/Growth dihitung terhadap acuan yang dipilih pengguna.",
+                        "Growth = (Pembanding-Acuan)/Acuan x100%, tidak berlaku jika acuan nol.",
+                        "Bulan tidak tersedia tidak diperlakukan sebagai nol transaksi.",
+                        "Perbandingan rentang dengan durasi berlainan perlu normalisasi per bulan berdata.",
+                        "Filter global tetap mengatur grafik lama; perbandingan memakai histori upload.",
                     ]}).to_excel(writer, sheet_name="Metodologi", index=False)
                 st.download_button(
                     "⬇️ Download Laporan Perbandingan (Excel)",
@@ -4265,8 +4399,8 @@ with tab_jumlah:
                     key=f"jt_xlsx_{mode_name}",
                     use_container_width=True,
                 )
-            except Exception:
-                st.caption("Excel tidak tersedia pada lingkungan ini; ekspor CSV tetap dapat digunakan.")
+            except Exception as exc:
+                st.warning(f"Ekspor Excel belum tersedia: {type(exc).__name__}. Gunakan CSV sebagai alternatif.")
 
 
     def jt_executive_note(a, b, lab_a, lab_b, extra=""):
@@ -4364,304 +4498,565 @@ with tab_jumlah:
             "📆 Perbandingan Antar Tahun", "🗓️ Perbandingan Bulan & Tahun", "🔁 Perbandingan Rentang Periode"
         ])
 
+        # ==========================================================================
+        # MULTI-COMPARISON UPGRADE (v3): fleksibel 2, 3, atau lebih pembanding.
+        # Existing helpers, Grafik Jumlah Transaksi, export CSV/Excel, dan tiga mode
+        # tetap dipertahankan. Seluruh kalkulasi di bawah memakai jt_counts historis.
+        # ==========================================================================
+        JT_MULTI_PALETTE = (
+            "#4F91FA", "#21CAB5", "#FFBA69", "#A78BFA", "#F472A1", "#8ECE76",
+            "#22D3EE", "#FACC65", "#7CA4FC", "#E879F9", "#F08B6D", "#63D6BA",
+        )
+
+
+        def jt_color_at(position):
+            return JT_MULTI_PALETTE[position % len(JT_MULTI_PALETTE)]
+
+
+        def jt_num_or_dash(value):
+            return "—" if value is None or pd.isna(value) else jt_format_int(value)
+
+
+        def jt_growth_signed(growth):
+            return "N/A (basis 0)" if growth is None else jt_format_change_pct(growth)
+
+
+        def jt_multi_cards(records, baseline_name):
+            """Empat KPI klasik untuk tepat dua periode; kartu adaptif saat 3+."""
+            if len(records) == 2:
+                reference = next((r for r in records if r["name"] == baseline_name), records[0])
+                comparison = next((r for r in records if r["name"] != reference["name"]), records[1])
+                return jt_summary_cards(
+                    reference["label"], comparison["label"],
+                    reference["total"], comparison["total"],
+                )
+            baseline = next((record for record in records if record["name"] == baseline_name), records[0])
+            cards_html = []
+            for i, record in enumerate(records):
+                delta, growth = jt_delta_data(baseline["total"], record["total"])
+                is_baseline = record["name"] == baseline["name"]
+                subtitle = "PERIODE ACUAN" if is_baseline else f"Δ {delta:+,} · {jt_growth_signed(growth)}"
+                subtitle = subtitle.replace(",", ".") if not is_baseline else subtitle
+                cards_html.append(
+                    '<div class="jt-multi-card" style="border-top:3px solid ' + jt_color_at(i) + '">'
+                    '<div class="jt-multi-label">' + jt_html.escape(str(record["name"])) + '</div>'
+                    '<div class="jt-multi-period">' + jt_html.escape(str(record["label"])) + '</div>'
+                    '<div class="jt-multi-value">' + jt_format_int(record["total"]) + '</div>'
+                    '<div class="jt-multi-sub">' + jt_html.escape(subtitle) + '</div>'
+                    '</div>'
+                )
+            st.markdown('<div class="jt-multi-grid">' + ''.join(cards_html) + '</div>', unsafe_allow_html=True)
+
+
+        def jt_multi_note(text, extra=""):
+            st.markdown(
+                '<div class="jt-note"><div class="jt-note-head">✦ AUTOMATED EXECUTIVE INSIGHT</div>'
+                '<div>' + jt_html.escape(str(text)) + '</div>'
+                '<div class="jt-note-small">' + jt_html.escape(str(extra)) + '</div></div>',
+                unsafe_allow_html=True,
+            )
+
+
+        def jt_safe_percent_difference(base, comparison):
+            if base is None or comparison is None:
+                return None, None
+            diff = comparison - base
+            if base == 0:
+                return diff, (0.0 if comparison == 0 else None)
+            return diff, 100 * diff / base
+
+
+        def jt_reset_invalid_choice(widget_key, available):
+            if widget_key in st.session_state and st.session_state[widget_key] not in available:
+                del st.session_state[widget_key]
+
+
+        st.markdown("""
+        <style>
+        .jt-multi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+         gap:12px;margin:16px 0 18px;}
+        .jt-multi-card{background:linear-gradient(120deg,#092541,#154166);border-radius:16px;
+         padding:19px 18px;min-height:112px;color:#fff;box-shadow:0 9px 25px rgba(8,33,60,.17);
+         border-left:1px solid #365d7e;border-right:1px solid #365d7e;border-bottom:1px solid #365d7e;}
+        .jt-multi-label{font-size:10px;letter-spacing:1px;color:#a9d1e7;font-weight:800;}
+        .jt-multi-period{font-size:11px;color:#d5eaf5;margin:9px 0 6px;line-height:1.35;}
+        .jt-multi-value{font-size:27px;font-weight:850;letter-spacing:.1px;color:#f9fcff;}
+        .jt-multi-sub{font-size:11px;font-weight:700;color:#77e8cf;margin-top:8px;}
+        .jt-section-heading{margin:18px 0 10px;padding:12px 15px;border-left:4px solid #16bea9;
+         background:#eaf3f9;color:#183e5f;font-weight:850;border-radius:0 9px 9px 0;}
+        .jt-data-caption{font-size:12px;color:#637c95;margin:8px 0 12px;}
+        </style>
+        """, unsafe_allow_html=True)
+
         # ==========================================
-        # MODE 1 — PERBANDINGAN TAHUN (YoY)
+        # MODE 1 - TAHUN JAMAK (YoY multi-series)
         # ==========================================
         with jt_mode_year:
-            st.markdown("#### Year-on-Year • Perbandingan Dua Tahun")
-            jt_yr_a_default = jt_year_options[-2] if len(jt_year_options) > 1 else jt_year_options[-1]
-            jt_yr_b_default = jt_year_options[-1]
-            jt_yc1, jt_yc2, jt_yc3 = st.columns([1, 1, 1.25])
-            with jt_yc1:
-                jt_year_a = st.selectbox("Tahun A (basis)", jt_year_options,
-                                         index=jt_year_options.index(jt_yr_a_default), key="jt_year_a")
-            with jt_yc2:
-                jt_year_b = st.selectbox("Tahun B (pembanding)", jt_year_options,
-                                         index=jt_year_options.index(jt_yr_b_default), key="jt_year_b")
-            with jt_yc3:
-                jt_align_months = st.checkbox("Samakan horizon bulan (YTD)", value=True,
-                    help="Jika aktif, kedua tahun dihitung sampai bulan terakhir yang tersedia pada tahun yang lebih pendek. "
-                         "Bulan yang tidak ada dalam file tetap dianggap belum tersedia (bukan nol).",
-                    key="jt_align_months")
+            st.markdown("#### Year-on-Year • Perbandingan Multi-Tahun")
+            st.caption("Pilih dua, tiga, atau seluruh tahun yang tersedia. Tahun acuan dapat dipilih bebas.")
+            jt_year_defaults = jt_year_options[-2:] if len(jt_year_options) > 1 else jt_year_options[:]
+            jt_year_selected = st.multiselect(
+                "Pilih tahun yang akan dibandingkan",
+                jt_year_options,
+                default=jt_year_defaults,
+                key="jt_year_multi_v3",
+                help="Boleh memilih 2, 3, 4, dan seterusnya; tidak dibatasi pada dua tahun.",
+            )
+            jt_year_selected = sorted(set(jt_year_selected))
+            if not jt_year_selected:
+                st.info("Pilih setidaknya satu tahun untuk menampilkan data; pilih dua atau lebih untuk membandingkan.")
+            else:
+                jt_reset_invalid_choice("jt_year_basis_v3", jt_year_selected)
+                jt_yc1, jt_yc2 = st.columns([1, 1.25])
+                with jt_yc1:
+                    jt_year_basis = st.selectbox("Tahun acuan (basis)", jt_year_selected,
+                                                  key="jt_year_basis_v3")
+                with jt_yc2:
+                    jt_align_months = st.checkbox(
+                        "Samakan horizon bulan (YTD)", value=True, key="jt_align_months",
+                        help="Horizon perbandingan diambil dari bulan terakhir terpendek di antara tahun terpilih. "
+                             "Bulan tanpa data tetap kosong, bukan dianggap nol.",
+                    )
+                jt_last_by_year = {
+                    year: max(p.month for p in jt_period_options if p.year == year)
+                    for year in jt_year_selected
+                }
+                jt_end_month = min(jt_last_by_year.values()) if jt_align_months else 12
+                jt_month_labels = list(JT_MONTH_SHORT[:jt_end_month])
+                jt_label_suffix = f"Jan–{JT_MONTH_SHORT[jt_end_month-1]}" if jt_align_months else "Jan–Des (tersedia)"
+                jt_year_series = {
+                    year: jt_months_series(jt_counts, year, jt_end_month) for year in jt_year_selected
+                }
+                jt_year_totals = {year: jt_count_sum(jt_year_series[year]) for year in jt_year_selected}
+                jt_year_coverages = {
+                    year: sum(x is not None for x in jt_year_series[year]) for year in jt_year_selected
+                }
+                jt_year_records = [
+                    {"name": str(year), "label": f"{year} • {jt_label_suffix}", "total": jt_year_totals[year]}
+                    for year in jt_year_selected
+                ]
+                jt_multi_cards(jt_year_records, str(jt_year_basis))
 
-            jt_last_a = max(p.month for p in jt_period_options if p.year == jt_year_a)
-            jt_last_b = max(p.month for p in jt_period_options if p.year == jt_year_b)
-            jt_end_month = min(jt_last_a, jt_last_b) if jt_align_months else 12
-            jt_series_a = jt_months_series(jt_counts, jt_year_a, jt_end_month)
-            jt_series_b = jt_months_series(jt_counts, jt_year_b, jt_end_month)
-            jt_total_a = jt_count_sum(jt_series_a)
-            jt_total_b = jt_count_sum(jt_series_b)
-            jt_month_labels = list(JT_MONTH_SHORT[:jt_end_month])
-            jt_label_suffix = f"Jan–{JT_MONTH_SHORT[jt_end_month-1]}" if jt_align_months else "Jan–Des (tersedia)"
-            jt_summary_cards(f"{jt_year_a} • {jt_label_suffix}",
-                             f"{jt_year_b} • {jt_label_suffix}", jt_total_a, jt_total_b)
+                if len(jt_year_selected) == 1:
+                    st.info("Hanya satu tahun yang dipilih. Tambahkan tahun lain untuk melihat perbandingan YoY.")
+                if len(set(jt_year_coverages.values())) > 1 or any(
+                    count < jt_end_month for count in jt_year_coverages.values()
+                ):
+                    st.warning(
+                        "Cakupan data per tahun berbeda. Bulan yang belum ada dalam file tidak dihitung "
+                        "sebagai nol transaksi. Tinjau coverage sebelum menarik kesimpulan pertumbuhan."
+                    )
+                if not jt_align_months and len(set(jt_last_by_year.values())) > 1:
+                    st.info("Periode tahunan belum tentu setara karena bulan terakhir berbeda. "
+                            "Aktifkan YTD untuk membandingkan horizon bulan yang sama.")
 
-            if jt_year_a == jt_year_b:
-                st.info("Pilih dua tahun berbeda untuk membandingkan pertumbuhan antar tahun. Jika baru ada satu tahun, gunakan mode antar bulan.")
+                jt_year_figure = jt_go.Figure()
+                for i, year in enumerate(jt_year_selected):
+                    values = jt_year_series[year]
+                    jt_year_figure.add_trace(jt_go.Bar(
+                        x=jt_month_labels, y=values, name=f"Tahun {year}",
+                        marker_color=jt_color_at(i),
+                        text=values if len(jt_year_selected) <= 4 else None,
+                        textposition="auto",
+                        hovertemplate=f"Tahun {year}<br>%{{x}}: %{{y:,.0f}} transaksi<extra></extra>",
+                    ))
+                jt_plot_style(jt_year_figure, "Distribusi Transaksi Bulanan • Multi-Tahun", height=445)
+                st.plotly_chart(jt_year_figure, use_container_width=True, key="jt_year_chart")
 
-            jt_year_figure = jt_go.Figure()
-            jt_year_figure.add_trace(jt_go.Bar(x=jt_month_labels, y=jt_series_a, name=f"Tahun {jt_year_a}",
-                                               marker_color=JT_BLUE, text=jt_series_a, textposition="auto",
-                                               hovertemplate="%{x} : %{y:,.0f} transaksi<extra></extra>"))
-            jt_year_figure.add_trace(jt_go.Bar(x=jt_month_labels, y=jt_series_b, name=f"Tahun {jt_year_b}",
-                                               marker_color=JT_TEAL, text=jt_series_b, textposition="auto",
-                                               hovertemplate="%{x} : %{y:,.0f} transaksi<extra></extra>"))
-            jt_plot_style(jt_year_figure, "Distribusi Transaksi per Bulan • Dua Tahun")
-            st.plotly_chart(jt_year_figure, use_container_width=True, key="jt_year_chart")
+                jt_year_cumulative = jt_go.Figure()
+                for i, year in enumerate(jt_year_selected):
+                    running = 0
+                    vals = []
+                    for count in jt_year_series[year]:
+                        if count is None:
+                            vals.append(None)
+                        else:
+                            running += int(count)
+                            vals.append(running)
+                    jt_year_cumulative.add_trace(jt_go.Scatter(
+                        x=jt_month_labels, y=vals, name=f"Tahun {year}",
+                        mode="lines+markers", connectgaps=False,
+                        line=dict(color=jt_color_at(i), width=3),
+                        marker=dict(size=7),
+                        hovertemplate=f"{year} • %{{x}}<br>Akumulasi: %{{y:,.0f}}<extra></extra>",
+                    ))
+                jt_plot_style(jt_year_cumulative, "Tren Akumulasi Transaksi per Tahun", "Akumulasi transaksi", 370)
+                st.plotly_chart(jt_year_cumulative, use_container_width=True, key="jt_year_accumulation_v3")
 
-            jt_year_rows = []
-            for m, va, vb in zip(range(1, jt_end_month + 1), jt_series_a, jt_series_b):
-                diff, growth = jt_delta_data(va, vb)
-                jt_year_rows.append({
-                    "Bulan": JT_MONTH_NAMES[m-1],
-                    f"Tahun {jt_year_a}": va,
-                    f"Tahun {jt_year_b}": vb,
-                    "Selisih (B-A)": diff,
-                    "Growth (%)": round(growth, 2) if growth is not None else None,
-                })
-            jt_year_table = pd.DataFrame(jt_year_rows)
-            st.markdown("##### Matriks Perbandingan Bulanan")
-            st.dataframe(jt_year_table, hide_index=True, use_container_width=True)
-
-            jt_common = sum(x is not None and y is not None for x, y in zip(jt_series_a, jt_series_b))
-            if jt_common < jt_end_month:
-                st.info(f"Data bulanan yang tersedia di kedua tahun: {jt_common} dari {jt_end_month} bulan. "
-                        "Bulan yang tidak tersedia bukan otomatis berarti nol transaksi.")
-            if not jt_align_months and jt_last_a != jt_last_b:
-                st.warning("Cakupan bulan kedua tahun berbeda. Bandingkan YTD atau lihat rata-rata per bulan "
-                           "sebelum menarik kesimpulan pertumbuhan.")
-
-            jt_executive_note(jt_total_a, jt_total_b,
-                              f"{jt_year_a} ({jt_label_suffix})", f"{jt_year_b} ({jt_label_suffix})",
-                              f"Data tersedia di kedua tahun pada {jt_common} bulan yang sama.")
-            jt_export_buttons(jt_year_table, "Antar_Tahun", {
-                "Mode": "Antar Tahun", "Periode A": f"{jt_year_a} {jt_label_suffix}",
-                "Periode B": f"{jt_year_b} {jt_label_suffix}",
-                "Transaksi A": jt_total_a, "Transaksi B": jt_total_b,
-                "Selisih": jt_total_b-jt_total_a,
-                "Growth (%)": jt_delta_data(jt_total_a,jt_total_b)[1],
-                "Bulan memiliki data di kedua tahun": jt_common,
-            })
+                jt_year_rows = []
+                for m in range(1, jt_end_month + 1):
+                    row = {"Bulan": JT_MONTH_NAMES[m-1]}
+                    basis_val = jt_year_series[jt_year_basis][m-1]
+                    for year in jt_year_selected:
+                        count = jt_year_series[year][m-1]
+                        row[f"Tahun {year}"] = count
+                        if year != jt_year_basis:
+                            diff, growth = jt_delta_data(basis_val, count)
+                            row[f"Selisih {year} vs {jt_year_basis}"] = diff
+                            row[f"Growth {year} vs {jt_year_basis} (%)"] = (
+                                round(growth, 2) if growth is not None else None
+                            )
+                    jt_year_rows.append(row)
+                jt_year_table = pd.DataFrame(jt_year_rows)
+                st.markdown("<div class='jt-section-heading'>Matriks Perbandingan Bulanan Semua Tahun</div>",
+                            unsafe_allow_html=True)
+                st.dataframe(jt_year_table, hide_index=True, use_container_width=True)
+                jt_year_summary = []
+                for year in jt_year_selected:
+                    diff, growth = jt_delta_data(jt_year_totals[jt_year_basis], jt_year_totals[year])
+                    jt_year_summary.append({
+                        "Tahun": year,
+                        "Status": "ACUAN" if year == jt_year_basis else "PEMBANDING",
+                        "Horizon": jt_label_suffix,
+                        "Total Transaksi": jt_year_totals[year],
+                        "Bulan Memiliki Data": jt_year_coverages[year],
+                        "Total Bulan Horizon": jt_end_month,
+                        f"Selisih vs {jt_year_basis}": diff,
+                        f"Growth vs {jt_year_basis} (%)": round(growth, 2) if growth is not None else None,
+                    })
+                jt_year_summary_df = pd.DataFrame(jt_year_summary)
+                st.markdown("<div class='jt-section-heading'>Executive Comparison • Tahun Terpilih</div>",
+                            unsafe_allow_html=True)
+                st.dataframe(jt_year_summary_df, use_container_width=True, hide_index=True)
+                jt_best_year = max(jt_year_selected, key=lambda yr: jt_year_totals[yr])
+                jt_multi_note(
+                    f"Dari {len(jt_year_selected)} tahun terpilih, tahun {jt_best_year} memiliki volume "
+                    f"terbesar dengan {jt_format_int(jt_year_totals[jt_best_year])} transaksi. "
+                    f"Tahun acuan adalah {jt_year_basis}.",
+                    "Pertumbuhan dihitung terhadap tahun acuan. Data kosong dipisahkan dari nol; "
+                    "total yang cakupannya berbeda tidak langsung sebanding.",
+                )
+                jt_export_buttons(jt_year_table, "Antar_Tahun_Multi", jt_year_summary,
+                                  extra_sheets={"Ringkasan Perbandingan": jt_year_summary_df})
 
         # ==========================================
-        # MODE 2 — DUA BULAN/TANGGAL SPESIFIK
+        # MODE 2 - BULAN & TAHUN JAMAK
         # ==========================================
         with jt_mode_month:
-            st.markdown("#### Month-to-Month • Dua Bulan dari Tahun Manapun")
-            jt_m_a_default = jt_period_options[-2] if len(jt_period_options) >= 2 else jt_period_options[-1]
-            jt_m_b_default = jt_period_options[-1]
-            jt_mc1, jt_mc2 = st.columns(2)
-            with jt_mc1:
-                jt_month_a = st.selectbox("Bulan A (basis)", jt_period_options,
-                            index=jt_period_options.index(jt_m_a_default), format_func=jt_month_text,
-                            key="jt_month_a")
-            with jt_mc2:
-                jt_month_b = st.selectbox("Bulan B (pembanding)", jt_period_options,
-                            index=jt_period_options.index(jt_m_b_default), format_func=jt_month_text,
-                            key="jt_month_b")
+            st.markdown("#### Month-to-Month • Perbandingan Multi-Bulan & Multi-Tahun")
+            st.caption("Pilih beberapa bulan dari tahun yang sama ataupun tahun berbeda.")
+            jt_month_defaults = jt_period_options[-2:] if len(jt_period_options) >= 2 else jt_period_options[:]
+            jt_selected_months = st.multiselect(
+                "Pilih bulan-tahun untuk dibandingkan",
+                jt_period_options,
+                default=jt_month_defaults,
+                format_func=jt_month_text,
+                key="jt_month_multi_v3",
+                help="Contoh: Januari 2024, Januari 2025, Januari 2026 atau gabungan bulan bebas.",
+            )
+            jt_selected_months = sorted(set(jt_selected_months))
+            if not jt_selected_months:
+                st.info("Pilih setidaknya satu bulan-tahun dari histori transaksi yang tersedia.")
+            else:
+                jt_reset_invalid_choice("jt_month_basis_v3", jt_selected_months)
+                jt_month_basis = st.selectbox(
+                    "Bulan-tahun acuan (basis)", jt_selected_months,
+                    format_func=jt_month_text, key="jt_month_basis_v3",
+                )
+                jt_month_records = [
+                    {"name": str(period), "label": jt_month_text(period), "total": jt_counts[period]}
+                    for period in jt_selected_months
+                ]
+                jt_multi_cards(jt_month_records, str(jt_month_basis))
+                if len(jt_selected_months) == 1:
+                    st.info("Tambahkan bulan lain agar dapat melihat selisih dan pertumbuhan antar bulan.")
 
-            jt_a_volume, jt_b_volume = jt_counts[jt_month_a], jt_counts[jt_month_b]
-            jt_summary_cards(jt_month_text(jt_month_a), jt_month_text(jt_month_b),
-                             jt_a_volume, jt_b_volume)
-            if jt_month_a == jt_month_b:
-                st.info("Saat ini bulan A dan B sama. Pilih bulan yang berbeda untuk perbandingan.")
-
-            jt_duel = jt_go.Figure()
-            jt_duel.add_trace(jt_go.Bar(
-                x=[jt_month_text(jt_month_a), jt_month_text(jt_month_b)],
-                y=[jt_a_volume, jt_b_volume],
-                marker_color=[JT_BLUE, JT_TEAL],
-                text=[jt_format_int(jt_a_volume), jt_format_int(jt_b_volume)],
-                textposition="outside", showlegend=False,
-                hovertemplate="%{x}<br>%{y:,.0f} transaksi<extra></extra>"
-            ))
-            jt_plot_style(jt_duel, "Perbandingan Langsung Dua Bulan", height=375)
-            st.plotly_chart(jt_duel, use_container_width=True, key="jt_month_duel_chart")
-
-            # Momentum 6 bulan sebelum dan termasuk bulan pilihan; no-data = None.
-            jt_momentum_fig = jt_go.Figure()
-            jt_momentum_rows = []
-            for label, p, color in [("Periode A", jt_month_a, JT_BLUE), ("Periode B", jt_month_b, JT_TEAL)]:
-                series_periods = pd.period_range(end=p, periods=6, freq="M")
-                vals = [jt_counts.get(period, None) for period in series_periods]
-                jt_momentum_fig.add_trace(jt_go.Scatter(
-                    x=[f"T-{5-i}" if i < 5 else "T" for i in range(6)],
-                    y=vals, name=f"{label} • {jt_month_text(p)}", mode="lines+markers",
-                    line=dict(color=color, width=3), marker=dict(size=9),
-                    customdata=[jt_month_text(period) for period in series_periods],
-                    hovertemplate="%{customdata}<br>%{y:,.0f} transaksi<extra></extra>",
-                    connectgaps=False,
+                jt_month_fig = jt_go.Figure()
+                jt_month_fig.add_trace(jt_go.Bar(
+                    x=[jt_month_text(p) for p in jt_selected_months],
+                    y=[jt_counts[p] for p in jt_selected_months],
+                    marker_color=[jt_color_at(i) for i in range(len(jt_selected_months))],
+                    text=[jt_format_int(jt_counts[p]) for p in jt_selected_months]
+                         if len(jt_selected_months) <= 12 else None,
+                    textposition="outside", showlegend=False,
+                    hovertemplate="%{x}<br>%{y:,.0f} transaksi<extra></extra>",
                 ))
-                for i, (period, val) in enumerate(zip(series_periods, vals)):
-                    jt_momentum_rows.append({"Pembanding": label, "Posisi": f"T-{5-i}" if i < 5 else "T",
-                                             "Periode": jt_month_text(period), "Jumlah Transaksi": val})
-            jt_plot_style(jt_momentum_fig, "Momentum 6 Bulan • Sebelum Masing-masing Bulan Pilihan")
-            st.plotly_chart(jt_momentum_fig, use_container_width=True, key="jt_month_momentum_chart")
-            st.caption("T = bulan yang dipilih, T-1 = satu bulan sebelumnya, dst. "
-                       "Titik kosong berarti bulan tersebut tidak tersedia dalam file upload.")
+                jt_plot_style(jt_month_fig, "Perbandingan Langsung Bulan-Tahun Terpilih", height=410)
+                jt_month_fig.update_xaxes(tickangle=-30)
+                st.plotly_chart(jt_month_fig, use_container_width=True, key="jt_month_duel_chart")
 
-            jt_executive_note(jt_a_volume, jt_b_volume, jt_month_text(jt_month_a), jt_month_text(jt_month_b),
-                              "Grafik momentum memperlihatkan konteks enam bulan masing-masing pilihan.")
-            jt_month_table = pd.DataFrame([
-                {"Periode": jt_month_text(jt_month_a), "Peran": "A (basis)", "Transaksi": jt_a_volume},
-                {"Periode": jt_month_text(jt_month_b), "Peran": "B (pembanding)", "Transaksi": jt_b_volume},
-            ])
-            st.dataframe(jt_month_table, use_container_width=True, hide_index=True)
-            jt_export_buttons(pd.DataFrame(jt_momentum_rows), "Antar_Bulan", {
-                "Mode": "Antar Bulan/Tahun", "Periode A": jt_month_text(jt_month_a),
-                "Periode B": jt_month_text(jt_month_b), "Transaksi A": jt_a_volume,
-                "Transaksi B": jt_b_volume, "Selisih": jt_b_volume-jt_a_volume,
-                "Growth (%)": jt_delta_data(jt_a_volume,jt_b_volume)[1],
-            })
+                # Momentum 6 bulan sebelumnya: mempertahankan grafik existing, diperluas N seri.
+                jt_momentum_fig = jt_go.Figure()
+                jt_momentum_rows = []
+                for i, period in enumerate(jt_selected_months):
+                    periods = pd.period_range(end=period, periods=6, freq="M")
+                    vals = [jt_counts.get(x) for x in periods]
+                    jt_momentum_fig.add_trace(jt_go.Scatter(
+                        x=[f"T-{5-j}" if j < 5 else "T" for j in range(6)],
+                        y=vals, name=jt_month_text(period), mode="lines+markers",
+                        line=dict(color=jt_color_at(i), width=3), marker=dict(size=8),
+                        customdata=[jt_month_text(x) for x in periods],
+                        hovertemplate="%{customdata}<br>%{y:,.0f} transaksi<extra></extra>",
+                        connectgaps=False,
+                    ))
+                    for j, (p, val) in enumerate(zip(periods, vals)):
+                        jt_momentum_rows.append({
+                            "Pilihan": jt_month_text(period),
+                            "Posisi": f"T-{5-j}" if j < 5 else "T",
+                            "Periode": jt_month_text(p),
+                            "Jumlah Transaksi": val,
+                        })
+                jt_plot_style(jt_momentum_fig,
+                              "Momentum 6 Bulan • Setiap Pilihan Bulan-Tahun", height=400)
+                st.plotly_chart(jt_momentum_fig, use_container_width=True, key="jt_month_momentum_chart")
+                st.caption("T = bulan yang dipilih, T-1 = satu bulan sebelumnya. "
+                           "Bulan yang belum tercatat pada file tetap kosong, tidak dikonversi ke nol.")
+
+                jt_month_rows = []
+                jt_basis_volume = jt_counts[jt_month_basis]
+                previous_value = None
+                for period in jt_selected_months:
+                    val = jt_counts[period]
+                    diff_basis, growth_basis = jt_delta_data(jt_basis_volume, val)
+                    diff_previous, growth_previous = jt_delta_data(previous_value, val)
+                    jt_month_rows.append({
+                        "Bulan & Tahun": jt_month_text(period),
+                        "Status": "ACUAN" if period == jt_month_basis else "PEMBANDING",
+                        "Jumlah Transaksi": val,
+                        "Selisih vs Acuan": diff_basis,
+                        "Growth vs Acuan (%)": round(growth_basis, 2) if growth_basis is not None else None,
+                        "Selisih vs Pilihan Sebelumnya": diff_previous,
+                        "Growth vs Pilihan Sebelumnya (%)": (
+                            round(growth_previous, 2) if growth_previous is not None else None
+                        ),
+                    })
+                    previous_value = val
+                jt_month_table = pd.DataFrame(jt_month_rows)
+                st.markdown("<div class='jt-section-heading'>Matriks Perbandingan Semua Bulan Terpilih</div>",
+                            unsafe_allow_html=True)
+                st.dataframe(jt_month_table, use_container_width=True, hide_index=True)
+                jt_top_month = max(jt_selected_months, key=lambda period: jt_counts[period])
+                jt_multi_note(
+                    f"Dari {len(jt_selected_months)} bulan-tahun yang dipilih, "
+                    f"volume tertinggi terdapat pada {jt_month_text(jt_top_month)} "
+                    f"sebanyak {jt_format_int(jt_counts[jt_top_month])} transaksi.",
+                    f"Basis pembanding: {jt_month_text(jt_month_basis)}. "
+                    "Selisih terhadap pilihan sebelumnya mengikuti urutan kronologis.",
+                )
+                jt_export_buttons(
+                    pd.DataFrame(jt_momentum_rows), "Antar_Bulan_Multi", jt_month_rows,
+                    extra_sheets={"Matriks Bulan": jt_month_table},
+                )
 
         # ==========================================
-        # MODE 3 — DUA RENTANG BEBAS
+        # MODE 3 - RENTANG PERIODE JAMAK
         # ==========================================
         with jt_mode_range:
-            st.markdown("#### Period-to-Period • Perbandingan Dua Rentang Bebas")
+            st.markdown("#### Period-to-Period • Multi-Rentang Periode Bebas")
+            st.caption("Tentukan jumlah rentang, lalu tetapkan awal–akhir masing-masing. "
+                       "Dapat membandingkan 2, 3, 4, atau lebih rentang sekaligus.")
             jt_latest_year = jt_latest.year
             jt_previous_year = jt_latest_year - 1
             jt_curr_year_periods = [p for p in jt_period_options if p.year == jt_latest_year]
             jt_prev_year_periods = [p for p in jt_period_options if p.year == jt_previous_year]
-
-            jt_b_start_def = jt_curr_year_periods[0] if jt_curr_year_periods else jt_period_options[0]
-            jt_b_end_def = jt_latest
-            jt_a_start_def = jt_prev_year_periods[0] if jt_prev_year_periods else jt_period_options[0]
-            jt_prev_equiv = [p for p in jt_prev_year_periods if p.month <= jt_latest.month]
-            jt_a_end_def = jt_prev_equiv[-1] if jt_prev_equiv else (
+            jt_default_b_start = jt_curr_year_periods[0] if jt_curr_year_periods else jt_period_options[0]
+            jt_default_b_end = jt_latest
+            jt_default_a_start = jt_prev_year_periods[0] if jt_prev_year_periods else jt_period_options[0]
+            jt_previous_ytd = [p for p in jt_prev_year_periods if p.month <= jt_latest.month]
+            jt_default_a_end = jt_previous_ytd[-1] if jt_previous_ytd else (
                 jt_prev_year_periods[-1] if jt_prev_year_periods else jt_period_options[-1]
             )
 
-            jt_range_cols = st.columns(2)
-            with jt_range_cols[0]:
-                st.markdown("**Periode A • Basis**")
-                jt_range_a_start = st.selectbox("Mulai periode A", jt_period_options,
-                                 index=jt_period_options.index(jt_a_start_def), format_func=jt_month_text,
-                                 key="jt_range_a_start")
-                jt_range_a_end = st.selectbox("Sampai periode A", jt_period_options,
-                                 index=jt_period_options.index(jt_a_end_def), format_func=jt_month_text,
-                                 key="jt_range_a_end")
-            with jt_range_cols[1]:
-                st.markdown("**Periode B • Pembanding**")
-                jt_range_b_start = st.selectbox("Mulai periode B", jt_period_options,
-                                 index=jt_period_options.index(jt_b_start_def), format_func=jt_month_text,
-                                 key="jt_range_b_start")
-                jt_range_b_end = st.selectbox("Sampai periode B", jt_period_options,
-                                 index=jt_period_options.index(jt_b_end_def), format_func=jt_month_text,
-                                 key="jt_range_b_end")
+            # Tanpa hard limit untuk jumlah perbandingan. Pengguna bisa menambah kapan pun.
+            jt_n_ranges = int(st.number_input(
+                "Jumlah rentang periode yang ingin dibandingkan",
+                min_value=2, value=2, step=1, key="jt_range_count_v3",
+                help="Mulai dua rentang, tambah menjadi tiga, empat, dan seterusnya.",
+            ))
+            if jt_n_ranges > 20:
+                st.info("Banyak rentang dipilih. Grafik serta tabel akan lebih lebar; "
+                        "gunakan mode layar lebar untuk hasil terbaik.")
 
-            if jt_range_a_start > jt_range_a_end or jt_range_b_start > jt_range_b_end:
-                st.warning("Periode awal tidak boleh sesudah periode akhir. Sesuaikan pilihan rentang A/B untuk menampilkan perbandingan.")
+            jt_ranges = []
+            jt_invalid_ranges = []
+            for i in range(jt_n_ranges):
+                range_label = f"Rentang {i+1}"
+                st.markdown(f"**{range_label}**" + (" • Basis awal" if i == 0 else ""))
+                if i == 0:
+                    default_start, default_end = jt_default_a_start, jt_default_a_end
+                elif i == 1:
+                    default_start, default_end = jt_default_b_start, jt_default_b_end
+                else:
+                    offset = i - 2
+                    default_year_index = max(0, len(jt_year_options) - 1 - offset)
+                    default_year = jt_year_options[default_year_index]
+                    year_available = [p for p in jt_period_options if p.year == default_year]
+                    default_start, default_end = year_available[0], year_available[-1]
+                jtr_c1, jtr_c2 = st.columns(2)
+                with jtr_c1:
+                    start = st.selectbox(
+                        f"Mulai {range_label.lower()}", jt_period_options,
+                        index=jt_period_options.index(default_start),
+                        format_func=jt_month_text, key=f"jt_range_start_v3_{i}",
+                    )
+                with jtr_c2:
+                    end = st.selectbox(
+                        f"Sampai {range_label.lower()}", jt_period_options,
+                        index=jt_period_options.index(default_end),
+                        format_func=jt_month_text, key=f"jt_range_end_v3_{i}",
+                    )
+                if start > end:
+                    jt_invalid_ranges.append(range_label)
+                    continue
+                periods = list(pd.period_range(start=start, end=end, freq="M"))
+                values = [jt_counts.get(period) for period in periods]
+                months_with_data = sum(value is not None for value in values)
+                total = jt_count_sum(values)
+                jt_ranges.append({
+                    "name": range_label,
+                    "label": f"{jt_month_text(start)} – {jt_month_text(end)}",
+                    "total": total,
+                    "months": len(periods),
+                    "observed": months_with_data,
+                    "avg": (total / months_with_data) if months_with_data else None,
+                    "periods": periods, "values": values,
+                    "start": start, "end": end,
+                })
+
+            if jt_invalid_ranges:
+                st.warning("Periode mulai harus sebelum atau sama dengan periode akhir pada: "
+                           + ", ".join(jt_invalid_ranges) + ". Sesuaikan pilihan untuk menampilkan perbandingan.")
             else:
-                jt_a_periods = list(pd.period_range(start=jt_range_a_start, end=jt_range_a_end, freq="M"))
-                jt_b_periods = list(pd.period_range(start=jt_range_b_start, end=jt_range_b_end, freq="M"))
-                jt_a_vals = [jt_counts.get(p) for p in jt_a_periods]
-                jt_b_vals = [jt_counts.get(p) for p in jt_b_periods]
-                jt_count_a, jt_count_b = jt_count_sum(jt_a_vals), jt_count_sum(jt_b_vals)
-                jt_a_label = f"{jt_month_text(jt_range_a_start)} – {jt_month_text(jt_range_a_end)}"
-                jt_b_label = f"{jt_month_text(jt_range_b_start)} – {jt_month_text(jt_range_b_end)}"
-                jt_summary_cards(jt_a_label, jt_b_label, jt_count_a, jt_count_b)
+                jt_range_names = [record["name"] for record in jt_ranges]
+                jt_reset_invalid_choice("jt_range_basis_v3", jt_range_names)
+                jt_range_basis_name = st.selectbox(
+                    "Rentang acuan (basis)", jt_range_names, key="jt_range_basis_v3",
+                )
+                jt_range_basis = next(r for r in jt_ranges if r["name"] == jt_range_basis_name)
+                jt_multi_cards(jt_ranges, jt_range_basis_name)
 
-                jt_n_a, jt_n_b = len(jt_a_periods), len(jt_b_periods)
-                jt_valid_a = sum(v is not None for v in jt_a_vals)
-                jt_valid_b = sum(v is not None for v in jt_b_vals)
-                jt_avg_a = jt_count_a / jt_n_a if jt_n_a else 0
-                jt_avg_b = jt_count_b / jt_n_b if jt_n_b else 0
-                jt_avg_delta, jt_avg_growth = jt_delta_data(jt_avg_a * 100, jt_avg_b * 100)
-                # Formula rata-rata menggunakan seluruh bulan kalender di dalam rentang,
-                # sementara coverage menunjukkan data yang tersedia. Tampilkan catatan eksplisit.
-                jt_r1,jt_r2,jt_r3,jt_r4 = st.columns(4)
-                jt_r1.metric("Durasi A", f"{jt_n_a} bulan")
-                jt_r2.metric("Durasi B", f"{jt_n_b} bulan")
-                jt_r3.metric("Rata-rata A / bulan tersedia", f"{jt_avg_a:,.1f}".replace(",","_" ).replace(".",",").replace("_","."))
-                jt_r4.metric("Rata-rata B / bulan tersedia", f"{jt_avg_b:,.1f}".replace(",","_").replace(".",",").replace("_","."))
+                jt_durations = {r["months"] for r in jt_ranges}
+                if len(jt_durations) > 1:
+                    st.warning("Durasi rentang tidak sama. Selisih total kurang sebanding; "
+                               "gunakan rata-rata per bulan berdata untuk perbandingan yang dinormalisasi.")
+                jt_gaps = [r for r in jt_ranges if r["observed"] < r["months"]]
+                if jt_gaps:
+                    st.info("Ada rentang dengan bulan tanpa data: " + ", ".join(
+                        f'{r["name"]} ({r["observed"]}/{r["months"]} bulan)' for r in jt_gaps
+                    ) + ". Bulan kosong tidak dianggap nol dan rata-rata hanya dihitung dari bulan berdata.")
+                overlap_pairs = [
+                    f'{r1["name"]}–{r2["name"]}'
+                    for i, r1 in enumerate(jt_ranges)
+                    for r2 in jt_ranges[i+1:]
+                    if r1["start"] <= r2["end"] and r2["start"] <= r1["end"]
+                ]
+                if overlap_pairs:
+                    st.info("Rentang saling tumpang tindih: " + ", ".join(overlap_pairs[:10])
+                            + (" dan lainnya." if len(overlap_pairs) > 10 else ".")
+                            + " Bulan tumpang tindih muncul di masing-masing rentang.")
 
-                if jt_n_a != jt_n_b:
-                    st.warning("Durasi rentang A dan B berbeda. Selisih total tidak sepenuhnya sebanding; "
-                               "perhatikan juga rata-rata per bulan dan coverage data.")
-                if jt_valid_a < jt_n_a or jt_valid_b < jt_n_b:
-                    st.info(f"Cakupan data: A tersedia {jt_valid_a}/{jt_n_a} bulan; "
-                            f"B tersedia {jt_valid_b}/{jt_n_b} bulan. "
-                            "Rata-rata per bulan dihitung dari jumlah bulan yang benar-benar tersedia, "
-                            "bukan dari bulan yang belum diunggah.")
-                if jt_range_a_start <= jt_range_b_end and jt_range_b_start <= jt_range_a_end:
-                    st.info("Kedua rentang saling tumpang tindih. Hasil tetap ditampilkan, tetapi beberapa "
-                            "bulan akan dihitung pada kedua periode.")
+                jtr_m1, jtr_m2, jtr_m3, jtr_m4 = st.columns(4)
+                jtr_m1.metric("Jumlah Rentang", str(len(jt_ranges)))
+                jtr_m2.metric("Bulan Acuan", f'{jt_range_basis["months"]} bulan')
+                jtr_m3.metric("Data Bulan Acuan", f'{jt_range_basis["observed"]}/{jt_range_basis["months"]}')
+                jtr_m4.metric("Rata-rata Acuan / Bulan", (
+                    f'{jt_range_basis["avg"]:,.1f}' if jt_range_basis["avg"] is not None else "—"
+                ))
 
                 jt_relative_fig = jt_go.Figure()
-                for label, values, periods, color in [
-                    ("Rentang A", jt_a_vals, jt_a_periods, JT_BLUE),
-                    ("Rentang B", jt_b_vals, jt_b_periods, JT_TEAL),
-                ]:
+                jt_cum_fig = jt_go.Figure()
+                jt_detail_rows = []
+                for i, record in enumerate(jt_ranges):
+                    jt_color = jt_color_at(i)
+                    indices = list(range(1, len(record["periods"]) + 1))
+                    labels = [jt_month_text(period) for period in record["periods"]]
                     jt_relative_fig.add_trace(jt_go.Scatter(
-                        x=list(range(1,len(values)+1)), y=values, name=label,
-                        mode="lines+markers", line=dict(width=3, color=color), marker=dict(size=8),
-                        customdata=[jt_month_text(p) for p in periods],
+                        x=indices, y=record["values"], name=record["name"],
+                        mode="lines+markers", line=dict(color=jt_color, width=3),
+                        marker=dict(size=8), customdata=labels,
                         hovertemplate="Bulan ke-%{x}<br>%{customdata}<br>%{y:,.0f} transaksi<extra></extra>",
                         connectgaps=False,
                     ))
-                jt_plot_style(jt_relative_fig, "Volume Transaksi • Posisi Bulan dalam Setiap Rentang")
-                jt_relative_fig.update_xaxes(title="Bulan ke-", dtick=1 if max(jt_n_a,jt_n_b)<=18 else None)
-                st.plotly_chart(jt_relative_fig, use_container_width=True, key="jt_range_relative_chart")
-
-                jt_cum_fig = jt_go.Figure()
-                for label, values, periods, color in [
-                    ("Akumulasi A", jt_a_vals, jt_a_periods, JT_BLUE),
-                    ("Akumulasi B", jt_b_vals, jt_b_periods, JT_TEAL),
-                ]:
-                    jt_cumul = []
                     running = 0
-                    for v in values:
-                        if v is not None:
-                            running += int(v)
-                            jt_cumul.append(running)
+                    accumulated = []
+                    for period, value, month_index in zip(record["periods"], record["values"], indices):
+                        if value is None:
+                            accumulated.append(None)
                         else:
-                            jt_cumul.append(None)
+                            running += int(value)
+                            accumulated.append(running)
+                        jt_detail_rows.append({
+                            "Rentang": record["name"], "Label": record["label"],
+                            "Bulan ke-": month_index, "Periode": jt_month_text(period),
+                            "Jumlah Transaksi": value, "Akumulasi": accumulated[-1],
+                        })
                     jt_cum_fig.add_trace(jt_go.Scatter(
-                        x=list(range(1,len(values)+1)), y=jt_cumul, name=label,
-                        mode="lines+markers", fill="tozeroy", opacity=.79,
-                        line=dict(width=3, color=color),
-                        customdata=[jt_month_text(p) for p in periods],
+                        x=indices, y=accumulated, name=record["name"],
+                        mode="lines+markers", line=dict(color=jt_color, width=3),
+                        marker=dict(size=7), customdata=labels,
+                        fill="tozeroy" if len(jt_ranges) <= 2 else None,
                         hovertemplate="%{customdata}<br>Akumulasi: %{y:,.0f}<extra></extra>",
                         connectgaps=False,
                     ))
-                jt_plot_style(jt_cum_fig, "Akumulasi Volume Transaksi • Setiap Rentang", "Akumulasi transaksi", 380)
+                jt_plot_style(jt_relative_fig,
+                              "Volume Transaksi • Posisi Bulan dalam Setiap Rentang", height=450)
+                jt_relative_fig.update_xaxes(title="Bulan ke-")
+                st.plotly_chart(jt_relative_fig, use_container_width=True,
+                                key="jt_range_relative_chart")
+
+                jt_plot_style(jt_cum_fig,
+                              "Akumulasi Volume Transaksi • Multi-Rentang", "Akumulasi transaksi", 410)
                 jt_cum_fig.update_xaxes(title="Bulan ke-")
                 st.plotly_chart(jt_cum_fig, use_container_width=True, key="jt_range_cum_chart")
 
-                jt_range_rows = []
-                for idx in range(max(len(jt_a_periods), len(jt_b_periods))):
-                    jt_pa = jt_a_periods[idx] if idx<len(jt_a_periods) else None
-                    jt_pb = jt_b_periods[idx] if idx<len(jt_b_periods) else None
-                    jt_va = jt_a_vals[idx] if idx<len(jt_a_vals) else None
-                    jt_vb = jt_b_vals[idx] if idx<len(jt_b_vals) else None
-                    jt_d,jt_g=jt_delta_data(jt_va,jt_vb)
-                    jt_range_rows.append({
-                        "Bulan ke-":idx+1,
-                        "Periode A": jt_month_text(jt_pa) if jt_pa else "—",
-                        "Transaksi A":jt_va,
-                        "Periode B": jt_month_text(jt_pb) if jt_pb else "—",
-                        "Transaksi B":jt_vb,
-                        "Selisih (B-A)":jt_d,
-                        "Growth (%)":round(jt_g,2) if jt_g is not None else None,
+                jt_range_summary = []
+                for record in jt_ranges:
+                    diff, growth = jt_delta_data(jt_range_basis["total"], record["total"])
+                    avg_diff, avg_growth = jt_safe_percent_difference(jt_range_basis["avg"], record["avg"])
+                    jt_range_summary.append({
+                        "Rentang": record["name"], "Periode": record["label"],
+                        "Status": "ACUAN" if record["name"] == jt_range_basis_name else "PEMBANDING",
+                        "Durasi Kalender (bulan)": record["months"],
+                        "Bulan dengan Data": record["observed"],
+                        "Total Transaksi": record["total"],
+                        "Rata-rata per Bulan Berdata": round(record["avg"], 2) if record["avg"] is not None else None,
+                        "Selisih Total vs Acuan": diff,
+                        "Growth Total vs Acuan (%)": round(growth, 2) if growth is not None else None,
+                        "Selisih Rata-rata vs Acuan": round(avg_diff, 2) if avg_diff is not None else None,
+                        "Growth Rata-rata vs Acuan (%)": (
+                            round(avg_growth, 2) if avg_growth is not None else None
+                        ),
                     })
-                jt_range_table = pd.DataFrame(jt_range_rows)
-                st.markdown("##### Matriks Detail Dua Rentang")
-                st.dataframe(jt_range_table, use_container_width=True, hide_index=True)
+                jt_range_summary_df = pd.DataFrame(jt_range_summary)
+                st.markdown("<div class='jt-section-heading'>Matriks Executive Comparison • Semua Rentang</div>",
+                            unsafe_allow_html=True)
+                st.dataframe(jt_range_summary_df, use_container_width=True, hide_index=True)
 
-                jt_executive_note(jt_count_a, jt_count_b, jt_a_label, jt_b_label,
-                    f"Durasi A {jt_n_a} bulan, B {jt_n_b} bulan. "
-                    f"Rata-rata volume per bulan tersedia A {jt_avg_a:,.1f}, B {jt_avg_b:,.1f}.")
-                jt_export_buttons(jt_range_table, "Rentang_Periode", {
-                    "Mode":"Rentang Periode", "Periode A":jt_a_label, "Periode B":jt_b_label,
-                    "Transaksi A":jt_count_a, "Transaksi B":jt_count_b,
-                    "Selisih":jt_count_b-jt_count_a,
-                    "Growth (%)":jt_delta_data(jt_count_a,jt_count_b)[1],
-                    "Durasi A (bulan)":jt_n_a, "Durasi B (bulan)":jt_n_b,
-                    "Data tersedia A (bulan)":jt_valid_a, "Data tersedia B (bulan)":jt_valid_b,
-                    "Rata-rata per bulan A":jt_avg_a, "Rata-rata per bulan B":jt_avg_b,
-                })
+                jt_max_span = max(r["months"] for r in jt_ranges)
+                jt_range_matrix_rows = []
+                for month_index in range(jt_max_span):
+                    row = {"Bulan ke-": month_index + 1}
+                    for record in jt_ranges:
+                        name = record["name"]
+                        row[f"Periode {name}"] = (
+                            jt_month_text(record["periods"][month_index])
+                            if month_index < record["months"] else None
+                        )
+                        row[f"Transaksi {name}"] = (
+                            record["values"][month_index]
+                            if month_index < record["months"] else None
+                        )
+                    jt_range_matrix_rows.append(row)
+                jt_range_matrix_df = pd.DataFrame(jt_range_matrix_rows)
+                st.markdown("<div class='jt-section-heading'>Matriks Bulan ke-Bulan Semua Rentang</div>",
+                            unsafe_allow_html=True)
+                st.dataframe(jt_range_matrix_df, hide_index=True, use_container_width=True)
+                with st.expander("🔎 Detail panjang untuk audit seluruh rentang", expanded=False):
+                    st.dataframe(pd.DataFrame(jt_detail_rows), hide_index=True, use_container_width=True)
 
+                jt_highest = max(jt_ranges, key=lambda record: record["total"])
+                jt_multi_note(
+                    f"Dari {len(jt_ranges)} rentang, {jt_highest['name']} memiliki total terbesar "
+                    f"({jt_format_int(jt_highest['total'])} transaksi). "
+                    f"Acuan perbandingan: {jt_range_basis_name}.",
+                    "Perhatikan durasi & coverage data tiap rentang; "
+                    "bila tidak sama, pertumbuhan rata-rata per bulan lebih relevan daripada pertumbuhan total.",
+                )
+                jt_export_buttons(
+                    jt_range_matrix_df, "Rentang_Periode_Multi", jt_range_summary,
+                    extra_sheets={"Detail Semua Rentang": pd.DataFrame(jt_detail_rows),
+                                  "Matriks Executive": jt_range_summary_df},
+                )
 
 # ==========================================================
 #            FITUR BARU: \U0001f4e5 DOWNLOAD POSTER (A4)
