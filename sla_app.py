@@ -4503,7 +4503,12 @@ if (not _SLA_LAZY_TABS) or bool(getattr(tab_jumlah, "open", False)):
                 paper_bgcolor="#0D2648",
                 plot_bgcolor="#123155",
                 font=dict(family="Segoe UI, Arial, sans-serif", color="#D2E4FA", size=12),
-                legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1),
+                legend=dict(
+                    orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1,
+                    title_text="Tahun / Periode", font=dict(size=12, color="#E7F2FF"),
+                    bgcolor="rgba(13,38,72,.45)", bordercolor="rgba(130,180,220,.22)", borderwidth=1,
+                    itemclick="toggleothers"
+                ),
                 margin=dict(l=32, r=30, t=95, b=50),
                 hovermode="x unified",
                 barmode="group",
@@ -4528,13 +4533,12 @@ if (not _SLA_LAZY_TABS) or bool(getattr(tab_jumlah, "open", False)):
             csv_bytes = detail_df.to_csv(index=False).encode("utf-8-sig")
             left, right = st.columns(2)
             with left:
-                st.download_button(
+                jt_download_button_compat(
                     "⬇️ Download Data Perbandingan (CSV)",
                     data=csv_bytes,
                     file_name=f"SLA_Jumlah_Transaksi_{mode_name}.csv",
                     mime="text/csv",
-                    key=f"jt_csv_{mode_name}",
-                    use_container_width=True,
+                    key_base=f"jt_csv_{mode_name}_v2",
                 )
             with right:
                 try:
@@ -4557,13 +4561,12 @@ if (not _SLA_LAZY_TABS) or bool(getattr(tab_jumlah, "open", False)):
                             "Perbandingan rentang dengan durasi berlainan perlu normalisasi per bulan berdata.",
                             "Filter global tetap mengatur grafik lama; perbandingan memakai histori upload.",
                         ]}).to_excel(writer, sheet_name="Metodologi", index=False)
-                    st.download_button(
+                    jt_download_button_compat(
                         "⬇️ Download Laporan Perbandingan (Excel)",
                         data=buf.getvalue(),
                         file_name=f"SLA_Jumlah_Transaksi_{mode_name}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"jt_xlsx_{mode_name}",
-                        use_container_width=True,
+                        key_base=f"jt_xlsx_{mode_name}_v2",
                     )
                 except Exception as exc:
                     st.warning(f"Ekspor Excel belum tersedia: {type(exc).__name__}. Gunakan CSV sebagai alternatif.")
@@ -4677,6 +4680,55 @@ if (not _SLA_LAZY_TABS) or bool(getattr(tab_jumlah, "open", False)):
 
             def jt_color_at(position):
                 return JT_MULTI_PALETTE[position % len(JT_MULTI_PALETTE)]
+
+
+            JT_FIXED_YEAR_COLORS = {
+                2022: "#F6C445",  # kuning
+                2023: "#21CAB5",  # turquoise
+                2024: "#5B8FF9",  # biru
+                2025: "#A78BFA",  # ungu
+                2026: "#F472A1",  # pink
+                2027: "#8ECE76",  # hijau
+                2028: "#22D3EE",  # cyan
+                2029: "#F08B6D",  # coral
+                2030: "#7DD3FC",  # sky
+            }
+
+
+            def jt_year_color(year, position=0):
+                return JT_FIXED_YEAR_COLORS.get(int(year), jt_color_at(position))
+
+
+            def jt_text_labels(values):
+                labels = []
+                for val in values:
+                    if val is None or pd.isna(val):
+                        labels.append("")
+                    else:
+                        labels.append(jt_format_int(int(val)))
+                return labels
+
+
+            def jt_download_button_compat(label, *, data, file_name, mime, key_base):
+                """Kompatibilitas lintas versi Streamlit agar tombol download tidak crash."""
+                try:
+                    return st.download_button(
+                        label,
+                        data=data,
+                        file_name=file_name,
+                        mime=mime,
+                        key=key_base,
+                        use_container_width=True,
+                    )
+                except Exception:
+                    # Fallback aman untuk versi Streamlit yang sensitif terhadap state / parameter tertentu.
+                    fallback_label = f"{label} • {file_name}"
+                    return st.download_button(
+                        fallback_label,
+                        data=data,
+                        file_name=file_name,
+                        mime=mime,
+                    )
 
 
             def jt_num_or_dash(value):
@@ -4819,14 +4871,18 @@ if (not _SLA_LAZY_TABS) or bool(getattr(tab_jumlah, "open", False)):
                     jt_year_figure = jt_go.Figure()
                     for i, year in enumerate(jt_year_selected):
                         values = jt_year_series[year]
+                        year_color = jt_year_color(year, i)
                         jt_year_figure.add_trace(jt_go.Bar(
-                            x=jt_month_labels, y=values, name=f"Tahun {year}",
-                            marker_color=jt_color_at(i),
-                            text=values if len(jt_year_selected) <= 4 else None,
-                            textposition="auto",
+                            x=jt_month_labels, y=values, name=str(year),
+                            marker_color=year_color,
+                            text=jt_text_labels(values),
+                            textposition="outside",
+                            textfont=dict(size=11, color="#F8FCFF"),
+                            cliponaxis=False,
                             hovertemplate=f"Tahun {year}<br>%{{x}}: %{{y:,.0f}} transaksi<extra></extra>",
                         ))
                     jt_plot_style(jt_year_figure, "Distribusi Transaksi Bulanan • Multi-Tahun", height=445)
+                    jt_year_figure.update_layout(legend_title_text="Tahun")
                     st.plotly_chart(jt_year_figure, use_container_width=True, key="jt_year_chart")
 
                     jt_year_cumulative = jt_go.Figure()
@@ -4839,15 +4895,20 @@ if (not _SLA_LAZY_TABS) or bool(getattr(tab_jumlah, "open", False)):
                             else:
                                 running += int(count)
                                 vals.append(running)
+                        year_color = jt_year_color(year, i)
                         jt_year_cumulative.add_trace(jt_go.Scatter(
-                            x=jt_month_labels, y=vals, name=f"Tahun {year}",
-                            mode="lines+markers", connectgaps=False,
-                            line=dict(color=jt_color_at(i), width=3),
-                            marker=dict(size=7),
+                            x=jt_month_labels, y=vals, name=str(year),
+                            mode="lines+markers+text", connectgaps=False,
+                            line=dict(color=year_color, width=3),
+                            marker=dict(size=8, color=year_color),
+                            text=jt_text_labels(vals), textposition="top center",
+                            textfont=dict(size=10, color="#F8FCFF"),
                             hovertemplate=f"{year} • %{{x}}<br>Akumulasi: %{{y:,.0f}}<extra></extra>",
                         ))
                     jt_plot_style(jt_year_cumulative, "Tren Akumulasi Transaksi per Tahun", "Akumulasi transaksi", 370)
+                    jt_year_cumulative.update_layout(legend_title_text="Tahun")
                     st.plotly_chart(jt_year_cumulative, use_container_width=True, key="jt_year_accumulation_v3")
+                    st.caption("Warna tahun dibuat konsisten agar lebih mudah dibaca pada legend. Nilai transaksi ditampilkan langsung pada batang dan titik grafik.")
 
                     jt_year_rows = []
                     for m in range(1, jt_end_month + 1):
@@ -4928,13 +4989,14 @@ if (not _SLA_LAZY_TABS) or bool(getattr(tab_jumlah, "open", False)):
                         st.info("Tambahkan bulan lain agar dapat melihat selisih dan pertumbuhan antar bulan.")
 
                     jt_month_fig = jt_go.Figure()
+                    jt_month_colors = [jt_year_color(p.year, i) for i, p in enumerate(jt_selected_months)]
                     jt_month_fig.add_trace(jt_go.Bar(
                         x=[jt_month_text(p) for p in jt_selected_months],
                         y=[jt_counts[p] for p in jt_selected_months],
-                        marker_color=[jt_color_at(i) for i in range(len(jt_selected_months))],
-                        text=[jt_format_int(jt_counts[p]) for p in jt_selected_months]
-                             if len(jt_selected_months) <= 12 else None,
-                        textposition="outside", showlegend=False,
+                        marker_color=jt_month_colors,
+                        text=[jt_format_int(jt_counts[p]) for p in jt_selected_months],
+                        textposition="outside", textfont=dict(size=11, color="#F8FCFF"),
+                        cliponaxis=False, showlegend=False,
                         hovertemplate="%{x}<br>%{y:,.0f} transaksi<extra></extra>",
                     ))
                     jt_plot_style(jt_month_fig, "Perbandingan Langsung Bulan-Tahun Terpilih", height=410)
@@ -4949,8 +5011,10 @@ if (not _SLA_LAZY_TABS) or bool(getattr(tab_jumlah, "open", False)):
                         vals = [jt_counts.get(x) for x in periods]
                         jt_momentum_fig.add_trace(jt_go.Scatter(
                             x=[f"T-{5-j}" if j < 5 else "T" for j in range(6)],
-                            y=vals, name=jt_month_text(period), mode="lines+markers",
-                            line=dict(color=jt_color_at(i), width=3), marker=dict(size=8),
+                            y=vals, name=jt_month_text(period), mode="lines+markers+text",
+                            line=dict(color=jt_year_color(period.year, i), width=3), marker=dict(size=8),
+                            text=jt_text_labels(vals), textposition="top center",
+                            textfont=dict(size=10, color="#F8FCFF"),
                             customdata=[jt_month_text(x) for x in periods],
                             hovertemplate="%{customdata}<br>%{y:,.0f} transaksi<extra></extra>",
                             connectgaps=False,
@@ -5128,8 +5192,10 @@ if (not _SLA_LAZY_TABS) or bool(getattr(tab_jumlah, "open", False)):
                         labels = [jt_month_text(period) for period in record["periods"]]
                         jt_relative_fig.add_trace(jt_go.Scatter(
                             x=indices, y=record["values"], name=record["name"],
-                            mode="lines+markers", line=dict(color=jt_color, width=3),
-                            marker=dict(size=8), customdata=labels,
+                            mode="lines+markers+text", line=dict(color=jt_color, width=3),
+                            marker=dict(size=8), text=jt_text_labels(record["values"]),
+                            textposition="top center", textfont=dict(size=10, color="#F8FCFF"),
+                            customdata=labels,
                             hovertemplate="Bulan ke-%{x}<br>%{customdata}<br>%{y:,.0f} transaksi<extra></extra>",
                             connectgaps=False,
                         ))
@@ -5148,8 +5214,9 @@ if (not _SLA_LAZY_TABS) or bool(getattr(tab_jumlah, "open", False)):
                             })
                         jt_cum_fig.add_trace(jt_go.Scatter(
                             x=indices, y=accumulated, name=record["name"],
-                            mode="lines+markers", line=dict(color=jt_color, width=3),
-                            marker=dict(size=7), customdata=labels,
+                            mode="lines+markers+text", line=dict(color=jt_color, width=3),
+                            marker=dict(size=7), text=jt_text_labels(accumulated),
+                            textposition="top center", textfont=dict(size=10, color="#F8FCFF"), customdata=labels,
                             fill="tozeroy" if len(jt_ranges) <= 2 else None,
                             hovertemplate="%{customdata}<br>Akumulasi: %{y:,.0f}<extra></extra>",
                             connectgaps=False,
