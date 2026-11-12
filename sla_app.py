@@ -1321,44 +1321,123 @@ with st.sidebar:
         "💬 Buka SELA", key="sela_sidebar_launcher_v15",
         help="Buka asisten pribadi SELA di halaman ini tanpa tab baru.",
     )
-    st.caption("SELA tetap ringan: hanya diproses saat dibuka. Bisa juga melalui tombol melayang di kanan bawah.")
+    st.caption("SELA tetap ringan: hanya diproses saat dibuka. Gunakan ikon SELA Premium di kanan atas layar.")
 
 # Floating action button akan dirender pada akhir script, setelah semua fungsi SELA tersedia.
 # CSS berikut hanya memengaruhi tombol SELA; komponen dashboard lain tidak diubah.
 st.markdown("""
 <style>
+/* SELA Premium Top-right Launcher — display-only upgrade to the working v15 button.
+   The Streamlit widget key and dialog callback are unchanged. */
 .st-key-sela_floating_launcher_v15 {
-  position:fixed!important;right:22px!important;bottom:20px!important;
-  width:max-content!important;max-width:calc(100vw - 24px)!important;
-  z-index:999995!important;pointer-events:auto!important;
+  position:fixed!important;
+  top:82px!important;
+  right:24px!important;
+  bottom:auto!important;
+  width:max-content!important;
+  max-width:calc(100vw - 24px)!important;
+  z-index:9998!important;
+  pointer-events:auto!important;
 }
 .st-key-sela_floating_launcher_v15 button {
-  border-radius:999px!important;
-  background:linear-gradient(120deg,#0d2b4b,#155075)!important;
-  border:1px solid rgba(98,195,212,.56)!important;
-  box-shadow:0 12px 32px rgba(9,32,56,.28)!important;
-  color:#fff!important;
-  font-weight:750!important;
-  padding:10px 17px!important;
-  min-height:48px!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:11px!important;
+  min-height:56px!important;
+  min-width:185px!important;
+  padding:8px 12px 8px 9px!important;
+  border-radius:18px!important;
+  border:1px solid rgba(104,218,219,.53)!important;
+  background:linear-gradient(125deg,#0b2948 0%,#0e3f62 55%,#13576d 100%)!important;
+  box-shadow:0 14px 32px rgba(5,28,51,.23),inset 0 1px 0 rgba(255,255,255,.14)!important;
+  color:#f5fbff!important;
+  font-family:Inter,'Segoe UI',sans-serif!important;
+  font-size:15px!important;
+  font-weight:850!important;
+  letter-spacing:.03em!important;
   white-space:nowrap!important;
-  transition:transform .16s ease,box-shadow .16s ease!important;
+  cursor:pointer!important;
+  transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease!important;
+}
+/* A compact premium assistant insignia, without an extra image or network request. */
+.st-key-sela_floating_launcher_v15 button::before {
+  content:"✦";
+  flex:0 0 40px;
+  width:40px;
+  height:40px;
+  display:grid;
+  place-items:center;
+  border-radius:13px;
+  background:linear-gradient(145deg,#74f5df 0%,#48bed7 56%,#6e96f7 100%);
+  box-shadow:0 5px 15px rgba(35,193,204,.31),inset 0 1px 0 rgba(255,255,255,.55);
+  color:#06344d;
+  font-size:22px;
+  font-weight:900;
+  line-height:1;
+}
+.st-key-sela_floating_launcher_v15 button::after {
+  content:"AI";
+  margin-left:2px;
+  padding:5px 7px;
+  border-radius:8px;
+  border:1px solid rgba(150,236,236,.23);
+  background:rgba(255,255,255,.09);
+  color:#bdf7f1;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.12em;
 }
 .st-key-sela_floating_launcher_v15 button:hover {
   transform:translateY(-2px)!important;
-  box-shadow:0 17px 38px rgba(9,32,56,.33)!important;
+  border-color:rgba(125,246,229,.83)!important;
+  box-shadow:0 19px 38px rgba(5,28,51,.30),0 0 0 3px rgba(84,213,214,.07)!important;
+}
+.st-key-sela_floating_launcher_v15 button:active {
+  transform:translateY(0)!important;
 }
 .st-key-sela_floating_launcher_v15 button:focus-visible {
-  outline:3px solid #6de2d1!important;outline-offset:3px!important;
+  outline:3px solid #7ef1dd!important;
+  outline-offset:3px!important;
 }
-/* Large dialog used by native Streamlit: scrolling and responsive layout. */
+/* Never cover the popup's close button while the personal assistant is open. */
+body:has([data-testid="stDialog"] [role="dialog"])
+  .st-key-sela_floating_launcher_v15 {
+  visibility:hidden!important;
+  pointer-events:none!important;
+}
+/* Keep the native SELA dialog scrollable without changing its content. */
 div[data-testid="stDialog"] div[role="dialog"] {
   max-height:calc(100dvh - 30px)!important;
   overflow-y:auto!important;
 }
 @media(max-width:700px){
-  .st-key-sela_floating_launcher_v15 {right:12px!important;bottom:12px!important;}
-  .st-key-sela_floating_launcher_v15 button {font-size:12px!important;padding:9px 13px!important;}
+  .st-key-sela_floating_launcher_v15 {
+    top:72px!important;
+    right:12px!important;
+  }
+  .st-key-sela_floating_launcher_v15 button {
+    min-height:49px!important;
+    min-width:136px!important;
+    font-size:13px!important;
+    padding:6px 10px 6px 6px!important;
+    gap:7px!important;
+    border-radius:15px!important;
+  }
+  .st-key-sela_floating_launcher_v15 button::before {
+    flex-basis:35px;
+    width:35px;
+    height:35px;
+    border-radius:11px;
+    font-size:20px;
+  }
+  .st-key-sela_floating_launcher_v15 button::after {
+    font-size:9px;
+    padding:4px 5px;
+  }
+}
+@media(prefers-reduced-motion:reduce){
+  .st-key-sela_floating_launcher_v15 button {transition:none!important;}
 }
 </style>
 """, unsafe_allow_html=True)
@@ -11047,8 +11126,8 @@ except TypeError:
     _sela_fab_host = st.container()
 with _sela_fab_host:
     _sela_fab_clicked = st.button(
-        "✦  Tanya SELA", key="sela_fab_button_v15",
-        help="Buka SELA dalam jendela asisten pada tab ini; tidak membuka tab baru.",
+        "SELA", key="sela_fab_button_v15",
+        help="✦ SELA Premium AI — buka asisten pribadi dalam popup, tanpa tab baru.",
     )
 
 if _sela_fab_clicked or _sela_sidebar_clicked:
