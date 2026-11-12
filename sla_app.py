@@ -15,6 +15,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
 import requests
 import json
+import html as slae_html
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -808,6 +809,61 @@ st.markdown(r"""
 }
 hr.soft {background:linear-gradient(90deg,transparent,#cbdce9,transparent);}
 
+/* ---------------------------------------------------------------
+   SLA TABLES: Per Proses & Tren — lightweight visual-only upgrade
+   Isolated class names, no JS / fonts / network requests.
+   --------------------------------------------------------------- */
+.slae-wrap{margin:12px 0 16px;min-width:0;}
+.slae-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:14px 0 18px;}
+.slae-kpi{border:1px solid #d9e7ef;border-radius:15px;padding:15px 17px;
+  background:linear-gradient(140deg,#fff 0%,#f5fafc 100%);
+  box-shadow:0 5px 19px rgba(20,56,86,.045);min-width:0;}
+.slae-kpi-label{color:#537088;font-size:10px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;}
+.slae-kpi-value{color:#102e4e;font-size:21px;line-height:1.28;font-weight:840;
+  letter-spacing:-.5px;margin-top:9px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums;}
+.slae-kpi-sub{color:#6f8597;font-size:11px;margin-top:5px;line-height:1.4;}
+.slae-panel{background:#fff;border:1px solid #d9e6ef;border-radius:18px;overflow:hidden;
+  box-shadow:0 10px 31px rgba(13,47,76,.085);}
+.slae-panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
+  background:linear-gradient(112deg,#0a2748 0%,#134e70 80%,#126472 100%);padding:17px 20px;}
+.slae-panel-title{font-weight:850;font-size:16px;letter-spacing:.1px;color:#fff;line-height:1.4;}
+.slae-panel-note{color:#a6f0dc;font-size:10px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;}
+.slae-scroll{overflow-x:auto;overflow-y:auto;max-height:620px;scrollbar-width:thin;}
+.slae-table{border-collapse:separate;border-spacing:0;min-width:720px;width:100%;
+  font-family:Inter,'Segoe UI',Arial,sans-serif;font-size:12px;color:#213b54;}
+.slae-table th{position:sticky;top:0;z-index:2;background:#ecf3f9;color:#37536b;
+  letter-spacing:.55px;text-transform:uppercase;font-size:10px;font-weight:850;
+  text-align:left;padding:15px 15px;border-bottom:1px solid #d7e4ee;white-space:nowrap;}
+.slae-table td{padding:13px 15px;border-bottom:1px solid #e6eef4;vertical-align:middle;}
+.slae-table tbody tr:nth-child(even){background:#f7fafd;}
+.slae-table tbody tr:hover{background:#eaf8f6;}
+.slae-table tbody tr:last-child td{border-bottom:0;}
+.slae-table .slae-numeric{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.slae-label{font-size:12px;font-weight:800;color:#173957;}
+.slae-hint{font-size:10px;color:#74899b;margin-top:3px;line-height:1.35;}
+.slae-duration{font-weight:820;color:#183f63;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.slae-days{font-weight:800;color:#0c7e79;white-space:nowrap;font-variant-numeric:tabular-nums;}
+.slae-pill{display:inline-block;border-radius:999px;padding:4px 9px;
+  background:#e5f6f2;color:#087a6a;font-size:10px;font-weight:850;white-space:nowrap;}
+.slae-pill-e2e{background:#e7edf9;color:#294b83;}
+.slae-pill-current{background:#e0f6ef;color:#13765d;}
+.slae-track{min-width:95px;width:100%;background:#e7eef4;height:8px;border-radius:99px;overflow:hidden;}
+.slae-track-fill{height:100%;background:linear-gradient(90deg,#2d83c3,#1bb7a8);border-radius:99px;}
+.slae-trend-table{min-width:920px;}
+.slae-trend-table th:first-child,.slae-trend-table td:first-child{position:sticky;left:0;z-index:1;
+  background:#f4f8fc;box-shadow:1px 0 0 #e2ebf3;}
+.slae-trend-table th:first-child{z-index:4;background:#e6f0f8;}
+.slae-trend-table tr.slae-latest td{background:#ecf9f6;}
+.slae-trend-table tr.slae-latest td:first-child{background:#e1f5ef;}
+.slae-trend-table .slae-small-value{font-size:10px;color:#768b9b;margin-top:3px;white-space:nowrap;}
+.slae-trend-table .slae-period{font-weight:850;color:#184565;white-space:nowrap;}
+.slae-empty{font-size:12px;color:#8896a7;}
+.slae-foot{font-size:11px;color:#637d91;margin:10px 3px 4px;line-height:1.6;}
+@media(max-width:1100px){.slae-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:640px){.slae-kpis{grid-template-columns:1fr 1fr;gap:8px;}
+  .slae-kpi{padding:12px;}.slae-kpi-value{font-size:17px;}
+  .slae-panel-head{padding:14px;}.slae-panel-title{font-size:14px;}}
+
 /* Loading and UI for narrower viewports. */
 @media(max-width: 1100px) {
   [data-testid="stMainBlockContainer"] {padding-top: 1rem;}
@@ -1576,7 +1632,77 @@ if (not _SLA_LAZY_TABS) or bool(getattr(tab_proses, "open", False)):
             rata_proses = rata_proses_seconds.reset_index()
             rata_proses.columns = ["Proses", "Rata-rata (detik)"]
             rata_proses["Rata-rata SLA"] = rata_proses["Rata-rata (detik)"].apply(seconds_to_sla_format)
-            st.dataframe(rata_proses[["Proses", "Rata-rata SLA"]], use_container_width=True)
+            # PREMIUM TABLE: murni presentasi, rata-rata existing tidak dimodifikasi.
+            # Tabel Streamlit original tetap tersedia untuk sort/copy/audit.
+            _slae_proc_names = [c for c in proses_grafik_cols if c in rata_proses_seconds.index]
+            _slae_valid_proc = [c for c in _slae_proc_names if pd.notna(rata_proses_seconds[c])]
+            _slae_fast = (min(_slae_valid_proc, key=lambda c: rata_proses_seconds[c])
+                          if _slae_valid_proc else None)
+            _slae_slow = (max(_slae_valid_proc, key=lambda c: rata_proses_seconds[c])
+                          if _slae_valid_proc else None)
+            _slae_total_seconds = (rata_proses_seconds.get("TOTAL WAKTU")
+                                   if "TOTAL WAKTU" in rata_proses_seconds.index else None)
+            _slae_total_days = (float(_slae_total_seconds) / 86400
+                                if _slae_total_seconds is not None and pd.notna(_slae_total_seconds) else None)
+            _slae_max_raw = max(
+                [float(v) for v in rata_proses_seconds if pd.notna(v) and float(v) > 0],
+                default=0.0,
+            )
+            _slae_proc_cards = [
+                ("TAHAPAN DIPANTAU", str(len(_slae_proc_names)), "Di luar total end-to-end"),
+                ("TAHAP TERCEPAT", (_slae_fast or "—").title(),
+                 seconds_to_sla_format(rata_proses_seconds[_slae_fast]) if _slae_fast else "Belum tersedia"),
+                ("DURASI TERTINGGI", (_slae_slow or "—").title(),
+                 seconds_to_sla_format(rata_proses_seconds[_slae_slow]) if _slae_slow else "Belum tersedia"),
+                ("TOTAL WAKTU", (f"{_slae_total_days:.2f}".replace(".", ",") + " hari")
+                 if _slae_total_days is not None else "—", "Rata-rata end-to-end bila tersedia"),
+            ]
+            _slae_cards_html = "".join(
+                '<div class="slae-kpi"><div class="slae-kpi-label">' + slae_html.escape(k) +
+                '</div><div class="slae-kpi-value">' + slae_html.escape(v) +
+                '</div><div class="slae-kpi-sub">' + slae_html.escape(d) + '</div></div>'
+                for k, v, d in _slae_proc_cards
+            )
+            _slae_proc_rows = []
+            for _, _slae_record in rata_proses.iterrows():
+                _slae_name = str(_slae_record["Proses"])
+                _slae_sec = _slae_record["Rata-rata (detik)"]
+                _slae_ok = pd.notna(_slae_sec)
+                _slae_days_str = (f"{float(_slae_sec)/86400:.2f}".replace(".", ",") + " hari") if _slae_ok else "—"
+                _slae_pct = (max(0.0, min(100.0, float(_slae_sec) / _slae_max_raw * 100))
+                             if _slae_ok and _slae_max_raw > 0 else 0.0)
+                _slae_is_total = _slae_name == "TOTAL WAKTU"
+                _slae_kind = "End-to-End" if _slae_is_total else "Tahapan proses"
+                _slae_badge = "slae-pill slae-pill-e2e" if _slae_is_total else "slae-pill"
+                _slae_proc_rows.append(
+                    '<tr><td><div class="slae-label">' + slae_html.escape(_slae_name) +
+                    '</div><div class="slae-hint"><span class="' + _slae_badge + '">' + _slae_kind +
+                    '</span></div></td><td><span class="slae-duration">' +
+                    slae_html.escape(str(_slae_record["Rata-rata SLA"])) +
+                    '</span></td><td class="slae-numeric"><span class="slae-days">' + _slae_days_str +
+                    '</span></td><td class="slae-numeric">' +
+                    f'{int(df_filtered[_slae_name].count()):,}'.replace(',', '.') +
+                    '</td><td><div class="slae-track" title="Skala relatif terhadap durasi rata-rata tertinggi">'
+                    '<div class="slae-track-fill" style="width:' + f'{_slae_pct:.1f}' + '%"></div>'
+                    '</div></td></tr>'
+                )
+            st.markdown(
+                '<div class="slae-wrap"><div class="slae-kpis">' + _slae_cards_html +
+                '</div><section class="slae-panel"><div class="slae-panel-head">'
+                '<div class="slae-panel-title">Process SLA Performance Ledger</div>'
+                '<div class="slae-panel-note">ASDP · PROCESS INTELLIGENCE</div></div>'
+                '<div class="slae-scroll"><table class="slae-table"><thead><tr>'
+                '<th>Proses</th><th>Rata-rata SLA</th><th style="text-align:right">Dalam Hari</th>'
+                '<th style="text-align:right">Data Valid</th><th>Durasi Relatif</th>'
+                '</tr></thead><tbody>' + ''.join(_slae_proc_rows) +
+                '</tbody></table></div></section><div class="slae-foot">'
+                'Bar menunjukkan skala relatif terhadap durasi rata-rata terbesar, bukan persentase '
+                'kontribusi proses. Nilai berasal dari agregasi SLA existing; angka grafik dan laporan tidak diubah.'
+                '</div></div>',
+                unsafe_allow_html=True,
+            )
+            with st.expander("🔎 Tabel original — sortir, salin & audit", expanded=False):
+                st.dataframe(rata_proses[["Proses", "Rata-rata SLA"]], use_container_width=True)
 
             if proses_grafik_cols:
                 fig2, ax2 = plt.subplots(figsize=(8, 4))
@@ -4600,11 +4726,75 @@ if (not _SLA_LAZY_TABS) or bool(getattr(tab_tren, "open", False)):
             for col in available_sla_cols:
                 trend_display[col] = trend_display[col].apply(seconds_to_sla_format)
 
-            # Hapus kolom bantu & sembunyikan index Pandas
-            st.dataframe(
-                trend_display.drop(columns=["PERIODE_SORTED"]).set_index("No").style.hide(axis="index"),
-                use_container_width=True
+            # PREMIUM TREND TABLE: tampilan alternatif dari trend_display yang sama.
+            # Tabel native original tetap dipertahankan (sort, copy, audit).
+            _slae_trend_last = str(trend.iloc[-1][periode_col]) if len(trend) else "—"
+            _slae_trend_total_col = ("TOTAL WAKTU" if "TOTAL WAKTU" in available_sla_cols else
+                                     ("KEUANGAN" if "KEUANGAN" in available_sla_cols else available_sla_cols[0]))
+            _slae_latest_sec = trend.iloc[-1][_slae_trend_total_col] if len(trend) else None
+            _slae_previous_sec = trend.iloc[-2][_slae_trend_total_col] if len(trend) > 1 else None
+            _slae_latest_days = (float(_slae_latest_sec) / 86400 if _slae_latest_sec is not None and
+                                 pd.notna(_slae_latest_sec) else None)
+            _slae_change_days = (float(_slae_latest_sec - _slae_previous_sec) / 86400 if
+                                 _slae_latest_sec is not None and pd.notna(_slae_latest_sec) and
+                                 _slae_previous_sec is not None and pd.notna(_slae_previous_sec) else None)
+            _slae_trend_cards = [
+                ("PERIODE TERANALISIS", str(len(trend)), "Periode dengan data pada filter"),
+                ("PERIODE TERAKHIR", _slae_trend_last, "Dalam rentang filter aktif"),
+                ("SLA TERAKHIR", (f"{_slae_latest_days:.2f}".replace('.', ',') + " hari")
+                 if _slae_latest_days is not None else "—", _slae_trend_total_col),
+                ("PERUBAHAN SLA", (f"{_slae_change_days:+.2f}".replace('.', ',') + " hari")
+                 if _slae_change_days is not None else "—", "Dibandingkan periode data sebelumnya"),
+            ]
+            _slae_trend_cards_html = "".join(
+                '<div class="slae-kpi"><div class="slae-kpi-label">' + slae_html.escape(k) +
+                '</div><div class="slae-kpi-value">' + slae_html.escape(v) +
+                '</div><div class="slae-kpi-sub">' + slae_html.escape(d) + '</div></div>'
+                for k, v, d in _slae_trend_cards
             )
+            _slae_trend_head = '<th>Periode</th>' + ''.join(
+                '<th>' + slae_html.escape(str(c)) + '</th>' for c in available_sla_cols
+            )
+            _slae_trend_rows = []
+            for _slae_ridx, _slae_record in trend_display.iterrows():
+                _slae_current = _slae_ridx == len(trend_display) - 1
+                _slae_period_value = slae_html.escape(str(_slae_record[periode_col]))
+                _slae_period_badge = (' <span class="slae-pill slae-pill-current">TERBARU</span>'
+                                      if _slae_current else '')
+                _slae_cells = []
+                for _slae_col in available_sla_cols:
+                    _slae_raw = trend.iloc[_slae_ridx][_slae_col]
+                    _slae_txt = slae_html.escape(str(_slae_record[_slae_col]))
+                    _slae_short = (f"{float(_slae_raw)/86400:.2f}".replace('.', ',') + " hari") if pd.notna(_slae_raw) else ""
+                    _slae_cells.append(
+                        '<td><div class="slae-duration">' + _slae_txt + '</div>' +
+                        ('<div class="slae-small-value">' + _slae_short + '</div>' if _slae_short else '') +
+                        '</td>'
+                    )
+                _slae_trend_rows.append(
+                    '<tr' + (' class="slae-latest"' if _slae_current else '') + '>'
+                    '<td><div class="slae-period">' + _slae_period_value + _slae_period_badge +
+                    '</div><div class="slae-hint">Periode ' + str(int(_slae_record['No'])) +
+                    '</div></td>' + ''.join(_slae_cells) + '</tr>'
+                )
+            st.markdown(
+                '<div class="slae-wrap"><div class="slae-kpis">' + _slae_trend_cards_html +
+                '</div><section class="slae-panel"><div class="slae-panel-head">'
+                '<div class="slae-panel-title">Monthly SLA Trend Ledger</div>'
+                '<div class="slae-panel-note">ASDP · HISTORICAL PERFORMANCE</div></div>'
+                '<div class="slae-scroll"><table class="slae-table slae-trend-table"><thead><tr>' +
+                _slae_trend_head + '</tr></thead><tbody>' + ''.join(_slae_trend_rows) +
+                '</tbody></table></div></section><div class="slae-foot">'
+                'Durasi ditampilkan dalam format asli serta hari desimal untuk memudahkan pembacaan. '
+                'Baris terakhir menandai periode terbaru pada filter aktif, bukan data real-time.'
+                '</div></div>',
+                unsafe_allow_html=True,
+            )
+            with st.expander("🔎 Tabel Tren original — sortir, salin & audit", expanded=False):
+                st.dataframe(
+                    trend_display.drop(columns=["PERIODE_SORTED"]).set_index("No").style.hide(axis="index"),
+                    use_container_width=True
+                )
 
             # ==============================
             # Grafik TOTAL WAKTU
