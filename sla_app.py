@@ -10258,7 +10258,7 @@ def render_sela_widget(df_filtered, periode_col: str,
       advisorOverview.innerHTML = `
         <div class="advisor-grid">
           <div class="viz-card wide">
-            <div class="insight-banner"><strong>Executive Narrative</strong><br>${escHtml(answerText || 'SELA siap menyusun insight eksekutif berdasarkan data aktif. Gunakan chip cepat atau ajukan pertanyaan spesifik.').replace(/\n/g,'<br>')}</div>
+            <div class="insight-banner"><strong>Executive Narrative</strong><br>${escHtml(answerText || 'SELA siap menyusun insight eksekutif berdasarkan data aktif. Gunakan chip cepat atau ajukan pertanyaan spesifik.').replace(/\\n/g,'<br>')}</div>
             <ul class="insight-list">${highlights.map(x => `<li>${escHtml(x)}</li>`).join('')}</ul>
           </div>
           <div class="viz-card wide">
@@ -10384,7 +10384,7 @@ def render_sela_widget(df_filtered, periode_col: str,
             <div class="poster-block"><div class="t">Rata-rata SLA</div><div class="n">${fmtDays(metrics.avg_sla_days || 0)}</div><div class="d">Menggambarkan durasi total rata-rata pada seluruh transaksi aktif.</div></div>
             <div class="poster-block"><div class="t">Bottleneck</div><div class="n">${escHtml(metrics.bottleneck && metrics.bottleneck.name ? prettyProcessName(metrics.bottleneck.name) : '-')}</div><div class="d">${metrics.bottleneck && metrics.bottleneck.avg_sla_days !== undefined ? 'Rata-rata SLA ' + fmtDays(metrics.bottleneck.avg_sla_days || 0) : 'Belum ada data bottleneck.'}</div></div>
             <div class="poster-block wide"><div class="t">Prioritas Transaksi & Vendor</div><div class="n">${escHtml(metrics.top_transaction && metrics.top_transaction.name ? metrics.top_transaction.name : '-')}</div><div class="d">Vendor prioritas: ${escHtml(metrics.top_vendor && metrics.top_vendor.name ? metrics.top_vendor.name : '-')}. ${metrics.top_transaction && metrics.top_transaction.avg_sla_days !== undefined ? 'SLA transaksi prioritas: ' + fmtDays(metrics.top_transaction.avg_sla_days || 0) + '.' : ''}</div></div>
-            <div class="poster-block wide"><div class="t">Executive Narrative</div><div class="d">${escHtml(answerText || 'SELA siap menyusun narasi eksekutif berdasarkan pertanyaan Anda.').replace(/\n/g,'<br>')}</div></div>
+            <div class="poster-block wide"><div class="t">Executive Narrative</div><div class="d">${escHtml(answerText || 'SELA siap menyusun narasi eksekutif berdasarkan pertanyaan Anda.').replace(/\\n/g,'<br>')}</div></div>
             <div class="poster-block full"><div class="t">Tahapan SLA</div><div class="legend-row">${stages.map((item, idx) => `<span class="legend-item"><span class="legend-swatch" style="background:${['#60a5fa','#34d399','#fbbf24','#f472b6'][idx % 4]}"></span>${escHtml(prettyProcessName(item.name))}: ${fmtDays(item.avg_sla_days || 0)}</span>`).join('') || '<span class="legend-item">Belum ada data tahapan.</span>'}</div></div>
             <div class="poster-block full"><div class="t">Rekomendasi Aksi</div><ol class="poster-actions">${actions.map(item => `<li>${escHtml(item)}</li>`).join('') || '<li>Belum ada rekomendasi.</li>'}</ol></div>
           </div>
@@ -10403,11 +10403,12 @@ def render_sela_widget(df_filtered, periode_col: str,
       return 'overview';
     }
     function refreshAdvisor(mode, question, answerText){
-      renderOverviewBody(question, answerText);
-      renderChartsBody();
-      renderTablesBody();
-      renderPosterBody(answerText);
+      // Render only the requested visual. Hidden panels remain lazy for a fast response.
       const safeMode = ['overview','charts','tables','poster'].includes(mode) ? mode : 'overview';
+      if(safeMode === 'overview') renderOverviewBody(question, answerText);
+      else if(safeMode === 'charts') renderChartsBody();
+      else if(safeMode === 'tables') renderTablesBody();
+      else renderPosterBody(answerText);
       setAdvisorTab(safeMode);
       const captions = {
         overview:'Insight eksekutif telah diringkas pada panel Insight.',
@@ -10416,7 +10417,27 @@ def render_sela_widget(df_filtered, periode_col: str,
         poster:'Poster eksekutif telah ditampilkan pada panel Poster.'
       };
       advisorStatus.textContent = captions[safeMode] + ' Data sumber tetap mengikuti dashboard aktif dan seluruh fitur utama aplikasi tetap dipertahankan.';
+      requestAnimationFrame(selaAutoResize);
     }
+    // SELA lives inside a Streamlit iframe: keep height synchronized with real content.
+    // Safe fallback: components.html(scrolling=True) still allows access if host ignores messages.
+    let selaLastReportedHeight = 0;
+    function selaAutoResize(){
+      if(window.parent === window) return;
+      const root = document.querySelector('.sela-root');
+      if(!root) return;
+      // Measure content, not iframe viewport, to prevent a resize feedback loop.
+      const desired = Math.ceil(root.scrollHeight + 24);
+      if(!Number.isFinite(desired) || Math.abs(desired-selaLastReportedHeight) < 24) return;
+      selaLastReportedHeight = desired;
+      window.parent.postMessage({isStreamlitMessage:true,
+                    type:'streamlit:setFrameHeight', height:desired}, '*');
+    }
+    if(typeof ResizeObserver !== 'undefined'){
+      const selaSizeObserver = new ResizeObserver(() => requestAnimationFrame(selaAutoResize));
+      selaSizeObserver.observe(document.body);
+    }
+    window.addEventListener('load', () => requestAnimationFrame(selaAutoResize));
     function handleQuestion(question){
       const q = String(question || '').trim();
       if(!q) return;
@@ -10432,15 +10453,9 @@ def render_sela_widget(df_filtered, periode_col: str,
                                   Number(metrics.transaction_count || 0))
           : result;
         const advisorMode = inferAdvisorMode(q);
-        if(advisorMode === 'charts' && !/grafik|chart|bagan/i.test(ans)) ans += '
-
-Saya juga menampilkan grafik eksekutif pada workspace advisor.';
-        if(advisorMode === 'tables' && !/tabel|table|daftar/i.test(ans)) ans += '
-
-Saya juga menampilkan tabel prioritas pada workspace advisor.';
-        if(advisorMode === 'poster' && !/poster/i.test(ans)) ans += '
-
-Saya juga menampilkan poster eksekutif pada workspace advisor.';
+        if(advisorMode === 'charts' && !/grafik|chart|bagan/i.test(ans)) ans += '\\n\\nSaya juga menampilkan grafik eksekutif pada workspace advisor.';
+        if(advisorMode === 'tables' && !/tabel|table|daftar/i.test(ans)) ans += '\\n\\nSaya juga menampilkan tabel prioritas pada workspace advisor.';
+        if(advisorMode === 'poster' && !/poster/i.test(ans)) ans += '\\n\\nSaya juga menampilkan poster eksekutif pada workspace advisor.';
         addMsg('bot', ans);
         refreshAdvisor(advisorMode, q, ans);
         setBubble(ans);
@@ -10516,7 +10531,7 @@ Saya juga menampilkan poster eksekutif pada workspace advisor.';
     components.html(
         html.replace("___SELA_PAYLOAD___", data_json),
         height=1460,
-        scrolling=False,
+        scrolling=True,  # fallback agar SELA dapat di-scroll jika host tidak auto-resize
     )
 
 
