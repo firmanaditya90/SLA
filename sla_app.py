@@ -1333,6 +1333,10 @@ with st.status("\u23f1\ufe0f Memproses kolom SLA setelah filter...", expanded=Fa
     )
     status.update(label="\u2705 Parsing SLA selesai", state="complete")
 
+# Preserve the original SLA upload before another tab can rebind df_raw.
+# SELA's historical comparison must never use the separate nilai-transaksi sheet.
+_sela_full_history_source = df_raw
+
 import io, base64
 
 def render_sparkline(data, width=180, height=60, color="#00eaff"):
@@ -8765,7 +8769,7 @@ if (not _SLA_LAZY_TABS) or (bool(getattr(tab_report, "open", False)) and bool(ge
             traceback.print_exc()
 
 # ==========================================================
-#  SELA v10 \u2014 Smooth Lip-Sync Smart Period Analyst
+#  SELA v11 Core Intelligence (v10 voice & avatar preserved)
 #  - Avatar wanita natural (ringan, CSS/SVG)
 #  - Voice input via Web Speech API
 #  - Voice output via Speech Synthesis
@@ -8829,61 +8833,144 @@ def _choose_col(cols, candidates):
 
 
 def _sela_month_year_from_period(value):
-    """Parse periode string into {year, month, month_name, month_key}; supports Januari 2023, Jan-2023, 2023-01, 01/2023."""
-    s = str(value or "").strip().lower()
-    year_match = re.search(r"(20\d{2})", s)
-    if not year_match:
-        return {"year": None, "month": None, "month_name": None, "month_key": None}
-    year = year_match.group(1)
-    month_map = {
-        "januari": 1, "jan": 1, "january": 1,
-        "februari": 2, "feb": 2, "february": 2,
-        "maret": 3, "mar": 3, "march": 3,
-        "april": 4, "apr": 4,
-        "mei": 5, "may": 5,
-        "juni": 6, "jun": 6, "june": 6,
-        "juli": 7, "jul": 7, "july": 7,
-        "agustus": 8, "agus": 8, "agt": 8, "agu": 8, "aug": 8, "august": 8,
-        "september": 9, "sep": 9, "sept": 9,
-        "oktober": 10, "okt": 10, "oct": 10, "october": 10,
-        "november": 11, "nov": 11,
-        "desember": 12, "des": 12, "dec": 12, "december": 12,
-    }
-    month = None
-    # match longest labels first so "maret" is preferred over "mar"
-    for label, num in sorted(month_map.items(), key=lambda kv: len(kv[0]), reverse=True):
-        if re.search(r"(^|[^a-z])" + re.escape(label) + r"([^a-z]|$)", s):
-            month = num
-            break
-    if month is None:
-        # numeric patterns such as 2024-04, 04/2024, 04.2024
-        pats = [
-            r"20\d{2}[^0-9]([01]?\d)",
-            r"([01]?\d)[^0-9]20\d{2}",
-        ]
-        for pat in pats:
-            m = re.search(pat, s)
-            if m:
-                cand = int(m.group(1))
-                if 1 <= cand <= 12:
-                    month = cand
-                    break
-    month_names = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
-    if month is None:
-        return {"year": year, "month": None, "month_name": None, "month_key": None}
+    """Same canonical month/year as the global filter, including Indonesian labels."""
+    parsed = parse_period_label_to_timestamp(value)
+    empty = {"year": None, "month": None, "month_name": None, "month_key": None}
+    if pd.isna(parsed):
+        return empty
+    months = ("Januari", "Februari", "Maret", "April", "Mei", "Juni",
+              "Juli", "Agustus", "September", "Oktober", "November", "Desember")
+    year, month = int(parsed.year), int(parsed.month)
     return {
-        "year": year,
-        "month": int(month),
-        "month_name": month_names[int(month)-1],
-        "month_key": f"{year}-{int(month):02d}",
+        "year": str(year), "month": month, "month_name": months[month - 1],
+        "month_key": f"{year:04d}-{month:02d}",
     }
+
+
+def _sela_valid_average_days(values):
+    """Return null for no valid SLA; never imply zero duration for missing values."""
+    series = pd.to_numeric(values, errors="coerce")
+    if not series.notna().any():
+        return None
+    return round(float(series.mean()) / 86400.0, 10)
+
+
+@st.cache_data(show_spinner=False, max_entries=6)
+def _sela_history_summary_cached(source_version: str, period_col: str, _raw_df: pd.DataFrame):
+    """Monthly/annual historical aggregates; only runs when SELA is opened.
+
+    Caching is keyed on the same file-version used by the dashboard. The raw frame
+    is excluded from the cache hash since the source version invalidates it.
+    No vendor names or transaction-level records are added to this cache output.
+    """
+    empty = {"history_month_stats": [], "history_year_stats": [], "total_rows": 0}
+    if _raw_df is None or _raw_df.empty or period_col not in _raw_df.columns:
+        return empty
+
+    if "PERIODE_DATETIME" in _raw_df.columns:
+        timestamps = pd.to_datetime(_raw_df["PERIODE_DATETIME"], errors="coerce")
+    else:
+        raw_labels = _raw_df[period_col].astype(str)
+        lookup = {name: parse_period_label_to_timestamp(name) for name in raw_labels.unique()}
+        timestamps = pd.to_datetime(raw_labels.map(lookup), errors="coerce")
+
+    valid = timestamps.notna()
+    if not bool(valid.any()):
+        return empty
+
+    months = timestamps.loc[valid].dt.strftime("%Y-%m")
+    data = pd.DataFrame({"month_key": months.to_numpy()}, index=_raw_df.index[valid])
+    stage_columns = [c for c in ("FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU")
+                     if c in _raw_df.columns]
+    for stage in stage_columns:
+        # Reuse the same parser as the dashboard, so SLA numbers do not diverge.
+        data[stage] = pd.to_numeric(_raw_df.loc[valid, stage].map(parse_sla), errors="coerce")
+
+    month_rows = []
+    for month_key, group in data.groupby("month_key", sort=True):
+        row = {"month_key": str(month_key), "year": str(month_key)[:4],
+               "month": int(str(month_key)[5:7]), "count": int(len(group))}
+        for stage in stage_columns:
+            good = group[stage].dropna()
+            row[stage] = round(float(good.mean()) / 86400.0, 10) if len(good) else None
+            row[f"{stage}_valid"] = int(len(good))
+            row[f"{stage}_sum_seconds"] = float(good.sum())
+        month_rows.append(row)
+
+    # Aggregate from unrounded seconds, never average month averages.
+    year_rows = []
+    for year, group in data.groupby(data["month_key"].str[:4], sort=True):
+        present_months = sorted(int(month[5:7]) for month in group["month_key"].unique())
+        row = {"year": str(year), "count": int(len(group)),
+               "months_present": present_months, "latest_month": max(present_months),
+               "month_count": len(present_months)}
+        for stage in stage_columns:
+            good = group[stage].dropna()
+            row[stage] = round(float(good.mean()) / 86400.0, 10) if len(good) else None
+            row[f"{stage}_valid"] = int(len(good))
+        year_rows.append(row)
+    return {"history_month_stats": month_rows,
+            "history_year_stats": year_rows,
+            "total_rows": int(len(data))}
+
+
+def _sela_rank_groups(df, name_col, limit=15):
+    """Vectorized top groups: avoids Python iteration over 90k unique requests."""
+    if name_col is None or name_col not in df.columns or df.empty:
+        return []
+    if "TOTAL WAKTU" in df.columns:
+        aggregate = df.groupby(name_col, dropna=False, sort=False)["TOTAL WAKTU"].agg(
+            ["size", "mean"]
+        ).reset_index()
+        aggregate["_avg"] = aggregate["mean"] / 86400.0
+        aggregate = aggregate.sort_values(["_avg", "size"], ascending=[False, False],
+                                          kind="stable", na_position="last").head(limit)
+    else:
+        aggregate = df.groupby(name_col, dropna=False, sort=False).size().reset_index(name="size")
+        aggregate = aggregate.sort_values("size", ascending=False, kind="stable").head(limit)
+    results = []
+    for row in aggregate.to_dict("records"):
+        entry = {"name": str(row[name_col]), "count": int(row["size"])}
+        if "_avg" in row:
+            entry["avg_sla_days"] = round(float(row["_avg"]), 10) if pd.notna(row["_avg"]) else None
+        results.append(entry)
+    return results
+
+
+def _sela_grouped_process_snapshot(df, period_key, name_col, sla_cols, limit):
+    """Materialize only the highest-volume group summaries via vectorized groupby."""
+    if period_key not in df.columns or name_col not in df.columns:
+        return []
+    relevant = df.dropna(subset=[period_key])
+    if relevant.empty:
+        return []
+    keys = [period_key, name_col]
+    grouped = relevant.groupby(keys, dropna=False, sort=False)
+    amounts = grouped.size().rename("_count").to_frame()
+    if sla_cols:
+        means = grouped[sla_cols].mean()
+        amounts = amounts.join(means)
+    amounts = amounts.sort_values("_count", ascending=False, kind="stable").head(limit).reset_index()
+    results = []
+    for row in amounts.to_dict("records"):
+        item = {"name": str(row[name_col]), "count": int(row["_count"])}
+        if period_key == "_year_sela":
+            item["year"] = str(row[period_key])
+        else:
+            item["month_key"] = str(row[period_key])
+            item.update(_sela_month_year_from_period(row[period_key]))
+        for c in sla_cols:
+            v = row.get(c)
+            item[c] = round(float(v) / 86400.0, 10) if v is not None and pd.notna(v) else None
+        results.append(item)
+    return results
 
 
 def build_sela_payload(df_filtered, periode_col: str):
     payload = {
         "meta": {
             "assistant_name": "SELA",
-            "version": "v10",
+            "version": "v11-core",
         },
         "metrics": {},
         "period_stats": [],
@@ -8900,6 +8987,9 @@ def build_sela_payload(df_filtered, periode_col: str):
         "process_vendor_year_stats": [],
         "process_vendor_month_stats": [],
         "sample_records": [],
+        "history_month_stats": [],
+        "history_year_stats": [],
+        "history_total_rows": 0,
     }
 
     if df_filtered is None or not isinstance(df_filtered, pd.DataFrame) or df_filtered.empty:
@@ -8925,7 +9015,8 @@ def build_sela_payload(df_filtered, periode_col: str):
         days_map[c] = df[c] / 86400.0
 
     total_rows = int(len(df))
-    total_sla_days = float(days_map.get("TOTAL WAKTU", pd.Series(dtype=float)).mean() or 0)
+    total_sla_average = days_map.get("TOTAL WAKTU", pd.Series(dtype=float)).mean()
+    total_sla_days = float(total_sla_average) if pd.notna(total_sla_average) else None
     period_values = df[periode_col].dropna().astype(str).tolist() if periode_col in df.columns else []
     period_first = period_values[0] if period_values else "-"
     period_last = period_values[-1] if period_values else "-"
@@ -8943,8 +9034,10 @@ def build_sela_payload(df_filtered, periode_col: str):
             _my = _sela_month_year_from_period(p)
             row.update(_my)
             if "TOTAL WAKTU" in g.columns:
-                row["avg_sla_days"] = round(float(pd.to_numeric(g["TOTAL WAKTU"], errors="coerce").mean() / 86400.0), 2) if len(g) else 0
+                row["avg_sla_days"] = round(float(pd.to_numeric(g["TOTAL WAKTU"], errors="coerce").mean() / 86400.0), 10) if len(g) else 0
             period_rows.append(row)
+        # Chronological ordering is required for accurate growth and last period.
+        period_rows.sort(key=lambda item: (item.get("month_key") or "9999-99", item["periode"]))
         payload["period_stats"] = period_rows
 
         # derive years
@@ -8963,7 +9056,7 @@ def build_sela_payload(df_filtered, periode_col: str):
                 item = year_map.setdefault(str(y), {"year": str(y), "count": 0, "sum_sla": 0.0, "n_sla": 0})
                 item["count"] = int(len(g))
                 if "TOTAL WAKTU" in g.columns:
-                    item["avg_sla_days"] = round(float(pd.to_numeric(g["TOTAL WAKTU"], errors="coerce").mean() / 86400.0), 2)
+                    item["avg_sla_days"] = round(float(pd.to_numeric(g["TOTAL WAKTU"], errors="coerce").mean() / 86400.0), 10)
             payload["year_stats"] = sorted(year_map.values(), key=lambda x: x["year"])
 
         # intelligent process aggregates for SELA natural filtering.
@@ -8972,15 +9065,25 @@ def build_sela_payload(df_filtered, periode_col: str):
             for c in sla_cols:
                 if c in g.columns:
                     s = pd.to_numeric(g[c], errors="coerce")
-                    item[c] = round(float(s.mean() / 86400.0), 2) if s.notna().any() else None
+                    item[c] = round(float(s.mean() / 86400.0), 10) if s.notna().any() else None
             return item
 
         tmp_proc = df.copy()
         tmp_proc["_year_sela"] = tmp_proc[periode_col].astype(str).str.extract(r"(20\d{2})")
-        _my_df = tmp_proc[periode_col].astype(str).apply(_sela_month_year_from_period).apply(pd.Series)
-        tmp_proc["_month_key_sela"] = _my_df.get("month_key")
-        tmp_proc["_month_name_sela"] = _my_df.get("month_name")
-        tmp_proc["_month_num_sela"] = _my_df.get("month")
+        # Fast vectorized lookup: parse each distinct label once, not each Excel row.
+        _labels_sela = tmp_proc[periode_col].astype(str)
+        _period_lookup_sela = {
+            label: _sela_month_year_from_period(label) for label in _labels_sela.unique()
+        }
+        tmp_proc["_month_key_sela"] = _labels_sela.map(
+            {k: v["month_key"] for k, v in _period_lookup_sela.items()}
+        )
+        tmp_proc["_month_name_sela"] = _labels_sela.map(
+            {k: v["month_name"] for k, v in _period_lookup_sela.items()}
+        )
+        tmp_proc["_month_num_sela"] = _labels_sela.map(
+            {k: v["month"] for k, v in _period_lookup_sela.items()}
+        )
 
         process_year_rows = []
         for y, g in tmp_proc.dropna(subset=["_year_sela"]).groupby("_year_sela"):
@@ -8995,7 +9098,9 @@ def build_sela_payload(df_filtered, periode_col: str):
             item.update(_sela_month_year_from_period(p))
             item.update(_sela_process_avg_row(g))
             process_period_rows.append(item)
-        payload["process_period_stats"] = process_period_rows
+        payload["process_period_stats"] = sorted(
+            process_period_rows, key=lambda item: (item.get("month_key") or "9999-99", item["periode"])
+        )
 
         process_month_rows = []
         month_ready = tmp_proc.dropna(subset=["_month_key_sela"]).copy()
@@ -9013,89 +9118,34 @@ def build_sela_payload(df_filtered, periode_col: str):
         payload["process_month_stats"] = sorted(process_month_rows, key=lambda x: x.get("month_key") or "")
 
         if trx_col and trx_col in tmp_proc.columns:
-            process_trx_year_rows = []
-            for (y, k), g in tmp_proc.dropna(subset=["_year_sela"]).groupby(["_year_sela", trx_col], dropna=False):
-                item = {"year": str(y), "name": str(k)}
-                item.update(_sela_process_avg_row(g))
-                process_trx_year_rows.append(item)
-            payload["process_transaction_year_stats"] = sorted(process_trx_year_rows, key=lambda x: x.get("count", 0), reverse=True)[:500]
-
-            process_trx_month_rows = []
-            trx_month_ready = tmp_proc.dropna(subset=["_month_key_sela"])
-            for (mk, k), g in trx_month_ready.groupby(["_month_key_sela", trx_col], dropna=False):
-                item = {
-                    "month_key": str(mk),
-                    "year": str(g["_year_sela"].dropna().iloc[0]) if g["_year_sela"].notna().any() else None,
-                    "month": int(g["_month_num_sela"].dropna().iloc[0]) if g["_month_num_sela"].notna().any() else None,
-                    "month_name": str(g["_month_name_sela"].dropna().iloc[0]) if g["_month_name_sela"].notna().any() else None,
-                    "name": str(k),
-                }
-                item.update(_sela_process_avg_row(g))
-                process_trx_month_rows.append(item)
-            payload["process_transaction_month_stats"] = sorted(process_trx_month_rows, key=lambda x: x.get("count", 0), reverse=True)[:800]
+            payload["process_transaction_year_stats"] = _sela_grouped_process_snapshot(
+                tmp_proc, "_year_sela", trx_col, sla_cols, limit=500)
+            payload["process_transaction_month_stats"] = _sela_grouped_process_snapshot(
+                tmp_proc, "_month_key_sela", trx_col, sla_cols, limit=800)
 
         if vendor_col and vendor_col in tmp_proc.columns:
-            process_vendor_year_rows = []
-            for (y, k), g in tmp_proc.dropna(subset=["_year_sela"]).groupby(["_year_sela", vendor_col], dropna=False):
-                item = {"year": str(y), "name": str(k)}
-                item.update(_sela_process_avg_row(g))
-                process_vendor_year_rows.append(item)
-            payload["process_vendor_year_stats"] = sorted(process_vendor_year_rows, key=lambda x: x.get("count", 0), reverse=True)[:500]
+            payload["process_vendor_year_stats"] = _sela_grouped_process_snapshot(
+                tmp_proc, "_year_sela", vendor_col, sla_cols, limit=500)
+            payload["process_vendor_month_stats"] = _sela_grouped_process_snapshot(
+                tmp_proc, "_month_key_sela", vendor_col, sla_cols, limit=800)
 
-            process_vendor_month_rows = []
-            vendor_month_ready = tmp_proc.dropna(subset=["_month_key_sela"])
-            for (mk, k), g in vendor_month_ready.groupby(["_month_key_sela", vendor_col], dropna=False):
-                item = {
-                    "month_key": str(mk),
-                    "year": str(g["_year_sela"].dropna().iloc[0]) if g["_year_sela"].notna().any() else None,
-                    "month": int(g["_month_num_sela"].dropna().iloc[0]) if g["_month_num_sela"].notna().any() else None,
-                    "month_name": str(g["_month_name_sela"].dropna().iloc[0]) if g["_month_name_sela"].notna().any() else None,
-                    "name": str(k),
-                }
-                item.update(_sela_process_avg_row(g))
-                process_vendor_month_rows.append(item)
-            payload["process_vendor_month_stats"] = sorted(process_vendor_month_rows, key=lambda x: x.get("count", 0), reverse=True)[:800]
+    # Top lists maintain their existing 15-item maximum, now using vectorized aggregation.
+    payload["transaction_stats"] = _sela_rank_groups(df, trx_col, limit=15)
+    payload["vendor_stats"] = _sela_rank_groups(df, vendor_col, limit=15)
+    payload["nomor_stats"] = _sela_rank_groups(df, nomor_col, limit=15)
 
-    # top transaksi
-    if trx_col and trx_col in df.columns:
-        out=[]
-        for k,g in df.groupby(trx_col, dropna=False):
-            item={"name": str(k), "count": int(len(g))}
-            if "TOTAL WAKTU" in g.columns:
-                item["avg_sla_days"] = round(float(pd.to_numeric(g["TOTAL WAKTU"], errors="coerce").mean()/86400.0),2)
-            out.append(item)
-        out=sorted(out, key=lambda x: (x.get("avg_sla_days",0), x["count"]), reverse=True)
-        payload["transaction_stats"] = out[:15]
-
-    # top vendor
-    if vendor_col and vendor_col in df.columns:
-        out=[]
-        for k,g in df.groupby(vendor_col, dropna=False):
-            item={"name": str(k), "count": int(len(g))}
-            if "TOTAL WAKTU" in g.columns:
-                item["avg_sla_days"] = round(float(pd.to_numeric(g["TOTAL WAKTU"], errors="coerce").mean()/86400.0),2)
-            out.append(item)
-        out=sorted(out, key=lambda x: (x.get("avg_sla_days",0), x["count"]), reverse=True)
-        payload["vendor_stats"] = out[:15]
-
-    # top nomor permohonan
-    if nomor_col and nomor_col in df.columns:
-        out=[]
-        for k,g in df.groupby(nomor_col, dropna=False):
-            item={"name": str(k), "count": int(len(g))}
-            if "TOTAL WAKTU" in g.columns:
-                item["avg_sla_days"] = round(float(pd.to_numeric(g["TOTAL WAKTU"], errors="coerce").mean()/86400.0),2)
-            out.append(item)
-        out=sorted(out, key=lambda x: (x.get("avg_sla_days",0), x["count"]), reverse=True)
-        payload["nomor_stats"] = out[:15]
-
-    # bottleneck proses
+    # Bottleneck ranks operational stages only; TOTAL WAKTU remains accessible
+    # for queries but is never itself called a workflow bottleneck.
     proses = []
+    operational_stages = {"FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN"}
     for c in ["FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"]:
         if c in df.columns:
-            avg_days = float(pd.to_numeric(df[c], errors="coerce").mean()/86400.0)
-            proses.append({"name": c, "avg_sla_days": round(avg_days,2)})
-    proses = sorted(proses, key=lambda x: x["avg_sla_days"], reverse=True)
+            average = _sela_valid_average_days(df[c])
+            valid_rows = int(pd.to_numeric(df[c], errors="coerce").notna().sum())
+            proses.append({"name": c, "avg_sla_days": average,
+                           "valid_count": valid_rows, "is_stage": c in operational_stages})
+    proses.sort(key=lambda item: (item["avg_sla_days"] is None,
+                                 -(item["avg_sla_days"] or 0)))
     payload["proses_stats"] = proses
 
     # sample records \u06a9\u0648\u0686\u06a9
@@ -9117,7 +9167,9 @@ def build_sela_payload(df_filtered, periode_col: str):
     top_trx = payload["transaction_stats"][0] if payload["transaction_stats"] else None
     top_vendor = payload["vendor_stats"][0] if payload["vendor_stats"] else None
     top_nomor = payload["nomor_stats"][0] if payload["nomor_stats"] else None
-    bottleneck = payload["proses_stats"][0] if payload["proses_stats"] else None
+    bottleneck = next((row for row in payload["proses_stats"]
+                       if row.get("is_stage") and row.get("valid_count", 0) > 0
+                       and row["avg_sla_days"] is not None), None)
     total_nilai = None
     if nilai_col and nilai_col in df.columns:
         try:
@@ -9127,7 +9179,7 @@ def build_sela_payload(df_filtered, periode_col: str):
 
     payload["metrics"] = {
         "transaction_count": total_rows,
-        "avg_sla_days": round(total_sla_days, 2),
+        "avg_sla_days": round(total_sla_days, 10) if total_sla_days is not None else None,
         "period_first": str(period_rows[0]["periode"]) if payload["period_stats"] else (period_first or "-"),
         "period_last": str(period_rows[-1]["periode"]) if payload["period_stats"] else (period_last or "-"),
         "period_mode": period_mode or "-",
@@ -9153,9 +9205,36 @@ def build_sela_payload(df_filtered, periode_col: str):
 
 
 
-def render_sela_widget(df_filtered, periode_col: str):
-    payload = build_sela_payload(df_filtered, periode_col)
+@st.cache_data(show_spinner=False, max_entries=8)
+def _sela_active_payload_cached(source_version: str, selected_keys: tuple,
+                                period_col: str, _active_df: pd.DataFrame):
+    """Re-use SELA v11 aggregates on repeated tab toggles and widget changes."""
+    return build_sela_payload(_active_df, period_col)
+
+
+def render_sela_widget(df_filtered, periode_col: str,
+                       source_version: str = "", period_keys: tuple = (),
+                       raw_history: pd.DataFrame | None = None):
+    if source_version:
+        payload = _sela_active_payload_cached(source_version, tuple(period_keys),
+                                              periode_col, df_filtered)
+    else:
+        payload = build_sela_payload(df_filtered, periode_col)
+
+    if raw_history is not None and source_version:
+        historical = _sela_history_summary_cached(source_version, periode_col, raw_history)
+        payload["history_month_stats"] = historical["history_month_stats"]
+        payload["history_year_stats"] = historical["history_year_stats"]
+        payload["history_total_rows"] = historical["total_rows"]
+
+    # Prevent Excel-derived strings from terminating the inline <script> element.
+    # Text is also rendered using DOM textContent in addMsg, never as HTML.
     data_json = json.dumps(payload, ensure_ascii=False)
+    data_json = (data_json.replace("<", "\\u003c")
+                         .replace(">", "\\u003e")
+                         .replace("&", "\\u0026")
+                         .replace("\u2028", "\\u2028")
+                         .replace("\u2029", "\\u2029"))
 
     html = """
 <!DOCTYPE html>
@@ -9269,7 +9348,7 @@ def render_sela_widget(df_filtered, periode_col: str):
       <div class="brand">
         <div class="logo">S</div>
         <div>
-          <div class="title">SELA v10 \u2022 Smart Virtual Human</div>
+          <div class="title">SELA v11 \u2022 Core Intelligence</div>
           <div class="subtitle">Asisten virtual human wanita dengan lip-sync lebih halus, analisis periode sampai level bulan, dan kemampuan menjawab SLA otomatis sesuai filter yang diminta.</div>
         </div>
       </div>
@@ -9278,6 +9357,7 @@ def render_sela_widget(df_filtered, periode_col: str):
         <div class="tag">VOICE READY</div>
         <div class="tag">LIP SYNC</div>
         <div class="tag">SMART FILTER</div>
+        <div class="tag">HISTORY VERIFIED</div>
       </div>
     </div>
 
@@ -9326,6 +9406,9 @@ def render_sela_widget(df_filtered, periode_col: str):
           <button class="chip" data-question="Vendor mana yang paling lambat?">Vendor Lambat</button>
           <button class="chip" data-question="Nomor permohonan mana yang perlu dipantau?">Nomor Permohonan</button>
           <button class="chip" data-question="Apa rekomendasi perbaikannya?">Rekomendasi</button>
+          <button class="chip" data-question="Bandingkan jumlah transaksi tahun 2024, 2025, dan 2026">Multi-Tahun</button>
+          <button class="chip" data-question="Bandingkan SLA Keuangan tahun 2024, 2025, dan 2026">SLA Multi-Tahun</button>
+          <button class="chip" data-question="Bagaimana bottleneck tiap tahapan proses?">Tahapan Bottleneck</button>
         </div>
 
         <div id="chatbox" class="chatbox"></div>
@@ -9358,6 +9441,20 @@ def render_sela_widget(df_filtered, periode_col: str):
     const processVendorYearStats = payload.process_vendor_year_stats || [];
     const processVendorMonthStats = payload.process_vendor_month_stats || [];
     const records = payload.sample_records || [];
+    const historyYears = payload.history_year_stats || [];
+    const historyMonths = payload.history_month_stats || [];
+    // Keep legacy quick questions; adapt new examples to the years actually uploaded.
+    const exampleYears = historyYears.map(item => String(item.year)).sort().slice(-3);
+    if(exampleYears.length >= 2){
+      const yearLabel = exampleYears.join(', ');
+      document.querySelectorAll('.chip').forEach(button => {
+        const q = button.dataset.question || '';
+        if(q.startsWith('Bandingkan jumlah transaksi tahun '))
+          button.dataset.question = 'Bandingkan jumlah transaksi tahun ' + yearLabel;
+        if(q.startsWith('Bandingkan SLA Keuangan tahun '))
+          button.dataset.question = 'Bandingkan SLA Keuangan tahun ' + yearLabel;
+      });
+    }
 
     const speechBubble = document.getElementById('speechBubble');
     const heroCaption = document.getElementById('heroCaption');
@@ -9396,8 +9493,14 @@ def render_sela_widget(df_filtered, periode_col: str):
     function normalize(s){ return String(s||'').toLowerCase().trim(); }
     function addMsg(role, text){
       const div = document.createElement('div');
-      div.className = `msg ${role}`;
-      div.innerHTML = text + `<small>${role === 'bot' ? 'SELA' : 'Anda'}</small>`;
+      div.className = `msg ${role === 'user' ? 'user' : 'bot'}`;
+      const content = document.createElement('span');
+      content.textContent = String(text == null ? '' : text);
+      content.style.whiteSpace = 'pre-wrap';
+      const author = document.createElement('small');
+      author.textContent = role === 'bot' ? 'SELA' : 'Anda';
+      div.appendChild(content);
+      div.appendChild(author);
       chatbox.appendChild(div);
       chatbox.scrollTop = chatbox.scrollHeight;
     }
@@ -9658,7 +9761,10 @@ def render_sela_widget(df_filtered, periode_col: str):
       }
       const rowAll = prosesStats.find(x => normalize(x.name) === normalize(process));
       if(rowAll){
-        return `${naturalLead()} Pada seluruh data aktif, rata-rata SLA ${prettyProcessName(process)} adalah ${fmtDays(rowAll.avg_sla_days || 0)}.`;
+        if(rowAll.avg_sla_days === null || rowAll.avg_sla_days === undefined){
+          return `Belum tersedia durasi SLA ${prettyProcessName(process)} yang valid pada filter aktif.`;
+        }
+        return `${naturalLead()} Pada seluruh data aktif, rata-rata SLA ${prettyProcessName(process)} adalah ${fmtDays(rowAll.avg_sla_days)} dari ${fmtNum(rowAll.valid_count)} baris dengan SLA valid.`;
       }
       return null;
     }
@@ -9693,10 +9799,205 @@ def render_sela_widget(df_filtered, periode_col: str):
       return rec.join(' ');
     }
 
+    // SELA v11: deterministic evidence layer based on source-versioned monthly aggregates.
+    // No external API calls; no dependency added; historical comparison never changes global filters.
+    function selaMentionedYears(text){
+      const raw = String(text);
+      const matches = raw.match(/(?:19|20)[0-9]{2}/g) || [];
+      const years = [...new Set(matches)].sort();
+      const span = raw.match(/((?:19|20)[0-9]{2})[ ]*(?:sampai|hingga|s[.]?d[.]?|[-–])[ ]*((?:19|20)[0-9]{2})/i);
+      if(span){
+        const start = Number(span[1]), end = Number(span[2]);
+        if(end >= start && end-start <= 30){
+          const available = historyYears.map(y => String(y.year));
+          return available.filter(y => Number(y) >= start && Number(y) <= end);
+        }
+      }
+      return years;
+    }
+    function selaIsComparison(text){
+      return /(bandingkan|perbandingan|dibandingkan|dibanding|versus| vs |komparasi|compare|sampai|hingga|antar tahun)/i.test(text);
+    }
+    function selaMetric(text){
+      if(/(jumlah|total|volume)[ ]+transaksi/.test(text)) return 'count';
+      const detected = detectProcess(text);
+      if(detected && /(sla|durasi|waktu|rata|proses)/i.test(text)) return detected;
+      return /(sla|durasi|rata-rata waktu)/i.test(text) ? 'TOTAL WAKTU' : 'count';
+    }
+    function selaEvidence(scope, n){
+      return `\nDasar data: ${scope}; ${fmtNum(n)} transaksi dari file unggahan. SLA (jika ditampilkan) dihitung dari durasi valid.`;
+    }
+    function selaCleanNumber(num){
+      return (num == null || !Number.isFinite(Number(num))) ? null : Number(num);
+    }
+    function selaMonthYearMentions(text){
+      const found = [];
+      const q = normalize(text);
+      MONTH_DEFS.forEach((variants, index) => {
+        variants.forEach(label => {
+          const rx = new RegExp('(?:^|[^a-z])' + label + '[ -]+((?:19|20)[0-9]{2})(?![0-9])', 'g');
+          for(const match of q.matchAll(rx)){
+            found.push(`${match[1]}-${String(index+1).padStart(2,'0')}`);
+          }
+        });
+      });
+      for(const m of q.matchAll(/((?:19|20)[0-9]{2})[-/]([01]?[0-9])/g)){
+        const month = Number(m[2]);
+        if(month >= 1 && month <= 12) found.push(`${m[1]}-${String(month).padStart(2,'0')}`);
+      }
+      return [...new Set(found)].sort();
+    }
+    function selaAggregateYear(year, horizon, metric){
+      const months = historyMonths.filter(m => String(m.year) === String(year) && m.month <= horizon);
+      if(!months.length) return null;
+      const total = months.reduce((acc, m) => acc + Number(m.count || 0), 0);
+      const coverage = new Set(months.map(m => Number(m.month))).size;
+      const missing = Array.from({length:horizon}, (_, i) => i + 1)
+                           .filter(month => !months.some(m => Number(m.month) === month));
+      if(metric === 'count') return {year, value:total, count:total, coverage, missing};
+      const n = months.reduce((acc, m) => acc + Number(m[metric + '_valid'] || 0), 0);
+      const s = months.reduce((acc, m) => acc + Number(m[metric + '_sum_seconds'] || 0), 0);
+      return {year, value:n ? s/n/86400 : null, count:total, valid:n, coverage, missing};
+    }
+    function selaCompareYears(text){
+      if(!selaIsComparison(text)) return null;
+      const years = selaMentionedYears(text);
+      if(years.length < 2) return null;
+      const metric = selaMetric(text);
+      const validYears = years.map(year => historyYears.find(y => String(y.year) === year));
+      const absent = years.filter((year, i) => !validYears[i]);
+      if(absent.length){
+        return `Belum tersedia data untuk tahun ${absent.join(', ')} pada file yang diunggah. Tahun tersedia: ${historyYears.map(y=>y.year).join(', ') || '-'}.`;
+      }
+      const horizon = Math.min(...validYears.map(y => Number(y.latest_month || 12)));
+      const snapshots = years.map(year => selaAggregateYear(year, horizon, metric));
+      if(snapshots.some(s => !s)) return 'Data perbandingan belum memadai untuk tahun yang dipilih.';
+      const title = metric === 'count' ? 'Jumlah transaksi' : `Rata-rata SLA ${prettyProcessName(metric)}`;
+      const pieces = snapshots.map(s => `${s.year}: ${metric==='count' ? fmtNum(s.value)+' transaksi' : fmtDays(s.value)} (data ${s.coverage}/${horizon} bulan${metric!=='count' ? ', SLA valid '+fmtNum(s.valid) : ''})`);
+      const gaps = snapshots.filter(s => s.missing.length > 0);
+      let answer = `${title} untuk horizon Januari–${MONTH_NAMES_ID[horizon-1]}: ${pieces.join('; ')}.`;
+      const base = snapshots[0];
+      if(base.value !== null){
+        const comparisons = snapshots.slice(1).map(s => {
+          if(s.value === null) return `${s.year}: data SLA valid tidak tersedia`;
+          const difference = s.value - base.value;
+          const growth = base.value === 0 ? null : difference/base.value*100;
+          const direction = difference > 0 ? 'naik' : difference < 0 ? 'turun' : 'tetap';
+          return `${s.year} vs ${base.year}: ${direction} ${metric==='count' ? fmtNum(Math.abs(difference))+' transaksi' : fmtDays(Math.abs(difference))}${growth === null ? '' : ' ('+fmtPct(growth)+')'}`;
+        });
+        answer += ` Perbandingan terhadap ${base.year}: ${comparisons.join('; ')}.`;
+      }
+      if(metric !== 'count'){
+        const available = snapshots.filter(s => s.value !== null);
+        if(available.length){
+          const fastest = available.reduce((best, s) => s.value < best.value ? s : best);
+          answer += ` SLA rata-rata paling cepat di antara tahun terpilih adalah ${fastest.year} (${fmtDays(fastest.value)}).`;
+        }
+      } else {
+        const best = snapshots.reduce((best, s) => s.value > best.value ? s : best);
+        answer += ` Volume terbesar terdapat pada ${best.year} (${fmtNum(best.value)} transaksi).`;
+      }
+      if(gaps.length) answer += ' Perhatian: ada bulan yang tidak tersedia pada ' + gaps.map(s => s.year).join(', ') + '; bulan kosong tidak dianggap nol.';
+      answer += selaEvidence(`histori seluruh unggahan, horizon Jan–${MONTH_NAMES_ID[horizon-1]}, tahun ${years.join(', ')}`,
+                             snapshots.reduce((a,s)=>a+s.count,0));
+      return answer;
+    }
+    function selaCompareMonths(text){
+      if(!selaIsComparison(text)) return null;
+      const keys = selaMonthYearMentions(text);
+      if(keys.length < 2) return null;
+      const rows = keys.map(key => historyMonths.find(row => row.month_key === key));
+      const missing = keys.filter((key, index) => !rows[index]);
+      if(missing.length){
+        return `Data periode ${missing.join(', ')} belum ada di histori unggahan. Tidak saya anggap sebagai nol transaksi.`;
+      }
+      const metric = selaMetric(text);
+      const vals = rows.map(row => ({
+        label: `${MONTH_NAMES_ID[Number(row.month)-1]} ${row.year}`,
+        count: Number(row.count || 0),
+        value: metric === 'count' ? Number(row.count || 0) : selaCleanNumber(row[metric]),
+        valid: metric === 'count' ? Number(row.count || 0) : Number(row[metric+'_valid'] || 0)
+      }));
+      let response = `Perbandingan ${metric === 'count' ? 'jumlah transaksi' : 'SLA '+prettyProcessName(metric)}: ` +
+        vals.map(v => `${v.label}: ${metric === 'count' ? fmtNum(v.value)+' transaksi' : fmtDays(v.value)} (n=${fmtNum(v.valid)})`).join('; ') + '.';
+      const first = vals[0];
+      if(first.value !== null && first.value !== 0){
+        response += ' Perubahan terhadap '+ first.label + ': ' + vals.slice(1).map(v =>
+          `${v.label} ${v.value === null ? 'tidak tersedia' : fmtPct((v.value-first.value)/first.value*100)}`
+        ).join('; ') + '.';
+      }
+      return response + selaEvidence('histori unggahan untuk '+vals.map(v=>v.label).join(', '), vals.reduce((n,v)=>n+v.count,0));
+    }
+    function selaHistoricalSingle(text){
+      const q = normalize(text);
+      const years = selaMentionedYears(q);
+      const metric = selaMetric(q);
+      const wantsNumbers = /(jumlah transaksi|total transaksi|volume transaksi|sla|durasi|rata-rata waktu)/.test(q);
+      if(!wantsNumbers || years.length !== 1) return null;
+      // Keep existing transaction/vendor-specific drilldowns on their own route.
+      if(findMentionedTransaction(q) || findMentionedVendor(q) || findMentionedNomor(q)) return null;
+      const monthKeys = selaMonthYearMentions(q);
+      if(monthKeys.length === 1){
+        const row = historyMonths.find(m => m.month_key === monthKeys[0]);
+        if(!row) return `Periode ${monthKeys[0]} belum tersedia pada histori upload.`;
+        const value = metric === 'count' ? row.count : row[metric];
+        return `${MONTH_NAMES_ID[Number(row.month)-1]} ${row.year}: ${metric==='count'?'jumlah transaksi':'rata-rata SLA '+prettyProcessName(metric)} adalah ${metric==='count'?fmtNum(value)+' transaksi':fmtDays(value)}.` +
+               selaEvidence('histori unggahan '+row.month_key, row.count);
+      }
+      const row = historyYears.find(item => String(item.year) === years[0]);
+      if(!row) return `Tahun ${years[0]} tidak ditemukan pada histori unggahan.`;
+      const value = metric === 'count' ? row.count : row[metric];
+      return `${row.year}: ${metric==='count'?'jumlah transaksi':'rata-rata SLA '+prettyProcessName(metric)} adalah ${metric==='count'?fmtNum(value)+' transaksi':fmtDays(value)} (cakupan ${row.month_count}/12 bulan).` +
+             selaEvidence('histori unggahan tahun '+row.year, row.count);
+    }
+    function selaStageBreakdown(text){
+      const q = normalize(text);
+      const request = /(bottleneck|tahapan|proses paling lama)/.test(q);
+      const detail = /(tiap|semua|masing|detail|rincian|setiap)/.test(q);
+      if(!request || !detail) return null;
+      const stages = prosesStats.filter(p => p.is_stage && p.avg_sla_days !== null && p.avg_sla_days !== undefined && p.valid_count > 0);
+      if(!stages.length) return 'Belum tersedia SLA tahapan proses yang valid pada filter aktif.';
+      const points = stages.map(s => `${prettyProcessName(s.name)}: ${fmtDays(s.avg_sla_days)} (n=${fmtNum(s.valid_count)})`);
+      const first = stages[0];
+      return `Urutan SLA tiap tahapan proses berdasarkan rata-rata terbesar: ${points.join('; ')}. ` +
+             `Tahap paling lama adalah ${prettyProcessName(first.name)}. TOTAL WAKTU tidak dihitung sebagai tahap karena merupakan durasi keseluruhan.` +
+             selaEvidence(`filter aktif ${metrics.period_first}–${metrics.period_last}`, Number(metrics.transaction_count || 0));
+    }
+    function selaHistoricalBottleneck(text){
+      const q = normalize(text);
+      if(!/(bottleneck|proses paling lama|hambatan)/.test(q)) return null;
+      const years = selaMentionedYears(q);
+      if(years.length !== 1) return null;
+      const monthKeys = selaMonthYearMentions(q);
+      const src = monthKeys.length === 1
+        ? historyMonths.find(m => m.month_key === monthKeys[0])
+        : historyYears.find(y => String(y.year) === years[0]);
+      if(!src) return `Data bottleneck untuk ${monthKeys[0] || years[0]} tidak tersedia di histori upload.`;
+      const stages = ['FUNGSIONAL','VENDOR','KEUANGAN','PERBENDAHARAAN']
+          .filter(name => src[name] !== null && src[name] !== undefined && src[name+'_valid'] > 0)
+          .map(name => ({name, avg: Number(src[name]), valid: Number(src[name+'_valid'])}));
+      if(!stages.length) return 'Data tahapan SLA valid belum tersedia pada periode tersebut.';
+      stages.sort((a,b) => b.avg-a.avg);
+      return `Bottleneck historis ${monthKeys.length ? monthKeys[0] : years[0]} adalah ${prettyProcessName(stages[0].name)} dengan rata-rata ${fmtDays(stages[0].avg)}. `+
+             `Rincian: ${stages.map(p=>prettyProcessName(p.name)+' '+fmtDays(p.avg)).join('; ')}. ` +
+             `TOTAL WAKTU tidak dianggap tahap proses.` +
+             selaEvidence(`histori unggahan ${monthKeys[0] || years[0]}`, Number(src.count || 0));
+    }
+    function selaQuestionRouter(text){
+      const stageDetail = selaStageBreakdown(text);
+      if(stageDetail) return stageDetail;
+      if(!historyMonths.length) return null;
+      return selaHistoricalBottleneck(text) || selaCompareMonths(text) ||
+             selaCompareYears(text) || selaHistoricalSingle(text);
+    }
+
     function answer(text){
       const q = normalize(text);
       if(!q) return 'Silakan sampaikan pertanyaannya ya, saya siap membantu.';
       if(payload.meta.status === 'empty') return 'Saat ini belum ada data aktif yang bisa saya baca. Silakan upload atau aktifkan data terlebih dahulu.';
+
+      const v11Answer = selaQuestionRouter(q);
+      if(v11Answer) return v11Answer;
 
       const processAnswer = answerProcessSLA(q);
       if(processAnswer) return processAnswer;
@@ -9709,7 +10010,7 @@ def render_sela_widget(df_filtered, periode_col: str):
       }
       if(/ringkasan direksi|executive|direksi|summary/.test(q)){
         const parts = [];
-        parts.push(`${naturalLead()} Pada data aktif terdapat ${fmtNum(metrics.transaction_count || 0)} transaksi dengan rata-rata SLA total ${fmtDays(metrics.avg_sla_days || 0)}.`);
+        parts.push(`${naturalLead()} Pada data aktif terdapat ${fmtNum(metrics.transaction_count || 0)} transaksi dengan rata-rata SLA total ${fmtDays(metrics.avg_sla_days)}.`);
         if(metrics.top_transaction) parts.push(`Jenis transaksi yang paling perlu menjadi perhatian adalah ${metrics.top_transaction.name} dengan rata-rata SLA ${fmtDays(metrics.top_transaction.avg_sla_days || 0)}.`);
         if(metrics.bottleneck) parts.push(`Bottleneck terbesar saat ini berada pada proses ${metrics.bottleneck.name} dengan rata-rata ${fmtDays(metrics.bottleneck.avg_sla_days || 0)}.`);
         if(metrics.latest_growth_pct !== null && metrics.latest_growth_pct !== undefined) parts.push(`Secara volume, transaksi terakhir ${Number(metrics.latest_growth_pct) >= 0 ? 'naik' : 'turun'} ${fmtPct(metrics.latest_growth_pct).replace('+','')} dibanding periode sebelumnya.`);
@@ -9804,7 +10105,13 @@ def render_sela_widget(df_filtered, periode_col: str):
       statusLine.textContent = 'Status: SELA sedang menganalisis pertanyaan Anda.';
       setAvatarState('listening');
       setTimeout(() => {
-        const ans = answer(q);
+        const result = answer(q);
+        const isDataQuestion = /(transaksi|sla|vendor|cabang|nomor permohonan|periode|tahun|bottleneck|growth|pertumbuhan|ringkasan|direksi|rekomendasi|proses)/i.test(q);
+        const hasEvidence = result.includes('Dasar data:');
+        const ans = (isDataQuestion && !hasEvidence && payload.meta.status !== 'empty')
+          ? result + selaEvidence(`filter aktif ${metrics.period_first || '-'}–${metrics.period_last || '-'}`,
+                                  Number(metrics.transaction_count || 0))
+          : result;
         addMsg('bot', ans);
         setBubble(ans);
         speak(ans);
@@ -9880,7 +10187,10 @@ def render_sela_widget(df_filtered, periode_col: str):
 
 # PANGGIL SELA HANYA JIKA USER MINTA (lebih ringan untuk halaman awal)
 if st.session_state.get("show_sela", False):
-    render_sela_widget(df_filtered, periode_col)
+    render_sela_widget(df_filtered, periode_col,
+                       source_version=_sla_source_version,
+                       period_keys=tuple(selected_periode),
+                       raw_history=_sela_full_history_source)
 
 # Performance-safe user settings preservation for dynamic tabs.
 if _SLA_LAZY_TABS:
