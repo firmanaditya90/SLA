@@ -462,11 +462,386 @@ hr.soft { border: none; height: 1px; background: linear-gradient(90deg, transpar
 </style>
 """, unsafe_allow_html=True)
 
+# Visual-only CSS overlay: contains no widget, data or server-side operations.
+st.markdown(r"""
+<style>
+/* ===============================================================
+   ASDP SLA PAYMENT ANALYZER - EXECUTIVE PREMIUM DESIGN SYSTEM
+   Pure CSS visual overlay. No application logic or chart datasets.
+   Local fonts only. No external assets, JS, animations, or HTTP.
+   =============================================================== */
+:root {
+  --sla-ink: #122945;
+  --sla-navy: #0b2747;
+  --sla-navy-mid: #174c70;
+  --sla-blue: #3474ba;
+  --sla-teal: #0ca9a3;
+  --sla-mint: #27c7af;
+  --sla-gold: #d7a956;
+  --sla-muted: #5b728b;
+  --sla-border: #dbe6f0;
+  --sla-paper: #ffffff;
+  --sla-shadow: 0 5px 14px rgba(18, 51, 83, .035),
+                0 18px 46px rgba(18, 51, 83, .075);
+  --sla-radius: 16px;
+}
+
+/* App canvas - calm luxury, restrained highlights and generous whitespace. */
+[data-testid="stAppViewContainer"] {
+  background: radial-gradient(circle at 98% -8%,rgba(39,189,188,.075),transparent 34%),
+              radial-gradient(circle at 15% 4%,rgba(59,121,193,.07),transparent 34%),
+              linear-gradient(180deg,#f5f9fd 0%,#f9fbfe 42%,#f5f8fc 100%);
+  color: var(--sla-ink);
+}
+[data-testid="stAppViewContainer"] > .main,
+[data-testid="stMain"] {background: transparent;}
+[data-testid="stMainBlockContainer"] {
+  padding-top: 1.65rem;
+  padding-bottom: 3.5rem;
+}
+[data-testid="stMain"] {font-family: Inter, 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif;}
+[data-testid="stMain"] [data-testid="stMarkdownContainer"] p {line-height: 1.56;}
+[data-testid="stMain"] [data-testid="stHeadingWithActionElements"] h2,
+[data-testid="stMain"] [data-testid="stHeadingWithActionElements"] h3 {
+  color: var(--sla-navy);
+  font-weight: 780;
+  letter-spacing: -.55px;
+}
+[data-testid="stMain"] [data-testid="stHeadingWithActionElements"] h2 {
+  padding-top: .3rem;
+  margin-bottom: .45rem;
+}
+[data-testid="stMain"] [data-testid="stHeadingWithActionElements"] h3 {letter-spacing: -.35px;}
+
+/* Page masthead - original title and description preserved. */
+.sla-hero-premium {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 30px 34px 31px;
+  margin: 2px 0 27px;
+  border-radius: 23px;
+  border: 1px solid rgba(105,194,220,.25);
+  background: radial-gradient(circle at 87% 14%,rgba(32,192,181,.16),transparent 36%),
+              radial-gradient(circle at 5% 100%,rgba(76,116,204,.17),transparent 43%),
+              linear-gradient(115deg,#091e3b 0%,#0c345a 55%,#165474 100%);
+  box-shadow: 0 15px 40px rgba(10,34,68,.16);
+  color: #f7fbff;
+  overflow: hidden;
+  position: relative;
+}
+.sla-hero-premium::before {
+  content: "";
+  position: absolute;
+  width: 260px;
+  height: 260px;
+  border: 1px solid rgba(176,222,243,.14);
+  border-radius: 50%;
+  right: -105px;
+  top: -125px;
+  pointer-events: none;
+}
+.sla-hero-premium::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 32px;
+  width: 160px;
+  height: 3px;
+  background: linear-gradient(90deg,var(--sla-mint),#bde2f4,transparent);
+}
+.sla-hero-premium .sla-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: #79e2d6;
+  font-size: 10px;
+  font-weight: 820;
+  letter-spacing: 2.1px;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.sla-hero-premium .sla-eyebrow::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #54d9c1;
+  box-shadow: 0 0 0 4px rgba(84,217,193,.13);
+}
+.sla-hero-premium h1 {
+  margin: 0;
+  font-weight: 840;
+  font-size: clamp(26px, 3.2vw, 42px);
+  line-height: 1.18;
+  letter-spacing: -1.5px;
+  color: #fff !important;
+  background: none !important;
+  -webkit-text-fill-color: #fff !important;
+}
+.sla-hero-premium .sla-hero-description {
+  margin: 12px 0 0;
+  color: #d3e5f1;
+  font-size: clamp(12px, 1vw, 14px);
+  max-width: 780px;
+}
+.sla-hero-premium .sla-hero-seal {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: center;
+  justify-content: center;
+  color: #d9eff5;
+  border: 1px solid rgba(205,238,243,.24);
+  background: rgba(255,255,255,.075);
+  border-radius: 15px;
+  padding: 17px 20px;
+  min-width: 130px;
+  white-space: nowrap;
+}
+.sla-hero-premium .sla-hero-seal strong {font-size: 17px;letter-spacing: 1.5px;color:#fff;}
+.sla-hero-premium .sla-hero-seal span {font-size: 9px;letter-spacing: 1.3px;color:#8be4d5;}
+
+/* Sidebar: crisp white navigation panel, readable in bright environments. */
+[data-testid="stSidebar"] {
+  background: #f9fbfe;
+  border-right: 1px solid #e1eaf2;
+  box-shadow: 3px 0 24px rgba(21,61,101,.035);
+}
+[data-testid="stSidebar"] > div:first-child {
+  background: linear-gradient(180deg,#fff 0%,#f9fbfe 100%);
+}
+[data-testid="stSidebar"] [data-testid="stImage"] img {
+  object-fit: contain;
+  max-width: 100%;
+}
+.sla-side-brand {
+  margin: 7px 0 19px;
+  padding: 16px 13px;
+  border-radius: 14px;
+  border: 1px solid #e1eaf1;
+  background: linear-gradient(145deg,#fff,#f2f8fc);
+  text-align: center;
+}
+.sla-side-brand strong {display:block;color:#0a3458;font-size:14px;letter-spacing:-.2px;}
+.sla-side-brand span {display:block;color:#5d8e9f;font-size:9px;font-weight:800;letter-spacing:1.35px;margin-top:5px;}
+[data-testid="stSidebar"] h3 {font-weight: 800 !important;color: #113456 !important;font-size: 15px;}
+[data-testid="stSidebar"] label {font-weight:600;color:#39536c;}
+[data-testid="stSidebar"] [data-testid="stExpander"] {
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #dce7ef;
+  box-shadow: 0 2px 8px rgba(18,52,87,.035);
+}
+
+/* Tabs: compact, touch-friendly, clearly distinguish active section. */
+[data-testid="stTabs"] [data-baseweb="tab-list"] {
+  gap: 4px;
+  padding: 7px 7px 6px;
+  margin: 8px 0 13px;
+  border-radius: 14px;
+  border: 1px solid #dce7f0;
+  background: #fff;
+  box-shadow: 0 5px 19px rgba(21,60,99,.05);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+[data-testid="stTabs"] [data-baseweb="tab"] {
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 690;
+  color: #52687d;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background-color .12s ease, color .12s ease;
+  white-space: nowrap;
+}
+[data-testid="stTabs"] [data-baseweb="tab"]:hover {
+  background: #ecf6fb;
+  color: #173b5b;
+}
+[data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] {
+  background: linear-gradient(120deg,#0d3158,#16627c);
+  border-color: #286781;
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(16,55,92,.14);
+}
+[data-testid="stTabs"] [data-baseweb="tab-highlight"],
+[data-testid="stTabs"] [data-baseweb="tab-border"] {display:none;}
+[data-testid="stTabs"] [data-baseweb="tab-panel"] {padding-top: .35rem;}
+
+/* Native widgets - only borders, surface and focus; no runtime state. */
+[data-testid="stSelectbox"] [data-baseweb="select"] > div,
+[data-testid="stMultiSelect"] [data-baseweb="select"] > div,
+[data-testid="stDateInput"] [data-baseweb="input"] > div,
+[data-testid="stTextInput"] [data-baseweb="input"] > div,
+[data-testid="stNumberInput"] [data-baseweb="input"] > div {
+  border: 1px solid #cfdeea;
+  border-radius: 11px;
+  background: #fff;
+  box-shadow: 0 2px 4px rgba(19,62,98,.025);
+  min-height: 40px;
+}
+[data-testid="stSelectbox"] [data-baseweb="select"] > div:focus-within,
+[data-testid="stMultiSelect"] [data-baseweb="select"] > div:focus-within,
+[data-testid="stTextInput"] [data-baseweb="input"] > div:focus-within {
+  border-color: #19aca5;
+  box-shadow: 0 0 0 3px rgba(24,172,166,.11);
+}
+[data-testid="stFileUploader"] {
+  border: 1px dashed #bbd4e3;
+  border-radius: 13px;
+  background: #f9fdff;
+  padding: 7px;
+}
+[data-testid="stButton"] button,
+[data-testid="stDownloadButton"] button,
+[data-testid="stFormSubmitButton"] button {
+  min-height: 39px;
+  border-radius: 10px;
+  font-weight: 700;
+  letter-spacing: .08px;
+  border: 1px solid #d3e2ed;
+  background: linear-gradient(180deg,#fff,#f5faff);
+  color: #184466;
+  box-shadow: 0 2px 7px rgba(25,64,99,.045);
+  transition: background-color .12s ease, box-shadow .12s ease;
+}
+[data-testid="stButton"] button:hover,
+[data-testid="stDownloadButton"] button:hover,
+[data-testid="stFormSubmitButton"] button:hover {
+  border-color: #23aeb0;
+  background: #ebf9f7;
+  color: #115c64;
+  box-shadow: 0 5px 12px rgba(13,74,86,.09);
+}
+[data-testid="stButton"] button[kind="primary"],
+[data-testid="stDownloadButton"] button[kind="primary"],
+[data-testid="stFormSubmitButton"] button[kind="primary"] {
+  color: #fff;
+  border-color: #145777;
+  background: linear-gradient(120deg,#123e69,#137b87);
+}
+[data-testid="stButton"] button[kind="primary"]:hover,
+[data-testid="stDownloadButton"] button[kind="primary"]:hover {
+  color: #fff;
+  background: linear-gradient(120deg,#174f81,#139e99);
+}
+
+/* Native reporting surfaces, dataframes, expander and KPI widgets. */
+[data-testid="stMetric"] {
+  background: #fff;
+  border-radius: 15px;
+  border: 1px solid var(--sla-border);
+  padding: 16px 18px;
+  box-shadow: 0 7px 19px rgba(22,53,86,.055);
+  min-height: 109px;
+}
+[data-testid="stMetricLabel"] {color: #5a758e;font-weight:680;}
+[data-testid="stMetricValue"] {color: #0c3758;font-weight:810;letter-spacing:-.8px;}
+[data-testid="stDataFrame"] {
+  background: #fff;
+  border: 1px solid #d8e5ef;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(20,51,83,.055);
+  margin-top: 5px;
+  margin-bottom: 9px;
+}
+[data-testid="stTable"] {
+  border: 1px solid #dae8f1;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(20,54,84,.045);
+}
+[data-testid="stExpander"] {
+  border-radius: 13px;
+  border: 1px solid #dbe7f0;
+  background: #fff;
+  box-shadow: 0 4px 13px rgba(18,53,89,.035);
+}
+[data-testid="stExpander"] summary {
+  font-weight: 700;
+  color: #1c4868;
+}
+[data-testid="stPlotlyChart"],
+[data-testid="stPyplotGlobalUse"] {
+  border-radius: 15px;
+  overflow: hidden;
+  border: 1px solid rgba(198,216,231,.82);
+  box-shadow: 0 7px 25px rgba(19,52,84,.055);
+  background: #fff;
+}
+[data-testid="stAlert"] {
+  border-radius: 12px;
+  border-left-width: 3px;
+}
+[data-testid="stCaptionContainer"] {color: #647e94;}
+
+/* Existing custom HTML KPI card surfaces: uplift without altering values. */
+.kpi-card {
+  background: linear-gradient(145deg,#fff,#f5faff);
+  border: 1px solid #dbe7f1;
+  border-radius: 16px;
+  box-shadow: var(--sla-shadow);
+  padding: 20px 18px;
+  backdrop-filter: none;
+}
+.kpi-card:hover {box-shadow: 0 12px 31px rgba(21,59,93,.115);transform: translateY(-2px);}
+.kpi-label {color: #56758f;opacity: 1;font-weight: 720;letter-spacing: .8px;}
+.kpi-value {
+  color: #0b496e;
+  background: linear-gradient(100deg,#0b3d6b,#0ba99d);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: -.9px;
+}
+.kpi-sub {color:#6a8092;opacity:1;}
+.kpi-status-on {color:#078970;text-shadow:none;}
+.kpi-status-off {color:#ca4b53;text-shadow:none;}
+.card {
+  background: #fff;
+  border: 1px solid #dbe7f0;
+  box-shadow: 0 5px 16px rgba(20,50,79,.045);
+}
+hr.soft {background:linear-gradient(90deg,transparent,#cbdce9,transparent);}
+
+/* Loading and UI for narrower viewports. */
+@media(max-width: 1100px) {
+  [data-testid="stMainBlockContainer"] {padding-top: 1rem;}
+  .sla-hero-premium {padding: 24px 24px 25px;}
+}
+@media(max-width: 700px) {
+  .sla-hero-premium {grid-template-columns:1fr;padding: 22px 21px;margin-bottom:18px;}
+  .sla-hero-premium .sla-hero-seal {display:none;}
+  .sla-hero-premium h1 {font-size:27px;letter-spacing:-.9px;}
+  [data-testid="stTabs"] [data-baseweb="tab"] {padding:9px 10px;font-size:11px;}
+  [data-testid="stMainBlockContainer"] {padding-left: 1rem;padding-right: 1rem;}
+}
+@media(prefers-reduced-motion: reduce) {
+  [data-testid="stTabs"] [data-baseweb="tab"],
+  [data-testid="stButton"] button,
+  [data-testid="stDownloadButton"] button,
+  .kpi-card {transition:none!important;}
+}
+
+</style>
+""", unsafe_allow_html=True)
+
 st.markdown("""
-<div class="hero">
-<h1 class="hero">\U0001f6a2 SLA Payment Analyzer</h1>
-  <p>Dashboard modern untuk melihat & menganalisis SLA dokumen penagihan</p>
-</div>
+<section class="sla-hero-premium" aria-label="SLA Payment Analyzer">
+  <div>
+    <div class="sla-eyebrow">PT ASDP INDONESIA FERRY &middot; PAYMENT INTELLIGENCE</div>
+    <h1>\U0001f6a2 SLA Payment Analyzer</h1>
+    <p class="sla-hero-description">Dashboard modern untuk melihat &amp; menganalisis SLA dokumen penagihan</p>
+  </div>
+  <div class="sla-hero-seal" aria-hidden="true">
+    <strong>ASDP</strong>
+    <span>EXECUTIVE VIEW</span>
+  </div>
+</section>
 """, unsafe_allow_html=True)
 
 # ==============================
@@ -477,7 +852,13 @@ with st.sidebar:
         "https://raw.githubusercontent.com/firmanaditya90/SLA/main/asdp_logo.png",
         width=180
     )
-    st.markdown("<h3 style='text-align: center;'>\U0001f680 SLA Payment Analyzer</h3>", unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sla-side-brand">'
+        '<strong>\U0001f680 SLA Payment Analyzer</strong>'
+        '<span>PAYMENT PERFORMANCE CENTER</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
 # ==============================
 # Path & Assets (TIDAK DIUBAH)
@@ -935,30 +1316,38 @@ html_code = f"""
     gap: 18px;
     justify-items: center;
     margin: 15px auto 25px auto;
-    max-width: 700px;
+    max-width: 880px;
 }}
 .summary-card {{
+    box-sizing: border-box;
     width: 100%;
-    min-height: 110px;
-    border-radius: 14px;
-    padding: 12px;
+    min-height: 116px;
+    border-radius: 17px;
+    padding: 17px 16px;
     text-align: center;
-    color: #fff;
-    font-family: 'Segoe UI', sans-serif;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.15);
-    transition: all 0.3s ease;
+    color: #f8fcff;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    border: 1px solid rgba(209,236,249,.20);
+    box-shadow: 0 12px 25px rgba(11,38,75,.16);
+    transition: transform .16s ease, box-shadow .16s ease;
 }}
 .summary-card:hover {{
-    transform: translateY(-4px);
-    box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+    transform: translateY(-2px);
+    box-shadow: 0 16px 31px rgba(11,38,75,.20);
 }}
-.summary-icon {{ font-size: 22px; margin-bottom: 4px; }}
-.summary-label {{ font-size: 13px; font-weight: 500; opacity: 0.9; }}
-.summary-value {{ font-size: 22px; font-weight: 700; margin-top: 3px; }}
-.card-1 {{ background: linear-gradient(135deg, #4facfe, #00f2fe); }}
-.card-2 {{ background: linear-gradient(135deg, #43e97b, #38f9d7); }}
-.card-3 {{ background: linear-gradient(135deg, #fa709a, #fee140); }}
-.card-4 {{ background: linear-gradient(135deg, #7f00ff, #e100ff); }}
+.summary-icon {{ font-size: 22px; margin-bottom: 6px; }}
+.summary-label {{ font-size: 12px; font-weight: 750; opacity: .85; letter-spacing: 1px; text-transform: uppercase; }}
+.summary-value {{ font-size: 25px; font-weight: 850; margin-top: 7px; letter-spacing: -.7px; }}
+.card-1 {{ background: linear-gradient(125deg, #0c3156, #194d79); }}
+.card-2 {{ background: linear-gradient(125deg, #07545f, #0c8e91); }}
+.card-3 {{ background: linear-gradient(125deg, #293e6b, #405a94); }}
+.card-4 {{ background: linear-gradient(125deg, #173956, #205f74); }}
+@media(max-width:520px){{
+    .summary-grid{{gap:10px;margin:8px auto 12px;}}
+    .summary-card{{min-height:120px;padding:12px 9px;}}
+    .summary-label{{font-size:10px;}}
+    .summary-value{{font-size:18px;}}
+}}
 </style>
 
 <div class="summary-grid">
