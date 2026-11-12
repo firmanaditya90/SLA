@@ -31,17 +31,8 @@ st.set_page_config(page_title="SLA Payment Analyzer", layout="wide", page_icon="
 if "show_sela" not in st.session_state:
     st.session_state["show_sela"] = False
 
-# Floating launcher control via query param keeps SELA lightweight until opened.
-try:
-    _sela_qp = st.query_params.get("sela", None)
-    if isinstance(_sela_qp, list):
-        _sela_qp = _sela_qp[-1] if _sela_qp else None
-    if _sela_qp == "open":
-        st.session_state["show_sela"] = True
-    elif _sela_qp == "close":
-        st.session_state["show_sela"] = False
-except Exception:
-    pass
+# SELA launcher uses Streamlit's native widget state, not links or query parameters.
+# This prevents duplicate Chrome tabs and keeps the dashboard in the same session.
 
 from datetime import datetime
 
@@ -1323,47 +1314,53 @@ st.sidebar.markdown(
     unsafe_allow_html=True,
 )
 
-# Akses SELA tetap tersedia di sidebar (backup), namun launcher utama dibuat mengambang.
+# Backup launcher di sidebar. Arahkan ke modal yang sama dengan tombol melayang.
 with st.sidebar:
     st.markdown("### 🤖 Tanya SELA")
-    if st.button("💬 Buka / Tutup SELA"):
-        st.session_state["show_sela"] = not st.session_state["show_sela"]
-    st.caption("SELA hanya di-load saat dibuka agar dashboard tetap ringan. Anda juga bisa membuka SELA lewat tombol melayang di kanan bawah.")
+    _sela_sidebar_clicked = st.button(
+        "💬 Buka SELA", key="sela_sidebar_launcher_v15",
+        help="Buka asisten pribadi SELA di halaman ini tanpa tab baru.",
+    )
+    st.caption("SELA tetap ringan: hanya diproses saat dibuka. Bisa juga melalui tombol melayang di kanan bawah.")
 
-# Floating launcher minimalis untuk membuka / menyembunyikan SELA tanpa mengganggu tab lain.
-_sela_open = st.session_state.get("show_sela", False)
-_sela_href = "?sela=close" if _sela_open else "?sela=open"
-_sela_label = "Tutup SELA" if _sela_open else "Buka SELA"
-_sela_badge = "ON" if _sela_open else "AI"
-st.markdown(f"""
+# Floating action button akan dirender pada akhir script, setelah semua fungsi SELA tersedia.
+# CSS berikut hanya memengaruhi tombol SELA; komponen dashboard lain tidak diubah.
+st.markdown("""
 <style>
-.sela-float-wrap {{position:fixed;right:22px;bottom:22px;z-index:9998;}}
-.sela-float-btn {{display:flex;align-items:center;gap:12px;min-width:148px;padding:12px 16px 12px 14px;
-  border-radius:999px;text-decoration:none!important;
-  background:linear-gradient(135deg,#0d2745,#123a67);color:#f7fbff!important;
-  border:1px solid rgba(123,178,224,.45);box-shadow:0 16px 40px rgba(6,22,43,.28);
-  font-weight:700;font-size:14px;letter-spacing:.01em;}}
-.sela-float-btn:hover {{transform:translateY(-1px);background:linear-gradient(135deg,#12345d,#145386);color:#ffffff!important;}}
-.sela-float-avatar {{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;
-  background:linear-gradient(135deg,#5fe2d0,#57a7ff);color:#0c2741;font-size:19px;font-weight:900;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 8px 20px rgba(46,152,196,.25);}}
-.sela-float-text {{display:flex;flex-direction:column;line-height:1.1;}}
-.sela-float-text small {{font-size:10px;font-weight:600;color:#b5d5f5;letter-spacing:.08em;}}
-.sela-float-badge {{margin-left:auto;padding:5px 8px;border-radius:999px;font-size:10px;font-weight:800;
-  background:rgba(255,255,255,.12);color:#dff4ff;border:1px solid rgba(255,255,255,.14);}}
-@media (max-width: 760px) {{
-  .sela-float-wrap {{right:14px;bottom:16px;}}
-  .sela-float-btn {{min-width:auto;padding:11px 13px;gap:10px;}}
-  .sela-float-text span {{font-size:12px;}}
-}}
+.st-key-sela_floating_launcher_v15 {
+  position:fixed!important;right:22px!important;bottom:20px!important;
+  width:max-content!important;max-width:calc(100vw - 24px)!important;
+  z-index:999995!important;pointer-events:auto!important;
+}
+.st-key-sela_floating_launcher_v15 button {
+  border-radius:999px!important;
+  background:linear-gradient(120deg,#0d2b4b,#155075)!important;
+  border:1px solid rgba(98,195,212,.56)!important;
+  box-shadow:0 12px 32px rgba(9,32,56,.28)!important;
+  color:#fff!important;
+  font-weight:750!important;
+  padding:10px 17px!important;
+  min-height:48px!important;
+  white-space:nowrap!important;
+  transition:transform .16s ease,box-shadow .16s ease!important;
+}
+.st-key-sela_floating_launcher_v15 button:hover {
+  transform:translateY(-2px)!important;
+  box-shadow:0 17px 38px rgba(9,32,56,.33)!important;
+}
+.st-key-sela_floating_launcher_v15 button:focus-visible {
+  outline:3px solid #6de2d1!important;outline-offset:3px!important;
+}
+/* Large dialog used by native Streamlit: scrolling and responsive layout. */
+div[data-testid="stDialog"] div[role="dialog"] {
+  max-height:calc(100dvh - 30px)!important;
+  overflow-y:auto!important;
+}
+@media(max-width:700px){
+  .st-key-sela_floating_launcher_v15 {right:12px!important;bottom:12px!important;}
+  .st-key-sela_floating_launcher_v15 button {font-size:12px!important;padding:9px 13px!important;}
+}
 </style>
-<div class="sela-float-wrap">
-  <a class="sela-float-btn" href="{_sela_href}">
-    <div class="sela-float-avatar">S</div>
-    <div class="sela-float-text"><small>SELA PREMIUM</small><span>{_sela_label}</span></div>
-    <div class="sela-float-badge">{_sela_badge}</div>
-  </a>
-</div>
 """, unsafe_allow_html=True)
 
 # ==============================
@@ -11018,12 +11015,44 @@ def render_sela_widget(df_filtered, periode_col: str,
     )
 
 
-# PANGGIL SELA HANYA JIKA USER MINTA (lebih ringan untuk halaman awal)
-if st.session_state.get("show_sela", False):
-    render_sela_widget(df_filtered, periode_col,
-                       source_version=_sla_source_version,
-                       period_keys=tuple(selected_periode),
-                       raw_history=_sela_full_history_source)
+# PANGGIL SELA HANYA SAAT DIBUKA (lazy, cached, tidak mengganggu dashboard).
+# Perbedaan penting dari launcher v14: ST.BUTTON, bukan HTML <a href="?...">.
+# Native Streamlit dialog muncul di TAB YANG SAMA; tidak mengubah URL dan tidak
+# menciptakan tab baru. Tombol X pada dialog menutup asisten secara normal.
+
+def _sela_launch_body():
+    render_sela_widget(
+        df_filtered, periode_col,
+        source_version=_sla_source_version,
+        period_keys=tuple(selected_periode),
+        raw_history=_sela_full_history_source,
+    )
+
+if callable(getattr(st, "dialog", None)):
+    @st.dialog("SELA • Personal Assistant", width="large")
+    def _sela_open_dialog():
+        # Dialog scoped to its own fragment, without re-rendering the entire app
+        # for chat/voice clicks inside the embedded SELA widget.
+        _sela_launch_body()
+else:
+    # Compatibility fallback for older Streamlit, still in the SAME Chrome tab.
+    def _sela_open_dialog():
+        st.info("SELA dibuka pada halaman ini. Scroll ke panel asisten di bawah.")
+        _sela_launch_body()
+
+try:
+    _sela_fab_host = st.container(key="sela_floating_launcher_v15")
+except TypeError:
+    # Keyed containers were introduced after older Streamlit versions.
+    _sela_fab_host = st.container()
+with _sela_fab_host:
+    _sela_fab_clicked = st.button(
+        "✦  Tanya SELA", key="sela_fab_button_v15",
+        help="Buka SELA dalam jendela asisten pada tab ini; tidak membuka tab baru.",
+    )
+
+if _sela_fab_clicked or _sela_sidebar_clicked:
+    _sela_open_dialog()
 
 # Performance-safe user settings preservation for dynamic tabs.
 if _SLA_LAZY_TABS:
