@@ -8970,7 +8970,7 @@ def build_sela_payload(df_filtered, periode_col: str):
     payload = {
         "meta": {
             "assistant_name": "SELA",
-            "version": "v11-core",
+            "version": "v12-executive",
         },
         "metrics": {},
         "period_stats": [],
@@ -9260,7 +9260,7 @@ def render_sela_widget(df_filtered, periode_col: str,
     body{margin:0;background:transparent;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text)}
     .sela-root{
       width:100%;
-      min-height:820px;
+      min-height:1240px;
       border-radius:28px;
       border:1px solid rgba(255,255,255,.08);
       background:
@@ -9280,9 +9280,9 @@ def render_sela_widget(df_filtered, periode_col: str,
     .subtitle{color:var(--muted);font-size:15px;max-width:720px;margin-top:6px}
     .head-tags{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
     .tag{padding:10px 16px;border:1px solid rgba(96,165,250,.4);border-radius:999px;background:rgba(9,31,51,.72);font-size:12px;font-weight:700;color:#d7ebff;letter-spacing:.03em}
-    .content{padding:22px;display:grid;grid-template-columns:360px minmax(0,1fr);gap:20px;align-items:start}
+    .content{padding:22px;display:grid;grid-template-columns:minmax(300px,340px) minmax(0,1fr);gap:20px;align-items:start}
     .panel{background:var(--card);border:1px solid var(--line);border-radius:24px;backdrop-filter:blur(10px)}
-    .avatar-panel{padding:18px;display:flex;flex-direction:column;gap:14px;min-height:690px}
+    .avatar-panel{padding:18px;display:flex;flex-direction:column;gap:14px;min-height:960px}
     .hero-stage{position:relative;flex:1;min-height:500px;border-radius:24px;background:linear-gradient(180deg,rgba(96,165,250,.12),rgba(255,255,255,.02));overflow:hidden;border:1px solid rgba(255,255,255,.08)}
     .hero-stage::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 28%, rgba(96,165,250,.18), transparent 42%),radial-gradient(circle at 50% 80%, rgba(52,211,153,.15), transparent 30%);pointer-events:none}
     .hero-stage::after{content:"";position:absolute;inset:14px;border-radius:22px;border:1px solid rgba(255,255,255,.06);pointer-events:none}
@@ -9309,7 +9309,7 @@ def render_sela_widget(df_filtered, periode_col: str,
     .wavebar-wrap{display:flex;justify-content:center;gap:6px;padding-top:8px}
     .wavebar{width:6px;height:10px;border-radius:999px;background:linear-gradient(180deg,#60a5fa,#34d399);opacity:.68;animation:wave 1.25s ease-in-out infinite}
     .wavebar:nth-child(2){animation-delay:.1s}.wavebar:nth-child(3){animation-delay:.2s}.wavebar:nth-child(4){animation-delay:.3s}.wavebar:nth-child(5){animation-delay:.4s}
-    .right-panel{padding:18px;display:grid;grid-template-rows:auto auto 1fr auto;gap:16px;min-height:690px}
+    .right-panel{padding:18px;display:grid;grid-template-rows:auto auto auto auto 1fr auto;gap:16px;min-height:960px}
     .speech{padding:16px 18px;border-radius:18px;background:linear-gradient(180deg,rgba(18,30,48,.95),rgba(23,37,62,.88));border:1px solid rgba(255,255,255,.08);line-height:1.55;font-size:15px;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
     .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .metric{padding:14px;border-radius:18px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);min-height:92px}
@@ -9326,7 +9326,7 @@ def render_sela_widget(df_filtered, periode_col: str,
     .chips{display:flex;flex-wrap:wrap;gap:10px}
     .chip{padding:10px 14px;border-radius:999px;border:1px solid rgba(52,211,153,.45);background:rgba(15,23,42,.88);color:#e8f5ff;font-size:13px;font-weight:700;cursor:pointer}
     .chip:hover{background:rgba(52,211,153,.16)}
-    .chatbox{min-height:245px;max-height:320px;overflow:auto;padding-right:4px;display:flex;flex-direction:column;gap:12px}
+    .chatbox{min-height:185px;max-height:260px;overflow:auto;padding-right:4px;display:flex;flex-direction:column;gap:12px}
     .msg{max-width:88%;padding:12px 14px;border-radius:18px;line-height:1.5;font-size:14px;box-shadow:0 8px 18px rgba(0,0,0,.08)}
     .msg.user{align-self:flex-end;background:linear-gradient(135deg,#2563eb,#0ea5e9);border-bottom-right-radius:6px}
     .msg.bot{align-self:flex-start;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.08);border-bottom-left-radius:6px}
@@ -9334,12 +9334,79 @@ def render_sela_widget(df_filtered, periode_col: str,
     .composer{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center}
     .footer-note{font-size:12px;color:#9eb7cb;line-height:1.45}
     .statusline{font-size:12px;color:#bfd8eb}
+    .hero-caption{padding:14px 16px;border-radius:16px;background:rgba(8,20,35,.72);border:1px solid rgba(255,255,255,.08);color:#deefff;font-size:13px;line-height:1.5;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+    .advisor-shell{border-radius:22px;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.04));border:1px solid rgba(255,255,255,.08);padding:16px;box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}
+    .advisor-topbar{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px}
+    .advisor-kicker{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#7dd3fc;font-weight:800;margin-bottom:5px}
+    .advisor-title{font-size:20px;font-weight:800;color:#ffffff}
+    .advisor-subtitle{font-size:13px;color:#b5c9db;line-height:1.5;margin-top:4px;max-width:760px}
+    .advisor-pill-wrap{display:flex;gap:8px;flex-wrap:wrap}
+    .advisor-pill{padding:8px 12px;border-radius:999px;background:rgba(15,23,42,.78);border:1px solid rgba(96,165,250,.22);font-size:11px;font-weight:800;color:#d9ebff;letter-spacing:.04em}
+    .advisor-tabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+    .advisor-tab{border:none;border-radius:14px;padding:10px 14px;font-weight:800;font-size:13px;cursor:pointer;background:rgba(15,23,42,.72);color:#dbeafe;border:1px solid rgba(255,255,255,.08);transition:.18s ease}
+    .advisor-tab.active,.advisor-tab:hover{background:linear-gradient(135deg,rgba(52,211,153,.22),rgba(96,165,250,.22));border-color:rgba(52,211,153,.34);transform:translateY(-1px)}
+    .advisor-panel{border-radius:18px;background:rgba(4,12,24,.42);border:1px solid rgba(255,255,255,.06);padding:14px}
+    .advisor-status{font-size:12px;color:#98b6cd;margin-bottom:12px;line-height:1.5}
+    .advisor-body{display:none}
+    .advisor-body.active{display:block}
+    .advisor-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px}
+    .viz-card{grid-column:span 6;border-radius:18px;background:linear-gradient(180deg,rgba(15,31,54,.94),rgba(11,24,42,.94));border:1px solid rgba(255,255,255,.07);padding:14px;box-shadow:0 14px 28px rgba(0,0,0,.16)}
+    .viz-card.wide{grid-column:span 12}
+    .viz-card.third{grid-column:span 4}
+    .viz-title{font-size:14px;font-weight:800;color:#fff;margin-bottom:4px}
+    .viz-subtitle{font-size:12px;color:#9fbed4;margin-bottom:12px}
+    .insight-banner{padding:14px 16px;border-radius:16px;background:linear-gradient(135deg,rgba(34,197,94,.16),rgba(59,130,246,.14));border:1px solid rgba(52,211,153,.2);font-size:13px;line-height:1.6;color:#eaf6ff}
+    .insight-list{margin:10px 0 0 0;padding-left:18px;color:#d7e9f8;font-size:13px;line-height:1.6}
+    .mini-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+    .mini-kpi{padding:14px;border-radius:16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)}
+    .mini-kpi .k{font-size:11px;letter-spacing:.05em;color:#9fb7ca;text-transform:uppercase;margin-bottom:6px}
+    .mini-kpi .v{font-size:22px;font-weight:800;color:#fff;line-height:1.15}
+    .mini-kpi .s{font-size:12px;color:#bcd0e0;margin-top:6px;line-height:1.45}
+    .bars{height:220px;display:flex;align-items:flex-end;gap:10px;padding-top:8px}
+    .bar-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:7px;min-width:0}
+    .bar-col-wrap{width:100%;height:150px;display:flex;align-items:flex-end;justify-content:center}
+    .bar-col{width:100%;max-width:56px;border-radius:14px 14px 6px 6px;background:linear-gradient(180deg,#60a5fa,#22c55e);position:relative;box-shadow:0 10px 24px rgba(52,211,153,.16)}
+    .bar-col.secondary{background:linear-gradient(180deg,#a78bfa,#f472b6)}
+    .bar-value{font-size:11px;color:#dff1ff;font-weight:800;white-space:nowrap}
+    .bar-label{font-size:11px;color:#96b3c9;text-align:center;line-height:1.3;min-height:30px}
+    .hbars{display:flex;flex-direction:column;gap:10px}
+    .hrow{display:grid;grid-template-columns:150px minmax(0,1fr) 100px;gap:10px;align-items:center}
+    .hlabel{font-size:12px;color:#dcecff;font-weight:700}
+    .htrack{height:14px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(255,255,255,.05)}
+    .hfill{height:100%;border-radius:999px;background:linear-gradient(90deg,#f59e0b,#f472b6,#60a5fa)}
+    .hval{font-size:12px;color:#c8dbee;text-align:right;font-weight:700}
+    .legend-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+    .legend-item{display:inline-flex;align-items:center;gap:8px;font-size:11px;color:#cfe3f4;font-weight:700}
+    .legend-swatch{width:12px;height:12px;border-radius:4px}
+    .premium-table-wrap{overflow:auto;border-radius:16px;border:1px solid rgba(255,255,255,.07);background:rgba(10,18,32,.58)}
+    table.premium-table{width:100%;border-collapse:collapse;min-width:640px}
+    .premium-table thead th{position:sticky;top:0;background:linear-gradient(180deg,#10233d,#0c1a2f);color:#dff0ff;padding:12px 14px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;text-align:left;border-bottom:1px solid rgba(255,255,255,.08)}
+    .premium-table tbody td{padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.05);font-size:13px;color:#eef7ff;vertical-align:top}
+    .premium-table tbody tr:nth-child(even){background:rgba(255,255,255,.03)}
+    .rank-pill{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;border-radius:999px;background:linear-gradient(135deg,#60a5fa,#34d399);font-size:12px;font-weight:800;color:#062033}
+    .poster-board{border-radius:22px;padding:20px;background:radial-gradient(circle at top left,rgba(52,211,153,.16),transparent 24%),radial-gradient(circle at top right,rgba(96,165,250,.14),transparent 26%),linear-gradient(145deg,#0b1d34,#081423 58%,#0b1728);border:1px solid rgba(255,255,255,.08);box-shadow:0 20px 45px rgba(0,0,0,.28)}
+    .poster-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap;margin-bottom:16px}
+    .poster-brand{font-size:12px;letter-spacing:.16em;color:#7dd3fc;font-weight:800;text-transform:uppercase}
+    .poster-title{font-size:28px;line-height:1.15;font-weight:800;color:#fff;max-width:640px}
+    .poster-note{font-size:13px;color:#b7cde0;line-height:1.5;margin-top:6px;max-width:720px}
+    .poster-badges{display:flex;gap:8px;flex-wrap:wrap}
+    .poster-badge{padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);font-size:11px;font-weight:800;color:#d9ebff}
+    .poster-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px}
+    .poster-block{grid-column:span 4;border-radius:18px;padding:16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)}
+    .poster-block.wide{grid-column:span 6}
+    .poster-block.full{grid-column:span 12}
+    .poster-block .t{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#9fc3dc;margin-bottom:8px}
+    .poster-block .n{font-size:24px;font-weight:800;color:#fff;line-height:1.15}
+    .poster-block .d{font-size:13px;color:#dcecff;line-height:1.55;margin-top:8px}
+    .poster-actions{margin:0;padding-left:18px;color:#e9f6ff;font-size:13px;line-height:1.65}
+    .poster-actions li{margin-bottom:6px}
+    .poster-foot{margin-top:12px;font-size:11px;color:#9eb7cb;line-height:1.5}
     @keyframes blink{0%,46%,48%,100%{transform:scaleY(0)}47%{transform:scaleY(1)}}
     @keyframes wave{0%,100%{height:10px;opacity:.45}50%{height:28px;opacity:1}}
     @keyframes talkMouth{0%{height:7px;width:42px;border-radius:0 0 24px 24px}28%{height:22px;width:34px;border-radius:4px 4px 22px 22px}55%{height:12px;width:46px;border-radius:0 0 26px 26px}78%{height:26px;width:31px;border-radius:4px 4px 20px 20px}100%{height:8px;width:42px;border-radius:0 0 24px 24px}}
     @keyframes pulse{0%,100%{transform:translateX(-50%) scale(1);opacity:.75}50%{transform:translateX(-50%) scale(1.08);opacity:1}}
-    @media (max-width: 1180px){.content{grid-template-columns:1fr}.avatar-panel,.right-panel{min-height:unset}.hero-stage{min-height:430px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.selectors{grid-template-columns:1fr 1fr}.composer{grid-template-columns:1fr 1fr}.btn.send{grid-column:span 2}}
-    @media (max-width: 720px){.title{font-size:22px}.head{padding:18px}.content{padding:16px}.metrics{grid-template-columns:1fr}.selectors{grid-template-columns:1fr}.composer{grid-template-columns:1fr}.female-avatar{transform:scale(.92)}}
+    @media (max-width: 1180px){.content{grid-template-columns:1fr}.avatar-panel,.right-panel{min-height:unset}.hero-stage{min-height:430px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.mini-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.selectors{grid-template-columns:1fr 1fr}.composer{grid-template-columns:1fr 1fr}.btn.send{grid-column:span 2}.viz-card,.viz-card.third,.poster-block,.poster-block.wide{grid-column:span 12}}
+    @media (max-width: 720px){.title{font-size:22px}.head{padding:18px}.content{padding:16px}.metrics,.mini-kpis{grid-template-columns:1fr}.selectors{grid-template-columns:1fr}.composer{grid-template-columns:1fr}.female-avatar{transform:scale(.92)}.hrow{grid-template-columns:1fr}.poster-title{font-size:22px}.bars{gap:8px}.bar-label{min-height:42px}}
   </style>
 </head>
 <body>
@@ -9348,8 +9415,8 @@ def render_sela_widget(df_filtered, periode_col: str,
       <div class="brand">
         <div class="logo">S</div>
         <div>
-          <div class="title">SELA v11 \u2022 Core Intelligence</div>
-          <div class="subtitle">Asisten virtual human wanita dengan lip-sync lebih halus, analisis periode sampai level bulan, dan kemampuan menjawab SLA otomatis sesuai filter yang diminta.</div>
+          <div class="title">SELA v12 \u2022 Executive Advisor</div>
+          <div class="subtitle">Asisten virtual human wanita dengan lip-sync lebih halus, analisis periode sampai level bulan, serta kemampuan menyajikan insight eksekutif dalam bentuk grafik, tabel, dan poster.</div>
         </div>
       </div>
       <div class="head-tags">
@@ -9358,6 +9425,7 @@ def render_sela_widget(df_filtered, periode_col: str,
         <div class="tag">LIP SYNC</div>
         <div class="tag">SMART FILTER</div>
         <div class="tag">HISTORY VERIFIED</div>
+        <div class="tag">EXECUTIVE ADVISOR</div>
       </div>
     </div>
 
@@ -9378,11 +9446,11 @@ def render_sela_widget(df_filtered, periode_col: str,
           </div>
         </div>
         <div class="wavebar-wrap"><div class="wavebar"></div><div class="wavebar"></div><div class="wavebar"></div><div class="wavebar"></div><div class="wavebar"></div></div>
-        <div class="hero-caption" id="heroCaption">Halo, saya SELA. Saya siap membantu Anda membaca SLA, tren transaksi, bottleneck, growth, vendor, nomor permohonan, dan menyusun ringkasan Direksi dengan bahasa yang natural.</div>
+        <div class="hero-caption" id="heroCaption">Halo, saya SELA. Saya siap membantu Anda membaca SLA, tren transaksi, bottleneck, growth, vendor, nomor permohonan, serta menampilkan insight eksekutif dalam bentuk grafik, tabel, dan poster.</div>
       </div>
 
       <div class="panel right-panel">
-        <div id="speechBubble" class="speech">Halo, saya SELA. Silakan bicara atau ketik pertanyaan Anda. Saya akan menjawab dengan bahasa yang natural berdasarkan data yang tersedia di dashboard ini.</div>
+        <div id="speechBubble" class="speech">Halo, saya SELA. Silakan bicara atau ketik pertanyaan Anda. Saya akan menjawab dengan bahasa yang natural dan, bila diperlukan, menampilkan insight eksekutif dalam bentuk grafik, tabel, atau poster berdasarkan data yang tersedia di dashboard ini.</div>
 
         <div class="metrics">
           <div class="metric"><div class="label">Transaksi Aktif</div><div id="metricCount" class="value">0</div><div class="sub" id="metricPeriod">-</div></div>
@@ -9409,6 +9477,37 @@ def render_sela_widget(df_filtered, periode_col: str,
           <button class="chip" data-question="Bandingkan jumlah transaksi tahun 2024, 2025, dan 2026">Multi-Tahun</button>
           <button class="chip" data-question="Bandingkan SLA Keuangan tahun 2024, 2025, dan 2026">SLA Multi-Tahun</button>
           <button class="chip" data-question="Bagaimana bottleneck tiap tahapan proses?">Tahapan Bottleneck</button>
+          <button class="chip" data-question="Tampilkan grafik eksekutif transaksi dan SLA">Grafik</button>
+          <button class="chip" data-question="Tampilkan tabel prioritas transaksi dan vendor">Tabel</button>
+          <button class="chip" data-question="Buatkan poster eksekutif SLA">Poster</button>
+        </div>
+
+        <div class="advisor-shell">
+          <div class="advisor-topbar">
+            <div>
+              <div class="advisor-kicker">SELA Executive Advisor</div>
+              <div class="advisor-title">Visual Insight Workspace</div>
+              <div class="advisor-subtitle">SELA dapat menampilkan ringkasan, grafik, tabel, dan poster eksekutif secara langsung tanpa mengubah angka pada dashboard utama.</div>
+            </div>
+            <div class="advisor-pill-wrap">
+              <div class="advisor-pill">FAST RENDER</div>
+              <div class="advisor-pill">DATA DRIVEN</div>
+              <div class="advisor-pill">BOARD-READY</div>
+            </div>
+          </div>
+          <div class="advisor-tabs">
+            <button class="advisor-tab active" data-tab="overview">Insight</button>
+            <button class="advisor-tab" data-tab="charts">Grafik</button>
+            <button class="advisor-tab" data-tab="tables">Tabel</button>
+            <button class="advisor-tab" data-tab="poster">Poster</button>
+          </div>
+          <div class="advisor-panel">
+            <div class="advisor-status" id="advisorStatus">Workspace Executive Advisor siap digunakan. Ketik pertanyaan atau klik chip cepat, lalu saya akan menampilkan insight visual yang paling relevan.</div>
+            <div id="advisorOverview" class="advisor-body active"></div>
+            <div id="advisorCharts" class="advisor-body"></div>
+            <div id="advisorTables" class="advisor-body"></div>
+            <div id="advisorPoster" class="advisor-body"></div>
+          </div>
         </div>
 
         <div id="chatbox" class="chatbox"></div>
@@ -9469,6 +9568,13 @@ def render_sela_widget(df_filtered, periode_col: str,
     const femaleAvatar = document.getElementById('femaleAvatar');
     const lipSyncMouth = document.querySelector('.lip-sync-mouth');
     const voiceSelect = document.getElementById('voiceSelect');
+    const advisorOverview = document.getElementById('advisorOverview');
+    const advisorCharts = document.getElementById('advisorCharts');
+    const advisorTables = document.getElementById('advisorTables');
+    const advisorPoster = document.getElementById('advisorPoster');
+    const advisorStatus = document.getElementById('advisorStatus');
+    const advisorBodies = document.querySelectorAll('.advisor-body');
+    const advisorTabs = document.querySelectorAll('.advisor-tab');
 
     function fmtNum(n){
       if(n === null || n === undefined || Number.isNaN(Number(n))) return '-';
@@ -10098,6 +10204,219 @@ def render_sela_widget(df_filtered, periode_col: str,
       return `${naturalLead()} Berdasarkan data aktif, terdapat ${fmtNum(metrics.transaction_count || 0)} transaksi dengan rata-rata SLA total ${fmtDays(metrics.avg_sla_days || 0)}. ${metrics.top_transaction ? `Jenis transaksi prioritas saat ini adalah ${metrics.top_transaction.name}. ` : ''}${metrics.bottleneck ? `Bottleneck terbesarnya berada pada proses ${metrics.bottleneck.name}. ` : ''}Jika ingin, Anda bisa bertanya lebih spesifik seperti \u201cberapa SLA Vendor tahun 2025\u201d, \u201cSLA Keuangan Juni 2026\u201d, \u201cvendor mana paling lambat\u201d, atau \u201cbuatkan ringkasan Direksi\u201d.`;
     }
 
+
+    function escHtml(value){
+      return String(value == null ? '' : value)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+    function shortLabel(text, maxLen){
+      const s = String(text == null ? '' : text);
+      return s.length > (maxLen || 18) ? s.slice(0, (maxLen || 18) - 1) + '…' : s;
+    }
+    function topProcessStages(){
+      return (prosesStats || []).filter(p => p.is_stage && p.avg_sla_days !== null && p.avg_sla_days !== undefined);
+    }
+    function buildExecutiveActions(){
+      const actions = [];
+      if(metrics.bottleneck && metrics.bottleneck.name){
+        actions.push(`Fokus percepatan pada tahap ${prettyProcessName(metrics.bottleneck.name)} karena saat ini menjadi bottleneck utama dengan SLA rata-rata ${fmtDays(metrics.bottleneck.avg_sla_days || 0)}.`);
+      }
+      if(metrics.top_transaction && metrics.top_transaction.name){
+        actions.push(`Prioritaskan evaluasi jenis transaksi ${metrics.top_transaction.name} karena memiliki SLA rata-rata paling tinggi di data aktif.`);
+      }
+      if(metrics.top_vendor && metrics.top_vendor.name){
+        actions.push(`Lakukan monitoring vendor/cabang ${metrics.top_vendor.name} karena berada pada daftar prioritas utama dari sisi SLA.`);
+      }
+      if(metrics.latest_growth_pct !== null && metrics.latest_growth_pct !== undefined){
+        actions.push(`Pantau perubahan volume transaksi terbaru (${fmtPct(metrics.latest_growth_pct)} dibanding periode sebelumnya) agar kapasitas proses tetap seimbang.`);
+      }
+      return actions.slice(0, 4);
+    }
+    function buildInsightHighlights(){
+      const rows = [];
+      rows.push(`Cakupan data aktif saat ini ${escHtml(metrics.period_first || '-')} sampai ${escHtml(metrics.period_last || '-')}, dengan ${fmtNum(metrics.transaction_count || 0)} transaksi.`);
+      rows.push(`Rata-rata SLA total berada pada ${fmtDays(metrics.avg_sla_days || 0)}${metrics.bottleneck && metrics.bottleneck.name ? ` dan bottleneck terbesar berada pada ${prettyProcessName(metrics.bottleneck.name)}` : ''}.`);
+      if(metrics.top_transaction && metrics.top_transaction.name){
+        rows.push(`Jenis transaksi prioritas utama adalah ${escHtml(metrics.top_transaction.name)} dengan SLA rata-rata ${fmtDays(metrics.top_transaction.avg_sla_days || 0)}.`);
+      }
+      if(metrics.top_vendor && metrics.top_vendor.name){
+        rows.push(`Vendor/cabang yang paling perlu dipantau saat ini adalah ${escHtml(metrics.top_vendor.name)}.`);
+      }
+      return rows;
+    }
+    function renderOverviewBody(question, answerText){
+      const actions = buildExecutiveActions();
+      const highlights = buildInsightHighlights();
+      const recent = (periodStats || []).slice(-4);
+      const trendCards = recent.map(item => `
+        <div class="mini-kpi">
+          <div class="k">${escHtml(item.periode || '-')}</div>
+          <div class="v">${fmtNum(item.count || 0)}</div>
+          <div class="s">SLA ${fmtDays(item.avg_sla_days || 0)}</div>
+        </div>`).join('');
+      advisorOverview.innerHTML = `
+        <div class="advisor-grid">
+          <div class="viz-card wide">
+            <div class="insight-banner"><strong>Executive Narrative</strong><br>${escHtml(answerText || 'SELA siap menyusun insight eksekutif berdasarkan data aktif. Gunakan chip cepat atau ajukan pertanyaan spesifik.').replace(/\n/g,'<br>')}</div>
+            <ul class="insight-list">${highlights.map(x => `<li>${escHtml(x)}</li>`).join('')}</ul>
+          </div>
+          <div class="viz-card wide">
+            <div class="viz-title">Snapshot Periode Terakhir</div>
+            <div class="viz-subtitle">Ringkasan empat periode terbaru dari data aktif</div>
+            <div class="mini-kpis">${trendCards || '<div class="mini-kpi"><div class="k">Info</div><div class="v">-</div><div class="s">Belum ada periode yang bisa diringkas.</div></div>'}</div>
+          </div>
+          <div class="viz-card third">
+            <div class="viz-title">Transaksi Aktif</div>
+            <div class="viz-subtitle">Volume pada filter aktif</div>
+            <div class="mini-kpi"><div class="k">Total</div><div class="v">${fmtNum(metrics.transaction_count || 0)}</div><div class="s">${escHtml(metrics.period_first || '-')} s.d. ${escHtml(metrics.period_last || '-')}</div></div>
+          </div>
+          <div class="viz-card third">
+            <div class="viz-title">Rata-rata SLA</div>
+            <div class="viz-subtitle">Keseluruhan proses</div>
+            <div class="mini-kpi"><div class="k">SLA</div><div class="v">${fmtDays(metrics.avg_sla_days || 0)}</div><div class="s">Bottleneck: ${escHtml(metrics.bottleneck && metrics.bottleneck.name ? prettyProcessName(metrics.bottleneck.name) : '-')}</div></div>
+          </div>
+          <div class="viz-card third">
+            <div class="viz-title">Prioritas Utama</div>
+            <div class="viz-subtitle">Fokus eksekusi singkat</div>
+            <ul class="insight-list">${actions.map(a => `<li>${escHtml(a)}</li>`).join('') || '<li>Belum ada rekomendasi khusus.</li>'}</ul>
+          </div>
+        </div>`;
+    }
+    function renderChartsBody(){
+      const recent = (periodStats || []).slice(-8);
+      const maxCount = Math.max(1, ...recent.map(item => Number(item.count || 0)));
+      const bars = recent.map((item, idx) => `
+        <div class="bar-item">
+          <div class="bar-value">${fmtNum(item.count || 0)}</div>
+          <div class="bar-col-wrap"><div class="bar-col ${idx % 2 ? 'secondary' : ''}" style="height:${Math.max(10, Math.round((Number(item.count || 0) / maxCount) * 100))}%"></div></div>
+          <div class="bar-label">${escHtml(shortLabel(item.periode || '-', 14))}</div>
+        </div>`).join('');
+      const stages = topProcessStages();
+      const maxStage = Math.max(1, ...stages.map(item => Number(item.avg_sla_days || 0)));
+      const hbars = stages.map(item => `
+        <div class="hrow">
+          <div class="hlabel">${escHtml(prettyProcessName(item.name))}</div>
+          <div class="htrack"><div class="hfill" style="width:${Math.max(10, Math.round((Number(item.avg_sla_days || 0) / maxStage) * 100))}%"></div></div>
+          <div class="hval">${fmtDays(item.avg_sla_days || 0)}</div>
+        </div>`).join('');
+      const years = (historyYears || []).slice(-5);
+      const yearLegendColors = ['#fbbf24','#60a5fa','#34d399','#a78bfa','#f472b6'];
+      const yearBars = years.map((row, idx) => ({row, color: yearLegendColors[idx % yearLegendColors.length]}));
+      const maxYear = Math.max(1, ...yearBars.map(item => Number(item.row.count || 0)));
+      advisorCharts.innerHTML = `
+        <div class="advisor-grid">
+          <div class="viz-card">
+            <div class="viz-title">Tren Jumlah Transaksi</div>
+            <div class="viz-subtitle">Delapan periode terakhir pada filter aktif</div>
+            <div class="bars">${bars || '<div class="bar-label">Belum ada data periode.</div>'}</div>
+          </div>
+          <div class="viz-card">
+            <div class="viz-title">Perbandingan SLA per Tahapan Proses</div>
+            <div class="viz-subtitle">Semakin panjang bar, semakin tinggi SLA rata-ratanya</div>
+            <div class="hbars">${hbars || '<div class="bar-label">Belum ada data SLA per tahapan.</div>'}</div>
+          </div>
+          <div class="viz-card wide">
+            <div class="viz-title">Perbandingan Volume Historis per Tahun</div>
+            <div class="viz-subtitle">Histori upload lintas tahun — legend dibuat kontras agar tahun mudah dibaca</div>
+            <div class="legend-row">${yearBars.map(item => `<span class="legend-item"><span class="legend-swatch" style="background:${item.color}"></span>${escHtml(item.row.year)}</span>`).join('')}</div>
+            <div class="bars">${yearBars.map(item => `
+              <div class="bar-item">
+                <div class="bar-value">${fmtNum(item.row.count || 0)}</div>
+                <div class="bar-col-wrap"><div class="bar-col" style="background:${item.color};height:${Math.max(10, Math.round((Number(item.row.count || 0) / maxYear) * 100))}%"></div></div>
+                <div class="bar-label">Tahun ${escHtml(item.row.year)}</div>
+              </div>`).join('') || '<div class="bar-label">Belum ada histori tahunan.</div>'}
+            </div>
+          </div>
+        </div>`;
+    }
+    function renderTablesBody(){
+      const trxRows = (trxStats || []).slice(0, 8).map((row, idx) => `
+        <tr><td><span class="rank-pill">${idx+1}</span></td><td>${escHtml(row.name || '-')}</td><td>${fmtNum(row.count || 0)}</td><td>${fmtDays(row.avg_sla_days || 0)}</td></tr>`).join('');
+      const vendorRows = (vendorStats || []).slice(0, 8).map((row, idx) => `
+        <tr><td><span class="rank-pill">${idx+1}</span></td><td>${escHtml(row.name || '-')}</td><td>${fmtNum(row.count || 0)}</td><td>${fmtDays(row.avg_sla_days || 0)}</td></tr>`).join('');
+      const sampleRows = (records || []).slice(0, 8).map((row, idx) => {
+        const periode = payload.meta && payload.meta.periode_col ? row[payload.meta.periode_col] : '';
+        const nomor = payload.meta && payload.meta.nomor_col ? row[payload.meta.nomor_col] : '';
+        const transaksi = payload.meta && payload.meta.trx_col ? row[payload.meta.trx_col] : '';
+        const vendor = payload.meta && payload.meta.vendor_col ? row[payload.meta.vendor_col] : '';
+        const total = row['TOTAL WAKTU'];
+        return `<tr><td>${idx+1}</td><td>${escHtml(periode || '-')}</td><td>${escHtml(shortLabel(nomor || '-', 20))}</td><td>${escHtml(shortLabel(transaksi || '-', 22))}</td><td>${escHtml(shortLabel(vendor || '-', 22))}</td><td>${fmtDays(total)}</td></tr>`;
+      }).join('');
+      advisorTables.innerHTML = `
+        <div class="advisor-grid">
+          <div class="viz-card">
+            <div class="viz-title">Top Jenis Transaksi</div>
+            <div class="viz-subtitle">Peringkat berdasarkan SLA rata-rata tertinggi pada data aktif</div>
+            <div class="premium-table-wrap"><table class="premium-table"><thead><tr><th>Rank</th><th>Jenis Transaksi</th><th>Volume</th><th>Rata-rata SLA</th></tr></thead><tbody>${trxRows || '<tr><td colspan="4">Belum ada data jenis transaksi.</td></tr>'}</tbody></table></div>
+          </div>
+          <div class="viz-card">
+            <div class="viz-title">Top Vendor / Cabang</div>
+            <div class="viz-subtitle">Entitas dengan SLA rata-rata paling tinggi</div>
+            <div class="premium-table-wrap"><table class="premium-table"><thead><tr><th>Rank</th><th>Vendor / Cabang</th><th>Volume</th><th>Rata-rata SLA</th></tr></thead><tbody>${vendorRows || '<tr><td colspan="4">Belum ada data vendor/cabang.</td></tr>'}</tbody></table></div>
+          </div>
+          <div class="viz-card wide">
+            <div class="viz-title">Preview Data Operasional</div>
+            <div class="viz-subtitle">Delapan baris pertama dari data aktif untuk validasi cepat</div>
+            <div class="premium-table-wrap"><table class="premium-table"><thead><tr><th>No</th><th>Periode</th><th>Nomor Permohonan</th><th>Jenis Transaksi</th><th>Vendor / Cabang</th><th>TOTAL WAKTU</th></tr></thead><tbody>${sampleRows || '<tr><td colspan="6">Belum ada sample record.</td></tr>'}</tbody></table></div>
+          </div>
+        </div>`;
+    }
+    function renderPosterBody(answerText){
+      const actions = buildExecutiveActions();
+      const stages = topProcessStages().slice(0, 4);
+      advisorPoster.innerHTML = `
+        <div class="poster-board">
+          <div class="poster-head">
+            <div>
+              <div class="poster-brand">ASDP • SLA Executive Advisor</div>
+              <div class="poster-title">SLA Executive Poster — Snapshot ${escHtml(metrics.period_first || '-')} sampai ${escHtml(metrics.period_last || '-')}</div>
+              <div class="poster-note">Poster ini dihasilkan langsung oleh SELA berdasarkan data yang sedang aktif pada dashboard, tanpa mengubah angka sumber. Cocok digunakan sebagai bahan briefing cepat atau executive preview.</div>
+            </div>
+            <div class="poster-badges">
+              <span class="poster-badge">${fmtNum(metrics.transaction_count || 0)} TRANSAKSI</span>
+              <span class="poster-badge">SLA ${fmtDays(metrics.avg_sla_days || 0)}</span>
+              <span class="poster-badge">GROWTH ${fmtPct(metrics.latest_growth_pct)}</span>
+            </div>
+          </div>
+          <div class="poster-grid">
+            <div class="poster-block"><div class="t">Volume Aktif</div><div class="n">${fmtNum(metrics.transaction_count || 0)}</div><div class="d">Cakupan data aktif ${escHtml(metrics.period_first || '-')} s.d. ${escHtml(metrics.period_last || '-')}.</div></div>
+            <div class="poster-block"><div class="t">Rata-rata SLA</div><div class="n">${fmtDays(metrics.avg_sla_days || 0)}</div><div class="d">Menggambarkan durasi total rata-rata pada seluruh transaksi aktif.</div></div>
+            <div class="poster-block"><div class="t">Bottleneck</div><div class="n">${escHtml(metrics.bottleneck && metrics.bottleneck.name ? prettyProcessName(metrics.bottleneck.name) : '-')}</div><div class="d">${metrics.bottleneck && metrics.bottleneck.avg_sla_days !== undefined ? 'Rata-rata SLA ' + fmtDays(metrics.bottleneck.avg_sla_days || 0) : 'Belum ada data bottleneck.'}</div></div>
+            <div class="poster-block wide"><div class="t">Prioritas Transaksi & Vendor</div><div class="n">${escHtml(metrics.top_transaction && metrics.top_transaction.name ? metrics.top_transaction.name : '-')}</div><div class="d">Vendor prioritas: ${escHtml(metrics.top_vendor && metrics.top_vendor.name ? metrics.top_vendor.name : '-')}. ${metrics.top_transaction && metrics.top_transaction.avg_sla_days !== undefined ? 'SLA transaksi prioritas: ' + fmtDays(metrics.top_transaction.avg_sla_days || 0) + '.' : ''}</div></div>
+            <div class="poster-block wide"><div class="t">Executive Narrative</div><div class="d">${escHtml(answerText || 'SELA siap menyusun narasi eksekutif berdasarkan pertanyaan Anda.').replace(/\n/g,'<br>')}</div></div>
+            <div class="poster-block full"><div class="t">Tahapan SLA</div><div class="legend-row">${stages.map((item, idx) => `<span class="legend-item"><span class="legend-swatch" style="background:${['#60a5fa','#34d399','#fbbf24','#f472b6'][idx % 4]}"></span>${escHtml(prettyProcessName(item.name))}: ${fmtDays(item.avg_sla_days || 0)}</span>`).join('') || '<span class="legend-item">Belum ada data tahapan.</span>'}</div></div>
+            <div class="poster-block full"><div class="t">Rekomendasi Aksi</div><ol class="poster-actions">${actions.map(item => `<li>${escHtml(item)}</li>`).join('') || '<li>Belum ada rekomendasi.</li>'}</ol></div>
+          </div>
+          <div class="poster-foot">Dasar data: filter aktif ${escHtml(metrics.period_first || '-')} s.d. ${escHtml(metrics.period_last || '-')}; ${fmtNum(metrics.transaction_count || 0)} transaksi. Poster ini hanya menampilkan visualisasi ringkas, sementara laporan utama aplikasi tetap menjadi referensi detail.</div>
+        </div>`;
+    }
+    function setAdvisorTab(name){
+      advisorTabs.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
+      advisorBodies.forEach(body => body.classList.toggle('active', body.id === 'advisor' + name.charAt(0).toUpperCase() + name.slice(1)));
+    }
+    function inferAdvisorMode(question){
+      const q = normalize(question);
+      if(/poster|infografik|ringkasan direksi|executive poster|executive advisor/.test(q)) return 'poster';
+      if(/tabel|table|daftar|list|top vendor|top transaksi|nomor permohonan/.test(q)) return 'tables';
+      if(/grafik|chart|bagan|tren|trend|visual/.test(q)) return 'charts';
+      return 'overview';
+    }
+    function refreshAdvisor(mode, question, answerText){
+      renderOverviewBody(question, answerText);
+      renderChartsBody();
+      renderTablesBody();
+      renderPosterBody(answerText);
+      const safeMode = ['overview','charts','tables','poster'].includes(mode) ? mode : 'overview';
+      setAdvisorTab(safeMode);
+      const captions = {
+        overview:'Insight eksekutif telah diringkas pada panel Insight.',
+        charts:'Grafik eksekutif telah ditampilkan pada panel Grafik.',
+        tables:'Tabel prioritas telah ditampilkan pada panel Tabel.',
+        poster:'Poster eksekutif telah ditampilkan pada panel Poster.'
+      };
+      advisorStatus.textContent = captions[safeMode] + ' Data sumber tetap mengikuti dashboard aktif dan seluruh fitur utama aplikasi tetap dipertahankan.';
+    }
     function handleQuestion(question){
       const q = String(question || '').trim();
       if(!q) return;
@@ -10108,11 +10427,22 @@ def render_sela_widget(df_filtered, periode_col: str,
         const result = answer(q);
         const isDataQuestion = /(transaksi|sla|vendor|cabang|nomor permohonan|periode|tahun|bottleneck|growth|pertumbuhan|ringkasan|direksi|rekomendasi|proses)/i.test(q);
         const hasEvidence = result.includes('Dasar data:');
-        const ans = (isDataQuestion && !hasEvidence && payload.meta.status !== 'empty')
+        let ans = (isDataQuestion && !hasEvidence && payload.meta.status !== 'empty')
           ? result + selaEvidence(`filter aktif ${metrics.period_first || '-'}–${metrics.period_last || '-'}`,
                                   Number(metrics.transaction_count || 0))
           : result;
+        const advisorMode = inferAdvisorMode(q);
+        if(advisorMode === 'charts' && !/grafik|chart|bagan/i.test(ans)) ans += '
+
+Saya juga menampilkan grafik eksekutif pada workspace advisor.';
+        if(advisorMode === 'tables' && !/tabel|table|daftar/i.test(ans)) ans += '
+
+Saya juga menampilkan tabel prioritas pada workspace advisor.';
+        if(advisorMode === 'poster' && !/poster/i.test(ans)) ans += '
+
+Saya juga menampilkan poster eksekutif pada workspace advisor.';
         addMsg('bot', ans);
+        refreshAdvisor(advisorMode, q, ans);
         setBubble(ans);
         speak(ans);
       }, 260);
@@ -10170,9 +10500,14 @@ def render_sela_widget(df_filtered, periode_col: str,
     sendBtn.addEventListener('click', () => handleQuestion(textInput.value));
     textInput.addEventListener('keydown', (e) => { if(e.key === 'Enter') handleQuestion(textInput.value); });
     document.querySelectorAll('.chip').forEach(btn => btn.addEventListener('click', () => handleQuestion(btn.dataset.question)));
+    advisorTabs.forEach(btn => btn.addEventListener('click', () => {
+      const mode = btn.dataset.tab || 'overview';
+      refreshAdvisor(mode, '', speechBubble.textContent || '');
+    }));
 
     populateMetrics();
-    addMsg('bot', 'Halo, saya SELA. Senang bisa membantu Anda. Silakan tanyakan apa saja terkait data SLA yang sedang aktif, dan saya akan menjawabnya dengan bahasa yang natural, ramah, dan informatif.');
+    refreshAdvisor('overview', '', 'Halo, saya SELA. Silakan gunakan workspace Executive Advisor untuk melihat insight, grafik, tabel, dan poster berbasis data aktif.');
+    addMsg('bot', 'Halo, saya SELA. Senang bisa membantu Anda. Silakan tanyakan apa saja terkait data SLA yang sedang aktif, dan saya akan menjawabnya dengan bahasa yang natural, ramah, informatif, serta menyiapkan tampilan visual bila diperlukan.');
   </script>
 </body>
 </html>
@@ -10180,7 +10515,7 @@ def render_sela_widget(df_filtered, periode_col: str,
 
     components.html(
         html.replace("___SELA_PAYLOAD___", data_json),
-        height=980,
+        height=1460,
         scrolling=False,
     )
 
