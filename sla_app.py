@@ -31,6 +31,17 @@ st.set_page_config(page_title="SLA Payment Analyzer", layout="wide", page_icon="
 if "show_sela" not in st.session_state:
     st.session_state["show_sela"] = False
 
+# Floating launcher control via query param keeps SELA lightweight until opened.
+try:
+    _sela_qp = st.query_params.get("sela", None)
+    if isinstance(_sela_qp, list):
+        _sela_qp = _sela_qp[-1] if _sela_qp else None
+    if _sela_qp == "open":
+        st.session_state["show_sela"] = True
+    elif _sela_qp == "close":
+        st.session_state["show_sela"] = False
+except Exception:
+    pass
 
 from datetime import datetime
 
@@ -460,7 +471,14 @@ hr.soft { border: none; height: 1px; background: linear-gradient(90deg, transpar
   flex: 2;
   padding-left: 20px;
 }
-</style>
+
+.avatar-photo{background:transparent!important;filter:drop-shadow(0 18px 30px rgba(8,23,41,.36));border-radius:0!important}
+.avatar-overlay,.avatar-grid{display:none!important}
+.avatar-card::before{content:"";position:absolute;inset:auto 12% 12px 12%;height:56px;border-radius:50%;background:radial-gradient(circle,rgba(95,226,208,.18),rgba(95,226,208,0));filter:blur(12px);z-index:0}
+.avatar-card > *{position:relative;z-index:1}
+
+
+  </style>
 """, unsafe_allow_html=True)
 
 # Visual-only CSS overlay: contains no widget, data or server-side operations.
@@ -1305,13 +1323,48 @@ st.sidebar.markdown(
     unsafe_allow_html=True,
 )
 
-# Tombol "Tanya SELA" di sidebar
+# Akses SELA tetap tersedia di sidebar (backup), namun launcher utama dibuat mengambang.
 with st.sidebar:
-    st.markdown("### \U0001f916 Tanya SELA")
-    if st.button("\U0001f4ac Buka / Tutup SELA"):
+    st.markdown("### 🤖 Tanya SELA")
+    if st.button("💬 Buka / Tutup SELA"):
         st.session_state["show_sela"] = not st.session_state["show_sela"]
-    st.caption("SELA 3D + AI hanya di-load saat Anda membukanya, supaya dashboard tetap ringan.")
+    st.caption("SELA hanya di-load saat dibuka agar dashboard tetap ringan. Anda juga bisa membuka SELA lewat tombol melayang di kanan bawah.")
 
+# Floating launcher minimalis untuk membuka / menyembunyikan SELA tanpa mengganggu tab lain.
+_sela_open = st.session_state.get("show_sela", False)
+_sela_href = "?sela=close" if _sela_open else "?sela=open"
+_sela_label = "Tutup SELA" if _sela_open else "Buka SELA"
+_sela_badge = "ON" if _sela_open else "AI"
+st.markdown(f"""
+<style>
+.sela-float-wrap {{position:fixed;right:22px;bottom:22px;z-index:9998;}}
+.sela-float-btn {{display:flex;align-items:center;gap:12px;min-width:148px;padding:12px 16px 12px 14px;
+  border-radius:999px;text-decoration:none!important;
+  background:linear-gradient(135deg,#0d2745,#123a67);color:#f7fbff!important;
+  border:1px solid rgba(123,178,224,.45);box-shadow:0 16px 40px rgba(6,22,43,.28);
+  font-weight:700;font-size:14px;letter-spacing:.01em;}}
+.sela-float-btn:hover {{transform:translateY(-1px);background:linear-gradient(135deg,#12345d,#145386);color:#ffffff!important;}}
+.sela-float-avatar {{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;
+  background:linear-gradient(135deg,#5fe2d0,#57a7ff);color:#0c2741;font-size:19px;font-weight:900;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 8px 20px rgba(46,152,196,.25);}}
+.sela-float-text {{display:flex;flex-direction:column;line-height:1.1;}}
+.sela-float-text small {{font-size:10px;font-weight:600;color:#b5d5f5;letter-spacing:.08em;}}
+.sela-float-badge {{margin-left:auto;padding:5px 8px;border-radius:999px;font-size:10px;font-weight:800;
+  background:rgba(255,255,255,.12);color:#dff4ff;border:1px solid rgba(255,255,255,.14);}}
+@media (max-width: 760px) {{
+  .sela-float-wrap {{right:14px;bottom:16px;}}
+  .sela-float-btn {{min-width:auto;padding:11px 13px;gap:10px;}}
+  .sela-float-text span {{font-size:12px;}}
+}}
+</style>
+<div class="sela-float-wrap">
+  <a class="sela-float-btn" href="{_sela_href}">
+    <div class="sela-float-avatar">S</div>
+    <div class="sela-float-text"><small>SELA PREMIUM</small><span>{_sela_label}</span></div>
+    <div class="sela-float-badge">{_sela_badge}</div>
+  </a>
+</div>
+""", unsafe_allow_html=True)
 
 # ==============================
 # Parsing SLA setelah filter (TIDAK DIUBAH)
@@ -9408,61 +9461,61 @@ def render_sela_widget(df_filtered, periode_col: str,
     @media (max-width: 1180px){.content{grid-template-columns:1fr}.avatar-panel,.right-panel{min-height:unset}.hero-stage{min-height:430px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.mini-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.selectors{grid-template-columns:1fr 1fr}.composer{grid-template-columns:1fr 1fr}.btn.send{grid-column:span 2}.viz-card,.viz-card.third,.poster-block,.poster-block.wide{grid-column:span 12}}
     @media (max-width: 720px){.title{font-size:22px}.head{padding:18px}.content{padding:16px}.metrics,.mini-kpis{grid-template-columns:1fr}.selectors{grid-template-columns:1fr}.composer{grid-template-columns:1fr}.female-avatar{transform:scale(.92)}.hrow{grid-template-columns:1fr}.poster-title{font-size:22px}.bars{gap:8px}.bar-label{min-height:42px}}
 
-/* SELA v13 Boardroom Assistant: lightweight, scoped visual refinement.
-   The avatar, speech, chat, existing actions and historical panels are kept intact. */
+/* SELA v14 Premium Virtual Human: minimal personal-assistant look.
+   All analytics, voice, exports and boardroom outputs are preserved. */
 .sela-root {
-  min-height:0; border-radius:24px;
-  background:#0c1728;
-  border:1px solid #24364b;
-  box-shadow:0 22px 56px rgba(13,27,44,.19);
+  min-height:0; border-radius:26px;
+  background:linear-gradient(180deg,#0b1524 0%,#0c1726 100%);
+  border:1px solid #22374b;
+  box-shadow:0 22px 56px rgba(13,27,44,.16);
 }
-.head {padding:22px 26px;gap:16px;background:linear-gradient(110deg,#101e32,#122338);border-bottom:1px solid #24364b}
+.head {padding:18px 22px;gap:14px;background:linear-gradient(110deg,#0f1b2d,#102033);border-bottom:1px solid #213449}
 .brand{gap:14px}
-.logo{width:44px;height:44px;flex-shrink:0;border-radius:13px;font-size:22px;background:linear-gradient(135deg,#2f779c,#25ad9d);box-shadow:none}
-.title{font-size:23px;font-weight:760;letter-spacing:-.035em}
-.subtitle{font-size:12px;line-height:1.55;color:#a7b9ce;max-width:610px}
-.head-tags{gap:6px;max-width:480px;justify-content:flex-end}
-.tag{padding:6px 9px;font-size:9px;font-weight:700;letter-spacing:.04em;background:transparent;border:1px solid #36516a;color:#b8d4e5}
-.content{padding:18px;grid-template-columns:minmax(215px,248px) minmax(0,1fr);gap:16px;align-items:stretch}
-.panel{border-radius:18px;border-color:#293b50;background:#142338;backdrop-filter:none;box-shadow:none}
-.avatar-panel{min-height:0;padding:13px;gap:12px;align-self:start}
-.hero-stage{min-height:350px;height:350px;flex:none;border-radius:16px;background:linear-gradient(180deg,#233a54,#112237)}
-.hero-stage::before{opacity:.45}
-.hero-stage::after{inset:8px;border-radius:13px}
-.avatar-wrap{padding:12px}
-.female-avatar{width:min(100%,220px);height:315px}
-.avatar-card{border-radius:17px;box-shadow:0 16px 34px rgba(2,9,18,.22)}
-.avatar-label{left:9px;right:9px;bottom:9px;border-radius:12px;padding:8px 9px;font-size:10px;line-height:1.35;background:rgba(7,17,31,.83)}
+.logo{width:40px;height:40px;flex-shrink:0;border-radius:50%;font-size:20px;background:linear-gradient(135deg,#55dbc8,#60a2ff);box-shadow:0 10px 24px rgba(54,153,198,.18)}
+.title{font-size:22px;font-weight:760;letter-spacing:-.03em}
+.subtitle{font-size:12px;line-height:1.52;color:#a8bfd2;max-width:720px}
+.head-tags{gap:6px;max-width:420px;justify-content:flex-end}
+.tag{padding:6px 9px;font-size:9px;font-weight:700;letter-spacing:.04em;background:rgba(255,255,255,.02);border:1px solid #2e4c68;color:#bdd8ea}
+.content{padding:14px;grid-template-columns:minmax(182px,208px) minmax(0,1fr);gap:14px;align-items:stretch}
+.panel{border-radius:20px;border-color:#26384d;background:linear-gradient(180deg,#122033,#101b2d);backdrop-filter:none;box-shadow:none}
+.avatar-panel{min-height:0;padding:12px 10px 12px 12px;gap:10px;align-self:start;position:relative;overflow:hidden}
+.hero-stage{min-height:318px;height:318px;flex:none;border-radius:18px;background:radial-gradient(circle at 50% 18%,rgba(91,177,255,.18),transparent 36%),linear-gradient(180deg,#16283b,#0d1625)}
+.hero-stage::before{opacity:.22}
+.hero-stage::after{display:none}
+.avatar-wrap{padding:6px 8px 0}
+.female-avatar{width:min(100%,188px);height:296px;margin:0 auto}
+.avatar-card{border-radius:18px;box-shadow:none;background:transparent;overflow:visible}
+.avatar-label{left:8px;right:8px;bottom:8px;border-radius:12px;padding:8px 10px;font-size:10px;line-height:1.35;background:rgba(8,18,31,.64);backdrop-filter:blur(8px)}
 .avatar-label strong{font-size:11px}
-.wavebar-wrap{padding-top:0}
-.hero-caption{max-height:110px;overflow:auto;padding:12px;font-size:11px;line-height:1.5;border-radius:12px;background:#101c2d;color:#c9dbea;scrollbar-width:thin}
-.right-panel{display:flex;flex-direction:column;gap:12px;padding:15px;min-height:0}
-.speech{padding:12px 14px;font-size:12px;line-height:1.5;max-height:90px;overflow:auto;background:#0e1a2c;border:1px solid #2b415a;box-shadow:none;scrollbar-width:thin;border-radius:12px}
+.wavebar-wrap{padding-top:2px}
+.hero-caption{max-height:92px;overflow:auto;padding:11px;font-size:11px;line-height:1.5;border-radius:14px;background:#0e1a2a;color:#d0e0ed;scrollbar-width:thin}
+.right-panel{display:flex;flex-direction:column;gap:12px;padding:14px;min-height:0}
+.speech{padding:13px 14px;font-size:12px;line-height:1.55;max-height:86px;overflow:auto;background:#0c1727;border:1px solid #263f58;box-shadow:none;scrollbar-width:thin;border-radius:16px}
 .metrics{gap:9px}
-.metric{padding:12px;border-radius:12px;background:#1d3046;min-height:86px;border-color:#31455b}
+.metric{padding:12px;border-radius:16px;background:linear-gradient(180deg,#17283d,#18283a);min-height:82px;border-color:#304559}
 .metric .label{font-size:10px;color:#9bb4c9;letter-spacing:.065em;margin-bottom:7px}
 .metric .value{font-size:22px;font-weight:750;color:#f2f7fe}
 .metric .sub{font-size:10px;margin-top:6px;color:#a8bed0}
-.selectors{gap:8px}
-.selectors select,.chat-input{background:#0e1c30;border-color:#31465c;border-radius:11px;padding:10px 12px;font-size:12px}
-.btn{padding:10px 12px;border-radius:11px;font-size:12px;box-shadow:none!important;transform:none!important}
+.selectors{gap:8px;align-items:center}
+.selectors select,.chat-input{background:#0d1828;border-color:#31465c;border-radius:14px;padding:10px 12px;font-size:12px}
+.btn{padding:10px 12px;border-radius:14px;font-size:12px;box-shadow:none!important;transform:none!important}
 .btn.primary{background:#2cbfa7;color:#082d2a}
 .btn.secondary{background:#3178c6;color:#fff}
 .btn.dark{background:#122035;color:#d8e9f8}
-.chips{gap:7px}
-.chip{padding:7px 10px;font-size:11px;border-radius:9px;font-weight:650;background:#10233a;border-color:#335570;color:#d1e3ef}
+.chips{gap:6px}
+.chip{padding:7px 10px;font-size:11px;border-radius:999px;font-weight:650;background:#0f2034;border-color:#31516c;color:#d4e6f2}
 .chip:hover{background:#17405a}
-.advisor-shell{padding:14px;border-radius:15px;background:#16283d;border-color:#2b4258;box-shadow:none}
+.advisor-shell{padding:14px;border-radius:20px;background:linear-gradient(180deg,#142538,#132234);border-color:#294056;box-shadow:none}
 .advisor-topbar{margin-bottom:12px}
 .advisor-kicker{color:#61cbbd;font-size:10px;letter-spacing:.14em}
-.advisor-title{font-size:19px;letter-spacing:-.02em;font-weight:750}
+.advisor-title{font-size:18px;letter-spacing:-.02em;font-weight:750}
 .advisor-subtitle{font-size:11px;margin-top:4px}
 .advisor-pill-wrap{gap:5px}
 .advisor-pill{padding:6px 8px;font-size:9px;background:#0c1a2d;border-color:#314b63}
-.advisor-tabs{margin-bottom:12px;gap:6px}
-.advisor-tab{font-size:11px;padding:8px 12px;border-radius:9px;background:#102137;border-color:#31455b;font-weight:650}
+.advisor-tabs{margin-bottom:12px;gap:6px;flex-wrap:wrap}
+.advisor-tab{font-size:11px;padding:8px 12px;border-radius:999px;background:#0f1f33;border-color:#31455b;font-weight:650}
 .advisor-tab.active,.advisor-tab:hover{background:#1f5b68;border-color:#347a7e;color:#e9ffff;transform:none}
-.advisor-panel{padding:12px;border-radius:12px;background:#101d2f}
+.advisor-panel{padding:12px;border-radius:16px;background:#0f1b2b}
 .advisor-status{font-size:11px;line-height:1.5;color:#aec5d6;margin-bottom:11px}
 .viz-card{border-radius:13px;padding:12px;background:#16273c;box-shadow:none}
 .viz-title{font-size:13px}
@@ -9472,14 +9525,14 @@ def render_sela_widget(df_filtered, periode_col: str,
 .mini-kpi{padding:12px;border-radius:12px;background:#1b3047}
 .mini-kpi .v{font-size:19px}
 .poster-board{box-shadow:none;background:#10223a}
-.msg{font-size:12px;padding:10px 12px;border-radius:13px;max-width:96%}
-.chatbox{min-height:122px;max-height:168px;gap:8px}
-.composer{position:sticky;bottom:0;z-index:3;background:#142338;padding:8px 0 4px}
+.msg{font-size:12px;padding:10px 12px;border-radius:16px;max-width:96%}
+.chatbox{min-height:110px;max-height:158px;gap:8px}
+.composer{position:sticky;bottom:0;z-index:3;background:#101b2d;padding:8px 0 4px}
 .statusline,.footer-note{font-size:10px}
 /* Boardroom one-click outputs */
-.boardroom-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:2px 0 13px;padding:11px;background:#0b1a2d;border:1px solid #2b435a;border-radius:12px}
+.boardroom-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:2px 0 13px;padding:10px 11px;background:#0d1a2a;border:1px solid #284259;border-radius:16px}
 .boardroom-label{font-size:11px;color:#91bad2;font-weight:800;letter-spacing:.06em;margin-right:3px}
-.boardroom-action{display:inline-flex;align-items:center;gap:7px;padding:8px 11px;background:#162d44;border:1px solid #35536a;color:#e4f3fc;font-weight:650;font-size:11px;border-radius:9px;cursor:pointer;transition:background .12s}
+.boardroom-action{display:inline-flex;align-items:center;gap:7px;padding:8px 11px;background:#14273b;border:1px solid #35536a;color:#e4f3fc;font-weight:650;font-size:11px;border-radius:999px;cursor:pointer;transition:background .12s}
 .boardroom-action:hover{background:#225372}
 .boardroom-action.primary{background:#1c716d;border-color:#258b82;color:#effffb}
 .boardroom-hint{font-size:10px;color:#9db8c9;margin:0 0 9px}
@@ -9500,21 +9553,22 @@ def render_sela_widget(df_filtered, periode_col: str,
 .briefing-foot{font-size:10px;color:#70899b;padding-top:9px;border-top:1px solid #e2e8ef}
 @media(max-width:1180px){
   .content{grid-template-columns:minmax(0,1fr)}
-  .avatar-panel{display:grid;grid-template-columns:180px minmax(0,1fr);gap:12px;align-items:center}
-  .hero-stage{height:225px;min-height:225px;grid-row:span 2}
-  .female-avatar{height:207px;width:150px}
-  .avatar-wrap{padding:7px}
+  .avatar-panel{display:grid;grid-template-columns:150px minmax(0,1fr);gap:12px;align-items:center}
+  .hero-stage{height:220px;min-height:220px;grid-row:span 2}
+  .female-avatar{height:200px;width:142px}
+  .avatar-wrap{padding:6px}
   .avatar-label{font-size:9px}
   .wavebar-wrap{justify-content:start}
-  .hero-caption{max-height:144px}
+  .hero-caption{max-height:120px}
   .right-panel{min-height:0}
 }
 @media(max-width:720px){
-  .head{padding:16px}.title{font-size:21px}
+  .head{padding:15px}.title{font-size:20px}
   .content{padding:10px}
-  .avatar-panel{grid-template-columns:140px minmax(0,1fr)}
-  .hero-stage{height:195px;min-height:195px}
-  .female-avatar{height:180px;width:127px}
+  .avatar-panel{grid-template-columns:minmax(0,1fr)}
+  .hero-stage{height:210px;min-height:210px}
+  .female-avatar{height:190px;width:132px}
+  .avatar-wrap{display:flex;justify-content:center}
   .avatar-label{max-height:66px;overflow:hidden;padding:5px 6px;font-size:8px;line-height:1.2}
   .avatar-label strong{font-size:9px}
   .metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -9532,8 +9586,8 @@ def render_sela_widget(df_filtered, periode_col: str,
       <div class="brand">
         <div class="logo">S</div>
         <div>
-          <div class="title">SELA v13 \u2022 Boardroom Assistant</div>
-          <div class="subtitle">Asisten pribadi virtual untuk keputusan pembayaran. Percakapan natural, insight terpercaya, dan output boardroom siap digunakan.</div>
+          <div class="title">SELA Premium Virtual Human</div>
+          <div class="subtitle">Asisten pribadi virtual yang minimalis, modern, dan responsif. Semua kemampuan analisis, suara, insight visual, dan boardroom output tetap tersedia.</div>
         </div>
       </div>
       <div class="head-tags">
@@ -9542,7 +9596,7 @@ def render_sela_widget(df_filtered, periode_col: str,
         <div class="tag">LIP SYNC</div>
         <div class="tag">SMART FILTER</div>
         <div class="tag">HISTORY VERIFIED</div>
-        <div class="tag">EXECUTIVE ADVISOR</div>
+        <div class="tag">PREMIUM HUMAN</div>
       </div>
     </div>
 
@@ -9563,11 +9617,11 @@ def render_sela_widget(df_filtered, periode_col: str,
           </div>
         </div>
         <div class="wavebar-wrap"><div class="wavebar"></div><div class="wavebar"></div><div class="wavebar"></div><div class="wavebar"></div><div class="wavebar"></div></div>
-        <div class="hero-caption" id="heroCaption">Halo, saya SELA. Saya siap membantu Anda membaca SLA, tren transaksi, bottleneck, growth, vendor, nomor permohonan, serta menampilkan insight eksekutif dalam bentuk grafik, tabel, dan poster.</div>
+        <div class="hero-caption" id="heroCaption">Halo, saya SELA. Saya siap membantu Anda membaca SLA, tren transaksi, bottleneck, growth, vendor, nomor permohonan, dan menyiapkan output eksekutif secara cepat.</div>
       </div>
 
       <div class="panel right-panel">
-        <div id="speechBubble" class="speech">Halo, saya SELA. Silakan bicara atau ketik pertanyaan Anda. Saya akan menjawab dengan bahasa yang natural dan, bila diperlukan, menampilkan insight eksekutif dalam bentuk grafik, tabel, atau poster berdasarkan data yang tersedia di dashboard ini.</div>
+        <div id="speechBubble" class="speech">Halo, saya SELA. Silakan bicara atau ketik pertanyaan Anda. Saya akan menjawab secara natural seperti asisten pribadi, dan bila diperlukan menampilkan insight dalam bentuk grafik, tabel, poster, atau briefing boardroom.</div>
 
         <div class="metrics">
           <div class="metric"><div class="label">Transaksi Aktif</div><div id="metricCount" class="value">0</div><div class="sub" id="metricPeriod">-</div></div>
@@ -9603,9 +9657,9 @@ def render_sela_widget(df_filtered, periode_col: str,
         <div class="advisor-shell">
           <div class="advisor-topbar">
             <div>
-              <div class="advisor-kicker">SELA Executive Advisor</div>
-              <div class="advisor-title">Executive Workspace</div>
-              <div class="advisor-subtitle">Tanyakan apa saja kepada SELA, lalu lihat analisis dan unduh materi briefing secara langsung.</div>
+              <div class="advisor-kicker">SELA Premium Workspace</div>
+              <div class="advisor-title">Personal Assistant Workspace</div>
+              <div class="advisor-subtitle">Ajukan pertanyaan seperti ke asisten pribadi, lalu gunakan insight, grafik, tabel, poster, dan briefing tanpa mengubah dashboard utama.</div>
             </div>
             <div class="advisor-pill-wrap">
               <div class="advisor-pill">FAST RENDER</div>
@@ -10959,7 +11013,7 @@ def render_sela_widget(df_filtered, periode_col: str,
 
     components.html(
         html.replace("___SELA_PAYLOAD___", data_json),
-        height=1070,
+        height=980,
         scrolling=True,  # fallback agar SELA dapat di-scroll jika host tidak auto-resize
     )
 
