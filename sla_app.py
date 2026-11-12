@@ -8970,7 +8970,7 @@ def build_sela_payload(df_filtered, periode_col: str):
     payload = {
         "meta": {
             "assistant_name": "SELA",
-            "version": "v12-executive",
+            "version": "v13-boardroom",
         },
         "metrics": {},
         "period_stats": [],
@@ -9407,6 +9407,123 @@ def render_sela_widget(df_filtered, periode_col: str,
     @keyframes pulse{0%,100%{transform:translateX(-50%) scale(1);opacity:.75}50%{transform:translateX(-50%) scale(1.08);opacity:1}}
     @media (max-width: 1180px){.content{grid-template-columns:1fr}.avatar-panel,.right-panel{min-height:unset}.hero-stage{min-height:430px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.mini-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.selectors{grid-template-columns:1fr 1fr}.composer{grid-template-columns:1fr 1fr}.btn.send{grid-column:span 2}.viz-card,.viz-card.third,.poster-block,.poster-block.wide{grid-column:span 12}}
     @media (max-width: 720px){.title{font-size:22px}.head{padding:18px}.content{padding:16px}.metrics,.mini-kpis{grid-template-columns:1fr}.selectors{grid-template-columns:1fr}.composer{grid-template-columns:1fr}.female-avatar{transform:scale(.92)}.hrow{grid-template-columns:1fr}.poster-title{font-size:22px}.bars{gap:8px}.bar-label{min-height:42px}}
+
+/* SELA v13 Boardroom Assistant: lightweight, scoped visual refinement.
+   The avatar, speech, chat, existing actions and historical panels are kept intact. */
+.sela-root {
+  min-height:0; border-radius:24px;
+  background:#0c1728;
+  border:1px solid #24364b;
+  box-shadow:0 22px 56px rgba(13,27,44,.19);
+}
+.head {padding:22px 26px;gap:16px;background:linear-gradient(110deg,#101e32,#122338);border-bottom:1px solid #24364b}
+.brand{gap:14px}
+.logo{width:44px;height:44px;flex-shrink:0;border-radius:13px;font-size:22px;background:linear-gradient(135deg,#2f779c,#25ad9d);box-shadow:none}
+.title{font-size:23px;font-weight:760;letter-spacing:-.035em}
+.subtitle{font-size:12px;line-height:1.55;color:#a7b9ce;max-width:610px}
+.head-tags{gap:6px;max-width:480px;justify-content:flex-end}
+.tag{padding:6px 9px;font-size:9px;font-weight:700;letter-spacing:.04em;background:transparent;border:1px solid #36516a;color:#b8d4e5}
+.content{padding:18px;grid-template-columns:minmax(215px,248px) minmax(0,1fr);gap:16px;align-items:stretch}
+.panel{border-radius:18px;border-color:#293b50;background:#142338;backdrop-filter:none;box-shadow:none}
+.avatar-panel{min-height:0;padding:13px;gap:12px;align-self:start}
+.hero-stage{min-height:350px;height:350px;flex:none;border-radius:16px;background:linear-gradient(180deg,#233a54,#112237)}
+.hero-stage::before{opacity:.45}
+.hero-stage::after{inset:8px;border-radius:13px}
+.avatar-wrap{padding:12px}
+.female-avatar{width:min(100%,220px);height:315px}
+.avatar-card{border-radius:17px;box-shadow:0 16px 34px rgba(2,9,18,.22)}
+.avatar-label{left:9px;right:9px;bottom:9px;border-radius:12px;padding:8px 9px;font-size:10px;line-height:1.35;background:rgba(7,17,31,.83)}
+.avatar-label strong{font-size:11px}
+.wavebar-wrap{padding-top:0}
+.hero-caption{max-height:110px;overflow:auto;padding:12px;font-size:11px;line-height:1.5;border-radius:12px;background:#101c2d;color:#c9dbea;scrollbar-width:thin}
+.right-panel{display:flex;flex-direction:column;gap:12px;padding:15px;min-height:0}
+.speech{padding:12px 14px;font-size:12px;line-height:1.5;max-height:90px;overflow:auto;background:#0e1a2c;border:1px solid #2b415a;box-shadow:none;scrollbar-width:thin;border-radius:12px}
+.metrics{gap:9px}
+.metric{padding:12px;border-radius:12px;background:#1d3046;min-height:86px;border-color:#31455b}
+.metric .label{font-size:10px;color:#9bb4c9;letter-spacing:.065em;margin-bottom:7px}
+.metric .value{font-size:22px;font-weight:750;color:#f2f7fe}
+.metric .sub{font-size:10px;margin-top:6px;color:#a8bed0}
+.selectors{gap:8px}
+.selectors select,.chat-input{background:#0e1c30;border-color:#31465c;border-radius:11px;padding:10px 12px;font-size:12px}
+.btn{padding:10px 12px;border-radius:11px;font-size:12px;box-shadow:none!important;transform:none!important}
+.btn.primary{background:#2cbfa7;color:#082d2a}
+.btn.secondary{background:#3178c6;color:#fff}
+.btn.dark{background:#122035;color:#d8e9f8}
+.chips{gap:7px}
+.chip{padding:7px 10px;font-size:11px;border-radius:9px;font-weight:650;background:#10233a;border-color:#335570;color:#d1e3ef}
+.chip:hover{background:#17405a}
+.advisor-shell{padding:14px;border-radius:15px;background:#16283d;border-color:#2b4258;box-shadow:none}
+.advisor-topbar{margin-bottom:12px}
+.advisor-kicker{color:#61cbbd;font-size:10px;letter-spacing:.14em}
+.advisor-title{font-size:19px;letter-spacing:-.02em;font-weight:750}
+.advisor-subtitle{font-size:11px;margin-top:4px}
+.advisor-pill-wrap{gap:5px}
+.advisor-pill{padding:6px 8px;font-size:9px;background:#0c1a2d;border-color:#314b63}
+.advisor-tabs{margin-bottom:12px;gap:6px}
+.advisor-tab{font-size:11px;padding:8px 12px;border-radius:9px;background:#102137;border-color:#31455b;font-weight:650}
+.advisor-tab.active,.advisor-tab:hover{background:#1f5b68;border-color:#347a7e;color:#e9ffff;transform:none}
+.advisor-panel{padding:12px;border-radius:12px;background:#101d2f}
+.advisor-status{font-size:11px;line-height:1.5;color:#aec5d6;margin-bottom:11px}
+.viz-card{border-radius:13px;padding:12px;background:#16273c;box-shadow:none}
+.viz-title{font-size:13px}
+.viz-subtitle{font-size:11px}
+.insight-banner{border-radius:12px;font-size:12px;background:#173548}
+.insight-list{font-size:12px}
+.mini-kpi{padding:12px;border-radius:12px;background:#1b3047}
+.mini-kpi .v{font-size:19px}
+.poster-board{box-shadow:none;background:#10223a}
+.msg{font-size:12px;padding:10px 12px;border-radius:13px;max-width:96%}
+.chatbox{min-height:122px;max-height:168px;gap:8px}
+.composer{position:sticky;bottom:0;z-index:3;background:#142338;padding:8px 0 4px}
+.statusline,.footer-note{font-size:10px}
+/* Boardroom one-click outputs */
+.boardroom-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:2px 0 13px;padding:11px;background:#0b1a2d;border:1px solid #2b435a;border-radius:12px}
+.boardroom-label{font-size:11px;color:#91bad2;font-weight:800;letter-spacing:.06em;margin-right:3px}
+.boardroom-action{display:inline-flex;align-items:center;gap:7px;padding:8px 11px;background:#162d44;border:1px solid #35536a;color:#e4f3fc;font-weight:650;font-size:11px;border-radius:9px;cursor:pointer;transition:background .12s}
+.boardroom-action:hover{background:#225372}
+.boardroom-action.primary{background:#1c716d;border-color:#258b82;color:#effffb}
+.boardroom-hint{font-size:10px;color:#9db8c9;margin:0 0 9px}
+.briefing-preview{padding:20px;border-radius:15px;background:#f8fafc;color:#182a3d;box-shadow:0 12px 27px rgba(0,0,0,.1)}
+.briefing-header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;border-bottom:2px solid #dde6ee;padding-bottom:12px;margin-bottom:16px}
+.briefing-eyebrow{font-size:10px;text-transform:uppercase;letter-spacing:.14em;color:#227b86;font-weight:800}
+.briefing-header h3{font-size:21px;color:#122c47;letter-spacing:-.025em;margin:4px 0 6px}
+.briefing-desc{font-size:11px;color:#567087;line-height:1.45}
+.briefing-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:15px}
+.briefing-kpi{background:#edf4f7;border-radius:11px;padding:12px;min-width:0}
+.briefing-kpi span{display:block;font-size:10px;text-transform:uppercase;color:#60798e;font-weight:700;margin-bottom:5px}
+.briefing-kpi strong{display:block;font-size:17px;color:#12334e;line-height:1.25;overflow-wrap:anywhere}
+.briefing-section{background:white;border:1px solid #e1e8ef;border-radius:12px;padding:14px;margin-bottom:12px}
+.briefing-section h4{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#2b5874;margin:0 0 9px}
+.briefing-section p,.briefing-section li{font-size:11px;color:#385066;line-height:1.5;margin:0}
+.briefing-section ol{padding-left:17px;margin:0}
+.briefing-chart{width:100%;max-height:230px;display:block}
+.briefing-foot{font-size:10px;color:#70899b;padding-top:9px;border-top:1px solid #e2e8ef}
+@media(max-width:1180px){
+  .content{grid-template-columns:minmax(0,1fr)}
+  .avatar-panel{display:grid;grid-template-columns:180px minmax(0,1fr);gap:12px;align-items:center}
+  .hero-stage{height:225px;min-height:225px;grid-row:span 2}
+  .female-avatar{height:207px;width:150px}
+  .avatar-wrap{padding:7px}
+  .avatar-label{font-size:9px}
+  .wavebar-wrap{justify-content:start}
+  .hero-caption{max-height:144px}
+  .right-panel{min-height:0}
+}
+@media(max-width:720px){
+  .head{padding:16px}.title{font-size:21px}
+  .content{padding:10px}
+  .avatar-panel{grid-template-columns:140px minmax(0,1fr)}
+  .hero-stage{height:195px;min-height:195px}
+  .female-avatar{height:180px;width:127px}
+  .avatar-label{max-height:66px;overflow:hidden;padding:5px 6px;font-size:8px;line-height:1.2}
+  .avatar-label strong{font-size:9px}
+  .metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .metric .value{font-size:18px}
+  .briefing-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .boardroom-tools{gap:6px}
+  .boardroom-action{font-size:10px;padding:8px}
+}
+
   </style>
 </head>
 <body>
@@ -9415,8 +9532,8 @@ def render_sela_widget(df_filtered, periode_col: str,
       <div class="brand">
         <div class="logo">S</div>
         <div>
-          <div class="title">SELA v12 \u2022 Executive Advisor</div>
-          <div class="subtitle">Asisten virtual human wanita dengan lip-sync lebih halus, analisis periode sampai level bulan, serta kemampuan menyajikan insight eksekutif dalam bentuk grafik, tabel, dan poster.</div>
+          <div class="title">SELA v13 \u2022 Boardroom Assistant</div>
+          <div class="subtitle">Asisten pribadi virtual untuk keputusan pembayaran. Percakapan natural, insight terpercaya, dan output boardroom siap digunakan.</div>
         </div>
       </div>
       <div class="head-tags">
@@ -9480,14 +9597,15 @@ def render_sela_widget(df_filtered, periode_col: str,
           <button class="chip" data-question="Tampilkan grafik eksekutif transaksi dan SLA">Grafik</button>
           <button class="chip" data-question="Tampilkan tabel prioritas transaksi dan vendor">Tabel</button>
           <button class="chip" data-question="Buatkan poster eksekutif SLA">Poster</button>
+          <button class="chip" data-question="Tampilkan briefing BOD satu halaman">Briefing BOD</button>
         </div>
 
         <div class="advisor-shell">
           <div class="advisor-topbar">
             <div>
               <div class="advisor-kicker">SELA Executive Advisor</div>
-              <div class="advisor-title">Visual Insight Workspace</div>
-              <div class="advisor-subtitle">SELA dapat menampilkan ringkasan, grafik, tabel, dan poster eksekutif secara langsung tanpa mengubah angka pada dashboard utama.</div>
+              <div class="advisor-title">Executive Workspace</div>
+              <div class="advisor-subtitle">Tanyakan apa saja kepada SELA, lalu lihat analisis dan unduh materi briefing secara langsung.</div>
             </div>
             <div class="advisor-pill-wrap">
               <div class="advisor-pill">FAST RENDER</div>
@@ -9500,6 +9618,16 @@ def render_sela_widget(df_filtered, periode_col: str,
             <button class="advisor-tab" data-tab="charts">Grafik</button>
             <button class="advisor-tab" data-tab="tables">Tabel</button>
             <button class="advisor-tab" data-tab="poster">Poster</button>
+            <button class="advisor-tab" data-tab="briefing">Boardroom</button>
+          </div>
+          <div class="boardroom-tools" aria-label="Unduh hasil analisis SELA">
+            <span class="boardroom-label">BOARDROOM OUTPUT</span>
+            <button type="button" class="boardroom-action primary" data-export="poster" title="Simpan poster 1600 x 1000 pixel">Poster PNG</button>
+            <button type="button" class="boardroom-action" data-export="chartpng" title="Simpan grafik menjadi gambar PNG">Grafik PNG</button>
+            <button type="button" class="boardroom-action" data-export="svg" title="Simpan grafik vektor siap presentasi">Grafik SVG</button>
+            <button type="button" class="boardroom-action" data-export="csv" title="Unduh tabel prioritas, bisa dibuka di Excel">Tabel CSV</button>
+            <button type="button" class="boardroom-action" data-export="html" title="Briefing satu halaman, bisa dibuka offline">Briefing HTML</button>
+            <button type="button" class="boardroom-action" data-export="pdf" title="Cetak briefing satu halaman atau simpan sebagai PDF">Cetak / PDF</button>
           </div>
           <div class="advisor-panel">
             <div class="advisor-status" id="advisorStatus">Workspace Executive Advisor siap digunakan. Ketik pertanyaan atau klik chip cepat, lalu saya akan menampilkan insight visual yang paling relevan.</div>
@@ -9507,6 +9635,7 @@ def render_sela_widget(df_filtered, periode_col: str,
             <div id="advisorCharts" class="advisor-body"></div>
             <div id="advisorTables" class="advisor-body"></div>
             <div id="advisorPoster" class="advisor-body"></div>
+            <div id="advisorBriefing" class="advisor-body"></div>
           </div>
         </div>
 
@@ -9572,6 +9701,7 @@ def render_sela_widget(df_filtered, periode_col: str,
     const advisorCharts = document.getElementById('advisorCharts');
     const advisorTables = document.getElementById('advisorTables');
     const advisorPoster = document.getElementById('advisorPoster');
+    const advisorBriefing = document.getElementById('advisorBriefing');
     const advisorStatus = document.getElementById('advisorStatus');
     const advisorBodies = document.querySelectorAll('.advisor-body');
     const advisorTabs = document.querySelectorAll('.advisor-tab');
@@ -10397,6 +10527,7 @@ def render_sela_widget(df_filtered, periode_col: str,
     }
     function inferAdvisorMode(question){
       const q = normalize(question);
+      if(/(briefing|boardroom|satu halaman|bod|dekom)/.test(q)) return 'briefing';
       if(/poster|infografik|ringkasan direksi|executive poster|executive advisor/.test(q)) return 'poster';
       if(/tabel|table|daftar|list|top vendor|top transaksi|nomor permohonan/.test(q)) return 'tables';
       if(/grafik|chart|bagan|tren|trend|visual/.test(q)) return 'charts';
@@ -10404,17 +10535,19 @@ def render_sela_widget(df_filtered, periode_col: str,
     }
     function refreshAdvisor(mode, question, answerText){
       // Render only the requested visual. Hidden panels remain lazy for a fast response.
-      const safeMode = ['overview','charts','tables','poster'].includes(mode) ? mode : 'overview';
+      const safeMode = ['overview','charts','tables','poster','briefing'].includes(mode) ? mode : 'overview';
       if(safeMode === 'overview') renderOverviewBody(question, answerText);
       else if(safeMode === 'charts') renderChartsBody();
       else if(safeMode === 'tables') renderTablesBody();
-      else renderPosterBody(answerText);
+      else if(safeMode === 'poster') renderPosterBody(answerText);
+      else renderBriefingBody();
       setAdvisorTab(safeMode);
       const captions = {
         overview:'Insight eksekutif telah diringkas pada panel Insight.',
         charts:'Grafik eksekutif telah ditampilkan pada panel Grafik.',
         tables:'Tabel prioritas telah ditampilkan pada panel Tabel.',
-        poster:'Poster eksekutif telah ditampilkan pada panel Poster.'
+        poster:'Poster eksekutif telah ditampilkan pada panel Poster.',
+        briefing:'Boardroom Briefing satu halaman siap diperiksa dan diekspor.'
       };
       advisorStatus.textContent = captions[safeMode] + ' Data sumber tetap mengikuti dashboard aktif dan seluruh fitur utama aplikasi tetap dipertahankan.';
       requestAnimationFrame(selaAutoResize);
@@ -10438,6 +10571,298 @@ def render_sela_widget(df_filtered, periode_col: str,
       selaSizeObserver.observe(document.body);
     }
     window.addEventListener('load', () => requestAnimationFrame(selaAutoResize));
+    // SELA v13 Boardroom Output: browser-native exports, no network or heavy dependency.
+    let boardroomQuestion = '';
+    let boardroomAnswer = '';
+    const boardroomColors = {'2022':'#edb841','2023':'#25b9a5','2024':'#4d8fdd','2025':'#9b82df','2026':'#db6a9d'};
+    function boardroomYearColor(label, index){
+      const year = String(label).match(/20[0-9]{2}/);
+      return year && boardroomColors[year[0]] ? boardroomColors[year[0]] : ['#257f95','#2bb7a5','#8a79cc','#e7b859','#c36f90'][index%5];
+    }
+    function boardroomBaseName(){
+      const clean = String(metrics.period_first || 'Data') + '_' + String(metrics.period_last || 'Terakhir');
+      return 'ASDP_SELA_Boardroom_' + clean.replace(/[^0-9a-zA-Z_-]+/g,'_').slice(0,72);
+    }
+    function boardroomScope(){
+      return String(metrics.period_first || '-') + ' – ' + String(metrics.period_last || '-');
+    }
+    function boardroomSeries(){
+      const question = boardroomQuestion || '';
+      const metric = selaMetric(normalize(question));
+      const unit = metric === 'count' ? 'transaksi' : 'hari';
+      const multiYears = selaMentionedYears(question);
+      const multiMonths = selaMonthYearMentions(question);
+      if(multiYears.length >= 2){
+        const available = multiYears.filter(y => historyYears.some(item=>String(item.year) === String(y)));
+        if(available.length >= 2){
+          const latest = available.map(y=>historyYears.find(item=>String(item.year)===String(y)));
+          const horizon = Math.min(...latest.map(x=>Number(x.latest_month || 12)));
+          return {title:metric==='count'?'Perbandingan volume multi-tahun':'Perbandingan SLA multi-tahun',
+            subtitle:'Horizon sebanding Januari–'+MONTH_NAMES_ID[horizon-1]+' • histori unggahan', unit,
+            data:available.map(y=>{
+              const row=selaAggregateYear(y,horizon,metric);
+              return {label:y,value:row?row.value:null};
+            }).filter(x=>x.value!==null && Number.isFinite(Number(x.value)))};
+        }
+      }
+      if(multiMonths.length >= 2){
+        const rows=multiMonths.map(key=>historyMonths.find(row=>row.month_key===key)).filter(Boolean);
+        return {title:metric==='count'?'Perbandingan volume antar bulan':'Perbandingan SLA antar bulan',
+          subtitle:'Histori periode yang diminta • hanya periode tersedia',unit,
+          data:rows.map(row=>({label:MONTH_NAMES_ID[Number(row.month)-1].slice(0,3)+' '+row.year,
+            value:metric==='count'?Number(row.count || 0):row[metric]}))
+            .filter(x=>x.value!==null && x.value!==undefined && Number.isFinite(Number(x.value)))};
+      }
+      if(multiYears.length===1 && historyMonths.some(r=>String(r.year)===String(multiYears[0]))){
+        const year=String(multiYears[0]);
+        const rows=historyMonths.filter(r=>String(r.year)===year).sort((a,b)=>Number(a.month)-Number(b.month));
+        return {title:metric==='count'?'Volume transaksi '+year:'SLA '+prettyProcessName(metric)+' '+year,
+          subtitle:'Histori unggahan tahun '+year+' • periode tersedia',unit,
+          data:rows.map(row=>({label:MONTH_NAMES_ID[Number(row.month)-1].slice(0,3),
+            value:metric==='count'?Number(row.count || 0):row[metric]}))
+            .filter(x=>x.value!==null && x.value!==undefined && Number.isFinite(Number(x.value)))};
+      }
+      const rows=(periodStats || []).slice(-8);
+      const slaByMonth=new Map((processMonthStats || []).map(row=>[row.month_key,row]));
+      return {title:metric==='count'?'Tren volume transaksi':'Tren SLA '+prettyProcessName(metric),
+        subtitle:'Periode aktif: '+boardroomScope(),unit,
+        data:rows.map(row=>({label:String(row.periode || '-'),value:metric==='count'
+          ? Number(row.count || 0)
+          : ((slaByMonth.get(row.month_key) || {})[metric] ?? (metric==='TOTAL WAKTU' ? row.avg_sla_days : null))}))
+          .filter(x=>x.value!==null && x.value!==undefined && Number.isFinite(Number(x.value)))};
+    }
+    function boardroomSvg(){
+      const series=boardroomSeries();
+      const data=series.data.slice(-12);
+      const width=1040, height=500, left=78, right=32, top=118, baseline=386;
+      const chartW=width-left-right, chartH=baseline-top;
+      const max=Math.max(1,...data.map(row=>Number(row.value)))*1.16;
+      const colors=data.map((row,i)=>boardroomYearColor(row.label,i));
+      const barW=data.length ? Math.min(64,(chartW/data.length)*0.56) : 64;
+      const axis=[0,1,2,3,4].map(i=>{
+        const y=baseline-i*chartH/4;
+        const value=max*i/4;
+        const label=series.unit==='transaksi' ? fmtNum(Math.round(value)) : fmtNum(Math.round(value*100)/100);
+        return `<line x1="${left}" y1="${y}" x2="${width-right}" y2="${y}" stroke="#dde7ef" stroke-width="1"/><text x="${left-14}" y="${y+4}" text-anchor="end" font-size="13" fill="#6b849a">${escHtml(label)}</text>`;
+      }).join('');
+      const bars=data.map((row,i)=>{
+        const x=left+chartW*(i+.5)/data.length;
+        const barH=Math.max(2,(Number(row.value)/max)*chartH);
+        const y=baseline-barH;
+        const display=series.unit==='transaksi' ? fmtNum(row.value):Number(row.value).toLocaleString('id-ID',{maximumFractionDigits:2});
+        const short=shortLabel(row.label,16);
+        return `<rect x="${(x-barW/2).toFixed(2)}" y="${y.toFixed(2)}" width="${barW}" height="${barH.toFixed(2)}" rx="7" fill="${colors[i]}"/>
+          <text x="${x.toFixed(2)}" y="${Math.max(top-8,y-9).toFixed(2)}" text-anchor="middle" font-size="14" fill="#15354d" font-weight="700">${escHtml(display)}</text>
+          <text x="${x.toFixed(2)}" y="${baseline+24}" text-anchor="middle" font-size="12" fill="#4a667f">${escHtml(short)}</text>`;
+      }).join('');
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Grafik SELA Boardroom">
+        <rect width="${width}" height="${height}" rx="24" fill="#f8fafc"/>
+        <rect x="0" y="0" width="${width}" height="9" fill="#249c97"/>
+        <text x="55" y="53" font-size="12" font-weight="700" letter-spacing="2" fill="#247f88">ASDP  ·  SELA BOARDROOM</text>
+        <text x="55" y="87" font-size="26" font-weight="800" fill="#152e48">${escHtml(series.title)}</text>
+        <text x="55" y="107" font-size="13" fill="#638199">${escHtml(series.subtitle)}</text>
+        ${axis}${bars}
+        <text x="55" y="461" font-size="12" fill="#5f7d95">Sumber: data transaksi yang telah diunggah · ${escHtml(boardroomScope())}</text>
+        <text x="${width-55}" y="461" text-anchor="end" font-size="12" fill="#247f88">SELA EXECUTIVE ASSISTANT</text>
+      </svg>`;
+    }
+    function boardroomDownloadBlob(blob,name){
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url;a.download=name;a.style.display='none';
+      document.body.appendChild(a);a.click();a.remove();
+      window.setTimeout(()=>URL.revokeObjectURL(url),4000);
+    }
+    function boardroomDownloadText(text,type,name){
+      boardroomDownloadBlob(new Blob([text],{type:type}),name);
+    }
+    function boardroomExportSvg(){
+      boardroomDownloadText(boardroomSvg(),'image/svg+xml;charset=utf-8',boardroomBaseName()+'_Grafik.svg');
+      advisorStatus.textContent='Grafik SVG telah disiapkan untuk diunduh.';
+    }
+    function boardroomExportChartPng(){
+      const svg=boardroomSvg();
+      const img=new Image();
+      const url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml;charset=utf-8'}));
+      img.onload=()=>{
+        try{
+          const canvas=document.createElement('canvas');canvas.width=1560;canvas.height=750;
+          const ctx=canvas.getContext('2d');ctx.fillStyle='#f8fafc';ctx.fillRect(0,0,1560,750);
+          ctx.drawImage(img,0,0,1560,750);
+          canvas.toBlob(blob=>{if(blob)boardroomDownloadBlob(blob,boardroomBaseName()+'_Grafik.png');},'image/png');
+          advisorStatus.textContent='Grafik PNG telah disiapkan untuk diunduh.';
+        }catch(err){advisorStatus.textContent='Grafik PNG belum bisa disimpan. Gunakan format SVG sebagai alternatif.';}
+        URL.revokeObjectURL(url);
+      };
+      img.onerror=()=>{URL.revokeObjectURL(url);advisorStatus.textContent='Grafik PNG belum bisa dibuat. Silakan gunakan SVG.';};
+      img.src=url;
+    }
+    function boardroomCsvEscape(value){
+      let string=String(value===null||value===undefined?'':value);
+      if(/^[=+@-]/.test(string.trim()))string="'"+string;
+      return '"'+string.replace(/"/g,'""')+'"';
+    }
+    function boardroomExportCsv(){
+      const rows=[['Kategori','Peringkat','Entitas','Jumlah Transaksi','Rata-rata SLA (hari)','Periode Aktif']];
+      [['Jenis Transaksi',trxStats],['Vendor/Cabang',vendorStats]].forEach(([kind,items])=>{
+        (items || []).forEach((row,i)=>rows.push([kind,i+1,row.name || '-',Number(row.count || 0),
+          row.avg_sla_days===null||row.avg_sla_days===undefined?'':Number(row.avg_sla_days).toFixed(6),boardroomScope()]));
+      });
+      const csv='\\ufeff'+rows.map(row=>row.map(boardroomCsvEscape).join(';')).join('\\r\\n');
+      boardroomDownloadText(csv,'text/csv;charset=utf-8',boardroomBaseName()+'_Prioritas.csv');
+      advisorStatus.textContent='Tabel prioritas CSV telah disiapkan untuk diunduh (kompatibel dengan Excel).';
+    }
+    function boardroomCanvasText(ctx,text,x,y,maxWidth,font,color){
+      ctx.font=font;ctx.fillStyle=color;
+      let out=String(text||'');
+      if(ctx.measureText(out).width>maxWidth){
+        while(out.length>1&&ctx.measureText(out+'…').width>maxWidth)out=out.slice(0,-1);
+        out+='…';
+      }
+      ctx.fillText(out,x,y);
+    }
+    function boardroomWrap(ctx,text,x,y,width,lineHeight,maxLines,font,color){
+      ctx.font=font;ctx.fillStyle=color;
+      const words=String(text||'').split(/\\s+/);let line='',lineNo=0;
+      for(const word of words){
+        const cand=line?line+' '+word:word;
+        if(ctx.measureText(cand).width<=width){line=cand;continue;}
+        if(line){boardroomCanvasText(ctx,line,x,y+lineNo*lineHeight,width,font,color);lineNo++;if(lineNo>=maxLines)return lineNo;}
+        line=word;
+      }
+      if(line&&lineNo<maxLines){boardroomCanvasText(ctx,line,x,y+lineNo*lineHeight,width,font,color);lineNo++;}
+      return lineNo;
+    }
+    function boardroomRounded(ctx,x,y,w,h,r,color){
+      ctx.fillStyle=color;ctx.beginPath();
+      if(typeof ctx.roundRect==='function')ctx.roundRect(x,y,w,h,r);
+      else ctx.rect(x,y,w,h);
+      ctx.fill();
+    }
+    function boardroomExportPosterPng(){
+      // Canvas export keeps confidential dashboard data local inside the browser.
+      const canvas=document.createElement('canvas');canvas.width=1600;canvas.height=1000;
+      const ctx=canvas.getContext('2d');
+      ctx.fillStyle='#f6f9fc';ctx.fillRect(0,0,1600,1000);
+      boardroomRounded(ctx,0,0,1600,260,0,'#132b45');
+      boardroomRounded(ctx,75,66,64,64,19,'#2cae9d');
+      boardroomCanvasText(ctx,'S',96,111,30,'800 34px Arial','#ffffff');
+      boardroomCanvasText(ctx,'ASDP · INTELLIGENT PAYMENT PERFORMANCE',162,79,1210,'700 19px Arial','#a5e1dd');
+      boardroomCanvasText(ctx,'SELA BOARDROOM BRIEF',75,163,1450,'800 51px Arial','#ffffff');
+      boardroomCanvasText(ctx,boardroomScope(),75,212,1400,'400 22px Arial','#c1d9eb');
+      const cards=[['TOTAL TRANSAKSI',fmtNum(metrics.transaction_count || 0)],['RATA-RATA SLA',fmtDays(metrics.avg_sla_days)],['GROWTH TERAKHIR',fmtPct(metrics.latest_growth_pct)],['BOTTLENECK',prettyProcessName(metrics.bottleneck?.name || '-')]];
+      cards.forEach((card,i)=>{
+        const x=75+i*367;
+        boardroomRounded(ctx,x,298,345,139,19,'#ffffff');
+        boardroomCanvasText(ctx,card[0],x+20,335,300,'700 16px Arial','#5d8198');
+        boardroomCanvasText(ctx,card[1],x+20,397,306,i===1?'800 22px Arial':'800 30px Arial','#173550');
+      });
+      boardroomRounded(ctx,75,472,850,384,20,'#ffffff');
+      boardroomCanvasText(ctx,'INSIGHT OPERASIONAL',103,516,780,'700 18px Arial','#278b86');
+      const highlights=buildInsightHighlights().slice(0,4);
+      let next=557;
+      highlights.forEach((h,i)=>{
+        ctx.fillStyle='#25b3a3';ctx.beginPath();ctx.arc(112,next-5,5,0,Math.PI*2);ctx.fill();
+        const lines=boardroomWrap(ctx,h,136,next,742,25,3,'400 19px Arial','#35526a');
+        next+=Math.max(2,lines)*25+18;
+      });
+      boardroomRounded(ctx,949,472,576,384,20,'#e5f4f3');
+      boardroomCanvasText(ctx,'PRIORITAS TINDAKAN',977,516,510,'700 18px Arial','#268983');
+      let ay=560;
+      buildExecutiveActions().slice(0,3).forEach((a,i)=>{
+        boardroomRounded(ctx,977,ay-24,33,33,10,'#bbdfda');
+        boardroomCanvasText(ctx,String(i+1),987,ay,20,'800 18px Arial','#1c6e66');
+        const lines=boardroomWrap(ctx,a,1024,ay-2,470,24,3,'400 17px Arial','#2c5265');
+        ay+=Math.max(lines,2)*24+24;
+      });
+      ctx.strokeStyle='#d8e4ed';ctx.beginPath();ctx.moveTo(75,899);ctx.lineTo(1525,899);ctx.stroke();
+      boardroomCanvasText(ctx,'Sumber: file transaksi aktif · Perhitungan identik dengan dashboard SELA',75,932,1360,'400 16px Arial','#67859b');
+      boardroomCanvasText(ctx,'SELA EXECUTIVE ASSISTANT',75,965,1380,'700 15px Arial','#2f8c89');
+      canvas.toBlob(blob=>{if(blob)boardroomDownloadBlob(blob,boardroomBaseName()+'_Poster.png');},'image/png');
+      advisorStatus.textContent='Poster PNG beresolusi 1600×1000 telah disiapkan untuk diunduh.';
+    }
+    function boardroomBriefBody(){
+      const actions=buildExecutiveActions();
+      const insights=buildInsightHighlights();
+      return `<section class="briefing-preview">
+        <header class="briefing-header"><div><div class="briefing-eyebrow">ASDP · SELA Executive Assistant</div>
+          <h3>Boardroom Briefing</h3><div class="briefing-desc">Ringkasan kinerja pembayaran · ${escHtml(boardroomScope())}</div></div>
+          <div class="briefing-eyebrow">ONE-PAGE BRIEF</div></header>
+        <div class="briefing-grid">
+          <div class="briefing-kpi"><span>Total Transaksi</span><strong>${fmtNum(metrics.transaction_count || 0)}</strong></div>
+          <div class="briefing-kpi"><span>Rata-rata SLA</span><strong>${fmtDays(metrics.avg_sla_days)}</strong></div>
+          <div class="briefing-kpi"><span>Growth Terakhir</span><strong>${fmtPct(metrics.latest_growth_pct)}</strong></div>
+          <div class="briefing-kpi"><span>Bottleneck</span><strong>${escHtml(prettyProcessName(metrics.bottleneck?.name || '-'))}</strong></div>
+        </div>
+        <div class="briefing-section"><h4>Visual Performance</h4>${boardroomSvg().replace(/width="1040" height="500"/,'class="briefing-chart" width="1040" height="500"')}</div>
+        <div class="briefing-section"><h4>Executive Highlights</h4><ol>${insights.slice(0,3).map(item=>`<li>${escHtml(item)}</li>`).join('')}</ol></div>
+        <div class="briefing-section"><h4>Management Action</h4><ol>${actions.slice(0,3).map(item=>`<li>${escHtml(item)}</li>`).join('')||'<li>Belum terdapat rekomendasi spesifik dari data aktif.</li>'}</ol></div>
+        <div class="briefing-foot">Basis: ${fmtNum(metrics.transaction_count || 0)} transaksi, filter ${escHtml(boardroomScope())}. Grafik historis, bila diminta, menggunakan histori unggahan. Output ini merupakan ringkasan pendamping dan tidak menggantikan laporan utama aplikasi.</div>
+      </section>`;
+    }
+    function renderBriefingBody(){
+      advisorBriefing.innerHTML=boardroomBriefBody();
+    }
+    function boardroomDocument(){
+      // Offline, printable A4 landscape; no requests to external services.
+      const preview=boardroomBriefBody();
+      return `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>ASDP SELA Boardroom Briefing</title><style>
+        *{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f0f4f7;color:#18324a}
+        .briefing-preview{padding:25px;max-width:1160px;margin:24px auto;border-radius:16px;background:#fff}
+        .briefing-header{display:flex;justify-content:space-between;border-bottom:2px solid #dce5ec;padding-bottom:12px;margin-bottom:14px}
+        .briefing-eyebrow{text-transform:uppercase;letter-spacing:1.5px;color:#267b83;font-weight:800;font-size:10px}
+        h3{font-size:26px;margin:4px 0 6px}.briefing-desc,.briefing-foot{font-size:11px;color:#607b90}
+        .briefing-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+        .briefing-kpi{background:#edf4f7;border-radius:9px;padding:12px}.briefing-kpi span{display:block;font-size:10px;color:#657f90;font-weight:700}
+        .briefing-kpi strong{display:block;font-size:18px;color:#16334f;margin-top:5px}
+        .briefing-section{border:1px solid #dfe8ef;border-radius:10px;padding:12px;margin-bottom:10px;page-break-inside:avoid}
+        .briefing-section h4{text-transform:uppercase;letter-spacing:1px;color:#2c6676;font-size:11px;margin:0 0 6px}
+        .briefing-section li{font-size:10px;line-height:1.45;margin-bottom:4px}
+        .briefing-section ol{margin:0;padding-left:18px}.briefing-chart{display:block;width:100%;max-height:220px}
+        .briefing-foot{margin-top:12px;border-top:1px solid #e3ebf2;padding-top:8px}
+        @page{size:A4 landscape;margin:10mm}
+        @media print{body{background:#fff}.briefing-preview{padding:0;max-width:none;margin:0;border-radius:0}
+          .briefing-chart{max-height:185px}.briefing-section{margin-bottom:7px;padding:8px}.briefing-grid{margin-bottom:8px}
+          h3{font-size:22px}.briefing-kpi{padding:9px}}
+        </style></head><body>${preview}</body></html>`;
+    }
+    function boardroomExportHtml(){
+      boardroomDownloadText(boardroomDocument(),'text/html;charset=utf-8',boardroomBaseName()+'_Boardroom_Brief.html');
+      advisorStatus.textContent='Executive Briefing HTML satu halaman siap diunduh. File dapat dibuka offline lalu dicetak ke PDF.';
+    }
+    function boardroomPrintPdf(){
+      // User-initiated print dialog: choose "Save as PDF"; avoids extra PDF libraries.
+      const popup=window.open('','_blank');
+      if(!popup){
+        advisorStatus.textContent='Pop-up cetak diblokir browser. Gunakan Unduh Briefing HTML lalu pilih Print / Save as PDF.';
+        return;
+      }
+      popup.document.open();popup.document.write(boardroomDocument());popup.document.close();
+      popup.focus();
+      let didPrint=false;
+      const goPrint=()=>{
+        if(didPrint)return;
+        didPrint=true;
+        try{popup.print();}catch(err){advisorStatus.textContent='Gunakan Ctrl+P pada tab briefing untuk menyimpan PDF.';}
+      };
+      popup.addEventListener('load',goPrint,{once:true});
+      window.setTimeout(()=>{if(!popup.closed&&popup.document.readyState==='complete')goPrint();},700);
+      advisorStatus.textContent='Jendela cetak dibuka. Pilih tujuan "Save as PDF" untuk menyimpan laporan satu halaman.';
+    }
+    function boardroomHandleExport(type){
+      try{
+        if(type==='poster')return boardroomExportPosterPng();
+        if(type==='svg')return boardroomExportSvg();
+        if(type==='chartpng')return boardroomExportChartPng();
+        if(type==='csv')return boardroomExportCsv();
+        if(type==='html')return boardroomExportHtml();
+        if(type==='pdf')return boardroomPrintPdf();
+      }catch(err){
+        advisorStatus.textContent='Ekspor belum berhasil: '+String(err?.message || err)+'. Format lain masih tersedia.';
+      }
+    }
+
     function handleQuestion(question){
       const q = String(question || '').trim();
       if(!q) return;
@@ -10457,6 +10882,8 @@ def render_sela_widget(df_filtered, periode_col: str,
         if(advisorMode === 'tables' && !/tabel|table|daftar/i.test(ans)) ans += '\\n\\nSaya juga menampilkan tabel prioritas pada workspace advisor.';
         if(advisorMode === 'poster' && !/poster/i.test(ans)) ans += '\\n\\nSaya juga menampilkan poster eksekutif pada workspace advisor.';
         addMsg('bot', ans);
+        boardroomQuestion = q;
+        boardroomAnswer = ans;
         refreshAdvisor(advisorMode, q, ans);
         setBubble(ans);
         speak(ans);
@@ -10517,8 +10944,10 @@ def render_sela_widget(df_filtered, periode_col: str,
     document.querySelectorAll('.chip').forEach(btn => btn.addEventListener('click', () => handleQuestion(btn.dataset.question)));
     advisorTabs.forEach(btn => btn.addEventListener('click', () => {
       const mode = btn.dataset.tab || 'overview';
-      refreshAdvisor(mode, '', speechBubble.textContent || '');
+      refreshAdvisor(mode, boardroomQuestion, boardroomAnswer || speechBubble.textContent || '');
     }));
+    document.querySelectorAll('.boardroom-action').forEach(btn =>
+      btn.addEventListener('click', () => boardroomHandleExport(btn.dataset.export)));
 
     populateMetrics();
     refreshAdvisor('overview', '', 'Halo, saya SELA. Silakan gunakan workspace Executive Advisor untuk melihat insight, grafik, tabel, dan poster berbasis data aktif.');
@@ -10530,7 +10959,7 @@ def render_sela_widget(df_filtered, periode_col: str,
 
     components.html(
         html.replace("___SELA_PAYLOAD___", data_json),
-        height=1460,
+        height=1070,
         scrolling=True,  # fallback agar SELA dapat di-scroll jika host tidak auto-resize
     )
 
