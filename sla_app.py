@@ -10000,6 +10000,9 @@ body.sela-narrow-host .cine-subtitle span{height:106px!important;min-height:106p
 @media(prefers-reduced-motion:reduce){.cine-subtitle,.cine-subtitle span{transition:none!important}}
 
 
+/* SELA v18.5: one speaking phrase at a time, no moving subtitle box. */
+.cine-subtitle span{overflow-wrap:break-word!important;word-break:normal!important;}
+
 /* SELA v18.4: report must stay to the RIGHT of Streamlit's sidebar and BELOW its header.
    Host-aware CSS variables are set by selaUpdateHostSize(). No data or export paths change. */
 body.sela-frame-expanded .advisor-shell.is-open{
@@ -10486,6 +10489,7 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
       // Standalone QA, not a fake audible response: explicitly labels silent animation.
       if(mouthDemoTimer){clearTimeout(mouthDemoTimer);mouthDemoTimer=null;}
       speakingGeneration++;
+      if(selaVoiceNextTimer!==null){clearTimeout(selaVoiceNextTimer);selaVoiceNextTimer=null;}
       if('speechSynthesis' in window) window.speechSynthesis.cancel();
       setAvatarState('speaking');
       mouthText = 'Halo saya SELA. Saya siap membantu analisis SLA dan laporan Anda.';
@@ -10543,78 +10547,132 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
       const chosen = voiceSelect.value;
       return voices.find(v => v.name === chosen) || voices.find(v => /id|indonesia/i.test(v.lang + ' ' + v.name)) || null;
     }
+    // v18.5: Each caption is tied to the actual utterance that Chrome starts,
+    // not to a guessed characters-per-second clock for a multi-minute answer.
+    // Short chunks also avoid browser TTS timeouts on long financial narratives.
+    let selaVoiceNextTimer=null;
+    function selaSpeechChunks(value){
+      const input=String(value||'').replace(/\\s+/g,' ').trim();
+      if(!input)return [];
+      const words=input.match(/\\S+/g)||[];
+      const chunks=[];
+      let current='';
+      const flush=()=>{if(current.trim()){chunks.push(current.trim());current='';}};
+      for(const word of words){
+        const proposed=current ? current+' '+word : word;
+        // Do not split a year, nominal amount, or transaction name mid-word.
+        if(current && proposed.length>76)flush();
+        current=current ? current+' '+word : word;
+        // Prefer natural phrase boundaries, but not fragments of 1–2 words.
+        if(current.length>=39 && /[.!?;:]$/.test(word))flush();
+        else if(current.length>=62 && /[,)]$/.test(word))flush();
+      }
+      flush();
+      // A very short final phrase sounds abrupt; merge only when still manageable.
+      if(chunks.length>1 && chunks[chunks.length-1].length<23){
+        const tail=chunks.pop();
+        if(chunks[chunks.length-1].length+tail.length+1<=98)
+          chunks[chunks.length-1]+=' '+tail;
+        else chunks.push(tail);
+      }
+      return chunks;
+    }
     function speak(text){
-      // Keep browser-native Indonesian speech. Start expression on the same user action
-      // even when some Chrome voices do not emit the first onboundary/onstart promptly.
       if(mouthDemoTimer){clearTimeout(mouthDemoTimer);mouthDemoTimer=null;}
-      if(mouthDemoBtn) mouthDemoBtn.textContent='▶ Demo Ekspresi · 6 dtk';
+      if(mouthDemoBtn)mouthDemoBtn.textContent='▶ Demo Ekspresi · 6 dtk';
+      const sequence=++speakingGeneration;
+      if(selaVoiceNextTimer!==null){clearTimeout(selaVoiceNextTimer);selaVoiceNextTimer=null;}
+      if('speechSynthesis' in window)window.speechSynthesis.cancel();
+      cineHideSubtitle();
       if(!('speechSynthesis' in window)){
         setAvatarState('');
-        statusLine.textContent='Status: suara browser tidak tersedia. Anda dapat mencoba Demo Ekspresi.';
+        statusLine.textContent='Status: suara browser tidak tersedia. Jawaban teks tetap dapat dibaca.';
         return;
       }
-      const sequence=++speakingGeneration;
-      window.speechSynthesis.cancel();
-      const utt=new SpeechSynthesisUtterance(String(text || '').replace(/\\s+/g,' ').trim());
-      utt.lang='id-ID';
+      const chunks=selaSpeechChunks(text);
+      if(!chunks.length){setAvatarState('');return;}
       const voice=pickVoice();
-      try { if(voice) utt.voice=voice; }
-      catch(err) { /* Keep browser default voice if the selected voice is unsupported. */ }
-      utt.rate=.98;
-      utt.pitch=1.12;
-      utt.volume=1;
-      let started=false;
-      let finished=false;
+      let completed=false;
+      let spokenChunks=0;
       setAvatarState('speaking');
-      mouthText=utt.text;
-      cineHideSubtitle();  // start captions when TTS really starts, not during voice queue
-      statusLine.textContent='Status: SELA menyiapkan suara dan ekspresi.';
-      utt.onstart=()=>{
-        if(sequence!==speakingGeneration) return;
-        started=true;
-        if(!mouthSpeaking) setAvatarState('speaking');
-        mouthText=utt.text;
-        cineStartSubtitle(utt.text);
-        statusLine.textContent='Status: SELA sedang berbicara.';
-      };
-      utt.onboundary=(event)=>{
-        if(sequence!==speakingGeneration || !event) return;
-        const at=Math.max(0,Number(event.charIndex || 0));
-        const raw=String(utt.text).slice(at);
-        const word=raw.split(/[^A-Za-z0-9]+/)[0] || '';
-        cueMouthBoundary(word);
-        cineSubtitleBoundary(at);
-      };
-      utt.onpause=()=>{
-        if(sequence!==speakingGeneration) return;
-        mouthTargetShape=0;
-        if(faceStatus) faceStatus.textContent='● JEDA';
-      };
-      utt.onresume=()=>{
-        if(sequence!==speakingGeneration) return;
-        if(faceStatus) faceStatus.textContent='● BERBICARA';
-      };
-      const done=(error)=>{
-        if(sequence!==speakingGeneration || finished) return;
-        finished=true;
+      statusLine.textContent='Status: SELA menyiapkan suara.';
+      const finish=(hasError)=>{
+        if(sequence!==speakingGeneration||completed)return;
+        completed=true;
+        if(selaVoiceNextTimer!==null){clearTimeout(selaVoiceNextTimer);selaVoiceNextTimer=null;}
         setAvatarState('');
         cineStopSubtitle();
-        statusLine.textContent=error ?
-          'Status: suara tidak tersedia atau terhenti. Coba Uji Suara / pilih voice lain.' :
+        statusLine.textContent=hasError ?
+          'Status: suara tidak dapat dilanjutkan. Jawaban lengkap tetap tersedia pada popup.' :
           'Status: SELA siap membantu pertanyaan berikutnya.';
       };
-      utt.onend=()=>done(false);
-      utt.onerror=()=>done(true);
-      try{
-        window.speechSynthesis.speak(utt);
-        // Fail gracefully for browser policies: never animate indefinitely without speech.
-        setTimeout(()=>{
-          if(sequence!==speakingGeneration || finished || started) return;
-          if(!window.speechSynthesis.speaking && !window.speechSynthesis.pending){
-            done(true);
-          }
-        }, 2800);
-      }catch(err){done(true);}
+      const playChunk=(index)=>{
+        if(sequence!==speakingGeneration||completed)return;
+        if(index>=chunks.length){finish(false);return;}
+        const chunkText=chunks[index];
+        const utt=new SpeechSynthesisUtterance(chunkText);
+        utt.lang='id-ID';
+        try{if(voice)utt.voice=voice;}catch(_voiceErr){}
+        utt.rate=.98;utt.pitch=1.12;utt.volume=1;
+        let started=false;
+        let settled=false;
+        utt.onstart=()=>{
+          if(sequence!==speakingGeneration||completed)return;
+          started=true;
+          if(!mouthSpeaking)setAvatarState('speaking');
+          mouthText=chunkText;
+          // Nothing from a future chunk is displayed before its own onstart.
+          cineStartSubtitle(chunkText);
+          statusLine.textContent='Status: SELA berbicara • bagian '+(index+1)+' dari '+chunks.length+'.';
+        };
+        utt.onboundary=(event)=>{
+          if(sequence!==speakingGeneration||completed||settled||!started||!event)return;
+          // charIndex/charLength are local to this utterance; no offsets from
+          // earlier utterances are allowed to leak into the active subtitle.
+          if(event.name && event.name!=='word')return;
+          const at=Math.max(0,Math.min(chunkText.length,Number(event.charIndex)||0));
+          const len=Number.isFinite(Number(event.charLength))?Number(event.charLength):0;
+          const raw=chunkText.slice(at);
+          const word=raw.split(/[^A-Za-z0-9]+/)[0]||'';
+          cueMouthBoundary(word);
+          cineSubtitleBoundary(at,len);
+        };
+        utt.onpause=()=>{
+          if(sequence!==speakingGeneration)return;
+          mouthTargetShape=0;
+          if(faceStatus)faceStatus.textContent='● JEDA';
+        };
+        utt.onresume=()=>{
+          if(sequence!==speakingGeneration)return;
+          if(faceStatus)faceStatus.textContent='● BERBICARA';
+        };
+        utt.onend=()=>{
+          if(sequence!==speakingGeneration||completed||settled)return;
+          settled=true;
+          spokenChunks++;
+          cineSubtitleCompleteSegment();
+          if(index===chunks.length-1){finish(false);return;}
+          // A brief hand-off preserves natural phrasing while keeping the
+          // caption for this chunk until the NEXT utterance really begins.
+          selaVoiceNextTimer=setTimeout(()=>{
+            selaVoiceNextTimer=null;
+            playChunk(index+1);
+          },35);
+        };
+        utt.onerror=()=>{
+          if(sequence!==speakingGeneration||completed||settled)return;
+          settled=true;
+          finish(true);
+        };
+        try{
+          window.speechSynthesis.speak(utt);
+          setTimeout(()=>{
+            if(sequence!==speakingGeneration||completed||started||settled)return;
+            if(!window.speechSynthesis.speaking&&!window.speechSynthesis.pending)finish(true);
+          },3000);
+        }catch(_err){finish(true);}
+      };
+      playChunk(0);
     }
 
     function topByName(arr, name){
@@ -11788,94 +11846,46 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
     let cineLastQuestion = '';
     let cineLastAnswer = '';
     let cineLastMode = 'overview';
-    // SELA v18.3: subtitle follows actual speech boundaries whenever Chrome emits
-    // them. The fallback is deliberately slower and cannot run ahead of a silent queue.
-    // Caption box never moves; only its text content changes.
+    // v18.5: subtitles are scoped to the utterance that is ACTUALLY speaking.
+    // Browser word boundaries enable typewriter-per-word. If a voice provides
+    // no boundaries, show the current short phrase rather than inventing an
+    // inaccurate timeline for the whole response.
     let cineSubtitleToken=0;
     let cineSubtitleFrame=null;
-    let cineSubtitleTextRaw='';
-    let cineSubtitlePages=[];
-    let cineSubtitleStartAt=0;
-    let cineSubtitleLastAt=0;
-    let cineSubtitleProgress=0;
-    let cineSubtitleBoundaryPos=-1;
-    let cineSubtitleBoundaryAt=0;
-    let cineSubtitleSawBoundary=false;
+    let cineSubtitleFallbackTimer=null;
     let cineSubtitleDismiss=null;
+    let cineSubtitleTextRaw='';
+    let cineSubtitleProgress=0;
+    let cineSubtitleTarget=0;
+    let cineSubtitleLastAt=0;
+    let cineSubtitleSawBoundary=false;
     let cineSubtitleFinished=false;
-    let cineSubtitleCurrentPage=-1;
     function cineHideSubtitle(){
       cineSubtitleToken++;
       if(cineSubtitleFrame!==null){cancelAnimationFrame(cineSubtitleFrame);cineSubtitleFrame=null;}
+      if(cineSubtitleFallbackTimer!==null){clearTimeout(cineSubtitleFallbackTimer);cineSubtitleFallbackTimer=null;}
       if(cineSubtitleDismiss!==null){clearTimeout(cineSubtitleDismiss);cineSubtitleDismiss=null;}
+      cineSubtitleTextRaw='';cineSubtitleProgress=0;cineSubtitleTarget=0;
+      cineSubtitleLastAt=0;cineSubtitleSawBoundary=false;cineSubtitleFinished=false;
+      cineSubtitleText.textContent='';
       cineSubtitle.classList.remove('is-visible');
-      cineSubtitleText.textContent='';cineSubtitleTextRaw='';cineSubtitlePages=[];
-      cineSubtitleStartAt=0;cineSubtitleLastAt=0;cineSubtitleProgress=0;
-      cineSubtitleBoundaryPos=-1;cineSubtitleBoundaryAt=0;
-      cineSubtitleSawBoundary=false;cineSubtitleFinished=false;cineSubtitleCurrentPage=-1;
-    }
-    function cineMakeSubtitlePages(text){
-      const limit=document.body.classList.contains('sela-narrow-host')?52:84;
-      const words=Array.from(text.matchAll(/\\S+/g));
-      const pages=[];let first=-1,last=-1;
-      words.forEach(match=>{
-        const at=match.index, end=at+match[0].length;
-        if(first<0)first=at;
-        const chunk=text.slice(first,end);
-        if(last>=0 && chunk.length>limit){
-          pages.push({start:first,end:last,text:text.slice(first,last)});
-          first=at;
-        }
-        last=end;
-        if(/[.!?]$/.test(match[0]) && last-first>=Math.floor(limit*.6)){
-          pages.push({start:first,end:last,text:text.slice(first,last)});
-          first=-1;last=-1;
-        }
-      });
-      if(first>=0)pages.push({start:first,end:last,text:text.slice(first,last)});
-      return pages;
     }
     function cineDrawSubtitle(){
-      const pos=Math.floor(cineSubtitleProgress);
-      let i=cineSubtitlePages.findIndex(p=>pos>=p.start&&pos<=p.end);
-      if(i<0){i=cineSubtitlePages.findIndex(p=>pos<p.start);}
-      if(i<0)i=cineSubtitlePages.length-1;
-      const page=cineSubtitlePages[i];
-      if(!page)return;
-      const clipped=Math.max(0,Math.min(page.text.length,pos-page.start));
-      const display=page.text.slice(0,clipped);
-      if(i!==cineSubtitleCurrentPage){cineSubtitleCurrentPage=i;cineSubtitleText.textContent='';}
-      if(cineSubtitleText.textContent!==display)cineSubtitleText.textContent=display;
-      cineSubtitle.classList.toggle('is-visible',Boolean(display));
+      if(!cineSubtitleTextRaw)return;
+      const visible=cineSubtitleTextRaw.slice(0,Math.max(0,Math.floor(cineSubtitleProgress)));
+      if(cineSubtitleText.textContent!==visible)cineSubtitleText.textContent=visible;
+      cineSubtitle.classList.toggle('is-visible',Boolean(visible));
     }
     function cineTickSubtitle(now){
       cineSubtitleFrame=null;
       if(!cineSubtitleTextRaw||cineSubtitleFinished)return;
       if(!cineSubtitleLastAt)cineSubtitleLastAt=now;
-      const dt=Math.min(.08,Math.max(0,(now-cineSubtitleLastAt)/1000));
+      const dt=Math.max(0,Math.min(.09,(now-cineSubtitleLastAt)/1000));
       cineSubtitleLastAt=now;
-      const paused=('speechSynthesis' in window)&&window.speechSynthesis.paused;
-      if(!paused){
-        const elapsed=Math.max(0,(now-cineSubtitleStartAt)/1000);
-        let target;
-        if(cineSubtitleSawBoundary){
-          // at beginning of current spoken word, reveal that word progressively.
-          const heard=cineSubtitleBoundaryPos;
-          const wordEnd=(()=>{let j=heard;while(j<cineSubtitleTextRaw.length&&!/\\s/.test(cineSubtitleTextRaw[j]))j++;return j;})();
-          const timeSince=(now-cineSubtitleBoundaryAt)/1000;
-          target=Math.min(wordEnd,heard+Math.max(0,timeSince)*18);
-          // When boundaries are sparse, predict at most 1.0s beyond last word.
-          if(timeSince>1.25)target=Math.min(cineSubtitleTextRaw.length,wordEnd+(timeSince-1.25)*10);
-        }else{
-          // Chrome has not supplied boundaries. Approximate 14 chars/sec, but
-          // never start before onstart and never jump the subtitle card.
-          target=Math.min(cineSubtitleTextRaw.length,elapsed*14);
-        }
-        // Fast catch-up after a word event, otherwise a gentle letter-by-letter flow.
-        const gap=Math.max(0,target-cineSubtitleProgress);
-        const speed=gap>16?46:gap>7?28:18;
-        cineSubtitleProgress=Math.min(target,cineSubtitleProgress+speed*dt);
-        if(cineSubtitleProgress>=cineSubtitleTextRaw.length-.01)cineSubtitleProgress=cineSubtitleTextRaw.length;
+      if(!('speechSynthesis' in window)||!window.speechSynthesis.paused){
+        // Never guess a later word. Only reveal what the TTS engine has
+        // reported by its real onboundary callback.
+        cineSubtitleProgress=Math.min(cineSubtitleTarget,cineSubtitleProgress+Math.max(1,85*dt));
         cineDrawSubtitle();
       }
       cineSubtitleFrame=requestAnimationFrame(cineTickSubtitle);
@@ -11884,28 +11894,56 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
       cineHideSubtitle();
       cineSubtitleTextRaw=String(text||'').replace(/\\s+/g,' ').trim();
       if(!cineSubtitleTextRaw)return;
-      cineSubtitlePages=cineMakeSubtitlePages(cineSubtitleTextRaw);
-      cineSubtitleStartAt=performance.now();
-      cineSubtitleLastAt=cineSubtitleStartAt;
+      const token=cineSubtitleToken;
+      cineSubtitleLastAt=performance.now();
+      // Some Indonesian voices never emit onboundary. This *current* phrase
+      // is still aligned with onstart/onend, and is at most ~76 characters.
+      cineSubtitleFallbackTimer=setTimeout(()=>{
+        cineSubtitleFallbackTimer=null;
+        if(token!==cineSubtitleToken||cineSubtitleSawBoundary||cineSubtitleFinished)return;
+        cineSubtitleProgress=cineSubtitleTextRaw.length;
+        cineSubtitleTarget=cineSubtitleTextRaw.length;
+        cineDrawSubtitle();
+      },430);
       cineSubtitleFrame=requestAnimationFrame(cineTickSubtitle);
     }
-    function cineSubtitleBoundary(charIndex){
+    function cineSubtitleBoundary(charIndex,charLength=0){
       if(!cineSubtitleTextRaw||cineSubtitleFinished)return;
       cineSubtitleSawBoundary=true;
-      cineSubtitleBoundaryPos=Math.max(0,Math.min(cineSubtitleTextRaw.length,Number(charIndex)||0));
-      cineSubtitleBoundaryAt=performance.now();
-      // Move to the start of the spoken word, never display the entire sentence at once.
-      cineSubtitleProgress=Math.max(cineSubtitleProgress,cineSubtitleBoundaryPos);
+      if(cineSubtitleFallbackTimer!==null){clearTimeout(cineSubtitleFallbackTimer);cineSubtitleFallbackTimer=null;}
+      const at=Math.max(0,Math.min(cineSubtitleTextRaw.length,Number(charIndex)||0));
+      let end=at;
+      const explicit=Math.max(0,Number(charLength)||0);
+      if(explicit>0){end=Math.min(cineSubtitleTextRaw.length,at+explicit);}
+      else{
+        while(end<cineSubtitleTextRaw.length && !/\\s/.test(cineSubtitleTextRaw[end]))end++;
+      }
+      // Reveal only the word currently being spoken, not future words.
+      cineSubtitleTarget=Math.max(cineSubtitleTarget,end);
+      if(!cineSubtitle.classList.contains('is-visible')){
+        cineSubtitleProgress=Math.min(end,Math.max(at,1));
+        cineDrawSubtitle();
+      }
+    }
+    function cineSubtitleCompleteSegment(){
+      if(!cineSubtitleTextRaw)return;
+      cineSubtitleTarget=cineSubtitleTextRaw.length;
+      cineSubtitleProgress=cineSubtitleTarget;
       cineDrawSubtitle();
     }
     function cineStopSubtitle(){
       if(!cineSubtitleTextRaw)return;
+      cineSubtitleCompleteSegment();
       cineSubtitleFinished=true;
       if(cineSubtitleFrame!==null){cancelAnimationFrame(cineSubtitleFrame);cineSubtitleFrame=null;}
+      if(cineSubtitleFallbackTimer!==null){clearTimeout(cineSubtitleFallbackTimer);cineSubtitleFallbackTimer=null;}
       if(cineSubtitleDismiss!==null)clearTimeout(cineSubtitleDismiss);
       const token=cineSubtitleToken;
-      cineSubtitleDismiss=setTimeout(()=>{if(token===cineSubtitleToken)cineHideSubtitle();},1400);
+      cineSubtitleDismiss=setTimeout(()=>{
+        if(token===cineSubtitleToken)cineHideSubtitle();
+      },1050);
     }
+
     function selaHostViewportWidth(){
       try{
         const frame=window.frameElement;
@@ -12146,6 +12184,7 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
     });
     stopVoiceBtn.addEventListener('click', () => {
       speakingGeneration++;
+      if(selaVoiceNextTimer!==null){clearTimeout(selaVoiceNextTimer);selaVoiceNextTimer=null;}
       if('speechSynthesis' in window) window.speechSynthesis.cancel();
       if(mouthDemoTimer){clearTimeout(mouthDemoTimer);mouthDemoTimer=null;}
       if(mouthDemoBtn) mouthDemoBtn.textContent='▶ Demo Ekspresi · 6 dtk';
