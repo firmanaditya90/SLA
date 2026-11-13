@@ -9384,7 +9384,31 @@ def _sela_history_from_parsed(_parsed: pd.DataFrame, period_col: str):
             row[c] = round(float(values.mean()) / 86400.0, 10) if len(values) else None
             row[f"{c}_valid"] = int(len(values))
         yearly.append(row)
+    # SELA annual intelligence: exact category volumes per calendar year. This
+    # runs once per source-version (same cache as the existing historical stats).
+    # Do not infer the most common type from SLA-sorted leaderboards.
+    year_transaction_top = []
+    transaction_col = _choose_col(list(_parsed.columns),
+                                  ["JENIS TRANSAKSI", "JENIS_TRANSAKSI", "TRANSAKSI"])
+    if transaction_col:
+        years = data["month_key"].str.slice(0, 4)
+        types = _parsed.loc[valid, transaction_col].fillna("").astype(str).str.strip()
+        groups = pd.DataFrame({"year": years.to_numpy(),
+                               "name": types.to_numpy()})
+        groups = groups[groups["name"].ne("") & groups["name"].ne("nan")]
+        if not groups.empty:
+            counted = (groups.groupby(["year", "name"], sort=False)
+                      .size().rename("count").reset_index())
+            counted = counted.sort_values(["year", "count", "name"],
+                                          ascending=[True, False, True],
+                                          kind="stable")
+            year_transaction_top = [
+                {"year": str(row["year"]), "name": str(row["name"]),
+                 "count": int(row["count"])}
+                for row in counted.groupby("year", sort=True).head(10).to_dict("records")
+            ]
     return {"history_month_stats": monthly, "history_year_stats": yearly,
+            "history_year_transaction_top": year_transaction_top,
             "total_rows": int(len(data))}
 
 
@@ -9975,6 +9999,66 @@ body.sela-narrow-host .cine-subtitle span{height:106px!important;min-height:106p
 .sela-face-status{font-size:10px!important}
 @media(prefers-reduced-motion:reduce){.cine-subtitle,.cine-subtitle span{transition:none!important}}
 
+
+/* SELA v18.3: boardroom content remains fully accessible at every scroll position. */
+body.sela-frame-expanded .advisor-shell.is-open{
+  top:18px!important;left:clamp(18px,3vw,54px)!important;right:auto!important;
+  transform:none!important;width:min(950px,calc(100vw - 390px))!important;
+  min-width:0!important;height:calc(100dvh - 36px)!important;
+  max-height:calc(100dvh - 36px)!important;
+  overflow-y:auto!important;overflow-x:hidden!important;
+  overscroll-behavior:contain!important;scrollbar-gutter:stable;
+  scroll-padding-top:14px;box-sizing:border-box!important;
+}
+body.sela-medium-host.sela-frame-expanded .advisor-shell.is-open{
+  left:14px!important;width:calc(100vw - 300px)!important;
+}
+body.sela-narrow-host.sela-frame-expanded .advisor-shell.is-open{
+  top:12px!important;left:12px!important;
+  width:calc(100vw - 24px)!important;
+  height:calc(100dvh - 242px)!important;max-height:calc(100dvh - 242px)!important;
+  padding:16px!important;
+}
+.advisor-shell .advisor-panel,.advisor-shell .advisor-grid,.advisor-shell .viz-card{
+  min-width:0!important;max-width:100%!important;box-sizing:border-box!important;
+}
+.advisor-shell .premium-table-wrap{max-width:100%!important;overflow-x:auto!important}
+.sela-year-report{width:100%;display:flex;flex-direction:column;gap:14px;min-width:0}
+.sela-year-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.sela-year-heading h3{font-size:22px;color:#f5fcff;margin:4px 0 5px}
+.sela-year-heading p{font-size:12px;color:#a6c7dc;margin:0;line-height:1.5}
+.sela-year-source{font-size:11px;color:#65e2cf;border:1px solid rgba(101,226,207,.3);border-radius:999px;padding:9px 12px;font-weight:800}
+.sela-year-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.sela-year-downloads{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:7px 0 4px}
+.sela-year-downloads span{font-size:11px;color:#a6c1d5}
+.sela-year-kpi{min-width:0;background:#192f49;border:1px solid #294962;border-radius:14px;padding:13px}
+.sela-year-kpi span{display:block;color:#9dbbd0;font-size:11px;margin-bottom:5px}
+.sela-year-kpi strong{display:block;color:#f5fbff;font-size:17px;line-height:1.4;overflow-wrap:anywhere}
+.sela-year-kpi small{display:block;color:#a8cad9;font-size:11px;margin-top:5px}
+.sela-year-card{border:1px solid #29445e;border-radius:16px;padding:14px;background:#13243a;min-width:0}
+.sela-year-card h4{font-size:15px;color:#f5fbff;margin:0 0 7px}
+.sela-year-caption{color:#a6c1d5;font-size:11px;line-height:1.5;margin:5px 0 12px}
+.sela-year-bars{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:6px;min-width:0;align-items:end;padding:10px 3px}
+.sela-yr-bar-cell{min-width:0;display:flex;align-items:center;flex-direction:column;gap:7px}
+.sela-yr-value{font-size:10px;color:#d7ecfb;font-weight:800;min-height:12px;white-space:nowrap}
+.sela-yr-bar-track{display:flex;align-items:end;justify-content:center;width:100%;height:180px;border-bottom:1px solid #4b6983}
+.sela-yr-bar{width:74%;max-width:52px;border-radius:7px 7px 0 0;background:linear-gradient(180deg,#53a5f7,#26c8b3)}
+.sela-yr-missing{height:2px!important;background:#678094;opacity:.5}
+.sela-yr-label{font-size:11px;color:#b7cedc;font-weight:700}
+.sela-type-list{display:flex;flex-direction:column;gap:13px;padding-top:8px}
+.sela-type-row{display:grid;grid-template-columns:minmax(100px,220px) minmax(0,1fr) 125px;gap:9px;align-items:center}
+.sela-type-label{font-size:12px;line-height:1.35;color:#e4f4ff;overflow-wrap:anywhere}
+.sela-type-track{height:12px;background:#263b50;border-radius:99px;overflow:hidden}
+.sela-type-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,#32ceae,#5fa3fa)}
+.sela-type-value{text-align:right;font-size:12px;color:#ecfbff;font-weight:800;white-space:nowrap}
+.sela-type-value small{font-weight:400;color:#a8c9da}
+body.sela-narrow-host .sela-year-bars{gap:3px}
+body.sela-narrow-host .sela-yr-value{font-size:8px;writing-mode:vertical-rl;transform:rotate(180deg);height:38px}
+body.sela-narrow-host .sela-yr-label{font-size:9px}
+body.sela-narrow-host .sela-year-kpis{grid-template-columns:1fr}
+body.sela-narrow-host .sela-type-row{grid-template-columns:minmax(0,1fr) 95px}
+body.sela-narrow-host .sela-type-track{grid-column:1 / -1;grid-row:2}
+body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
 </style>
 </head>
 <body>
@@ -9996,7 +10080,7 @@ body.sela-narrow-host .cine-subtitle span{height:106px!important;min-height:106p
       <div class="brand">
         <div class="logo">S</div>
         <div>
-          <div class="title">SELA v18.2 · Cinematic Personal Assistant</div>
+          <div class="title">SELA v18.3 · Annual Intelligence</div>
           <div class="subtitle">Asisten pribadi virtual yang minimalis, modern, dan responsif. Semua kemampuan analisis, suara, insight visual, dan boardroom output tetap tersedia.</div>
         </div>
       </div>
@@ -10154,6 +10238,7 @@ body.sela-narrow-host .cine-subtitle span{height:106px!important;min-height:106p
     let records = payload.sample_records || [];
     const historyYears = payload.history_year_stats || [];
     const historyMonths = payload.history_month_stats || [];
+    const historyYearTransactionTop = payload.history_year_transaction_top || [];
     // Keep legacy quick questions; adapt new examples to the years actually uploaded.
     const exampleYears = historyYears.map(item => String(item.year)).sort().slice(-3);
     if(exampleYears.length >= 2){
@@ -10433,7 +10518,7 @@ body.sela-narrow-host .cine-subtitle span{height:106px!important;min-height:106p
       }
       const sequence=++speakingGeneration;
       window.speechSynthesis.cancel();
-      const utt=new SpeechSynthesisUtterance(String(text || ''));
+      const utt=new SpeechSynthesisUtterance(String(text || '').replace(/\\s+/g,' ').trim());
       utt.lang='id-ID';
       const voice=pickVoice();
       try { if(voice) utt.voice=voice; }
@@ -10445,13 +10530,14 @@ body.sela-narrow-host .cine-subtitle span{height:106px!important;min-height:106p
       let finished=false;
       setAvatarState('speaking');
       mouthText=utt.text;
-      cineStartSubtitle(utt.text);
+      cineHideSubtitle();  // start captions when TTS really starts, not during voice queue
       statusLine.textContent='Status: SELA menyiapkan suara dan ekspresi.';
       utt.onstart=()=>{
         if(sequence!==speakingGeneration) return;
         started=true;
         if(!mouthSpeaking) setAvatarState('speaking');
         mouthText=utt.text;
+        cineStartSubtitle(utt.text);
         statusLine.textContent='Status: SELA sedang berbicara.';
       };
       utt.onboundary=(event)=>{
@@ -10868,6 +10954,149 @@ body.sela-narrow-host .cine-subtitle span{height:106px!important;min-height:106p
              selaCompareYears(text) || selaHistoricalSingle(text);
     }
 
+    // SELA annual intelligence: use already cached whole-upload aggregates.
+    // Month-over-month change is computed only between consecutive observed months.
+    // Missing months are NOT interpreted as zero-transactions.
+    let selaAnnualReportState = null;
+    function selaAnalyzeAnnualQuestion(question){
+      const q=normalize(question);
+      const mention=selaMentionedYears(q);
+      const yearMatch=q.match(/(?:19|20)[0-9]{2}/);
+      const year=yearMatch ? String(yearMatch[0]) : '';
+      if(!year || mention.length!==1) return null;
+      const intent=/(analisis|analisa|ulasan|evaluasi|tinjau|insight|review|rekap|tren|trend|grafik|diagram|terbanyak|paling banyak|analisa data)/i.test(q);
+      const about=/(transaksi|jumlah|volume|data|tahun|kinerja)/i.test(q);
+      if(!intent || !about || /sla (?:vendor|keuangan|fungsional|perbendaharaan)/i.test(q)) return null;
+      // Never redirect existing SLA duration questions to a transaction-count report.
+      if(/(sla|durasi|waktu)/i.test(q) && !/(transaksi|volume|jumlah)/i.test(q)) return null;
+      const available=historyMonths.filter(row=>String(row.year)===year)
+        .sort((a,b)=>Number(a.month)-Number(b.month));
+      if(!available.length){
+        return {year,missing:true,answer:`Data transaksi tahun ${year} tidak ditemukan pada file unggahan. Tahun yang tersedia: ${historyYears.map(x=>x.year).join(', ') || '-'}.`};
+      }
+      const yrow=historyYears.find(row=>String(row.year)===year);
+      const total=available.reduce((n,row)=>n+Number(row.count||0),0);
+      const monthly=available.map(row=>({month:Number(row.month),name:MONTH_NAMES_ID[Number(row.month)-1],
+        count:Number(row.count||0),key:row.month_key}));
+      let changes=[], percentages=[];
+      const detailed=monthly.map((row,i)=>{
+        const prev=monthly[i-1];
+        const consecutive=Boolean(prev && row.month===prev.month+1);
+        const delta=consecutive ? row.count-prev.count : null;
+        const growth=consecutive && prev.count>0 ? (delta/prev.count*100) : null;
+        if(delta!==null) changes.push(delta);
+        if(growth!==null) percentages.push(growth);
+        return {...row,delta,growth};
+      });
+      const meanDelta=changes.length?changes.reduce((a,b)=>a+b,0)/changes.length:null;
+      const meanGrowth=percentages.length?percentages.reduce((a,b)=>a+b,0)/percentages.length:null;
+      const most=detailed.reduce((best,row)=>!best||row.count>best.count?row:best,null);
+      const least=detailed.reduce((best,row)=>!best||row.count<best.count?row:best,null);
+      const topTypes=historyYearTransactionTop.filter(row=>String(row.year)===year)
+        .sort((a,b)=>Number(b.count||0)-Number(a.count||0));
+      const leader=topTypes[0] || null;
+      const covered=detailed.length;
+      const missing=Array.from({length:12},(_,i)=>i+1).filter(n=>!detailed.some(row=>row.month===n));
+      let answer=`Berikut analisis transaksi tahun ${year} berdasarkan seluruh histori Excel. `+
+        `Total ${fmtNum(total)} transaksi dari ${covered} bulan yang tersedia, `+
+        `dengan rata-rata ${fmtNum(Math.round(total/covered))} transaksi per bulan berdata. `+
+        `Volume tertinggi terjadi pada ${most.name}: ${fmtNum(most.count)} transaksi; `+
+        `terendah pada ${least.name}: ${fmtNum(least.count)} transaksi. `;
+      if(meanDelta!==null){
+        answer+=`Rata-rata perubahan bulanan antarbulan yang berurutan adalah ${meanDelta<0?'turun':'naik'} `+
+          `${fmtNum(Math.round(Math.abs(meanDelta)))} transaksi`+
+          (meanGrowth===null?'':` atau ${fmtPct(meanGrowth)} rata-rata pertumbuhan bulanan`) +
+          `, dihitung dari ${changes.length} pasangan bulan berurutan. `;
+      }else{answer+='Rata-rata perubahan bulanan belum dapat dihitung karena bulan berurutan tidak cukup. ';}
+      if(leader){
+        answer+=`Jenis transaksi dengan volume paling banyak adalah ${leader.name}, `+
+          `${fmtNum(leader.count)} transaksi atau ${fmtPct((leader.count/Math.max(1,total))*100)} dari total tahun tersebut. `;
+      }else{answer+='Rincian jenis transaksi belum tersedia pada file sumber. ';}
+      if(missing.length) answer+=`Perhatian: ${missing.length} bulan tidak tersedia pada file dan tidak diperlakukan sebagai nol. `;
+      answer+=`Diagram bulanan dan rincian jenis transaksi saya tampilkan pada panel analisis. `;
+      answer+=selaEvidence(`histori seluruh unggahan, tahun ${year}, ${covered} bulan tersedia`,total);
+      return {year,missing:false,total,covered,monthly:detailed,meanDelta,meanGrowth,
+              comparisons:changes.length,most,least,topTypes,missingMonths:missing,
+              avgPerMonth:total/covered,answer};
+    }
+    function selaRenderAnnualReport(report){
+      if(!report || report.missing) return;
+      const months=Array.from({length:12},(_,i)=>{
+        const item=report.monthly.find(x=>x.month===i+1);
+        return item || {month:i+1,name:MONTH_NAMES_ID[i],count:null,delta:null,growth:null};
+      });
+      const max=Math.max(1,...report.monthly.map(row=>Number(row.count||0)));
+      const bars=months.map(row=>{
+        const val=row.count;
+        const height=val===null?0:Math.max(4,Math.round(100*val/max));
+        return `<div class="sela-yr-bar-cell" title="${escHtml(row.name)} ${report.year}: ${val===null?'Tidak tersedia':fmtNum(val)+' transaksi'}">
+          <div class="sela-yr-value">${val===null?'—':fmtNum(val)}</div>
+          <div class="sela-yr-bar-track"><div class="sela-yr-bar ${val===null?'sela-yr-missing':''}" style="height:${height}%"></div></div>
+          <div class="sela-yr-label">${escHtml(row.name.slice(0,3))}</div>
+        </div>`;
+      }).join('');
+      const topTypes=report.topTypes.slice(0,6);
+      const maxTop=Math.max(1,...topTypes.map(x=>Number(x.count||0)));
+      const typeRows=topTypes.map((r,i)=>`<div class="sela-type-row">
+        <div class="sela-type-label" title="${escHtml(r.name)}">${escHtml(shortLabel(r.name,50))}</div>
+        <div class="sela-type-track"><div class="sela-type-fill" style="width:${Math.max(2,100*Number(r.count||0)/maxTop)}%"></div></div>
+        <div class="sela-type-value">${fmtNum(r.count)} <small>(${fmtPct(100*r.count/Math.max(1,report.total))})</small></div>
+      </div>`).join('');
+      const rows=months.map(row=>`<tr><td>${escHtml(row.name)}</td>
+        <td>${row.count===null?'—':fmtNum(row.count)}</td>
+        <td>${row.delta===null?'—':(row.delta>0?'+':'')+fmtNum(row.delta)}</td>
+        <td>${row.growth===null?'—':fmtPct(row.growth)}</td></tr>`).join('');
+      const missingNote=report.missingMonths.length?
+        `${report.missingMonths.length} bulan tidak tersedia; tidak dianggap nol.`:'Seluruh 12 bulan tersedia.';
+      const avgLabel=report.meanDelta===null?'Belum cukup data':
+        `${report.meanDelta>=0?'+':''}${fmtNum(Math.round(report.meanDelta))} transaksi / bulan`;
+      const growthLabel=report.meanGrowth===null?'—':fmtPct(report.meanGrowth);
+      advisorCharts.innerHTML=`<div class="sela-year-report">
+        <div class="sela-year-heading"><div><div class="advisor-kicker">SELA · TRANSACTION INTELLIGENCE</div>
+          <h3>Analisis Transaksi ${escHtml(report.year)}</h3>
+          <p>Histori seluruh unggahan · ${report.covered} bulan berdata · grafik dan perhitungan dari sumber yang sama</p></div>
+          <div class="sela-year-source">${fmtNum(report.total)} TRANSAKSI</div></div>
+        <div class="sela-year-kpis">
+          <div class="sela-year-kpi"><span>Total Transaksi</span><strong>${fmtNum(report.total)}</strong></div>
+          <div class="sela-year-kpi"><span>Rata-rata / Bulan Berdata</span><strong>${fmtNum(Math.round(report.avgPerMonth))}</strong></div>
+          <div class="sela-year-kpi"><span>Rata-rata Perubahan MoM</span><strong>${escHtml(avgLabel)}</strong><small>Rata-rata persentase: ${growthLabel}</small></div>
+          <div class="sela-year-kpi"><span>Jenis Terbanyak</span><strong>${report.topTypes.length?escHtml(shortLabel(report.topTypes[0].name,35)):'Belum tersedia'}</strong></div>
+        </div>
+        <div class="sela-year-card"><h4>Volume Transaksi per Bulan · ${escHtml(report.year)}</h4>
+          <div class="sela-year-caption">Nilai tampil di setiap batang. Bulan tanpa data ditandai —, bukan nol.</div>
+          <div class="sela-year-bars">${bars}</div>
+          <div class="sela-year-caption">Bulan tertinggi: ${escHtml(report.most.name)} (${fmtNum(report.most.count)} transaksi). ${escHtml(missingNote)}</div>
+        </div>
+        <div class="sela-year-card"><h4>Jenis Transaksi Terbanyak · berdasarkan VOLUME</h4>
+          <div class="sela-year-caption">Top jenis transaksi diurutkan menurut jumlah dokumen, bukan lamanya SLA.</div>
+          <div class="sela-type-list">${typeRows || '<div class="sela-year-caption">Kolom jenis transaksi belum tersedia pada dataset.</div>'}</div>
+        </div>
+        <div class="sela-year-card"><h4>Rincian Bulanan & Perubahan MoM</h4>
+          <div class="premium-table-wrap"><table class="premium-table"><thead><tr><th>Bulan</th><th>Transaksi</th><th>Δ vs Bulan Sebelumnya</th><th>Growth MoM</th></tr></thead><tbody>${rows}</tbody></table></div>
+          <div class="sela-year-caption">Rata-rata perubahan dihitung dari ${report.comparisons} pasangan bulan kalender berurutan yang tersedia. Growth % tidak dihitung apabila bulan sebelumnya nol.</div>
+        </div>
+        <div class="sela-year-downloads"><button class="cine-control-btn" type="button" id="selaYearCsvBtn">⬇ Unduh Analisis ${escHtml(report.year)} (CSV)</button>
+          <span>Termasuk volume bulanan, growth MoM, dan peringkat jenis transaksi</span></div>
+      </div>`;
+      document.getElementById('selaYearCsvBtn')?.addEventListener('click',()=>selaExportAnnualCsv(report));
+    }
+    function selaExportAnnualCsv(report){
+      const rows=[['Analisis Transaksi '+report.year],['Sumber','Histori unggahan '+report.year],[],
+        ['Bulan','Jumlah Transaksi','Selisih vs Bulan Sebelumnya','Growth MoM (%)']];
+      for(let m=1;m<=12;m++){
+        const row=report.monthly.find(x=>x.month===m);
+        rows.push([MONTH_NAMES_ID[m-1],row?row.count:'',row?.delta??'',
+                   row?.growth===null||row?.growth===undefined?'':row.growth.toFixed(4)]);
+      }
+      rows.push([],['Jenis Transaksi','Volume','Porsi dari Total Tahun (%)']);
+      report.topTypes.forEach(r=>rows.push([r.name,r.count,
+                     (100*r.count/Math.max(1,report.total)).toFixed(4)]));
+      rows.push([],['Metodologi','Rata-rata perubahan hanya pada bulan kalender berurutan yang tersedia. Data yang tidak tersedia tidak dianggap nol.']);
+      const csv='\\ufeff'+rows.map(row=>row.map(boardroomCsvEscape).join(';')).join('\\r\\n');
+      boardroomDownloadText(csv,'text/csv;charset=utf-8','ASDP_SELA_Analisis_Transaksi_'+report.year+'.csv');
+      advisorStatus.textContent='Analisis tahun '+report.year+' berhasil disiapkan untuk ekspor CSV.';
+    }
+
     function answer(text){
       const q = normalize(text);
       if(!q) return 'Silakan sampaikan pertanyaannya ya, saya siap membantu.';
@@ -11178,7 +11407,11 @@ body.sela-narrow-host .cine-subtitle span{height:106px!important;min-height:106p
       // Render only the requested visual. Hidden panels remain lazy for a fast response.
       const safeMode = ['overview','charts','tables','poster','briefing'].includes(mode) ? mode : 'overview';
       if(safeMode === 'overview') renderOverviewBody(question, answerText);
-      else if(safeMode === 'charts') renderChartsBody();
+      else if(safeMode === 'charts') {
+        if(selaAnnualReportState && String(question||'').includes(selaAnnualReportState.year))
+          selaRenderAnnualReport(selaAnnualReportState);
+        else renderChartsBody();
+      }
       else if(safeMode === 'tables') renderTablesBody();
       else if(safeMode === 'poster') renderPosterBody(answerText);
       else renderBriefingBody();
@@ -11518,87 +11751,95 @@ body.sela-narrow-host .cine-subtitle span{height:106px!important;min-height:106p
     let cineLastQuestion = '';
     let cineLastAnswer = '';
     let cineLastMode = 'overview';
-    // Subtitle v19.1: fixed two-line caption card; only the letters advance.
-    // Pages are split at word/sentence boundaries; never scroll an 84-char tail.
-    let cineSubtitleToken = 0;
-    let cineSubtitleFrame = null;
-    let cineSubtitleTextRaw = '';
-    let cineSubtitlePages = [];
-    let cineSubtitlePage = 0;
-    let cineSubtitlePagePos = 0;
-    let cineSubtitleLastAt = 0;
-    let cineSubtitleHoldUntil = 0;
-    let cineSubtitleBoundaryPos = -1;
-    let cineSubtitleFinished = false;
-    let cineSubtitleDismiss = null;
-    let cineSubtitleSpeed = 23;
+    // SELA v18.3: subtitle follows actual speech boundaries whenever Chrome emits
+    // them. The fallback is deliberately slower and cannot run ahead of a silent queue.
+    // Caption box never moves; only its text content changes.
+    let cineSubtitleToken=0;
+    let cineSubtitleFrame=null;
+    let cineSubtitleTextRaw='';
+    let cineSubtitlePages=[];
+    let cineSubtitleStartAt=0;
+    let cineSubtitleLastAt=0;
+    let cineSubtitleProgress=0;
+    let cineSubtitleBoundaryPos=-1;
+    let cineSubtitleBoundaryAt=0;
+    let cineSubtitleSawBoundary=false;
+    let cineSubtitleDismiss=null;
+    let cineSubtitleFinished=false;
+    let cineSubtitleCurrentPage=-1;
     function cineHideSubtitle(){
       cineSubtitleToken++;
-      if(cineSubtitleFrame !== null){cancelAnimationFrame(cineSubtitleFrame);cineSubtitleFrame=null;}
-      if(cineSubtitleDismiss !== null){clearTimeout(cineSubtitleDismiss);cineSubtitleDismiss=null;}
+      if(cineSubtitleFrame!==null){cancelAnimationFrame(cineSubtitleFrame);cineSubtitleFrame=null;}
+      if(cineSubtitleDismiss!==null){clearTimeout(cineSubtitleDismiss);cineSubtitleDismiss=null;}
       cineSubtitle.classList.remove('is-visible');
-      cineSubtitleText.textContent='';
-      cineSubtitleTextRaw='';cineSubtitlePages=[];
-      cineSubtitlePage=0;cineSubtitlePagePos=0;
-      cineSubtitleLastAt=0;cineSubtitleHoldUntil=0;
-      cineSubtitleBoundaryPos=-1;cineSubtitleFinished=false;
+      cineSubtitleText.textContent='';cineSubtitleTextRaw='';cineSubtitlePages=[];
+      cineSubtitleStartAt=0;cineSubtitleLastAt=0;cineSubtitleProgress=0;
+      cineSubtitleBoundaryPos=-1;cineSubtitleBoundaryAt=0;
+      cineSubtitleSawBoundary=false;cineSubtitleFinished=false;cineSubtitleCurrentPage=-1;
     }
     function cineMakeSubtitlePages(text){
-      const clean=String(text||'').replace(/\\s+/g,' ').trim();
-      const hostSmall=document.body.classList.contains('sela-narrow-host');
-      const limit=hostSmall?49:77;
-      const tokens=clean.split(/\\s+/).filter(Boolean);
-      const pages=[];let page='';let offset=0;
-      for(const token of tokens){
-        const proposed=page?page+' '+token:token;
-        const sentenceStop=/[.!?;:]$/.test(token)&&proposed.length>=Math.floor(limit*.56);
-        if(page && proposed.length>limit){
-          pages.push({text:page,start:offset,end:offset+page.length});
-          offset+=page.length+1;page=token;
-        }else{page=proposed;}
-        if(sentenceStop&&page){
-          pages.push({text:page,start:offset,end:offset+page.length});
-          offset+=page.length+1;page='';
+      const limit=document.body.classList.contains('sela-narrow-host')?52:84;
+      const words=Array.from(text.matchAll(/\\S+/g));
+      const pages=[];let first=-1,last=-1;
+      words.forEach(match=>{
+        const at=match.index, end=at+match[0].length;
+        if(first<0)first=at;
+        const chunk=text.slice(first,end);
+        if(last>=0 && chunk.length>limit){
+          pages.push({start:first,end:last,text:text.slice(first,last)});
+          first=at;
         }
-      }
-      if(page)pages.push({text:page,start:offset,end:offset+page.length});
+        last=end;
+        if(/[.!?]$/.test(match[0]) && last-first>=Math.floor(limit*.6)){
+          pages.push({start:first,end:last,text:text.slice(first,last)});
+          first=-1;last=-1;
+        }
+      });
+      if(first>=0)pages.push({start:first,end:last,text:text.slice(first,last)});
       return pages;
     }
-    function cinePaintSubtitle(){
-      const current=cineSubtitlePages[cineSubtitlePage];
-      if(!current) return;
-      const visible=current.text.slice(0,Math.floor(cineSubtitlePagePos));
-      cineSubtitleText.textContent=visible;
-      cineSubtitle.classList.toggle('is-visible',Boolean(visible));
+    function cineDrawSubtitle(){
+      const pos=Math.floor(cineSubtitleProgress);
+      let i=cineSubtitlePages.findIndex(p=>pos>=p.start&&pos<=p.end);
+      if(i<0){i=cineSubtitlePages.findIndex(p=>pos<p.start);}
+      if(i<0)i=cineSubtitlePages.length-1;
+      const page=cineSubtitlePages[i];
+      if(!page)return;
+      const clipped=Math.max(0,Math.min(page.text.length,pos-page.start));
+      const display=page.text.slice(0,clipped);
+      if(i!==cineSubtitleCurrentPage){cineSubtitleCurrentPage=i;cineSubtitleText.textContent='';}
+      if(cineSubtitleText.textContent!==display)cineSubtitleText.textContent=display;
+      cineSubtitle.classList.toggle('is-visible',Boolean(display));
     }
     function cineTickSubtitle(now){
       cineSubtitleFrame=null;
-      if(!cineSubtitlePages.length||cineSubtitleFinished)return;
-      const current=cineSubtitlePages[cineSubtitlePage];
-      if(!current)return;
+      if(!cineSubtitleTextRaw||cineSubtitleFinished)return;
       if(!cineSubtitleLastAt)cineSubtitleLastAt=now;
-      const elapsed=Math.min(.075,Math.max(0,(now-cineSubtitleLastAt)/1000));
+      const dt=Math.min(.08,Math.max(0,(now-cineSubtitleLastAt)/1000));
       cineSubtitleLastAt=now;
       const paused=('speechSynthesis' in window)&&window.speechSynthesis.paused;
       if(!paused){
-        if(cineSubtitleHoldUntil){
-          if(now>=cineSubtitleHoldUntil){
-            if(cineSubtitlePage<cineSubtitlePages.length-1){
-              cineSubtitlePage++;
-              cineSubtitlePagePos=0;
-              cineSubtitleHoldUntil=0;
-              cineSubtitleText.textContent='';
-            }else{cineSubtitleHoldUntil=0;return;}
-          }
-        }else if(cineSubtitlePagePos<current.text.length){
-          // Boundary events can speed/slow typing slightly but never skip letters.
-          const charPos=current.start+cineSubtitlePagePos;
-          const relative=Number(cineSubtitleBoundaryPos)-charPos;
-          const speed=relative>12?28:relative< -15?20:cineSubtitleSpeed;
-          cineSubtitlePagePos=Math.min(current.text.length,cineSubtitlePagePos+speed*elapsed);
-          cinePaintSubtitle();
-          if(cineSubtitlePagePos>=current.text.length){cineSubtitleHoldUntil=now+500;}
+        const elapsed=Math.max(0,(now-cineSubtitleStartAt)/1000);
+        let target;
+        if(cineSubtitleSawBoundary){
+          // at beginning of current spoken word, reveal that word progressively.
+          const heard=cineSubtitleBoundaryPos;
+          const wordEnd=(()=>{let j=heard;while(j<cineSubtitleTextRaw.length&&!/\\s/.test(cineSubtitleTextRaw[j]))j++;return j;})();
+          const timeSince=(now-cineSubtitleBoundaryAt)/1000;
+          target=Math.min(wordEnd,heard+Math.max(0,timeSince)*18);
+          // When boundaries are sparse, predict at most 1.0s beyond last word.
+          if(timeSince>1.25)target=Math.min(cineSubtitleTextRaw.length,wordEnd+(timeSince-1.25)*10);
+        }else{
+          // Chrome has not supplied boundaries. Approximate 14 chars/sec, but
+          // never start before onstart and never jump the subtitle card.
+          target=Math.min(cineSubtitleTextRaw.length,elapsed*14);
         }
+        // Fast catch-up after a word event, otherwise a gentle letter-by-letter flow.
+        const gap=Math.max(0,target-cineSubtitleProgress);
+        const speed=gap>16?46:gap>7?28:18;
+        cineSubtitleProgress=Math.min(target,cineSubtitleProgress+speed*dt);
+        if(cineSubtitleProgress>=cineSubtitleTextRaw.length-.01)cineSubtitleProgress=cineSubtitleTextRaw.length;
+        cineDrawSubtitle();
       }
       cineSubtitleFrame=requestAnimationFrame(cineTickSubtitle);
     }
@@ -11607,22 +11848,26 @@ body.sela-narrow-host .cine-subtitle span{height:106px!important;min-height:106p
       cineSubtitleTextRaw=String(text||'').replace(/\\s+/g,' ').trim();
       if(!cineSubtitleTextRaw)return;
       cineSubtitlePages=cineMakeSubtitlePages(cineSubtitleTextRaw);
-      cineSubtitleLastAt=0;cineSubtitlePage=0;cineSubtitlePagePos=0;
-      cineSubtitleHoldUntil=0;cineSubtitleBoundaryPos=-1;cineSubtitleSpeed=23;
+      cineSubtitleStartAt=performance.now();
+      cineSubtitleLastAt=cineSubtitleStartAt;
       cineSubtitleFrame=requestAnimationFrame(cineTickSubtitle);
     }
     function cineSubtitleBoundary(charIndex){
       if(!cineSubtitleTextRaw||cineSubtitleFinished)return;
-      cineSubtitleBoundaryPos=Math.max(0,Number(charIndex)||0);
+      cineSubtitleSawBoundary=true;
+      cineSubtitleBoundaryPos=Math.max(0,Math.min(cineSubtitleTextRaw.length,Number(charIndex)||0));
+      cineSubtitleBoundaryAt=performance.now();
+      // Move to the start of the spoken word, never display the entire sentence at once.
+      cineSubtitleProgress=Math.max(cineSubtitleProgress,cineSubtitleBoundaryPos);
+      cineDrawSubtitle();
     }
     function cineStopSubtitle(){
-      if(!cineSubtitlePages.length)return;
+      if(!cineSubtitleTextRaw)return;
       cineSubtitleFinished=true;
       if(cineSubtitleFrame!==null){cancelAnimationFrame(cineSubtitleFrame);cineSubtitleFrame=null;}
-      // Do not jump to the final words: keep the current stable caption briefly.
       if(cineSubtitleDismiss!==null)clearTimeout(cineSubtitleDismiss);
       const token=cineSubtitleToken;
-      cineSubtitleDismiss=setTimeout(()=>{if(token===cineSubtitleToken)cineHideSubtitle();},1350);
+      cineSubtitleDismiss=setTimeout(()=>{if(token===cineSubtitleToken)cineHideSubtitle();},1400);
     }
     function selaHostViewportWidth(){
       try{
@@ -11684,8 +11929,11 @@ body.sela-narrow-host .cine-subtitle span{height:106px!important;min-height:106p
       if(mode==='overview'){
         cineTextBody.textContent=cineLastAnswer;
         cineTextAnswer.classList.add('is-open');
+        cineTextAnswer.scrollTop=0;
       }else{
         cineReport.classList.add('is-open');
+        cineReport.scrollTop=0;
+        if(advisorCharts) advisorCharts.scrollTop=0;
       }
     }
     function cineShowVisual(mode){
@@ -11747,6 +11995,10 @@ body.sela-narrow-host .cine-subtitle span{height:106px!important;min-height:106p
         return 'active';
       if(/(seluruh data|semua data|seluruh excel|semua transaksi|seluruh histori|full data|tanpa filter)/i.test(q))
         return 'all';
+      // Year-specific deep analysis always uses the full uploaded history unless
+      // the user explicitly asks for the active dashboard filter above.
+      if(/(?:19|20)\\d{2}/.test(q) && /(analisis|analisa|ulasan|evaluasi|tinjau|insight|review|rekap|tren|trend|grafik|diagram|terbanyak|paling banyak)/i.test(q))
+        return 'all';
       return selaScopeSelect ? selaScopeSelect.value : 'all';
     }
     if(selaScopeSelect) selaScopeSelect.addEventListener('change',()=>selaApplyScope(selaScopeSelect.value));
@@ -11759,21 +12011,24 @@ body.sela-narrow-host .cine-subtitle span{height:106px!important;min-height:106p
       statusLine.textContent = 'Status: SELA sedang menganalisis pertanyaan Anda.';
       setAvatarState('listening');
       queueMicrotask(() => {
-        const result = answer(q);
+        const annual = selaAnalyzeAnnualQuestion(q);
+        selaAnnualReportState = annual && !annual.missing ? annual : null;
+        const result = annual ? annual.answer : answer(q);
         const isDataQuestion = /(transaksi|sla|vendor|cabang|nomor permohonan|periode|tahun|bottleneck|growth|pertumbuhan|ringkasan|direksi|rekomendasi|proses)/i.test(q);
         const hasEvidence = result.includes('Dasar data:');
         let ans = (isDataQuestion && !hasEvidence && payload.meta.status !== 'empty')
           ? result + selaEvidence(`cakupan ${selaScopeSelect?.value === 'active' ? 'filter dashboard' : 'seluruh Excel'} ${metrics.period_first || '-'}–${metrics.period_last || '-'}`,
                                   Number(metrics.transaction_count || 0))
           : result;
-        const advisorMode = inferAdvisorMode(q);
-        if(advisorMode === 'charts' && !/grafik|chart|bagan/i.test(ans)) ans += '\\n\\nSaya juga menampilkan grafik eksekutif pada workspace advisor.';
+        const advisorMode = annual && !annual.missing ? 'charts' : inferAdvisorMode(q);
+        if(advisorMode === 'charts' && !annual && !/grafik|chart|bagan/i.test(ans)) ans += '\\n\\nSaya juga menampilkan grafik eksekutif pada workspace advisor.';
         if(advisorMode === 'tables' && !/tabel|table|daftar/i.test(ans)) ans += '\\n\\nSaya juga menampilkan tabel prioritas pada workspace advisor.';
         if(advisorMode === 'poster' && !/poster/i.test(ans)) ans += '\\n\\nSaya juga menampilkan poster eksekutif pada workspace advisor.';
         addMsg('bot', ans);
         boardroomQuestion = q;
         boardroomAnswer = ans;
         if(advisorMode !== 'overview') refreshAdvisor(advisorMode, q, ans);
+        if(annual && !annual.missing) selaRenderAnnualReport(annual);
         setBubble(ans);
         cineOpenAnswer(advisorMode, q, ans);
         speak(ans);
