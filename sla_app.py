@@ -9341,20 +9341,99 @@ def _sela_active_payload_cached(source_version: str, selected_keys: tuple,
     return build_sela_payload(_active_df, period_col)
 
 
+def _sela_history_from_parsed(_parsed: pd.DataFrame, period_col: str):
+    """Historical counts/weighted SLA derived from the *already parsed* full upload.
+
+    This avoids parsing 5 SLA columns again for SELA year/month comparisons.
+    """
+    empty = {"history_month_stats": [], "history_year_stats": [], "total_rows": 0}
+    if _parsed is None or _parsed.empty or period_col not in _parsed.columns:
+        return empty
+    if "PERIODE_DATETIME" in _parsed.columns:
+        timestamps = pd.to_datetime(_parsed["PERIODE_DATETIME"], errors="coerce")
+    else:
+        labels = _parsed[period_col].astype(str)
+        mapping = {value: parse_period_label_to_timestamp(value) for value in labels.unique()}
+        timestamps = pd.to_datetime(labels.map(mapping), errors="coerce")
+    valid = timestamps.notna()
+    if not bool(valid.any()):
+        return empty
+    data = pd.DataFrame({"month_key": timestamps.loc[valid].dt.strftime("%Y-%m")},
+                        index=_parsed.index[valid])
+    stages = [c for c in ("FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU")
+              if c in _parsed.columns]
+    for c in stages:
+        data[c] = pd.to_numeric(_parsed.loc[valid, c], errors="coerce")
+    monthly = []
+    for key, group in data.groupby("month_key", sort=True):
+        row = {"month_key": str(key), "year": str(key)[:4],
+               "month": int(str(key)[5:7]), "count": int(len(group))}
+        for c in stages:
+            values = group[c].dropna()
+            row[c] = round(float(values.mean()) / 86400.0, 10) if len(values) else None
+            row[f"{c}_valid"] = int(len(values))
+            row[f"{c}_sum_seconds"] = float(values.sum())
+        monthly.append(row)
+    yearly = []
+    for yr, group in data.groupby(data["month_key"].str[:4], sort=True):
+        available = sorted(int(k[5:7]) for k in group["month_key"].unique())
+        row = {"year": str(yr), "count": int(len(group)), "months_present": available,
+               "latest_month": max(available), "month_count": len(available)}
+        for c in stages:
+            values = group[c].dropna()
+            row[c] = round(float(values.mean()) / 86400.0, 10) if len(values) else None
+            row[f"{c}_valid"] = int(len(values))
+        yearly.append(row)
+    return {"history_month_stats": monthly, "history_year_stats": yearly,
+            "total_rows": int(len(data))}
+
+
+@st.cache_data(show_spinner=False, max_entries=4)
+def _sela_full_upload_payload_cached(source_version: str, period_col: str,
+                                     _raw_upload: pd.DataFrame):
+    """Single cached intelligence source for ALL uploaded periods and transactions.
+
+    Dashboard filters remain independent; parsing uses the exact existing SLA parser.
+    The full dataset is never transferred to the browser, only bounded aggregates.
+    """
+    if _raw_upload is None or _raw_upload.empty:
+        return build_sela_payload(pd.DataFrame(), period_col)
+    df = _raw_upload.copy()
+    for col in ("FUNGSIONAL", "VENDOR", "KEUANGAN", "PERBENDAHARAAN", "TOTAL WAKTU"):
+        if col in df.columns:
+            # The raw upload has text SLA values. Parse before aggregation; raw seconds
+            # must NOT be silently coerced from human-readable text by pandas.
+            df[col] = df[col].map(parse_sla)
+    full = build_sela_payload(df, period_col)
+    historical = _sela_history_from_parsed(df, period_col)
+    full.update(historical)
+    full["history_total_rows"] = full.pop("total_rows", int(len(df)))
+    full["meta"].update({"scope": "all_uploaded", "source_version": str(source_version)[:20]})
+    return full
+
+
 def render_sela_widget(df_filtered, periode_col: str,
                        source_version: str = "", period_keys: tuple = (),
                        raw_history: pd.DataFrame | None = None):
-    if source_version:
-        payload = _sela_active_payload_cached(source_version, tuple(period_keys),
+    # The default SELA scope is the ENTIRE uploaded file, regardless of sidebar filters.
+    # Keep the active dashboard slice separately, so "filter aktif" remains possible.
+    if raw_history is not None and isinstance(raw_history, pd.DataFrame) and not raw_history.empty:
+        payload = _sela_full_upload_payload_cached(source_version or "local-full", periode_col,
+                                                  raw_history)
+        active = (_sela_active_payload_cached(source_version, tuple(period_keys),
                                               periode_col, df_filtered)
+                  if source_version else build_sela_payload(df_filtered, periode_col))
+        payload["active_scope"] = {key: active.get(key) for key in (
+            "metrics", "period_stats", "year_stats", "transaction_stats", "vendor_stats",
+            "nomor_stats", "proses_stats", "process_year_stats", "process_month_stats",
+            "process_period_stats", "process_transaction_year_stats",
+            "process_transaction_month_stats", "process_vendor_year_stats",
+            "process_vendor_month_stats", "sample_records", "meta")}
     else:
-        payload = build_sela_payload(df_filtered, periode_col)
-
-    if raw_history is not None and source_version:
-        historical = _sela_history_summary_cached(source_version, periode_col, raw_history)
-        payload["history_month_stats"] = historical["history_month_stats"]
-        payload["history_year_stats"] = historical["history_year_stats"]
-        payload["history_total_rows"] = historical["total_rows"]
+        payload = (_sela_active_payload_cached(source_version, tuple(period_keys),
+                                               periode_col, df_filtered)
+                   if source_version else build_sela_payload(df_filtered, periode_col))
+        payload["meta"]["scope"] = "active_only_fallback"
 
     # Prevent Excel-derived strings from terminating the inline <script> element.
     # Text is also rendered using DOM textContent in addMsg, never as HTML.
@@ -9694,6 +9773,17 @@ def render_sela_widget(df_filtered, periode_col: str,
   .sela-mouth-shape{transition:none}
 }
 
+/* === SELA v19: modeless cinematic dock, preserves existing v18 UI and exports. === */
+.sela-mouth-calibrator{display:none;flex-basis:100%;align-items:center;gap:10px;
+  color:#d8edfb;font-size:11px;flex-wrap:wrap;padding:7px 10px;border-top:1px solid #3a5b76}
+.sela-mouth-calibrator label{min-width:130px;font-weight:700}
+.sela-mouth-calibrator input{flex:1;min-width:100px;accent-color:#40d5bd}
+.selectors.is-expanded .sela-mouth-calibrator{display:flex}
+
+body:not(.sela-frame-expanded) .cine-subtitle{display:none!important}
+body:not(.sela-frame-expanded) .cine-shade{display:none!important}
+body:not(.sela-frame-expanded) .advisor-shell,
+body:not(.sela-frame-expanded) .cine-text-answer{display:none!important}
 /* === SELA v18 CINEMATIC STAGE. No data/analytics/report code is modified. === */
 html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important;background:transparent!important}
 .sela-root{position:fixed!important;inset:0!important;width:100%!important;height:100dvh!important;
@@ -9717,7 +9807,7 @@ html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important
 .avatar-face-scene{width:100%!important;height:100%!important}
 .avatar-label,.hero-caption,.wavebar-wrap,.sela-mouth-demo{display:none!important}
 /* Move only speaking visemes; eyelid location is unchanged. */
-.avatar-expression.sela-mouth-shape{transform:translateX(7px)!important}
+.avatar-expression.sela-mouth-shape{transform:translateX(var(--sela-mouth-offset,2px))!important}
 .sela-face-status{position:absolute!important;bottom:8px!important;left:50%!important;
   transform:translateX(-50%)!important;min-width:94px!important;max-width:90%!important;
   padding:5px 10px!important;border:1px solid rgba(119,221,217,.27)!important;border-radius:999px!important;
@@ -9851,7 +9941,7 @@ html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important
   <div class="cine-shade" id="cineShade" aria-hidden="true"></div>
   <section class="cine-text-answer" id="cineTextAnswer" role="region" aria-label="Jawaban SELA">
     <button type="button" class="cine-answer-close" id="cineCloseText" title="Tutup jawaban">×</button>
-    <div class="cine-minihead"><div class="cine-mini-avatar">✦</div><div><strong>SELA menjawab</strong><span>Personal assistant · berdasarkan data aktif</span></div></div>
+    <div class="cine-minihead"><div class="cine-mini-avatar">✦</div><div><strong>SELA menjawab</strong><span>Personal assistant · berdasarkan cakupan data yang dipilih</span></div></div>
     <div class="cine-answer-message" id="cineTextBody"></div>
     <div class="cine-answer-actions">
       <button class="cine-control-btn" type="button" id="cineShowReport">Tampilkan grafik / tabel</button>
@@ -9921,6 +10011,14 @@ html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important
 
         <div class="selectors">
           <select id="voiceSelect"></select>
+          <select id="selaDataScope" title="Cakupan jawaban SELA">
+            <option value="all" selected>Seluruh Excel (semua periode)</option>
+            <option value="active">Hanya Filter Dashboard</option>
+          </select>
+          <div class="sela-mouth-calibrator" title="Kalibrasi posisi bibir jika posisi layar berbeda">
+            <label for="selaMouthAlign">Posisi bibir <span id="selaMouthAlignValue">+2 px</span></label>
+            <input id="selaMouthAlign" type="range" min="-6" max="9" step="1" value="2" />
+          </div>
           <button id="checkMicBtn" class="btn dark">Cek Mic</button>
           <button id="testVoiceBtn" class="btn secondary">Uji Suara</button>
           <button id="stopVoiceBtn" class="btn dark">Stop</button>
@@ -9999,21 +10097,21 @@ html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important
 
   <script>
     const payload = ___SELA_PAYLOAD___;
-    const metrics = payload.metrics || {};
-    const periodStats = payload.period_stats || [];
-    const yearStats = payload.year_stats || [];
-    const trxStats = payload.transaction_stats || [];
-    const vendorStats = payload.vendor_stats || [];
-    const nomorStats = payload.nomor_stats || [];
-    const prosesStats = payload.proses_stats || [];
-    const processYearStats = payload.process_year_stats || [];
-    const processMonthStats = payload.process_month_stats || [];
-    const processPeriodStats = payload.process_period_stats || [];
-    const processTransactionYearStats = payload.process_transaction_year_stats || [];
-    const processTransactionMonthStats = payload.process_transaction_month_stats || [];
-    const processVendorYearStats = payload.process_vendor_year_stats || [];
-    const processVendorMonthStats = payload.process_vendor_month_stats || [];
-    const records = payload.sample_records || [];
+    let metrics = payload.metrics || {};
+    let periodStats = payload.period_stats || [];
+    let yearStats = payload.year_stats || [];
+    let trxStats = payload.transaction_stats || [];
+    let vendorStats = payload.vendor_stats || [];
+    let nomorStats = payload.nomor_stats || [];
+    let prosesStats = payload.proses_stats || [];
+    let processYearStats = payload.process_year_stats || [];
+    let processMonthStats = payload.process_month_stats || [];
+    let processPeriodStats = payload.process_period_stats || [];
+    let processTransactionYearStats = payload.process_transaction_year_stats || [];
+    let processTransactionMonthStats = payload.process_transaction_month_stats || [];
+    let processVendorYearStats = payload.process_vendor_year_stats || [];
+    let processVendorMonthStats = payload.process_vendor_month_stats || [];
+    let records = payload.sample_records || [];
     const historyYears = payload.history_year_stats || [];
     const historyMonths = payload.history_month_stats || [];
     // Keep legacy quick questions; adapt new examples to the years actually uploaded.
@@ -10777,7 +10875,7 @@ html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important
           const y = yearStats.find(x => String(x.year) === String(year));
           if(y) return `${naturalLead()} Untuk tahun ${year}, total transaksi yang tercatat sebanyak ${fmtNum(y.count)} transaksi dengan rata-rata SLA ${fmtDays(y.avg_sla_days || 0)}.`;
         }
-        return `${naturalLead()} Total transaksi aktif saat ini adalah ${fmtNum(metrics.transaction_count || 0)} transaksi, dengan cakupan periode ${metrics.period_first || '-'} sampai ${metrics.period_last || '-'}.`;
+        return `${naturalLead()} Total transaksi untuk ${selaScopeLabel()} adalah ${fmtNum(metrics.transaction_count || 0)} transaksi, dengan cakupan periode ${metrics.period_first || '-'} sampai ${metrics.period_last || '-'}.`;
       }
       if(/sla total|rata-rata sla|sla keseluruhan|berapa sla/.test(q)){
         const p = findMentionedPeriod(q) || findMonthYearPeriod(q);
@@ -10788,7 +10886,7 @@ html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important
         if(tr) return `${naturalLead()} Untuk jenis transaksi ${tr.name}, rata-rata SLA totalnya adalah ${fmtDays(tr.avg_sla_days || 0)} dengan volume ${fmtNum(tr.count || 0)} transaksi.`;
         if(vd) return `${naturalLead()} Untuk vendor ${vd.name}, rata-rata SLA totalnya adalah ${fmtDays(vd.avg_sla_days || 0)} dari ${fmtNum(vd.count || 0)} transaksi.`;
         if(nm) return `${naturalLead()} Untuk nomor permohonan ${nm.name}, rata-rata SLA totalnya adalah ${fmtDays(nm.avg_sla_days || 0)} dari ${fmtNum(nm.count || 0)} transaksi.`;
-        return `${naturalLead()} Rata-rata SLA total seluruh data aktif saat ini adalah ${fmtDays(metrics.avg_sla_days || 0)}.`;
+        return `${naturalLead()} Rata-rata SLA total untuk ${selaScopeLabel()} adalah ${fmtDays(metrics.avg_sla_days || 0)}.`;
       }
       if(/jenis transaksi|transaksi apa yang paling lama|top sla|paling lambat/.test(q)){
         if(metrics.top_transaction){
@@ -10827,14 +10925,14 @@ html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important
       }
       if(/nilai transaksi|nominal|amount/.test(q)){
         if(metrics.total_nilai !== null && metrics.total_nilai !== undefined){
-          return `${naturalLead()} Total nilai transaksi pada data aktif adalah Rp ${fmtNum(metrics.total_nilai)}.`;
+          return `${naturalLead()} Total nilai transaksi untuk ${selaScopeLabel()} adalah Rp ${fmtNum(metrics.total_nilai)}.`;
         }
         return 'Maaf, saat ini data nilai transaksi belum tersedia pada dataset aktif.';
       }
       if(/semua yang saya tanyakan|bisa jawab apa saja|apa yang bisa kamu jawab/.test(q)){
         return 'Saya bisa membantu menjawab pertanyaan terkait jumlah transaksi, perbandingan tahun atau periode, rata-rata SLA total, SLA per jenis transaksi, vendor/cabang paling lambat, nomor permohonan yang perlu dipantau, bottleneck proses, growth transaksi, nilai transaksi jika tersedia, serta membuat ringkasan Direksi dan rekomendasi perbaikan.';
       }
-      return `${naturalLead()} Berdasarkan data aktif, terdapat ${fmtNum(metrics.transaction_count || 0)} transaksi dengan rata-rata SLA total ${fmtDays(metrics.avg_sla_days || 0)}. ${metrics.top_transaction ? `Jenis transaksi prioritas saat ini adalah ${metrics.top_transaction.name}. ` : ''}${metrics.bottleneck ? `Bottleneck terbesarnya berada pada proses ${metrics.bottleneck.name}. ` : ''}Jika ingin, Anda bisa bertanya lebih spesifik seperti \u201cberapa SLA Vendor tahun 2025\u201d, \u201cSLA Keuangan Juni 2026\u201d, \u201cvendor mana paling lambat\u201d, atau \u201cbuatkan ringkasan Direksi\u201d.`;
+      return `${naturalLead()} Berdasarkan ${selaScopeLabel()}, terdapat ${fmtNum(metrics.transaction_count || 0)} transaksi dengan rata-rata SLA total ${fmtDays(metrics.avg_sla_days || 0)}. ${metrics.top_transaction ? `Jenis transaksi prioritas saat ini adalah ${metrics.top_transaction.name}. ` : ''}${metrics.bottleneck ? `Bottleneck terbesarnya berada pada proses ${metrics.bottleneck.name}. ` : ''}Jika ingin, Anda bisa bertanya lebih spesifik seperti \u201cberapa SLA Vendor tahun 2025\u201d, \u201cSLA Keuangan Juni 2026\u201d, \u201cvendor mana paling lambat\u201d, atau \u201cbuatkan ringkasan Direksi\u201d.`;
     }
 
 
@@ -10896,12 +10994,12 @@ html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important
           </div>
           <div class="viz-card wide">
             <div class="viz-title">Snapshot Periode Terakhir</div>
-            <div class="viz-subtitle">Ringkasan empat periode terbaru dari data aktif</div>
+            <div class="viz-subtitle">Ringkasan empat periode terakhir pada cakupan SELA</div>
             <div class="mini-kpis">${trendCards || '<div class="mini-kpi"><div class="k">Info</div><div class="v">-</div><div class="s">Belum ada periode yang bisa diringkas.</div></div>'}</div>
           </div>
           <div class="viz-card third">
             <div class="viz-title">Transaksi Aktif</div>
-            <div class="viz-subtitle">Volume pada filter aktif</div>
+            <div class="viz-subtitle">Volume pada cakupan SELA</div>
             <div class="mini-kpi"><div class="k">Total</div><div class="v">${fmtNum(metrics.transaction_count || 0)}</div><div class="s">${escHtml(metrics.period_first || '-')} s.d. ${escHtml(metrics.period_last || '-')}</div></div>
           </div>
           <div class="viz-card third">
@@ -10980,7 +11078,7 @@ html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important
         <div class="advisor-grid">
           <div class="viz-card">
             <div class="viz-title">Top Jenis Transaksi</div>
-            <div class="viz-subtitle">Peringkat berdasarkan SLA rata-rata tertinggi pada data aktif</div>
+            <div class="viz-subtitle">Peringkat SLA tertinggi pada cakupan SELA</div>
             <div class="premium-table-wrap"><table class="premium-table"><thead><tr><th>Rank</th><th>Jenis Transaksi</th><th>Volume</th><th>Rata-rata SLA</th></tr></thead><tbody>${trxRows || '<tr><td colspan="4">Belum ada data jenis transaksi.</td></tr>'}</tbody></table></div>
           </div>
           <div class="viz-card">
@@ -10990,7 +11088,7 @@ html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important
           </div>
           <div class="viz-card wide">
             <div class="viz-title">Preview Data Operasional</div>
-            <div class="viz-subtitle">Delapan baris pertama dari data aktif untuk validasi cepat</div>
+            <div class="viz-subtitle">Delapan baris sampel dari cakupan SELA untuk validasi cepat</div>
             <div class="premium-table-wrap"><table class="premium-table"><thead><tr><th>No</th><th>Periode</th><th>Nomor Permohonan</th><th>Jenis Transaksi</th><th>Vendor / Cabang</th><th>TOTAL WAKTU</th></tr></thead><tbody>${sampleRows || '<tr><td colspan="6">Belum ada sample record.</td></tr>'}</tbody></table></div>
           </div>
         </div>`;
@@ -11128,7 +11226,7 @@ html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important
       const rows=(periodStats || []).slice(-8);
       const slaByMonth=new Map((processMonthStats || []).map(row=>[row.month_key,row]));
       return {title:metric==='count'?'Tren volume transaksi':'Tren SLA '+prettyProcessName(metric),
-        subtitle:'Periode aktif: '+boardroomScope(),unit,
+        subtitle:'Cakupan SELA: '+boardroomScope(),unit,
         data:rows.map(row=>({label:String(row.periode || '-'),value:metric==='count'
           ? Number(row.count || 0)
           : ((slaByMonth.get(row.month_key) || {})[metric] ?? (metric==='TOTAL WAKTU' ? row.avg_sla_days : null))}))
@@ -11381,57 +11479,104 @@ html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important
     let cineLastAnswer = '';
     let cineLastMode = 'overview';
     let cineSubtitleToken = 0;
-    let cineSubtitleInterval = null;
-    let cineSubtitleWords = [];
-    let cineSubtitleCursor = 0;
-    let cineLastBoundaryAt = 0;
+    let cineSubtitleFrame = null;
+    let cineSubtitleTextRaw = '';
+    let cineSubtitlePosition = 0;
+    let cineSubtitleStartAt = 0;
+    let cineSubtitleLastAt = 0;
+    let cineSubtitleBoundaryPos = -1;
+    let cineSubtitleBoundaryAt = 0;
+    let cineSubtitleFinished = false;
     let cineSubtitleDismiss = null;
+    let cineSubtitleSpeed = 19; // fallback characters/second, adjusted by browser boundary cues
     function cineHideSubtitle(){
       cineSubtitleToken++;
-      if(cineSubtitleInterval){clearInterval(cineSubtitleInterval);cineSubtitleInterval=null;}
-      if(cineSubtitleDismiss){clearTimeout(cineSubtitleDismiss);cineSubtitleDismiss=null;}
+      if(cineSubtitleFrame !== null){cancelAnimationFrame(cineSubtitleFrame);cineSubtitleFrame=null;}
+      if(cineSubtitleDismiss !== null){clearTimeout(cineSubtitleDismiss);cineSubtitleDismiss=null;}
       cineSubtitle.classList.remove('is-visible');
       cineSubtitleText.textContent='';
+      cineSubtitleTextRaw='';
+      cineSubtitlePosition=0;
+      cineSubtitleFinished=false;
     }
-    function cineSubtitleAt(charIndex){
-      if(!cineSubtitleWords.length) return;
-      const loc = Math.max(0,Number(charIndex)||0);
-      let idx=0;
-      for(let i=0;i<cineSubtitleWords.length;i++){
-        if(cineSubtitleWords[i].start<=loc) idx=i;
-        else break;
+    function cinePaintSubtitle(){
+      const shown=cineSubtitleTextRaw.slice(0,Math.floor(cineSubtitlePosition));
+      // Show only last ~84 characters (film-style max 2 lines), preserving the typing cursor.
+      let tail=shown.length > 84 ? shown.slice(-84) : shown;
+      if(shown.length > 84){const space=tail.indexOf(' '); if(space>0 && space<22)tail=tail.slice(space+1);}
+      cineSubtitleText.textContent=tail;
+      cineSubtitle.classList.toggle('is-visible',Boolean(tail));
+    }
+    function cineTickSubtitle(now){
+      cineSubtitleFrame=null;
+      if(!cineSubtitleTextRaw || cineSubtitleFinished) return;
+      if(!cineSubtitleLastAt) cineSubtitleLastAt=now;
+      const dt=Math.min(0.08,Math.max(0,(now-cineSubtitleLastAt)/1000));
+      cineSubtitleLastAt=now;
+      const paused=('speechSynthesis' in window) && window.speechSynthesis.paused;
+      if(!paused){
+        let speed=cineSubtitleSpeed;
+        if(cineSubtitleBoundaryPos>=0){
+          const gap=cineSubtitleBoundaryPos-cineSubtitlePosition;
+          if(gap>0) speed=Math.min(64,Math.max(speed,gap*2.2));
+          else if(gap< -16) speed=Math.max(9,speed*.55);
+        }
+        cineSubtitlePosition=Math.min(cineSubtitleTextRaw.length,cineSubtitlePosition+speed*dt);
+        cinePaintSubtitle();
       }
-      cineSubtitleCursor=idx;
-      cineSubtitleText.textContent=cineSubtitleWords.slice(Math.max(0,idx-2),Math.min(cineSubtitleWords.length,idx+9))
-        .map(w=>w.word).join(' ');
-      cineSubtitle.classList.add('is-visible');
+      if(cineSubtitlePosition<cineSubtitleTextRaw.length)
+        cineSubtitleFrame=requestAnimationFrame(cineTickSubtitle);
     }
     function cineStartSubtitle(text){
       cineHideSubtitle();
-      const raw=String(text||'').replace(/\\s+/g,' ').trim();
-      cineSubtitleWords=[...raw.matchAll(/\\S+/g)].map(m=>({word:m[0],start:m.index}));
-      if(!cineSubtitleWords.length) return;
-      cineSubtitleAt(0);
-      const token=cineSubtitleToken;
-      cineLastBoundaryAt=0;
-      cineSubtitleInterval=setInterval(()=>{
-        if(token!==cineSubtitleToken){clearInterval(cineSubtitleInterval);cineSubtitleInterval=null;return;}
-        if(cineLastBoundaryAt && performance.now()-cineLastBoundaryAt<750) return;
-        cineSubtitleCursor=Math.min(cineSubtitleWords.length-1,cineSubtitleCursor+1);
-        cineSubtitleAt(cineSubtitleWords[cineSubtitleCursor].start);
-      },310);
+      cineSubtitleTextRaw=String(text||'').replace(/\\s+/g,' ').trim();
+      if(!cineSubtitleTextRaw) return;
+      cineSubtitleStartAt=performance.now();
+      cineSubtitleLastAt=0;
+      cineSubtitleBoundaryPos=-1;
+      cineSubtitleBoundaryAt=0;
+      cineSubtitleSpeed=20;
+      cineSubtitleFrame=requestAnimationFrame(cineTickSubtitle);
     }
     function cineSubtitleBoundary(charIndex){
-      cineLastBoundaryAt=performance.now();
-      cineSubtitleAt(charIndex);
+      if(!cineSubtitleTextRaw || cineSubtitleFinished) return;
+      const cue=Math.min(cineSubtitleTextRaw.length,Math.max(0,Number(charIndex)||0));
+      cineSubtitleBoundaryPos=cue;
+      cineSubtitleBoundaryAt=performance.now();
+      // Catch up GRADUALLY instead of showing a complete word block instantly.
+      if(cineSubtitleFrame===null && cineSubtitlePosition<cineSubtitleTextRaw.length)
+        cineSubtitleFrame=requestAnimationFrame(cineTickSubtitle);
     }
     function cineStopSubtitle(){
-      if(cineSubtitleInterval){clearInterval(cineSubtitleInterval);cineSubtitleInterval=null;}
-      if(cineSubtitleDismiss) clearTimeout(cineSubtitleDismiss);
+      if(!cineSubtitleTextRaw) return;
+      cineSubtitleFinished=true;
+      if(cineSubtitleFrame!==null){cancelAnimationFrame(cineSubtitleFrame);cineSubtitleFrame=null;}
+      cineSubtitlePosition=cineSubtitleTextRaw.length;
+      cinePaintSubtitle();
+      if(cineSubtitleDismiss!==null)clearTimeout(cineSubtitleDismiss);
       const token=cineSubtitleToken;
-      cineSubtitleDismiss=setTimeout(()=>{
-        if(token===cineSubtitleToken) cineHideSubtitle();
-      },1250);
+      cineSubtitleDismiss=setTimeout(()=>{if(token===cineSubtitleToken) cineHideSubtitle();},1550);
+    }
+    function selaFrameExpanded(expanded){
+      document.body.classList.toggle('sela-frame-expanded',Boolean(expanded));
+      // Streamlit's component iframe is same-origin; frameElement is intentionally
+      // resized only while a response is open, keeping page scroll available otherwise.
+      try{
+        const frame=window.frameElement;
+        if(!frame) return;
+        const large=Boolean(expanded);
+        frame.style.setProperty('position','fixed','important');
+        frame.style.setProperty('top','auto','important');
+        frame.style.setProperty('right',large?'0':'10px','important');
+        frame.style.setProperty('bottom','0','important');
+        frame.style.setProperty('width',large?'100vw':'min(340px, 100vw)','important');
+        frame.style.setProperty('height',large?'100dvh':'min(615px, 94dvh)','important');
+        frame.style.setProperty('max-width','none','important');
+        frame.style.setProperty('max-height','none','important');
+        frame.style.setProperty('z-index','10000','important');
+        frame.style.setProperty('border','0','important');
+        frame.style.setProperty('background','transparent','important');
+      }catch(e){ /* If the host prevents iframe resizing, dock remains usable. */ }
     }
     function cineCloseAnswer(){
       cineTextAnswer.classList.remove('is-open');
@@ -11439,6 +11584,7 @@ html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important
       chatbox.classList.remove('is-expanded');
       cineShade.classList.remove('is-open');
       cineShade.setAttribute('aria-hidden','true');
+      selaFrameExpanded(false);
       // Audio keeps playing independently; Stop button remains available.
     }
     function cineOpenAnswer(mode,question,answerText){
@@ -11446,6 +11592,7 @@ html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important
       cineLastAnswer=String(answerText||'');
       cineLastMode=mode;
       cineCloseAnswer();
+      selaFrameExpanded(true);
       cineShade.classList.add('is-open');
       cineShade.setAttribute('aria-hidden','false');
       if(mode==='overview'){
@@ -11464,13 +11611,64 @@ html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important
     }
     function cineOpenHistory(){
       cineCloseAnswer();
+      selaFrameExpanded(true);
       cineShade.classList.add('is-open');
       chatbox.classList.add('is-expanded');
       chatbox.scrollTop=chatbox.scrollHeight;
     }
+    const selaMouthAlignInput = document.getElementById('selaMouthAlign');
+    if(selaMouthAlignInput){
+      const calibrate=()=>{
+        const n=Number(selaMouthAlignInput.value)||0;
+        document.documentElement.style.setProperty('--sela-mouth-offset',n+'px');
+        const label=document.getElementById('selaMouthAlignValue');
+        if(label)label.textContent=(n>=0?'+':'')+n+' px';
+      };
+      selaMouthAlignInput.addEventListener('input',calibrate,{passive:true});
+      calibrate();
+    }
+    const selaScopeSelect = document.getElementById('selaDataScope');
+    const selaAllScope = payload;
+    const selaActiveScope = payload.active_scope || null;
+    function selaApplyScope(scope){
+      const useActive = scope === 'active' && Boolean(selaActiveScope);
+      const source = useActive ? selaActiveScope : selaAllScope;
+      metrics = source.metrics || {};
+      periodStats = source.period_stats || [];
+      yearStats = source.year_stats || [];
+      trxStats = source.transaction_stats || [];
+      vendorStats = source.vendor_stats || [];
+      nomorStats = source.nomor_stats || [];
+      prosesStats = source.proses_stats || [];
+      processYearStats = source.process_year_stats || [];
+      processMonthStats = source.process_month_stats || [];
+      processPeriodStats = source.process_period_stats || [];
+      processTransactionYearStats = source.process_transaction_year_stats || [];
+      processTransactionMonthStats = source.process_transaction_month_stats || [];
+      processVendorYearStats = source.process_vendor_year_stats || [];
+      processVendorMonthStats = source.process_vendor_month_stats || [];
+      records = source.sample_records || [];
+      if(selaScopeSelect) selaScopeSelect.value=useActive?'active':'all';
+      populateMetrics();
+      return useActive;
+    }
+    function selaScopeLabel(){
+      return selaScopeSelect && selaScopeSelect.value==='active' ? 'filter dashboard yang dipilih' : 'seluruh file Excel yang diunggah';
+    }
+    function selaScopeFromQuestion(q){
+      // Mentioning a year/month does NOT change scope: comparisons are historical.
+      if(/(filter aktif|filter dashboard|sesuai filter|periode dipilih|periode terfilter|yang sedang ditampilkan)/i.test(q))
+        return 'active';
+      if(/(seluruh data|semua data|seluruh excel|semua transaksi|seluruh histori|full data|tanpa filter)/i.test(q))
+        return 'all';
+      return selaScopeSelect ? selaScopeSelect.value : 'all';
+    }
+    if(selaScopeSelect) selaScopeSelect.addEventListener('change',()=>selaApplyScope(selaScopeSelect.value));
+
     function handleQuestion(question){
       const q = String(question || '').trim();
       if(!q) return;
+      selaApplyScope(selaScopeFromQuestion(q));
       addMsg('user', q);
       statusLine.textContent = 'Status: SELA sedang menganalisis pertanyaan Anda.';
       setAvatarState('listening');
@@ -11479,7 +11677,7 @@ html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important
         const isDataQuestion = /(transaksi|sla|vendor|cabang|nomor permohonan|periode|tahun|bottleneck|growth|pertumbuhan|ringkasan|direksi|rekomendasi|proses)/i.test(q);
         const hasEvidence = result.includes('Dasar data:');
         let ans = (isDataQuestion && !hasEvidence && payload.meta.status !== 'empty')
-          ? result + selaEvidence(`filter aktif ${metrics.period_first || '-'}–${metrics.period_last || '-'}`,
+          ? result + selaEvidence(`cakupan ${selaScopeSelect?.value === 'active' ? 'filter dashboard' : 'seluruh Excel'} ${metrics.period_first || '-'}–${metrics.period_last || '-'}`,
                                   Number(metrics.transaction_count || 0))
           : result;
         const advisorMode = inferAdvisorMode(q);
@@ -11591,6 +11789,7 @@ html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important
     });
 
     populateMetrics();
+    selaFrameExpanded(false);
     // v18 remains visually idle until a question is asked, avoiding unnecessary visual rendering.
     addMsg('bot', 'Halo, saya SELA. Senang bisa membantu Anda. Silakan ketik atau ucapkan pertanyaan. Setelah Anda bertanya, saya akan menjawab dan menyiapkan teks, tabel, grafik, poster, atau Boardroom sesuai kebutuhan.');
   </script>
@@ -11600,68 +11799,14 @@ html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important
 
     components.html(
         html.replace("___SELA_PAYLOAD___", data_json),
-        height=960,  # Native dialog CSS expands the iframe to the viewport.
-        scrolling=False,  # Cinematic panels manage their own scroll; prevent nested scrollbars.
+        height=615,  # Modeless compact SELA dock; expands only for an active answer.
+        scrolling=False,  # Workspace panels manage their own scroll.
     )
 
 
-# PANGGIL SELA HANYA SAAT DIBUKA (lazy, cached, tidak mengganggu dashboard).
-# Perbedaan penting dari launcher v14: ST.BUTTON, bukan HTML <a href="?...">.
-# Native Streamlit dialog muncul di TAB YANG SAMA; tidak mengubah URL dan tidak
-# menciptakan tab baru. Tombol X pada dialog menutup asisten secara normal.
-
+# SELA v19: non-modal floating dock. st.dialog was intentionally removed because
+# it blocks scrolling the main dashboard even when SELA is visually tiny.
 def _sela_launch_body():
-    # Scope the cinematic dialog to SELA only. Keep regular Streamlit tabs intact.
-    st.markdown('<div id="sela_v18_dialog_marker" aria-hidden="true"></div>', unsafe_allow_html=True)
-    st.markdown("""
-    <style>
-    /* SELA v18: the dialog is a transparent full-screen stage; the assistant is
-       docked inside its iframe, while reports appear in the center of the SAME tab. */
-    div[data-testid="stDialog"]:has(#sela_v18_dialog_marker) [role="dialog"],
-    [role="dialog"]:has(#sela_v18_dialog_marker) {
-      position:fixed!important; inset:0!important;
-      transform:none!important; margin:0!important;
-      width:100vw!important; max-width:100vw!important;
-      height:100dvh!important; max-height:100dvh!important;
-      padding:0!important; overflow:visible!important;
-      border:0!important; border-radius:0!important;
-      background:transparent!important; box-shadow:none!important;
-    }
-    div[data-testid="stDialog"]:has(#sela_v18_dialog_marker) iframe,
-    [role="dialog"]:has(#sela_v18_dialog_marker) iframe {
-      position:fixed!important; inset:0!important;
-      width:100vw!important; height:100dvh!important;
-      max-height:100dvh!important; border:0!important;
-      background:transparent!important; z-index:1!important;
-    }
-    div[data-testid="stDialog"]:has(#sela_v18_dialog_marker)
-      [data-testid="stVerticalBlockBorderWrapper"],
-    div[data-testid="stDialog"]:has(#sela_v18_dialog_marker)
-      [data-testid="stVerticalBlock"],
-    div[data-testid="stDialog"]:has(#sela_v18_dialog_marker)
-      [data-testid="stElementContainer"] {
-      padding:0!important; margin:0!important; min-height:0!important;
-    }
-    div[data-testid="stDialog"]:has(#sela_v18_dialog_marker) button[aria-label="Close"],
-    div[data-testid="stDialog"]:has(#sela_v18_dialog_marker) button[aria-label="Close dialog"],
-    [role="dialog"]:has(#sela_v18_dialog_marker) button[aria-label="Close"],
-    [role="dialog"]:has(#sela_v18_dialog_marker) button[aria-label="Close dialog"] {
-      position:fixed!important;top:14px!important;right:17px!important;
-      z-index:10000!important; color:#eef8ff!important;
-      background:#132a42!important;border:1px solid #466781!important;
-      border-radius:999px!important;
-    }
-    /* Disable the dark full-screen overlay, not the panel controls. */
-    div[data-testid="stDialog"]:has(#sela_v18_dialog_marker) ~ div {
-      box-shadow:none;
-    }
-    @media(max-width:700px){
-      div[data-testid="stDialog"]:has(#sela_v18_dialog_marker) button[aria-label="Close"] {
-        top:8px!important;right:8px!important;
-      }
-    }
-    </style>
-    """, unsafe_allow_html=True)
     render_sela_widget(
         df_filtered, periode_col,
         source_version=_sla_source_version,
@@ -11669,31 +11814,56 @@ def _sela_launch_body():
         raw_history=_sela_full_history_source,
     )
 
-if callable(getattr(st, "dialog", None)):
-    @st.dialog("SELA • Cinematic Assistant", width="large")
-    def _sela_open_dialog():
-        # Dialog scoped to its own fragment, without re-rendering the entire app
-        # for chat/voice clicks inside the embedded SELA widget.
-        _sela_launch_body()
-else:
-    # Compatibility fallback for older Streamlit, still in the SAME Chrome tab.
-    def _sela_open_dialog():
-        st.info("SELA dibuka pada halaman ini. Scroll ke panel asisten di bawah.")
-        _sela_launch_body()
-
+# Native Streamlit button avoids duplicate browser tabs; click once to open,
+# click again to close. The full dashboard remains scrollable while dock is idle.
+if "sela_modeless_open_v19" not in st.session_state:
+    st.session_state["sela_modeless_open_v19"] = False
 try:
     _sela_fab_host = st.container(key="sela_floating_launcher_v15")
 except TypeError:
-    # Keyed containers were introduced after older Streamlit versions.
     _sela_fab_host = st.container()
 with _sela_fab_host:
     _sela_fab_clicked = st.button(
         "SELA", key="sela_fab_button_v15",
-        help="✦ SELA Premium AI — buka asisten pribadi dalam popup, tanpa tab baru.",
+        help="✦ SELA AI — klik untuk membuka atau menutup personal assistant.",
     )
-
 if _sela_fab_clicked or _sela_sidebar_clicked:
-    _sela_open_dialog()
+    st.session_state["sela_modeless_open_v19"] = not st.session_state["sela_modeless_open_v19"]
+
+if st.session_state["sela_modeless_open_v19"]:
+    st.markdown("""
+    <style>
+    /* The component iframe is fixed only within its own dock rectangle.
+       Page scrolling and clicks outside this rectangle are never intercepted. */
+    .st-key-sela_modeless_dock_v19 {
+        position:fixed!important;right:10px!important;bottom:0!important;
+        width:0!important;height:0!important;max-width:0!important;
+        padding:0!important;margin:0!important;border:0!important;
+        z-index:9990!important;overflow:visible!important;
+        pointer-events:none!important;
+    }
+    .st-key-sela_modeless_dock_v19 iframe {
+        position:fixed!important;right:10px!important;bottom:0!important;
+        width:min(340px,100vw)!important;height:min(615px,94dvh)!important;
+        max-width:none!important;max-height:none!important;
+        border:0!important;background:transparent!important;
+        z-index:9992!important;pointer-events:auto!important;
+    }
+    .st-key-sela_modeless_dock_v19 [data-testid="stVerticalBlock"],
+    .st-key-sela_modeless_dock_v19 [data-testid="stElementContainer"],
+    .st-key-sela_modeless_dock_v19 [data-testid="stVerticalBlockBorderWrapper"] {
+        overflow:visible!important;pointer-events:none!important;
+        padding:0!important;margin:0!important;
+    }
+    .st-key-sela_modeless_dock_v19 iframe {pointer-events:auto!important}
+    </style>
+    """, unsafe_allow_html=True)
+    try:
+        _sela_dock = st.container(key="sela_modeless_dock_v19")
+    except TypeError:
+        _sela_dock = st.container()
+    with _sela_dock:
+        _sela_launch_body()
 
 # Performance-safe user settings preservation for dynamic tabs.
 if _SLA_LAZY_TABS:
