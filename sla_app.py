@@ -9693,15 +9693,180 @@ def render_sela_widget(df_filtered, periode_col: str,
   .sela-blink.blinking{animation-duration:.12s}
   .sela-mouth-shape{transition:none}
 }
+
+/* === SELA v18 CINEMATIC STAGE. No data/analytics/report code is modified. === */
+html,body{width:100%;height:100%;min-height:0;margin:0;overflow:hidden!important;background:transparent!important}
+.sela-root{position:fixed!important;inset:0!important;width:100%!important;height:100dvh!important;
+  min-height:0!important;border:0!important;box-shadow:none!important;background:transparent!important;
+  border-radius:0!important;overflow:visible!important;pointer-events:none!important;z-index:70!important}
+.head{display:none!important}
+.content,.right-panel{display:contents!important}
+.avatar-panel{position:fixed!important;z-index:40!important;right:26px!important;bottom:143px!important;
+  width:clamp(183px,17.4vw,238px)!important;height:clamp(211px,33vh,282px)!important;
+  padding:0!important;margin:0!important;border:0!important;box-shadow:none!important;
+  background:transparent!important;overflow:visible!important;display:block!important;pointer-events:auto!important}
+.hero-stage{width:100%!important;height:100%!important;min-height:0!important;max-height:none!important;
+  border:none!important;border-radius:25px!important;overflow:hidden!important;
+  background:linear-gradient(160deg,rgba(10,31,54,.22),rgba(9,23,43,.1))!important}
+.hero-stage:before,.hero-stage:after{display:none!important}
+.avatar-wrap{inset:0!important;padding:0!important}
+.female-avatar{width:100%!important;height:100%!important;max-width:none!important;transform:none!important}
+.avatar-card{width:100%!important;height:100%!important;border-radius:24px!important;
+  border:1px solid rgba(134,216,240,.25)!important;box-shadow:0 19px 49px rgba(4,24,47,.28)!important;
+  overflow:hidden!important;background:#0b1a2d!important}
+.avatar-face-scene{width:100%!important;height:100%!important}
+.avatar-label,.hero-caption,.wavebar-wrap,.sela-mouth-demo{display:none!important}
+/* Move only speaking visemes; eyelid location is unchanged. */
+.avatar-expression.sela-mouth-shape{transform:translateX(7px)!important}
+.sela-face-status{position:absolute!important;bottom:8px!important;left:50%!important;
+  transform:translateX(-50%)!important;min-width:94px!important;max-width:90%!important;
+  padding:5px 10px!important;border:1px solid rgba(119,221,217,.27)!important;border-radius:999px!important;
+  background:rgba(5,25,42,.78)!important;color:#a6eee2!important;text-align:center!important;
+  white-space:nowrap!important;font-size:9px!important;letter-spacing:.1em!important;z-index:43!important;
+  box-shadow:0 4px 14px rgba(0,0,0,.19)!important}
+.speech,.metrics,.footer-note{display:none!important}
+.selectors{position:fixed!important;z-index:42!important;right:25px!important;bottom:104px!important;
+  display:flex!important;gap:6px!important;align-items:center!important;justify-content:center!important;
+  width:clamp(200px,21vw,272px)!important;padding:7px!important;border-radius:17px!important;
+  border:1px solid rgba(119,185,224,.22)!important;background:rgba(10,27,47,.92)!important;
+  box-shadow:0 12px 25px rgba(6,19,38,.19)!important;pointer-events:auto!important}
+.selectors select,.selectors #checkMicBtn{display:none!important}
+.selectors .btn{padding:9px 10px!important;border-radius:11px!important;min-height:36px!important;
+  font-size:11px!important;flex:1!important;white-space:nowrap!important}
+.selectors #testVoiceBtn{background:#174a68!important;color:#ecfbff!important}
+.selectors #stopVoiceBtn{background:#152c44!important;color:#d7eafb!important}
+.selectors #cineMoreBtn{flex:0 0 37px!important;background:#11263e!important}
+.selectors.is-expanded{flex-wrap:wrap!important}
+.selectors.is-expanded select,.selectors.is-expanded #checkMicBtn{display:inline-flex!important;max-width:100%!important;
+  flex:1 1 100%!important;font-size:11px!important}
+.selectors .sela-mouth-demo{display:none!important}
+.selectors.is-expanded .sela-mouth-demo{display:inline-flex!important;justify-content:center!important;
+  flex:1 1 100%!important;padding:8px 10px!important;font-size:11px!important;min-height:34px!important}
+.chips{display:none!important;position:fixed!important;z-index:80!important;right:25px!important;
+  bottom:205px!important;width:min(330px,calc(100vw - 34px))!important;max-height:250px!important;
+  padding:13px!important;overflow-y:auto!important;pointer-events:auto!important;
+  background:#102239!important;border:1px solid rgba(110,188,225,.3)!important;
+  border-radius:17px!important;box-shadow:0 24px 64px rgba(5,14,32,.32)!important}
+.chips.is-expanded{display:flex!important;gap:8px!important}
+.chips .chip{font-size:11px!important}
+.composer{position:fixed!important;z-index:42!important;right:25px!important;bottom:31px!important;
+  display:grid!important;grid-template-columns:minmax(0,1fr) auto auto!important;align-items:center!important;
+  width:clamp(255px,28vw,380px)!important;min-height:61px!important;gap:6px!important;
+  padding:8px!important;border-radius:18px!important;background:rgba(10,26,44,.96)!important;
+  border:1px solid rgba(94,177,218,.26)!important;box-shadow:0 18px 42px rgba(2,13,30,.25)!important;
+  pointer-events:auto!important}
+.composer input{width:100%!important;min-width:0!important;font-size:12px!important;padding:10px!important}
+.composer .btn{padding:9px 11px!important;min-height:38px!important;font-size:12px!important;grid-column:auto!important}
+.statusline{position:fixed!important;bottom:6px!important;right:30px!important;z-index:42!important;
+  max-width:370px!important;text-align:right!important;color:#527c94!important;font-size:10px!important;
+  pointer-events:none!important;overflow:hidden!important;white-space:nowrap!important;text-overflow:ellipsis!important}
+.chatbox{display:none!important}
+.chatbox.is-expanded{display:flex!important;position:fixed!important;z-index:105!important;
+  top:50%!important;left:50%!important;transform:translate(-50%,-50%)!important;
+  width:min(610px,calc(100vw - 30px))!important;height:min(380px,65dvh)!important;
+  max-height:none!important;min-height:0!important;overflow-y:auto!important;padding:18px!important;
+  border:1px solid #35516e!important;border-radius:20px!important;background:#102038!important;
+  box-shadow:0 25px 80px rgba(0,0,0,.38)!important;pointer-events:auto!important}
+/* Cinematic center dialog, hidden until SELA has a question or a user opens a report. */
+.advisor-shell{display:none!important;position:fixed!important;z-index:90!important;
+  left:calc(50% - 100px)!important;top:50%!important;transform:translate(-50%,-50%)!important;
+  width:min(880px,calc(100vw - 360px))!important;min-width:490px!important;
+  max-height:calc(100dvh - 56px)!important;overflow:auto!important;pointer-events:auto!important;
+  margin:0!important;padding:22px!important;border:1px solid rgba(108,178,220,.39)!important;
+  border-radius:24px!important;background:linear-gradient(160deg,#0e223b,#101d30)!important;
+  box-shadow:0 32px 100px rgba(5,16,33,.53)!important}
+.advisor-shell.is-open{display:block!important}
+.advisor-topbar{padding-right:35px!important}
+.advisor-title{font-size:20px!important}
+.advisor-shell .advisor-tab{border-radius:999px!important}
+.advisor-shell .advisor-panel{background:rgba(4,13,29,.48)!important}
+.cine-shade{position:fixed;inset:0;z-index:60;display:none;background:rgba(6,18,35,.40);
+  backdrop-filter:blur(3px);pointer-events:auto}
+.cine-shade.is-open{display:block}
+.cine-text-answer{display:none;position:fixed;z-index:90;top:50%;left:calc(50% - 100px);
+  transform:translate(-50%,-50%);width:min(680px,calc(100vw - 360px));min-width:490px;
+  max-height:calc(100dvh - 60px);overflow:auto;border:1px solid rgba(116,202,226,.38);
+  border-radius:25px;background:linear-gradient(155deg,#102a48,#102036);color:#f0f8ff;
+  box-shadow:0 32px 100px rgba(5,15,32,.5);padding:25px;pointer-events:auto}
+.cine-text-answer.is-open{display:block}
+.cine-minihead{display:flex;gap:11px;align-items:center;margin-bottom:18px}
+.cine-mini-avatar{display:grid;place-items:center;background:linear-gradient(130deg,#4be0cc,#5b9deb);
+  border-radius:14px;width:44px;height:44px;color:#05263b;font-size:22px;font-weight:900}
+.cine-minihead strong{display:block;font-size:16px;font-weight:800}
+.cine-minihead span{display:block;font-size:11px;color:#a3c8da;margin-top:3px}
+.cine-answer-message{white-space:pre-wrap;font-size:15px;line-height:1.85;overflow-wrap:anywhere;color:#e0f4ff;
+  border-left:3px solid #56d6c6;padding:2px 0 2px 19px}
+.cine-answer-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:19px;padding-top:13px;border-top:1px solid rgba(255,255,255,.1)}
+.cine-subtitle{position:fixed;z-index:110;left:calc((100vw - 305px) / 2);bottom:24px;
+  transform:translateX(-50%);width:min(730px,calc(100vw - 360px));min-height:0;
+  display:none;justify-content:center;align-items:center;text-align:center;pointer-events:none}
+.cine-subtitle.is-visible{display:flex}
+.cine-subtitle span{display:inline-block;padding:10px 17px;border-radius:13px;
+  background:rgba(4,10,19,.91);color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.55);
+  box-shadow:0 8px 23px rgba(0,0,0,.25);font-size:17px;font-weight:720;line-height:1.65;
+  letter-spacing:.01em;max-width:100%;overflow-wrap:anywhere}
+.cine-answer-close{position:absolute;top:14px;right:14px;z-index:101;display:grid;place-items:center;
+  width:35px;height:35px;border-radius:999px;border:1px solid rgba(138,194,229,.28);
+  background:#112d47;color:#ecfbff;font-size:20px;cursor:pointer}
+.cine-answer-close:hover{background:#16486b}
+.cine-microcopy{font-size:12px;color:#95bdcf;margin-top:13px;line-height:1.5}
+.cine-control-btn{border-radius:999px;padding:9px 14px;color:#e9f9ff;background:#153651;
+  border:1px solid #3d6e83;font-weight:720;cursor:pointer;font-size:12px}
+.cine-control-btn:hover{background:#205879}
+/* Ignore the cumbersome original panel until a question is asked; never drop its data or events. */
+@media(max-width:1040px){
+ .cine-text-answer,.advisor-shell{left:44%!important;width:min(680px,calc(100vw - 285px))!important;
+   min-width:0!important;max-height:calc(100dvh - 50px)!important}
+ .cine-subtitle{left:calc((100vw - 270px)/2);width:calc(100vw - 295px)}
+ .avatar-panel{right:14px!important;bottom:140px!important;width:195px!important;height:224px!important}
+ .selectors{right:13px!important;bottom:98px!important;width:220px!important}
+ .composer{right:13px!important;bottom:28px!important;width:270px!important}
+ .statusline{right:18px!important}
+ .chips{right:13px!important}
+}
+@media(max-width:690px){
+ .avatar-panel{right:12px!important;bottom:114px!important;width:124px!important;height:155px!important}
+ .avatar-card{border-radius:17px!important}
+ .selectors{right:12px!important;bottom:77px!important;width:183px!important;padding:5px!important}
+ .selectors .btn{padding:7px!important;font-size:9px!important;min-height:29px!important}
+ .composer{right:12px!important;bottom:12px!important;width:min(300px,calc(100vw - 22px))!important;
+   min-height:55px!important;grid-template-columns:minmax(0,1fr) auto auto!important}
+ .composer .btn{padding:9px!important;font-size:10px!important;min-height:32px!important}
+ .composer input{font-size:11px!important}
+ .statusline{display:none!important}
+ .chips{bottom:152px!important;right:12px!important}
+ .cine-text-answer,.advisor-shell{left:50%!important;top:39%!important;
+   width:calc(100vw - 24px)!important;min-width:0!important;max-height:61dvh!important;
+   padding:17px!important;border-radius:19px!important}
+ .advisor-shell .advisor-topbar{padding-right:30px!important}
+ .cine-answer-message{font-size:13px;line-height:1.65}
+ .cine-subtitle{left:50%;width:calc(100vw - 24px);bottom:80px}
+ .cine-subtitle span{font-size:13px;line-height:1.45;padding:7px 12px}
+}
+@media(prefers-reduced-motion:reduce){.cine-shade,.cine-subtitle{transition:none!important}}
+
 </style>
 </head>
 <body>
+  <div class="cine-shade" id="cineShade" aria-hidden="true"></div>
+  <section class="cine-text-answer" id="cineTextAnswer" role="region" aria-label="Jawaban SELA">
+    <button type="button" class="cine-answer-close" id="cineCloseText" title="Tutup jawaban">×</button>
+    <div class="cine-minihead"><div class="cine-mini-avatar">✦</div><div><strong>SELA menjawab</strong><span>Personal assistant · berdasarkan data aktif</span></div></div>
+    <div class="cine-answer-message" id="cineTextBody"></div>
+    <div class="cine-answer-actions">
+      <button class="cine-control-btn" type="button" id="cineShowReport">Tampilkan grafik / tabel</button>
+      <button class="cine-control-btn" type="button" id="cineCopyAnswer">Salin jawaban</button>
+      <button class="cine-control-btn" type="button" id="cineHistoryBtn">Riwayat percakapan</button>
+    </div>
+    <div class="cine-microcopy">Data diambil dari analisis SELA. Filter dashboard dan laporan existing tidak berubah.</div>
+  </section>
+  <div class="cine-subtitle" id="cineSubtitle" aria-live="polite" aria-atomic="true"><span id="cineSubtitleText"></span></div>
   <div class="sela-root">
     <div class="head">
       <div class="brand">
         <div class="logo">S</div>
         <div>
-          <div class="title">SELA v17 · Smooth Talking Virtual Human</div>
+          <div class="title">SELA v18 · Cinematic Personal Assistant</div>
           <div class="subtitle">Asisten pribadi virtual yang minimalis, modern, dan responsif. Semua kemampuan analisis, suara, insight visual, dan boardroom output tetap tersedia.</div>
         </div>
       </div>
@@ -9758,7 +9923,8 @@ def render_sela_widget(df_filtered, periode_col: str,
           <select id="voiceSelect"></select>
           <button id="checkMicBtn" class="btn dark">Cek Mic</button>
           <button id="testVoiceBtn" class="btn secondary">Uji Suara</button>
-          <button id="stopVoiceBtn" class="btn dark">Stop Suara</button>
+          <button id="stopVoiceBtn" class="btn dark">Stop</button>
+          <button type="button" id="cineMoreBtn" class="btn dark" title="Pertanyaan cepat dan pengaturan suara">⋯</button>
         </div>
 
         <div class="chips" id="quickChips">
@@ -9779,6 +9945,7 @@ def render_sela_widget(df_filtered, periode_col: str,
         </div>
 
         <div class="advisor-shell">
+          <button type="button" class="cine-answer-close" id="cineCloseReport" title="Tutup panel">×</button>
           <div class="advisor-topbar">
             <div>
               <div class="advisor-kicker">SELA Premium Workspace</div>
@@ -9820,8 +9987,8 @@ def render_sela_widget(df_filtered, periode_col: str,
         <div id="chatbox" class="chatbox"></div>
 
         <div class="composer">
-          <input id="textInput" class="chat-input" type="text" placeholder="Tanya apa saja tentang data SLA, transaksi, vendor, growth, atau nomor permohonan..." />
-          <button id="micBtn" class="btn primary">\U0001f399\ufe0f Bicara</button>
+          <input id="textInput" class="chat-input" type="text" placeholder="Tanya SELA..." />
+          <button id="micBtn" class="btn primary">🎙️ Bicara</button>
           <button id="sendBtn" class="btn send secondary">Kirim</button>
         </div>
         <div class="statusline" id="statusLine">Status: SELA siap membantu. Anda bisa bicara atau mengetik.</div>
@@ -10140,6 +10307,7 @@ def render_sela_widget(df_filtered, periode_col: str,
       let finished=false;
       setAvatarState('speaking');
       mouthText=utt.text;
+      cineStartSubtitle(utt.text);
       statusLine.textContent='Status: SELA menyiapkan suara dan ekspresi.';
       utt.onstart=()=>{
         if(sequence!==speakingGeneration) return;
@@ -10154,6 +10322,7 @@ def render_sela_widget(df_filtered, periode_col: str,
         const raw=String(utt.text).slice(at);
         const word=raw.split(/[^A-Za-z0-9]+/)[0] || '';
         cueMouthBoundary(word);
+        cineSubtitleBoundary(at);
       };
       utt.onpause=()=>{
         if(sequence!==speakingGeneration) return;
@@ -10168,6 +10337,7 @@ def render_sela_widget(df_filtered, periode_col: str,
         if(sequence!==speakingGeneration || finished) return;
         finished=true;
         setAvatarState('');
+        cineStopSubtitle();
         statusLine.textContent=error ?
           'Status: suara tidak tersedia atau terhenti. Coba Uji Suara / pilih voice lain.' :
           'Status: SELA siap membantu pertanyaan berikutnya.';
@@ -11158,7 +11328,8 @@ def render_sela_widget(df_filtered, periode_col: str,
         @media print{body{background:#fff}.briefing-preview{padding:0;max-width:none;margin:0;border-radius:0}
           .briefing-chart{max-height:185px}.briefing-section{margin-bottom:7px;padding:8px}.briefing-grid{margin-bottom:8px}
           h3{font-size:22px}.briefing-kpi{padding:9px}}
-        </style></head><body>${preview}</body></html>`;
+      
+  </style></head><body>${preview}</body></html>`;
     }
     function boardroomExportHtml(){
       boardroomDownloadText(boardroomDocument(),'text/html;charset=utf-8',boardroomBaseName()+'_Boardroom_Brief.html');
@@ -11196,6 +11367,107 @@ def render_sela_widget(df_filtered, periode_col: str,
       }
     }
 
+    // v18: comic-style responses and film subtitles, opt-in only when SELA is open.
+    const cineShade = document.getElementById('cineShade');
+    const cineTextAnswer = document.getElementById('cineTextAnswer');
+    const cineTextBody = document.getElementById('cineTextBody');
+    const cineSubtitle = document.getElementById('cineSubtitle');
+    const cineSubtitleText = document.getElementById('cineSubtitleText');
+    const cineMoreBtn = document.getElementById('cineMoreBtn');
+    const cineShortcutPanel = document.getElementById('quickChips');
+    const cineVoiceControls = document.querySelector('.selectors');
+    const cineReport = document.querySelector('.advisor-shell');
+    let cineLastQuestion = '';
+    let cineLastAnswer = '';
+    let cineLastMode = 'overview';
+    let cineSubtitleToken = 0;
+    let cineSubtitleInterval = null;
+    let cineSubtitleWords = [];
+    let cineSubtitleCursor = 0;
+    let cineLastBoundaryAt = 0;
+    let cineSubtitleDismiss = null;
+    function cineHideSubtitle(){
+      cineSubtitleToken++;
+      if(cineSubtitleInterval){clearInterval(cineSubtitleInterval);cineSubtitleInterval=null;}
+      if(cineSubtitleDismiss){clearTimeout(cineSubtitleDismiss);cineSubtitleDismiss=null;}
+      cineSubtitle.classList.remove('is-visible');
+      cineSubtitleText.textContent='';
+    }
+    function cineSubtitleAt(charIndex){
+      if(!cineSubtitleWords.length) return;
+      const loc = Math.max(0,Number(charIndex)||0);
+      let idx=0;
+      for(let i=0;i<cineSubtitleWords.length;i++){
+        if(cineSubtitleWords[i].start<=loc) idx=i;
+        else break;
+      }
+      cineSubtitleCursor=idx;
+      cineSubtitleText.textContent=cineSubtitleWords.slice(Math.max(0,idx-2),Math.min(cineSubtitleWords.length,idx+9))
+        .map(w=>w.word).join(' ');
+      cineSubtitle.classList.add('is-visible');
+    }
+    function cineStartSubtitle(text){
+      cineHideSubtitle();
+      const raw=String(text||'').replace(/\\s+/g,' ').trim();
+      cineSubtitleWords=[...raw.matchAll(/\\S+/g)].map(m=>({word:m[0],start:m.index}));
+      if(!cineSubtitleWords.length) return;
+      cineSubtitleAt(0);
+      const token=cineSubtitleToken;
+      cineLastBoundaryAt=0;
+      cineSubtitleInterval=setInterval(()=>{
+        if(token!==cineSubtitleToken){clearInterval(cineSubtitleInterval);cineSubtitleInterval=null;return;}
+        if(cineLastBoundaryAt && performance.now()-cineLastBoundaryAt<750) return;
+        cineSubtitleCursor=Math.min(cineSubtitleWords.length-1,cineSubtitleCursor+1);
+        cineSubtitleAt(cineSubtitleWords[cineSubtitleCursor].start);
+      },310);
+    }
+    function cineSubtitleBoundary(charIndex){
+      cineLastBoundaryAt=performance.now();
+      cineSubtitleAt(charIndex);
+    }
+    function cineStopSubtitle(){
+      if(cineSubtitleInterval){clearInterval(cineSubtitleInterval);cineSubtitleInterval=null;}
+      if(cineSubtitleDismiss) clearTimeout(cineSubtitleDismiss);
+      const token=cineSubtitleToken;
+      cineSubtitleDismiss=setTimeout(()=>{
+        if(token===cineSubtitleToken) cineHideSubtitle();
+      },1250);
+    }
+    function cineCloseAnswer(){
+      cineTextAnswer.classList.remove('is-open');
+      cineReport.classList.remove('is-open');
+      chatbox.classList.remove('is-expanded');
+      cineShade.classList.remove('is-open');
+      cineShade.setAttribute('aria-hidden','true');
+      // Audio keeps playing independently; Stop button remains available.
+    }
+    function cineOpenAnswer(mode,question,answerText){
+      cineLastQuestion=String(question||'');
+      cineLastAnswer=String(answerText||'');
+      cineLastMode=mode;
+      cineCloseAnswer();
+      cineShade.classList.add('is-open');
+      cineShade.setAttribute('aria-hidden','false');
+      if(mode==='overview'){
+        cineTextBody.textContent=cineLastAnswer;
+        cineTextAnswer.classList.add('is-open');
+      }else{
+        cineReport.classList.add('is-open');
+      }
+    }
+    function cineShowVisual(mode){
+      const question=cineLastQuestion || 'Tampilkan informasi eksekutif';
+      const answerText=cineLastAnswer || 'SELA menampilkan ringkasan data aktif.';
+      const selected=['overview','charts','tables','poster','briefing'].includes(mode)?mode:'charts';
+      refreshAdvisor(selected,question,answerText);
+      cineOpenAnswer(selected,question,answerText);
+    }
+    function cineOpenHistory(){
+      cineCloseAnswer();
+      cineShade.classList.add('is-open');
+      chatbox.classList.add('is-expanded');
+      chatbox.scrollTop=chatbox.scrollHeight;
+    }
     function handleQuestion(question){
       const q = String(question || '').trim();
       if(!q) return;
@@ -11217,8 +11489,9 @@ def render_sela_widget(df_filtered, periode_col: str,
         addMsg('bot', ans);
         boardroomQuestion = q;
         boardroomAnswer = ans;
-        refreshAdvisor(advisorMode, q, ans);
+        if(advisorMode !== 'overview') refreshAdvisor(advisorMode, q, ans);
         setBubble(ans);
+        cineOpenAnswer(advisorMode, q, ans);
         speak(ans);
       });
       textInput.value = '';
@@ -11238,8 +11511,8 @@ def render_sela_widget(df_filtered, periode_col: str,
       recognizer.interimResults = false;
       recognizer.maxAlternatives = 1;
       recognizer.onstart = () => {recognizing = true; setAvatarState('listening'); micBtn.textContent='\u23f9\ufe0f Stop'; statusLine.textContent='Status: SELA sedang mendengarkan...'; setBubble('Saya sedang mendengarkan. Silakan bicara dengan jelas ya.'); };
-      recognizer.onerror = (e) => {recognizing = false; micBtn.textContent='\U0001f399\ufe0f Bicara'; setAvatarState(''); statusLine.textContent = 'Status: mic belum masuk. Pastikan izin microphone di browser sudah Allow, lalu coba lagi. Detail: ' + e.error; setBubble('Saya belum menangkap suara. Coba klik Mic lagi, izinkan microphone, atau gunakan input teks.'); };
-      recognizer.onend = () => {recognizing = false; micBtn.textContent='\U0001f399\ufe0f Bicara'; if(!window.speechSynthesis.speaking){ setAvatarState(''); statusLine.textContent='Status: selesai mendengarkan, saya siap untuk pertanyaan berikutnya.'; } };
+      recognizer.onerror = (e) => {recognizing = false; micBtn.textContent='🎙️ Bicara'; setAvatarState(''); statusLine.textContent = 'Status: mic belum masuk. Pastikan izin microphone di browser sudah Allow, lalu coba lagi. Detail: ' + e.error; setBubble('Saya belum menangkap suara. Coba klik Mic lagi, izinkan microphone, atau gunakan input teks.'); };
+      recognizer.onend = () => {recognizing = false; micBtn.textContent='🎙️ Bicara'; if(!window.speechSynthesis.speaking){ setAvatarState(''); statusLine.textContent='Status: selesai mendengarkan, saya siap untuk pertanyaan berikutnya.'; } };
       recognizer.onresult = (event) => { const text = event.results && event.results[0] && event.results[0][0] ? event.results[0][0].transcript : ''; handleQuestion(text); };
       return recognizer;
     }
@@ -11273,6 +11546,7 @@ def render_sela_widget(df_filtered, periode_col: str,
       if(mouthDemoTimer){clearTimeout(mouthDemoTimer);mouthDemoTimer=null;}
       if(mouthDemoBtn) mouthDemoBtn.textContent='▶ Demo Ekspresi · 6 dtk';
       setAvatarState('');
+      cineHideSubtitle();
       statusLine.textContent = 'Status: suara dihentikan.';
     });
     if(mouthDemoBtn) mouthDemoBtn.addEventListener('click', selaDemoExpressions);
@@ -11287,13 +11561,38 @@ def render_sela_widget(df_filtered, periode_col: str,
     advisorTabs.forEach(btn => btn.addEventListener('click', () => {
       const mode = btn.dataset.tab || 'overview';
       refreshAdvisor(mode, boardroomQuestion, boardroomAnswer || speechBubble.textContent || '');
+      if(!cineReport.classList.contains('is-open')) cineOpenAnswer(mode, boardroomQuestion, boardroomAnswer || '');
     }));
     document.querySelectorAll('.boardroom-action').forEach(btn =>
       btn.addEventListener('click', () => boardroomHandleExport(btn.dataset.export)));
+    document.getElementById('cineCloseText').addEventListener('click',cineCloseAnswer);
+    document.getElementById('cineCloseReport').addEventListener('click',cineCloseAnswer);
+    cineShade.addEventListener('click',cineCloseAnswer);
+    document.getElementById('cineShowReport').addEventListener('click',()=>cineShowVisual('charts'));
+    document.getElementById('cineHistoryBtn').addEventListener('click',cineOpenHistory);
+    document.getElementById('cineCopyAnswer').addEventListener('click',()=>{
+      const text=cineLastAnswer||'';
+      if(navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(()=>{statusLine.textContent='Status: jawaban tersalin.';})
+        .catch(()=>{statusLine.textContent='Status: gunakan pilih teks dan salin.';});
+      }
+    });
+    // Keep the v17 silent expression demo reachable from the advanced options.
+    if(mouthDemoBtn) cineVoiceControls.appendChild(mouthDemoBtn);
+    cineMoreBtn.addEventListener('click',()=>{
+      const next=!cineShortcutPanel.classList.contains('is-expanded');
+      cineShortcutPanel.classList.toggle('is-expanded',next);
+      cineVoiceControls.classList.toggle('is-expanded',next);
+      cineMoreBtn.setAttribute('aria-expanded',String(next));
+      cineMoreBtn.textContent=next?'×':'⋯';
+    });
+    document.addEventListener('keydown',(e)=>{
+      if(e.key==='Escape'){cineCloseAnswer();cineShortcutPanel.classList.remove('is-expanded');cineVoiceControls.classList.remove('is-expanded');}
+    });
 
     populateMetrics();
-    refreshAdvisor('overview', '', 'Halo, saya SELA. Silakan gunakan workspace Executive Advisor untuk melihat insight, grafik, tabel, dan poster berbasis data aktif.');
-    addMsg('bot', 'Halo, saya SELA. Senang bisa membantu Anda. Silakan tanyakan apa saja terkait data SLA yang sedang aktif, dan saya akan menjawabnya dengan bahasa yang natural, ramah, informatif, serta menyiapkan tampilan visual bila diperlukan.');
+    // v18 remains visually idle until a question is asked, avoiding unnecessary visual rendering.
+    addMsg('bot', 'Halo, saya SELA. Senang bisa membantu Anda. Silakan ketik atau ucapkan pertanyaan. Setelah Anda bertanya, saya akan menjawab dan menyiapkan teks, tabel, grafik, poster, atau Boardroom sesuai kebutuhan.');
   </script>
 </body>
 </html>
@@ -11301,8 +11600,8 @@ def render_sela_widget(df_filtered, periode_col: str,
 
     components.html(
         html.replace("___SELA_PAYLOAD___", data_json),
-        height=980,
-        scrolling=True,  # fallback agar SELA dapat di-scroll jika host tidak auto-resize
+        height=960,  # Native dialog CSS expands the iframe to the viewport.
+        scrolling=False,  # Cinematic panels manage their own scroll; prevent nested scrollbars.
     )
 
 
@@ -11312,6 +11611,57 @@ def render_sela_widget(df_filtered, periode_col: str,
 # menciptakan tab baru. Tombol X pada dialog menutup asisten secara normal.
 
 def _sela_launch_body():
+    # Scope the cinematic dialog to SELA only. Keep regular Streamlit tabs intact.
+    st.markdown('<div id="sela_v18_dialog_marker" aria-hidden="true"></div>', unsafe_allow_html=True)
+    st.markdown("""
+    <style>
+    /* SELA v18: the dialog is a transparent full-screen stage; the assistant is
+       docked inside its iframe, while reports appear in the center of the SAME tab. */
+    div[data-testid="stDialog"]:has(#sela_v18_dialog_marker) [role="dialog"],
+    [role="dialog"]:has(#sela_v18_dialog_marker) {
+      position:fixed!important; inset:0!important;
+      transform:none!important; margin:0!important;
+      width:100vw!important; max-width:100vw!important;
+      height:100dvh!important; max-height:100dvh!important;
+      padding:0!important; overflow:visible!important;
+      border:0!important; border-radius:0!important;
+      background:transparent!important; box-shadow:none!important;
+    }
+    div[data-testid="stDialog"]:has(#sela_v18_dialog_marker) iframe,
+    [role="dialog"]:has(#sela_v18_dialog_marker) iframe {
+      position:fixed!important; inset:0!important;
+      width:100vw!important; height:100dvh!important;
+      max-height:100dvh!important; border:0!important;
+      background:transparent!important; z-index:1!important;
+    }
+    div[data-testid="stDialog"]:has(#sela_v18_dialog_marker)
+      [data-testid="stVerticalBlockBorderWrapper"],
+    div[data-testid="stDialog"]:has(#sela_v18_dialog_marker)
+      [data-testid="stVerticalBlock"],
+    div[data-testid="stDialog"]:has(#sela_v18_dialog_marker)
+      [data-testid="stElementContainer"] {
+      padding:0!important; margin:0!important; min-height:0!important;
+    }
+    div[data-testid="stDialog"]:has(#sela_v18_dialog_marker) button[aria-label="Close"],
+    div[data-testid="stDialog"]:has(#sela_v18_dialog_marker) button[aria-label="Close dialog"],
+    [role="dialog"]:has(#sela_v18_dialog_marker) button[aria-label="Close"],
+    [role="dialog"]:has(#sela_v18_dialog_marker) button[aria-label="Close dialog"] {
+      position:fixed!important;top:14px!important;right:17px!important;
+      z-index:10000!important; color:#eef8ff!important;
+      background:#132a42!important;border:1px solid #466781!important;
+      border-radius:999px!important;
+    }
+    /* Disable the dark full-screen overlay, not the panel controls. */
+    div[data-testid="stDialog"]:has(#sela_v18_dialog_marker) ~ div {
+      box-shadow:none;
+    }
+    @media(max-width:700px){
+      div[data-testid="stDialog"]:has(#sela_v18_dialog_marker) button[aria-label="Close"] {
+        top:8px!important;right:8px!important;
+      }
+    }
+    </style>
+    """, unsafe_allow_html=True)
     render_sela_widget(
         df_filtered, periode_col,
         source_version=_sla_source_version,
@@ -11320,7 +11670,7 @@ def _sela_launch_body():
     )
 
 if callable(getattr(st, "dialog", None)):
-    @st.dialog("SELA • Personal Assistant", width="large")
+    @st.dialog("SELA • Cinematic Assistant", width="large")
     def _sela_open_dialog():
         # Dialog scoped to its own fragment, without re-rendering the entire app
         # for chat/voice clicks inside the embedded SELA widget.
