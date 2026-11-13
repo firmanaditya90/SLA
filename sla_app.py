@@ -10723,6 +10723,20 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
       if(w.indexOf('e') >= 0 || w.indexOf('i') >= 0) return 2;
       return 1;
     }
+    function hardResetMouthVisuals(){
+      if(mouthAnimFrame){cancelAnimationFrame(mouthAnimFrame);mouthAnimFrame=null;}
+      mouthSprites.forEach(img => {if(img) img.style.opacity='0';});
+      premiumMouthSprites.forEach(img => {if(img) img.style.opacity='0';});
+      selaV211Lips.forEach(img => {if(img) img.style.opacity='0';});
+      selaV22MouthFrames.forEach(img => {if(img) img.style.opacity='0';});
+      shapeOpacity.fill(0);
+      selaV211MouthPosition=2.6;
+      selaV211MouthStrength=0;
+      selaV22Current=0;
+      selaV22Strength=0;
+      selaPremiumRestOpacity=0;
+      if(premiumRest) premiumRest.style.opacity='0';
+    }
     function startSmoothMouth(text){
       mouthSpeaking = true;
       mouthStartAt = performance.now();
@@ -10735,15 +10749,24 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
       if(faceStatus) faceStatus.textContent = '● BERBICARA';
       if(!mouthAnimFrame) mouthAnimFrame = requestAnimationFrame(animateMouth);
     }
-    function stopSmoothMouth(){
+    function stopSmoothMouth(immediate=false){
       mouthSpeaking = false;
       mouthTargetShape = 0;
+      mouthText = '';
       lastWordCueAt = 0;
+      lastWordCue = '';
+      mouthFrameIndex = 0;
+      mouthChangeAt = performance.now();
+      if(immediate){
+        hardResetMouthVisuals();
+        if(faceStatus) faceStatus.textContent = '● SIAP';
+        return;
+      }
       if(!mouthAnimFrame && shapeOpacity.some(v => v > .01)){
         mouthAnimFrame = requestAnimationFrame(animateMouth);
       }
       if(!mouthAnimFrame){
-        mouthSprites.forEach(img => {if(img) img.style.opacity='0';});
+        hardResetMouthVisuals();
       }
       if(faceStatus) faceStatus.textContent = '● SIAP';
     }
@@ -11009,9 +11032,9 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
       femaleAvatar.classList.remove('speaking','listening','thinking');
       if(state) femaleAvatar.classList.add(state);
       if(state === 'speaking'){
-        if(sela3DActive)stopSmoothMouth();else startSmoothMouth();
+        if(sela3DActive)stopSmoothMouth(true);else startSmoothMouth();
       } else {
-        stopSmoothMouth();
+        stopSmoothMouth(true);
         if(state === 'listening' && faceStatus) faceStatus.textContent='● MENDENGARKAN';
         if(state === 'thinking' && faceStatus) faceStatus.textContent='● MENGANALISIS';
       }
@@ -11136,6 +11159,8 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
         if(sequence!==speakingGeneration||completed)return;
         completed=true;
         if(selaVoiceNextTimer!==null){clearTimeout(selaVoiceNextTimer);selaVoiceNextTimer=null;}
+        try{window.speechSynthesis.cancel();}catch(_cancelErr){}
+        stopSmoothMouth(true);
         setAvatarState('');
         cineStopSubtitle();
         statusLine.textContent=hasError ?
