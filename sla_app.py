@@ -10000,24 +10000,61 @@ body.sela-narrow-host .cine-subtitle span{height:106px!important;min-height:106p
 @media(prefers-reduced-motion:reduce){.cine-subtitle,.cine-subtitle span{transition:none!important}}
 
 
-/* SELA v18.3: boardroom content remains fully accessible at every scroll position. */
+/* SELA v18.4: report must stay to the RIGHT of Streamlit's sidebar and BELOW its header.
+   Host-aware CSS variables are set by selaUpdateHostSize(). No data or export paths change. */
 body.sela-frame-expanded .advisor-shell.is-open{
-  top:18px!important;left:clamp(18px,3vw,54px)!important;right:auto!important;
-  transform:none!important;width:min(950px,calc(100vw - 390px))!important;
-  min-width:0!important;height:calc(100dvh - 36px)!important;
-  max-height:calc(100dvh - 36px)!important;
+  position:fixed!important;
+  top:var(--sela-safe-top,76px)!important;
+  left:var(--sela-safe-left,280px)!important;
+  right:auto!important;bottom:auto!important;
+  transform:none!important;
+  width:min(900px,calc(100vw - var(--sela-safe-left,280px) - 30px))!important;
+  max-width:calc(100vw - var(--sela-safe-left,280px) - 30px)!important;
+  min-width:0!important;
+  height:calc(100dvh - var(--sela-safe-top,76px) - 20px)!important;
+  max-height:calc(100dvh - var(--sela-safe-top,76px) - 20px)!important;
   overflow-y:auto!important;overflow-x:hidden!important;
   overscroll-behavior:contain!important;scrollbar-gutter:stable;
   scroll-padding-top:14px;box-sizing:border-box!important;
 }
 body.sela-medium-host.sela-frame-expanded .advisor-shell.is-open{
-  left:14px!important;width:calc(100vw - 300px)!important;
+  left:var(--sela-safe-left,246px)!important;
+  width:calc(100vw - var(--sela-safe-left,246px) - 20px)!important;
+  max-width:calc(100vw - var(--sela-safe-left,246px) - 20px)!important;
 }
 body.sela-narrow-host.sela-frame-expanded .advisor-shell.is-open{
-  top:12px!important;left:12px!important;
-  width:calc(100vw - 24px)!important;
-  height:calc(100dvh - 242px)!important;max-height:calc(100dvh - 242px)!important;
+  top:var(--sela-safe-top,64px)!important;
+  left:12px!important;width:calc(100vw - 24px)!important;
+  max-width:calc(100vw - 24px)!important;
+  height:calc(100dvh - var(--sela-safe-top,64px) - 206px)!important;
+  max-height:calc(100dvh - var(--sela-safe-top,64px) - 206px)!important;
   padding:16px!important;
+}
+/* Standard text answers and conversation history use the same viewport-safe origin. */
+body.sela-frame-expanded .cine-text-answer.is-open{
+  top:var(--sela-safe-top,76px)!important;
+  left:var(--sela-safe-left,280px)!important;
+  right:auto!important;transform:none!important;
+  width:min(700px,calc(100vw - var(--sela-safe-left,280px) - 30px))!important;
+  max-width:calc(100vw - var(--sela-safe-left,280px) - 30px)!important;
+  min-width:0!important;
+  max-height:calc(100dvh - var(--sela-safe-top,76px) - 24px)!important;
+  overflow-y:auto!important;box-sizing:border-box!important;
+}
+body.sela-frame-expanded .chatbox.is-expanded{
+  top:var(--sela-safe-top,76px)!important;
+  left:var(--sela-safe-left,280px)!important;
+  right:auto!important;transform:none!important;
+  width:min(660px,calc(100vw - var(--sela-safe-left,280px) - 30px))!important;
+  max-width:calc(100vw - var(--sela-safe-left,280px) - 30px)!important;
+  max-height:calc(100dvh - var(--sela-safe-top,76px) - 24px)!important;
+  box-sizing:border-box!important;
+}
+body.sela-narrow-host.sela-frame-expanded .cine-text-answer.is-open,
+body.sela-narrow-host.sela-frame-expanded .chatbox.is-expanded{
+  top:var(--sela-safe-top,64px)!important;left:12px!important;
+  width:calc(100vw - 24px)!important;max-width:calc(100vw - 24px)!important;
+  max-height:calc(100dvh - var(--sela-safe-top,64px) - 206px)!important;
 }
 .advisor-shell .advisor-panel,.advisor-shell .advisor-grid,.advisor-shell .viz-card{
   min-width:0!important;max-width:100%!important;box-sizing:border-box!important;
@@ -10080,7 +10117,7 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
       <div class="brand">
         <div class="logo">S</div>
         <div>
-          <div class="title">SELA v18.3 · Annual Intelligence</div>
+          <div class="title">SELA v18.4 · Popup Responsive Hotfix</div>
           <div class="subtitle">Asisten pribadi virtual yang minimalis, modern, dan responsif. Semua kemampuan analisis, suara, insight visual, dan boardroom output tetap tersedia.</div>
         </div>
       </div>
@@ -11881,6 +11918,33 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
       const hostWidth=selaHostViewportWidth();
       document.body.classList.toggle('sela-narrow-host',hostWidth<650);
       document.body.classList.toggle('sela-medium-host',hostWidth>=650&&hostWidth<1090);
+      // Streamlit adds its own sidebar and top toolbar OUTSIDE the embedded SELA
+      // iframe. Measure the host in CSS viewport coordinates; otherwise a fixed
+      // popup can sit underneath the sidebar, making its left half inaccessible.
+      const narrow=hostWidth<650;
+      let sidebarRight=narrow ? 0 : Math.min(280,Math.max(200,hostWidth*.17));
+      let headerBottom=52;
+      try{
+        const hostDoc=window.frameElement?.ownerDocument;
+        if(hostDoc){
+          const sidebar=hostDoc.querySelector('[data-testid="stSidebar"]');
+          if(sidebar){
+            const rect=sidebar.getBoundingClientRect();
+            if(rect.width>100 && rect.right>0 && rect.left<hostWidth-80 && rect.right<hostWidth*.7)
+              sidebarRight=rect.right;
+            else if(rect.width<30 || rect.right<=0) sidebarRight=0;
+          }
+          const header=hostDoc.querySelector('header[data-testid="stHeader"]');
+          if(header){
+            const rect=header.getBoundingClientRect();
+            if(rect.height>0 && rect.bottom>0 && rect.bottom<160) headerBottom=rect.bottom;
+          }
+        }
+      }catch(_err){ /* Browser sandbox: use responsive safe defaults. */ }
+      const left=narrow ? 12 : Math.max(22,Math.min(hostWidth-200,Math.round(sidebarRight+22)));
+      const top=Math.max(62,Math.min(128,Math.round(headerBottom+16)));
+      document.documentElement.style.setProperty('--sela-safe-left',left+'px');
+      document.documentElement.style.setProperty('--sela-safe-top',top+'px');
     }
     selaUpdateHostSize();
     window.addEventListener('resize',selaUpdateHostSize,{passive:true});
@@ -11889,6 +11953,7 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
       if(hostWin && hostWin!==window) hostWin.addEventListener('resize',selaUpdateHostSize,{passive:true});
     }catch(e){}
     function selaFrameExpanded(expanded){
+      if(expanded) selaUpdateHostSize(); // synchronize sidebar/header before showing a report
       document.body.classList.toggle('sela-frame-expanded',Boolean(expanded));
       // Streamlit's component iframe is same-origin; frameElement is intentionally
       // resized only while a response is open, keeping page scroll available otherwise.
