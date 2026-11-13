@@ -10223,7 +10223,35 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
         transition:none!important;transform:none!important;will-change:auto;
       }
     }
+
+    /* SELA v20: explicit opt-in 3D pilot. No 3D resources loaded until user clicks. */
+    .hero-stage{position:relative;isolation:isolate}
+    .sela-3d-switch{position:absolute;top:11px;right:11px;z-index:30;
+      display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:7px 10px;
+      border:1px solid rgba(87,210,200,.42);background:rgba(9,29,48,.9);
+      backdrop-filter:blur(8px);color:#e8fbff;font-size:11px;font-weight:800;
+      cursor:pointer;box-shadow:0 8px 16px rgba(0,0,0,.22)}
+    .sela-3d-switch:hover{background:#17516b}
+    .sela-3d-switch[disabled]{opacity:.65;cursor:wait}
+    .sela-3d-switch[aria-pressed="true"]{background:rgba(30,111,101,.92);border-color:#5ee0ce}
+    .sela-3d-stage{display:block;visibility:hidden;position:absolute;inset:0;border-radius:inherit;overflow:hidden;
+      background:radial-gradient(circle at 50% 36%,rgba(82,169,207,.15),transparent 55%),#0b1a2a}
+    .sela-3d-stage.is-active{visibility:visible}
+    .sela-3d-canvas{width:100%;height:100%;min-height:270px}
+    .sela-3d-message{position:absolute;bottom:13px;left:12px;right:12px;
+      font-size:11px;line-height:1.4;color:#d7efff;padding:7px 10px;
+      background:rgba(7,20,36,.73);border-radius:10px;text-align:center;pointer-events:none}
+    .hero-stage.is-3d .avatar-wrap{visibility:hidden;pointer-events:none}
+    .sela-3d-note{color:#acd1e2;font-size:10px;text-align:center;line-height:1.45}
+    @media(prefers-reduced-motion:reduce){.sela-3d-switch{transition:none}}
 </style>
+<script type="importmap">
+{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js/+esm",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
+  "talkinghead": "https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@1.8/modules/talkinghead.mjs"
+}}
+</script>
 </head>
 <body>
   <div class="cine-shade" id="cineShade" aria-hidden="true"></div>
@@ -10244,7 +10272,7 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
       <div class="brand">
         <div class="logo">S</div>
         <div>
-          <div class="title">SELA v18.4 · Popup Responsive Hotfix</div>
+          <div class="title">SELA v20 · 3D Pilot (Opsional)</div>
           <div class="subtitle">Asisten pribadi virtual yang minimalis, modern, dan responsif. Semua kemampuan analisis, suara, insight visual, dan boardroom output tetap tersedia.</div>
         </div>
       </div>
@@ -10280,6 +10308,12 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
               </div>
             </div>
           </div>
+          <div class="sela-3d-stage" id="sela3DStage" aria-hidden="true">
+            <div id="sela3DCanvas" class="sela-3d-canvas"></div>
+            <div id="sela3DMessage" class="sela-3d-message">Mode 3D Pilot · Model gratis MPFB / TalkingHead</div>
+          </div>
+          <button type="button" id="sela3DSwitch" class="sela-3d-switch" aria-pressed="false"
+              title="Aktifkan model wanita 3D opsional. Memerlukan WebGL dan koneksi untuk memuat model CC0.">✧ 3D Beta</button>
         </div>
         <div class="wavebar-wrap"><div class="wavebar"></div><div class="wavebar"></div><div class="wavebar"></div><div class="wavebar"></div><div class="wavebar"></div></div>
         <button type="button" class="sela-mouth-demo" id="selaMouthDemoBtn" title="Uji gerakan bibir, kepala, dan napas selama 6 detik tanpa suara">▶ Demo Ekspresi · 6 dtk</button>
@@ -10639,18 +10673,157 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
       };
       tick();
     }
+    // =============================================================
+    // SELA v20 optional 3D (MPFB CC0 model + MIT TalkingHead)
+    // This module is opt-in, does not read/upload payment data, and
+    // falls back to the proven SELA 2D whenever a 3D load fails.
+    // =============================================================
+    const sela3DSwitch = document.getElementById('sela3DSwitch');
+    const sela3DStage = document.getElementById('sela3DStage');
+    const sela3DCanvas = document.getElementById('sela3DCanvas');
+    const sela3DMessage = document.getElementById('sela3DMessage');
+    const selaHeroStage = sela3DStage.closest('.hero-stage');
+    let sela3DHead = null;
+    let sela3DActive = false;
+    let sela3DLoading = false;
+    let sela3DDesired = false;
+    let sela3DMode = '';
+    let sela3DWordPulse = 0;
+    let sela3DMouthValue = 0;
+    let sela3DGestureTime = 0;
+    const sela3DModelUrl = 'https://raw.githubusercontent.com/met4citizen/TalkingHead/main/avatars/mpfb.glb';
+
+    function sela3DStatus(text){
+      sela3DMessage.textContent = text;
+    }
+    function sela3DWordCue(){
+      sela3DWordPulse = performance.now();
+    }
+    // Browser speechSynthesis does not expose decoded PCM/audio; therefore
+    // 3D visemes are a smooth approximation, not phoneme-level lip-sync.
+    function sela3DFrame(){
+      if(!sela3DActive || !sela3DHead || !Array.isArray(sela3DHead.morphs))return;
+      const now=performance.now();
+      const talking=sela3DMode==='speaking';
+      const pulse=Math.exp(-Math.max(0,now-sela3DWordPulse)/270);
+      const rhythmic=0.24+0.17*Math.sin(now*.017)+0.12*Math.sin(now*.029);
+      const target=talking ? Math.min(.62,Math.max(.08,rhythmic+0.24*pulse)) : 0;
+      sela3DMouthValue+=(target-sela3DMouthValue)*.26;
+      const value=Math.max(0,Math.min(.72,sela3DMouthValue));
+      for(const mesh of sela3DHead.morphs){
+        const dict=mesh.morphTargetDictionary;
+        const arr=mesh.morphTargetInfluences;
+        if(!dict||!arr)continue;
+        for(const key of ['jawOpen','viseme_aa','mouthOpen']){
+          const idx=dict[key];
+          if(idx!==undefined)arr[idx]=value;
+        }
+      }
+    }
+    function sela3DMotion(state){
+      sela3DMode=state||'';
+      if(!sela3DActive||!sela3DHead)return;
+      if(state==='speaking'){
+        sela3DStatus('● SELA 3D BERBICARA');
+        try{sela3DHead.makeEyeContact(1.2);}catch(_e){}
+        if(performance.now()-sela3DGestureTime>4500){
+          sela3DGestureTime=performance.now();
+          try{sela3DHead.playGesture('side',2,false,650);}catch(_e){}
+        }
+      } else if(state==='listening'){
+        sela3DStatus('● SELA 3D MENDENGARKAN');
+        try{sela3DHead.lookAtCamera(1.2);}catch(_e){}
+      } else {
+        sela3DStatus('● SELA 3D SIAP MEMBANTU');
+      }
+    }
+    function sela3DFallback(reason){
+      sela3DActive=false;
+      sela3DDesired=false;
+      sela3DStage.classList.remove('is-active');
+      sela3DStage.setAttribute('aria-hidden','true');
+      selaHeroStage.classList.remove('is-3d');
+      sela3DSwitch.setAttribute('aria-pressed','false');
+      sela3DSwitch.textContent='✧ 3D Beta';
+      sela3DSwitch.disabled=false;
+      if(sela3DHead){try{sela3DHead.stop();}catch(_e){}}
+      if(femaleAvatar.classList.contains('speaking'))startSmoothMouth();
+      if(reason){
+        const msg='3D belum dapat dimuat ('+reason+'). Avatar 2D tetap aktif.';
+        if(statusLine)statusLine.textContent='Status: '+msg;
+      }
+    }
+    async function sela3DToggle(){
+      if(sela3DLoading)return;
+      if(sela3DActive){sela3DFallback('dinonaktifkan');return;}
+      sela3DDesired=true;
+      sela3DLoading=true;
+      sela3DSwitch.disabled=true;
+      sela3DSwitch.textContent='3D Memuat…';
+      sela3DStatus('Memeriksa WebGL…');
+      try{
+        const canvas=document.createElement('canvas');
+        const gl=canvas.getContext('webgl2')||canvas.getContext('webgl');
+        if(!gl)throw new Error('WebGL tidak tersedia');
+        if(!sela3DHead){
+          sela3DStatus('Memuat TalkingHead & model MPFB CC0…');
+          const module=await import('talkinghead');
+          if(!module||typeof module.TalkingHead!=='function')throw new Error('engine TalkingHead tidak tersedia');
+          const head=new module.TalkingHead(sela3DCanvas,{
+            cameraView:'upper',cameraRotateEnable:false,cameraPanEnable:false,
+            cameraZoomEnable:false,avatarIdleHeadMove:.28,avatarSpeakingHeadMove:.48,
+            lightAmbientIntensity:2,lightDirectIntensity:17,
+            update:()=>sela3DFrame(),
+          });
+          sela3DHead=head;
+          await head.showAvatar({
+            url:sela3DModelUrl,
+            body:'F',avatarMood:'neutral',
+            avatarIdleEyeContact:.6,avatarSpeakingEyeContact:.85,
+            avatarSpeakingHeadMove:.48,
+          });
+          head.setView('upper');
+        } else {
+          try{sela3DHead.start();}catch(_e){}
+        }
+        if(!sela3DDesired){sela3DFallback(null);return;}
+        sela3DActive=true;
+        sela3DStage.classList.add('is-active');
+        sela3DStage.setAttribute('aria-hidden','false');
+        selaHeroStage.classList.add('is-3d');
+        sela3DSwitch.textContent='↶ 2D Asli';
+        sela3DSwitch.setAttribute('aria-pressed','true');
+        sela3DMotion(femaleAvatar.classList.contains('speaking')?'speaking':femaleAvatar.classList.contains('listening')?'listening':'');
+        stopSmoothMouth();
+      }catch(err){
+        console.warn('SELA 3D optional load failed:',err);
+        sela3DFallback(err&&err.message ? String(err.message).slice(0,90) : 'koneksi/model');
+      }finally{
+        sela3DLoading=false;
+        sela3DSwitch.disabled=false;
+      }
+    }
+    sela3DSwitch.addEventListener('click',sela3DToggle);
+    document.addEventListener('visibilitychange',()=>{
+      if(!sela3DActive||!sela3DHead)return;
+      try{if(document.hidden)sela3DHead.stop();else sela3DHead.start();}catch(_e){}
+    });
+    // ===================== END optional 3D =====================
+
     function setAvatarState(state){
       const previous = femaleAvatar.classList.contains('speaking') ? 'speaking' :
                        femaleAvatar.classList.contains('listening') ? 'listening' : '';
       femaleAvatar.classList.remove('speaking','listening');
       if(state) femaleAvatar.classList.add(state);
-      if(state === 'speaking') startSmoothMouth();
-      else {
+      if(state === 'speaking'){
+        if(sela3DActive)stopSmoothMouth();else startSmoothMouth();
+      } else {
         stopSmoothMouth();
         if(state === 'listening' && faceStatus) faceStatus.textContent='● MENDENGARKAN';
       }
+      sela3DMotion(state);
       if(state !== previous){
-        if(state === 'speaking' || state === 'listening') selaStartPose(state);
+        if(!sela3DActive && (state === 'speaking' || state === 'listening')) selaStartPose(state);
         else selaStopPose();
       }
     }
@@ -10804,6 +10977,7 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
           const raw=chunkText.slice(at);
           const word=raw.split(/[^A-Za-z0-9]+/)[0]||'';
           cueMouthBoundary(word);
+          sela3DWordCue();
           cineSubtitleBoundary(at,len);
         };
         utt.onpause=()=>{
