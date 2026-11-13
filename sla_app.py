@@ -9099,7 +9099,7 @@ def build_sela_payload(df_filtered, periode_col: str):
     payload = {
         "meta": {
             "assistant_name": "SELA",
-            "version": "v13-boardroom",
+            "version": "v19-branch-intelligence",
         },
         "metrics": {},
         "period_stats": [],
@@ -9338,7 +9338,9 @@ def build_sela_payload(df_filtered, periode_col: str):
 def _sela_active_payload_cached(source_version: str, selected_keys: tuple,
                                 period_col: str, _active_df: pd.DataFrame):
     """Re-use SELA v11 aggregates on repeated tab toggles and widget changes."""
-    return build_sela_payload(_active_df, period_col)
+    active = build_sela_payload(_active_df, period_col)
+    active.update(_sela_branch_year_stats_from_parsed(_active_df, period_col))
+    return active
 
 
 def _sela_history_from_parsed(_parsed: pd.DataFrame, period_col: str):
@@ -9412,6 +9414,94 @@ def _sela_history_from_parsed(_parsed: pd.DataFrame, period_col: str):
             "total_rows": int(len(data))}
 
 
+def _sela_branch_year_stats_from_parsed(parsed_df: pd.DataFrame, period_col: str,
+                                        raw_sla_series=None):
+    """Deterministic annual branch SLA ranking, consistent with Tab Vendor rules.
+
+    Cabang are identified by a dedicated branch column when available, or from
+    NAMA VENDOR containing 'GM CABANG' as the existing Tab Vendor does. For
+    branches, the existing dashboard's duration is FUNGSIONAL (seconds), not
+    VENDOR or TOTAL WAKTU. Only valid non-negative durations enter the mean.
+    """
+    empty = {"branch_year_stats": [], "branch_year_meta": {
+        "label_column": None, "sla_column": "FUNGSIONAL", "unit": "hari",
+        "definition": "Cabang: nama cabang atau NAMA VENDOR berisi GM CABANG. SLA: FUNGSIONAL.",
+    }}
+    if (parsed_df is None or parsed_df.empty or period_col not in parsed_df.columns
+            or "FUNGSIONAL" not in parsed_df.columns):
+        return empty
+
+    cols = list(parsed_df.columns)
+    branch_col = _choose_col(cols, ["NAMA CABANG", "CABANG ASAL", "UNIT CABANG"])
+    vendor_col = _choose_col(cols, ["NAMA VENDOR"])
+    if branch_col:
+        names = parsed_df[branch_col].fillna("").astype(str).str.strip()
+        is_branch = (names.ne("") & ~names.str.lower().isin(["nan", "none", "null", "-"]))
+    elif vendor_col:
+        names = parsed_df[vendor_col].fillna("").astype(str).str.strip()
+        is_branch = names.str.contains("GM CABANG", case=False, regex=False, na=False)
+        branch_col = vendor_col
+    else:
+        return empty
+
+    if "PERIODE_DATETIME" in parsed_df.columns:
+        periods = pd.to_datetime(parsed_df["PERIODE_DATETIME"], errors="coerce")
+    else:
+        labels = parsed_df[period_col].astype(str)
+        lookup = {value: parse_period_label_to_timestamp(value) for value in labels.unique()}
+        periods = pd.to_datetime(labels.map(lookup), errors="coerce")
+    valid_rows = is_branch & periods.notna()
+    if not bool(valid_rows.any()):
+        empty["branch_year_meta"]["label_column"] = branch_col
+        return empty
+
+    # Parsed input has native seconds. Never re-run document OCR or SLA parsing.
+    durations = pd.to_numeric(parsed_df.loc[valid_rows, "FUNGSIONAL"], errors="coerce")
+    durations = durations.where(durations.ge(0))
+    if raw_sla_series is not None:
+        # Existing parse_sla returns zero even for unrecognized free text.
+        # Do not let e.g. '-' or 'N/A' win the fastest-branch ranking as 0 days.
+        original = pd.Series(raw_sla_series, index=parsed_df.index).loc[valid_rows]
+        recognized = original.fillna("").astype(str).str.contains(
+            r"\d+\s*DAY\b|\d{1,2}:\d{2}", case=False, regex=True)
+        durations = durations.where(recognized)
+    groups = pd.DataFrame({
+        "year": periods.loc[valid_rows].dt.year.astype(int).astype(str).to_numpy(),
+        "branch": names.loc[valid_rows].to_numpy(),
+        "seconds": durations.to_numpy(),
+    })
+    grouped = (groups.groupby(["year", "branch"], sort=False)
+               .agg(total_transactions=("seconds", "size"),
+                    valid_transactions=("seconds", "count"),
+                    mean_seconds=("seconds", "mean"))
+               .reset_index())
+    grouped = grouped.sort_values(
+        ["year", "mean_seconds", "valid_transactions", "branch"],
+        ascending=[True, True, False, True],
+        na_position="last", kind="stable")
+    results = []
+    for item in grouped.to_dict("records"):
+        mean_seconds = item["mean_seconds"]
+        results.append({
+            "year": str(item["year"]), "name": str(item["branch"]),
+            "count": int(item["total_transactions"]),
+            "valid_count": int(item["valid_transactions"]),
+            "avg_sla_days": (round(float(mean_seconds) / 86400.0, 10)
+                             if pd.notna(mean_seconds) else None),
+        })
+    return {
+        "branch_year_stats": results,
+        "branch_year_meta": {
+            "label_column": str(branch_col), "sla_column": "FUNGSIONAL",
+            "unit": "hari",
+            "definition": ("Kelompok cabang berdasarkan 'GM CABANG' pada NAMA VENDOR; "
+                           "SLA Fungsional, sesuai Tab Vendor."
+                           if branch_col == vendor_col else
+                           "Kelompok berdasarkan kolom cabang; SLA Fungsional."),
+        },
+    }
+
+
 @st.cache_data(show_spinner=False, max_entries=4)
 def _sela_full_upload_payload_cached(source_version: str, period_col: str,
                                      _raw_upload: pd.DataFrame):
@@ -9431,6 +9521,8 @@ def _sela_full_upload_payload_cached(source_version: str, period_col: str,
     full = build_sela_payload(df, period_col)
     historical = _sela_history_from_parsed(df, period_col)
     full.update(historical)
+    full.update(_sela_branch_year_stats_from_parsed(
+        df, period_col, raw_sla_series=_raw_upload.get("FUNGSIONAL")))
     full["history_total_rows"] = full.pop("total_rows", int(len(df)))
     full["meta"].update({"scope": "all_uploaded", "source_version": str(source_version)[:20]})
     return full
@@ -9452,7 +9544,8 @@ def render_sela_widget(df_filtered, periode_col: str,
             "nomor_stats", "proses_stats", "process_year_stats", "process_month_stats",
             "process_period_stats", "process_transaction_year_stats",
             "process_transaction_month_stats", "process_vendor_year_stats",
-            "process_vendor_month_stats", "sample_records", "meta")}
+            "process_vendor_month_stats", "sample_records", "meta",
+            "branch_year_stats", "branch_year_meta")}
     else:
         payload = (_sela_active_payload_cached(source_version, tuple(period_keys),
                                                periode_col, df_filtered)
@@ -10099,6 +10192,37 @@ body.sela-narrow-host .sela-year-kpis{grid-template-columns:1fr}
 body.sela-narrow-host .sela-type-row{grid-template-columns:minmax(0,1fr) 95px}
 body.sela-narrow-host .sela-type-track{grid-column:1 / -1;grid-row:2}
 body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
+    /* v19: small 3D-perspective motion of the WHOLE 2D portrait.
+       It suggests presence while preserving alignment of eyes and mouth overlays. */
+    .female-avatar.speaking .avatar-card,
+    .female-avatar.listening .avatar-card {
+      animation:none!important;
+      transform-origin:50% 43%;
+      transform:perspective(900px) rotateY(var(--sela-pose-y,0deg))
+                rotateX(var(--sela-pose-x,0deg)) rotateZ(var(--sela-pose-z,0deg))
+                translate3d(0,var(--sela-pose-lift,0px),0);
+      transition:transform 560ms cubic-bezier(.25,.65,.28,1);
+      will-change:transform;
+    }
+    .female-avatar.speaking .avatar-photo {filter:saturate(1.05) brightness(1.025)}
+    .sela-branch-panel {display:grid;gap:14px}
+    .sela-branch-summary {border-radius:14px;padding:14px 16px;
+      border:1px solid rgba(75,180,182,.32);background:rgba(26,80,93,.22);color:#e8f7ff;
+      font-size:13px;line-height:1.6}
+    .sela-branch-chart {display:flex;flex-direction:column;gap:10px}
+    .sela-branch-row {display:grid;grid-template-columns:minmax(140px,1.25fr) minmax(60px,3fr) minmax(118px,1fr);
+      align-items:center;gap:12px;font-size:12px;color:#e3f1fa}
+    .sela-branch-name {overflow-wrap:anywhere}
+    .sela-branch-track {height:15px;background:rgba(255,255,255,.09);border-radius:999px;overflow:hidden}
+    .sela-branch-fill {height:100%;background:linear-gradient(90deg,#2dc7b0,#65a9ff);border-radius:999px}
+    .sela-branch-value {text-align:right;color:#e3f5ff;line-height:1.4}
+    .sela-branch-foot {font-size:11px;color:#a7c6d9;line-height:1.5}
+    @media(max-width:640px){.sela-branch-row{grid-template-columns:minmax(80px,1fr) minmax(45px,1fr) minmax(85px,1fr);gap:6px}}
+    @media(prefers-reduced-motion:reduce){
+      .female-avatar.speaking .avatar-card,.female-avatar.listening .avatar-card{
+        transition:none!important;transform:none!important;will-change:auto;
+      }
+    }
 </style>
 </head>
 <body>
@@ -10195,6 +10319,7 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
           <button class="chip" data-question="Bagaimana growth transaksi?">Growth</button>
           <button class="chip" data-question="Apa bottleneck utamanya?">Bottleneck</button>
           <button class="chip" data-question="Vendor mana yang paling lambat?">Vendor Lambat</button>
+          <button class="chip" data-question="Cabang mana yang tercepat tahun 2026?">Cabang Tercepat</button>
           <button class="chip" data-question="Nomor permohonan mana yang perlu dipantau?">Nomor Permohonan</button>
           <button class="chip" data-question="Apa rekomendasi perbaikannya?">Rekomendasi</button>
           <button class="chip" data-question="Bandingkan jumlah transaksi tahun 2024, 2025, dan 2026">Multi-Tahun</button>
@@ -10279,6 +10404,11 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
     const historyYears = payload.history_year_stats || [];
     const historyMonths = payload.history_month_stats || [];
     const historyYearTransactionTop = payload.history_year_transaction_top || [];
+    const branchHistoryAll = payload.branch_year_stats || [];
+    const branchMetaAll = payload.branch_year_meta || {};
+    let branchYearStats = branchHistoryAll;
+    let branchYearMeta = branchMetaAll;
+    let selaBranchReportState = null;
     // Keep legacy quick questions; adapt new examples to the years actually uploaded.
     const exampleYears = historyYears.map(item => String(item.year)).sort().slice(-3);
     if(exampleYears.length >= 2){
@@ -10476,13 +10606,52 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
       }
       if(mouthSpeaking || active) mouthAnimFrame=requestAnimationFrame(animateMouth);
     }
+    // Light pose changes are tied to speaking/listening, not a video/GPU loop.
+    let selaPoseTimer = null;
+    const selaPortrait = femaleAvatar.querySelector('.avatar-card');
+    const selaReducedMotion = window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    function selaPoseStep(mode){
+      if(!selaPortrait || selaReducedMotion || document.hidden) return;
+      const amplitude = mode === 'speaking' ? 1 : .45;
+      const random = (spread) => (Math.random()*2-1)*spread*amplitude;
+      selaPortrait.style.setProperty('--sela-pose-y',random(1.15).toFixed(2)+'deg');
+      selaPortrait.style.setProperty('--sela-pose-x',random(.72).toFixed(2)+'deg');
+      selaPortrait.style.setProperty('--sela-pose-z',random(.43).toFixed(2)+'deg');
+      selaPortrait.style.setProperty('--sela-pose-lift',random(1.35).toFixed(2)+'px');
+    }
+    function selaStopPose(){
+      if(selaPoseTimer!==null){clearTimeout(selaPoseTimer);selaPoseTimer=null;}
+      if(selaPortrait){
+        ['--sela-pose-y','--sela-pose-x','--sela-pose-z','--sela-pose-lift']
+        .forEach(name=>selaPortrait.style.removeProperty(name));
+      }
+    }
+    function selaStartPose(mode){
+      if(selaPoseTimer!==null){clearTimeout(selaPoseTimer);selaPoseTimer=null;}
+      if(selaReducedMotion)return;
+      const tick=()=>{
+        if(!femaleAvatar.classList.contains(mode) || document.hidden){
+          selaStopPose();return;
+        }
+        selaPoseStep(mode);
+        selaPoseTimer=setTimeout(tick,620+Math.random()*510);
+      };
+      tick();
+    }
     function setAvatarState(state){
+      const previous = femaleAvatar.classList.contains('speaking') ? 'speaking' :
+                       femaleAvatar.classList.contains('listening') ? 'listening' : '';
       femaleAvatar.classList.remove('speaking','listening');
       if(state) femaleAvatar.classList.add(state);
       if(state === 'speaking') startSmoothMouth();
       else {
         stopSmoothMouth();
         if(state === 'listening' && faceStatus) faceStatus.textContent='● MENDENGARKAN';
+      }
+      if(state !== previous){
+        if(state === 'speaking' || state === 'listening') selaStartPose(state);
+        else selaStopPose();
       }
     }
     function selaDemoExpressions(){
@@ -11053,6 +11222,92 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
     // Month-over-month change is computed only between consecutive observed months.
     // Missing months are NOT interpreted as zero-transactions.
     let selaAnnualReportState = null;
+    // v19: branch ranking is deliberately separate from the vendor leaderboard.
+    // GM CABANG uses SLA FUNGSIONAL, consistent with Tab Vendor.
+    function selaAnalyzeBranchQuestion(question){
+      const q = normalize(question);
+      if(!/(cabang|gm cabang|unit cabang)/i.test(q)) return null;
+      const intent = /(tercepat|paling cepat|paling singkat|terlambat|paling lambat|paling lama|peringkat|ranking|urutan|top[ ]*[0-9]*|analisis|analisa|kinerja|sla|rata-rata)/i.test(q);
+      if(!intent) return null;
+      const years = selaMentionedYears(q);
+      const latestBranchYear = branchYearStats.length ? branchYearStats
+        .map(row=>String(row.year)).sort().slice(-1)[0] : '';
+      const year = years.length === 1 ? years[0] : years.length===0 ? latestBranchYear : '';
+      if(years.length > 1){
+        return {missing:true, answer:'Untuk peringkat cabang yang adil, sebutkan satu tahun terlebih dahulu, misalnya 2026. Perbandingan lintas tahun tetap tersedia pada analisis SLA.'};
+      }
+      if(!year)return {missing:true,answer:'Saya belum menemukan tahun data cabang. Mohon sebutkan tahunnya.'};
+      const available = branchYearStats.filter(row=>String(row.year)===String(year));
+      const valid = available.filter(row=>row.avg_sla_days!==null && Number(row.valid_count)>0);
+      if(!valid.length){
+        const src = branchYearMeta.label_column || 'NAMA VENDOR';
+        return {missing:true,year,answer:`Saya belum menemukan data SLA Fungsional cabang yang valid untuk tahun ${year}. Kolom acuan cabang: ${src}. Cabang hanya dapat diperingkat jika nama cabang dan SLA Fungsional tersedia. Saya tidak akan menyamakan vendor umum dengan cabang.`};
+      }
+      const slowest = /(terlambat|paling lama|paling lambat|sla tertinggi)/i.test(q);
+      const sorted = valid.slice().sort((a,b)=>{
+        const diff=Number(a.avg_sla_days)-Number(b.avg_sla_days);
+        return slowest ? -diff : diff || Number(b.valid_count)-Number(a.valid_count) || String(a.name).localeCompare(String(b.name));
+      });
+      // Avoid presenting a one-document branch as a stable corporate winner.
+      const minimum = 5;
+      const eligible = sorted.filter(row=>Number(row.valid_count)>=minimum);
+      const ranked = eligible.length ? eligible : sorted;
+      const limited = ranked.slice(0,10);
+      const first = ranked[0];
+      const totalCases = ranked.reduce((sum,row)=>sum+Number(row.count||0),0);
+      const totalValid = ranked.reduce((sum,row)=>sum+Number(row.valid_count||0),0);
+      const rankLabel=slowest?'paling lama':'tercepat';
+      const note=eligible.length ? `Perbandingan memprioritaskan cabang dengan sedikitnya ${minimum} transaksi SLA valid.`
+         : `Semua cabang memiliki kurang dari ${minimum} transaksi SLA valid; ranking masih bersifat indikatif.`;
+      const near=ranked.slice(1,4).map(row=>`${row.name} (${fmtDays(row.avg_sla_days)}; ${fmtNum(row.valid_count)} valid)`).join('; ');
+      const answer=`${naturalLead()} Cabang dengan rata-rata penyelesaian ${rankLabel} pada tahun ${year} adalah ${first.name}, `+
+        `dengan SLA Fungsional ${fmtDays(first.avg_sla_days)} dari ${fmtNum(first.valid_count)} transaksi valid `+
+        `(total ${fmtNum(first.count)} transaksi cabang). `+
+        (near ? `Pembanding berikutnya: ${near}. ` : '')+
+        `${note} `+
+        `Dasar data: seluruh histori unggahan tahun ${year}; ${fmtNum(totalValid)} transaksi valid dari ${fmtNum(totalCases)} transaksi pada cabang terperingkat. `+
+        `Metrik SLA Fungsional sesuai Tab Vendor; SLA lebih kecil berarti lebih cepat.`;
+      return {year,missing:false,slowest,top:limited,first,all:ranked,
+              minimum,eligible:eligible.length>0,totalCases,totalValid,answer};
+    }
+    function selaRenderBranchReport(report){
+      if(!report || report.missing || !advisorCharts)return;
+      const max=Math.max(1,...report.top.map(row=>Number(row.avg_sla_days||0)));
+      const rows=report.top.map((row,i)=>{
+        const portion=100*Number(row.avg_sla_days||0)/max;
+        return `<div class="sela-branch-row"><div class="sela-branch-name"><strong>${i+1}.</strong> ${escHtml(row.name)}</div>`+
+           `<div class="sela-branch-track"><div class="sela-branch-fill" style="width:${Math.max(2,portion).toFixed(1)}%"></div></div>`+
+           `<div class="sela-branch-value">${fmtDays(row.avg_sla_days)}<br><small>n=${fmtNum(row.valid_count)}</small></div></div>`;
+      }).join('');
+      const table=report.top.map((row,i)=>`<tr><td>${i+1}</td><td>${escHtml(row.name)}</td>`+
+        `<td>${fmtNum(row.count)}</td><td>${fmtNum(row.valid_count)}</td><td>${fmtDays(row.avg_sla_days)}</td></tr>`).join('');
+      advisorCharts.innerHTML=`<div class="sela-branch-panel">
+        <div class="sela-year-heading"><div><div class="advisor-kicker">SELA · BRANCH PERFORMANCE INTELLIGENCE</div>
+          <h3>Cabang ${report.slowest?'SLA Terlama':'Tercepat'} · ${escHtml(report.year)}</h3>
+          <p>Diurutkan berdasarkan rata-rata SLA Fungsional • tahun yang diminta dari histori Excel</p></div>
+          <div class="sela-year-source">${fmtNum(report.totalValid)} SLA VALID</div></div>
+        <div class="sela-branch-summary"><strong>${escHtml(report.first.name)}</strong><br>
+          Rata-rata ${fmtDays(report.first.avg_sla_days)} dari ${fmtNum(report.first.valid_count)} transaksi valid.
+          <br>Perbandingan ${report.eligible?'menggunakan minimal 5 transaksi SLA valid':'bersifat indikatif karena sampel sangat kecil'}.</div>
+        <div class="sela-year-card"><h4>Perbandingan Rata-rata SLA Fungsional</h4>
+          <div class="sela-year-caption">Bar lebih pendek berarti lebih cepat. Grafik tidak boleh dibaca sebagai volume transaksi.</div>
+          <div class="sela-branch-chart">${rows}</div></div>
+        <div class="sela-year-card"><h4>Rincian Ranking Cabang</h4>
+          <div class="premium-table-wrap"><table class="premium-table"><thead><tr><th>Peringkat</th><th>Cabang</th><th>Total</th><th>SLA Valid</th><th>Rata-rata SLA</th></tr></thead><tbody>${table}</tbody></table></div>
+          <p class="sela-branch-foot">${escHtml(branchYearMeta.definition||'SLA Fungsional pada cabang.')} ${report.eligible?'Minimum 5 SLA valid per cabang.':'Jumlah sampel kecil: peringkat bersifat indikatif.'} Tanggal dan SLA mengikuti file unggahan.</p></div>
+          <div class="sela-year-downloads"><button type="button" class="cine-control-btn" id="selaBranchCsvBtn">⬇ Unduh Ranking Cabang ${escHtml(report.year)} (CSV)</button></div>
+        </div>`;
+      const btn=document.getElementById('selaBranchCsvBtn');
+      if(btn)btn.addEventListener('click',()=>selaExportBranchCsv(report));
+    }
+    function selaExportBranchCsv(report){
+      const rows=[['Ranking Cabang '+report.year],['Metrik','SLA Fungsional; semakin kecil semakin cepat'],
+        ['Sumber',branchYearMeta.definition||'GM CABANG'],[],['Peringkat','Nama Cabang','Total Transaksi','SLA Valid','Rata-rata Hari']];
+      report.all.forEach((r,i)=>rows.push([i+1,r.name,r.count,r.valid_count,r.avg_sla_days]));
+      const csv='\\ufeff'+rows.map(row=>row.map(boardroomCsvEscape).join(';')).join('\\r\\n');
+      boardroomDownloadText(csv,'text/csv;charset=utf-8','ASDP_SELA_Ranking_Cabang_'+report.year+'.csv');
+    }
+
     function selaAnalyzeAnnualQuestion(question){
       const q=normalize(question);
       const mention=selaMentionedYears(q);
@@ -11503,7 +11758,9 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
       const safeMode = ['overview','charts','tables','poster','briefing'].includes(mode) ? mode : 'overview';
       if(safeMode === 'overview') renderOverviewBody(question, answerText);
       else if(safeMode === 'charts') {
-        if(selaAnnualReportState && String(question||'').includes(selaAnnualReportState.year))
+        if(selaBranchReportState && String(question||'').includes(selaBranchReportState.year))
+          selaRenderBranchReport(selaBranchReportState);
+        else if(selaAnnualReportState && String(question||'').includes(selaAnnualReportState.year))
           selaRenderAnnualReport(selaAnnualReportState);
         else renderChartsBody();
       }
@@ -12085,6 +12342,8 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
       processVendorYearStats = source.process_vendor_year_stats || [];
       processVendorMonthStats = source.process_vendor_month_stats || [];
       records = source.sample_records || [];
+      branchYearStats = source.branch_year_stats || branchHistoryAll;
+      branchYearMeta = source.branch_year_meta || branchMetaAll;
       if(selaScopeSelect) selaScopeSelect.value=useActive?'active':'all';
       populateMetrics();
       return useActive;
@@ -12097,6 +12356,8 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
       if(/(filter aktif|filter dashboard|sesuai filter|periode dipilih|periode terfilter|yang sedang ditampilkan)/i.test(q))
         return 'active';
       if(/(seluruh data|semua data|seluruh excel|semua transaksi|seluruh histori|full data|tanpa filter)/i.test(q))
+        return 'all';
+      if(/(?:19|20)\\d{2}/.test(q) && /(cabang|gm cabang)/i.test(q))
         return 'all';
       // Year-specific deep analysis always uses the full uploaded history unless
       // the user explicitly asks for the active dashboard filter above.
@@ -12114,16 +12375,19 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
       statusLine.textContent = 'Status: SELA sedang menganalisis pertanyaan Anda.';
       setAvatarState('listening');
       queueMicrotask(() => {
-        const annual = selaAnalyzeAnnualQuestion(q);
+        const branch = selaAnalyzeBranchQuestion(q);
+        const annual = branch ? null : selaAnalyzeAnnualQuestion(q);
+        selaBranchReportState = branch && !branch.missing ? branch : null;
         selaAnnualReportState = annual && !annual.missing ? annual : null;
-        const result = annual ? annual.answer : answer(q);
+        const result = branch ? branch.answer : annual ? annual.answer : answer(q);
         const isDataQuestion = /(transaksi|sla|vendor|cabang|nomor permohonan|periode|tahun|bottleneck|growth|pertumbuhan|ringkasan|direksi|rekomendasi|proses)/i.test(q);
         const hasEvidence = result.includes('Dasar data:');
         let ans = (isDataQuestion && !hasEvidence && payload.meta.status !== 'empty')
           ? result + selaEvidence(`cakupan ${selaScopeSelect?.value === 'active' ? 'filter dashboard' : 'seluruh Excel'} ${metrics.period_first || '-'}–${metrics.period_last || '-'}`,
                                   Number(metrics.transaction_count || 0))
           : result;
-        const advisorMode = annual && !annual.missing ? 'charts' : inferAdvisorMode(q);
+        const advisorMode = (branch && !branch.missing) || (annual && !annual.missing)
+          ? 'charts' : inferAdvisorMode(q);
         if(advisorMode === 'charts' && !annual && !/grafik|chart|bagan/i.test(ans)) ans += '\\n\\nSaya juga menampilkan grafik eksekutif pada workspace advisor.';
         if(advisorMode === 'tables' && !/tabel|table|daftar/i.test(ans)) ans += '\\n\\nSaya juga menampilkan tabel prioritas pada workspace advisor.';
         if(advisorMode === 'poster' && !/poster/i.test(ans)) ans += '\\n\\nSaya juga menampilkan poster eksekutif pada workspace advisor.';
@@ -12132,6 +12396,7 @@ body.sela-narrow-host .sela-type-value{grid-column:2;grid-row:1}
         boardroomAnswer = ans;
         if(advisorMode !== 'overview') refreshAdvisor(advisorMode, q, ans);
         if(annual && !annual.missing) selaRenderAnnualReport(annual);
+        if(branch && !branch.missing) selaRenderBranchReport(branch);
         setBubble(ans);
         cineOpenAnswer(advisorMode, q, ans);
         speak(ans);
